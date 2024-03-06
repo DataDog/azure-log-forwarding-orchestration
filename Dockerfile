@@ -1,4 +1,11 @@
 FROM ubuntu:latest
+RUN apt update && apt install -y software-properties-common wget
+RUN add-apt-repository ppa:deadsnakes/ppa -y
+RUN apt-get update
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get install -y python3.11
+RUN wget https://bootstrap.pypa.io/get-pip.py
+RUN python3.11 get-pip.py
 RUN mkdir /opt/app
 WORKDIR /opt/app
 COPY build_requirements.txt .
