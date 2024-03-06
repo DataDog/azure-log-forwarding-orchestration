@@ -1,17 +1,15 @@
 # stdlib
-from asyncio import Task, create_task, gather
+from asyncio import gather
 from datetime import datetime, timezone
 from json import dumps, loads
 from logging import INFO, WARNING, getLogger
-from typing import Any, AsyncIterable, Callable, NotRequired, TypeAlias, TypedDict
+from typing import NotRequired, TypeAlias, TypedDict
 
 
 # 3p
 from azure.functions import FunctionApp, TimerRequest, Out
 from azure.mgmt.resource.subscriptions.aio import SubscriptionClient
 from azure.mgmt.resource.resources.aio import ResourceManagementClient
-from azure.mgmt.storage.v2023_01_01.aio import StorageManagementClient
-from azure.mgmt.storage.v2023_01_01.models import Resource
 from azure.identity.aio import DefaultAzureCredential
 
 # silence azure logging except for warnings
@@ -40,7 +38,7 @@ ResourceCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, ResourceConfigu
 
 class ResourcesTask:
 
-    def __init__(self, credential: DefaultAzureCredential, resources: str, cache: Out[str]) -> None:
+    def __init__(self, credential:DefaultAzureCredential, resources: str, cache: Out[str]) -> None:
         self.credential = credential
         self.resource_ids_per_subscription: dict[str, set[str]] = {}
         self._cache = cache
@@ -59,36 +57,10 @@ class ResourcesTask:
 
     async def process_subscription(self, subscription_id: str) -> None:
         log.info("Processing the following subscription: %s", subscription_id)
-        subresource_tasks: list[Task[None]] = []
-        resource_ids: set[str] = set()
-
-        async def get_and_store_sub_resource_ids(
-            call: Callable[..., AsyncIterable[Resource]], *args: Any, **kwargs: Any
-        ):
-            resource_ids.update([resource.id async for resource in call(*args, **kwargs)])  # type: ignore
-
-        async with (
-            ResourceManagementClient(self.credential, subscription_id) as resource_client,
-            StorageManagementClient(self.credential, subscription_id) as storage_client,
-        ):
-            async for resource in resource_client.resources.list():
-                resource_ids.add(resource.id)  # type: ignore
-
-                if resource.type == "Microsoft.Storage/storageAccounts":
-                    resource_group = resource.id.split("/")[4]  # type: ignore
-                    subresource_tasks.append(
-                        create_task(
-                            get_and_store_sub_resource_ids(
-                                storage_client.blob_containers.list, resource_group, resource.name
-                            )
-                        )
-                    )
-            await gather(*subresource_tasks)
-
-        log.info(f"Subscription {subscription_id}: Collected {len(resource_ids)} resources")
-
-        # async with
-        self.resource_ids_per_subscription[subscription_id] = resource_ids
+        async with ResourceManagementClient(self.credential, subscription_id) as client:
+            resource_ids: set[str] = {r.id async for r in client.resources.list()}  # type: ignore
+            log.info(f"Subscription {subscription_id}: Collected {len(resource_ids)} resources")
+            self.resource_ids_per_subscription[subscription_id] = resource_ids
 
     def store_resources(self) -> None:
         if not isinstance(self._resources_cache_initial_state, dict):
