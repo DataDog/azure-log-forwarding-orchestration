@@ -2,7 +2,17 @@ variables:
   BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
 
 stages:
+  - test
   - publish
+
+test-workflow:
+  image: $BAZEL_CI_IMAGE
+  stage: test
+  tags: ["runner:main"]
+  before_script:
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+  script:
+    - cd diagnostic_settings_task && pytest tests
 
 publish-workflow:
   image: $BAZEL_CI_IMAGE
