@@ -37,7 +37,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.list_diagnostic_settings_categories: Mock = client.diagnostic_settings_category.list
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
         client.subscription_diagnostic_settings.list = Mock(return_value=agen())  # nothing to test here yet
-
+        self.credential = Mock()
         self.out_mock = Mock()
 
     @property
@@ -62,7 +62,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
             Mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
-        await DiagnosticSettingsTask(resources, self.out_mock).run()
+        await DiagnosticSettingsTask(self.credential, resources, self.out_mock).run()
 
         self.create_or_update_setting.assert_awaited()
         self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
@@ -95,7 +95,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         )
         self.list_diagnostic_settings_categories.return_value = agen()
 
-        await DiagnosticSettingsTask(resources, self.out_mock).run()
+        await DiagnosticSettingsTask(self.credential, resources, self.out_mock).run()
 
         self.create_or_update_setting.assert_not_called()
         self.create_or_update_setting.assert_not_awaited()
