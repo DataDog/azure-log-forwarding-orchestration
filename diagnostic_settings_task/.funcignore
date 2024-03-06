@@ -1,0 +1,7 @@
+.venv/
+.vscode/
+tests/
+local.settings.json
+local.settings.example.json
+remove_diagnostic_settings.py
+README.md
