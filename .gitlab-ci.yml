@@ -16,7 +16,7 @@ stages:
 build-workflow:
   image: $DOCKER_CI_IMAGE
   stage: build
-  tags: ["runner:main"]
+  tags: ["runner:docker"]
   script:
     - ci/tasks/build-base-image.sh
 
