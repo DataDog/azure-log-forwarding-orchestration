@@ -16,21 +16,21 @@ stages:
 build-workflow:
   image: $DOCKER_CI_IMAGE
   stage: build
-  tags: ["runner:docker"]
+  tags: ["arch:amd64", "specific:true", "runner:docker"]
   script:
     - ci/tasks/build-base-image.sh
 
 test-workflow:
   image: $DOCKER_CI_IMAGE
   stage: test
-  tags: ["runner:main"]
+  tags: ["arch:amd64", "specific:true", "runner:docker"]
   script:
     - ci/tasks/run-tests.sh
 
 publish-workflow:
   image: $BAZEL_CI_IMAGE
   stage: publish
-  tags: ["runner:main"]
+  tags: ["arch:amd64", "specific:true"]
   before_script:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
   script:
