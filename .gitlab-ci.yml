@@ -1,5 +1,6 @@
 variables:
   BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
+  DOCKER_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:20.10.3
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
   PLATFORMS:
     description: |
@@ -13,7 +14,7 @@ stages:
   - publish
 
 build-workflow:
-  image: $BAZEL_CI_IMAGE
+  image: $DOCKER_CI_IMAGE
   stage: build
   tags: ["runner:main"]
   script:
