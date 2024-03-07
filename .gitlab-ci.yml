@@ -1,6 +1,7 @@
 variables:
   BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
-  DOCKER_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:20.10.3
+  DOCKER_CI_IMAGE: registry.ddbuild.io/ci/dogweb/docker-builder:evaluation-v19967295-81b4ae8e # (2023-09-12) https://gitlab.ddbuild.io/DataDog/dogweb/-/jobs/327981116
+
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
   PLATFORMS:
     description: |
