@@ -21,7 +21,7 @@ build-workflow:
     - ci/tasks/build-base-image.sh
 
 test-workflow:
-  image: $BAZEL_CI_IMAGE
+  image: $DOCKER_CI_IMAGE
   stage: test
   tags: ["runner:main"]
   script:
