@@ -41,9 +41,12 @@ readonly fixed_image_tag="registry.ddbuild.io/${repository}:${version_tag}"
 # up-to-date build.
     # --tag "${floating_image_tag}" \
     # --metadata-file "${metadata_file}" \
+    # --no-cache \
+
+systemctl start docker
+
 time docker buildx build \
     --platform="${PLATFORMS}" \
-    --no-cache \
     --cache-to type=inline \
     --tag "${fixed_image_tag}" \
     --label git.repository="${CI_PROJECT_NAME}" \
