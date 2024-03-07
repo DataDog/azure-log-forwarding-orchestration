@@ -33,18 +33,18 @@ readonly metadata_file="image-metadata.json"
 # tag, even though most (all?) usage will be through the floating tag. The
 # `image_info.txt` file generated at the end of this script also requires us to
 # have a fixed tag (see comments there for more information).
-readonly floating_image_tag="registry.ddbuild.io/${GBILITE_IMAGE_TO_BUILD}"
+# readonly floating_image_tag="registry.ddbuild.io/${GBILITE_IMAGE_TO_BUILD}"
 readonly fixed_image_tag="registry.ddbuild.io/${repository}:${version_tag}"
 
 # Just like the GBI Lite runs in DataDog/images, we explicitly opt-out of using
 # a cache for building, to ensure that we always get a completely fresh and
 # up-to-date build.
+    # --tag "${floating_image_tag}" \
 time docker buildx build \
     --platform="${DOGWEB_IMAGE_PLATFORMS}" \
     --no-cache \
     --cache-to type=inline \
     --metadata-file "${metadata_file}" \
-    --tag "${floating_image_tag}" \
     --tag "${fixed_image_tag}" \
     --build-arg PYTHON_BASE_IMAGE="${PYTHON_BASE_IMAGE}" \
     --label git.repository="${CI_PROJECT_NAME}" \
