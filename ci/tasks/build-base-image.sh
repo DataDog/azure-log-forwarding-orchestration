@@ -40,11 +40,11 @@ readonly fixed_image_tag="registry.ddbuild.io/${repository}:${version_tag}"
 # a cache for building, to ensure that we always get a completely fresh and
 # up-to-date build.
     # --tag "${floating_image_tag}" \
+    # --metadata-file "${metadata_file}" \
 time docker buildx build \
     --platform="${PLATFORMS}" \
     --no-cache \
     --cache-to type=inline \
-    --metadata-file "${metadata_file}" \
     --tag "${fixed_image_tag}" \
     --label git.repository="${CI_PROJECT_NAME}" \
     --label git.branch="${CI_COMMIT_REF_NAME}" \
@@ -59,8 +59,8 @@ time docker buildx build \
     .
 
 # Extract the digest from the metadata file for `ddsign`
-image_digest="$(jq --raw-output '.["containerimage.digest"]' "${metadata_file}")"
-readonly image_digest
+# image_digest="$(jq --raw-output '.["containerimage.digest"]' "${metadata_file}")"
+# readonly image_digest
 
 # ddsign sign "${fixed_image_tag}@${image_digest}"
 
