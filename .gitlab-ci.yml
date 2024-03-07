@@ -1,5 +1,6 @@
 variables:
   BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
+  BASE_PIPELINE_ID: $CI_PIPELINE_ID
 
 stages:
   - build
