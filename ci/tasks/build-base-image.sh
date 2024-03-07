@@ -46,7 +46,6 @@ time docker buildx build \
     --cache-to type=inline \
     --metadata-file "${metadata_file}" \
     --tag "${fixed_image_tag}" \
-    --build-arg PYTHON_BASE_IMAGE="${PYTHON_BASE_IMAGE}" \
     --label git.repository="${CI_PROJECT_NAME}" \
     --label git.branch="${CI_COMMIT_REF_NAME}" \
     --label git.commit="${CI_COMMIT_SHA}" \
