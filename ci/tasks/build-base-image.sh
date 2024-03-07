@@ -41,7 +41,7 @@ readonly fixed_image_tag="registry.ddbuild.io/${repository}:${version_tag}"
 # up-to-date build.
     # --tag "${floating_image_tag}" \
 time docker buildx build \
-    --platform="${DOGWEB_IMAGE_PLATFORMS}" \
+    --platform="${PLATFORMS}" \
     --no-cache \
     --cache-to type=inline \
     --metadata-file "${metadata_file}" \
@@ -52,7 +52,7 @@ time docker buildx build \
     --label git.commit="${CI_COMMIT_SHA}" \
     --label ci.pipeline_id="${BASE_PIPELINE_ID}" \
     --label ci.job_id="${CI_JOB_ID}" \
-    --label org.opencontainers.image.source="http://github.com/DataDog/dogweb" \
+    --label org.opencontainers.image.source="http://github.com/DataDog/${repository}" \
     --label org.opencontainers.image.vendor="datadog" \
     --label org.opencontainers.image.version="${version_tag}" \
     --label org.opencontainers.image.revision="${CI_COMMIT_SHA}" \

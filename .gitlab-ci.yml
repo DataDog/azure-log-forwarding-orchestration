@@ -1,6 +1,11 @@
 variables:
   BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
+  PLATFORMS:
+    description: |
+      A list of platforms to build images for; corresponds to the
+      `--platform` option of `docker buildx build`.
+    value: "linux/amd64,linux/arm64"
 
 stages:
   - build
