@@ -76,7 +76,10 @@ readonly image_digest
 #
 # However, if our image use logic should ever change for some reason, this file
 # (properly constructed) will be able to support that change.
-cat << EOM > .campaigns/image_info.txt
-${version_tag}
-${image_digest}
-EOM
+
+# cat << EOM > .campaigns/image_info.txt
+# ${version_tag}
+# ${image_digest}
+# EOM
+
+echo $fixed_image_tag > ci/image_tag.txt
