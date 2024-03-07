@@ -43,7 +43,6 @@ readonly fixed_image_tag="registry.ddbuild.io/${repository}:${version_tag}"
     # --metadata-file "${metadata_file}" \
     # --no-cache \
 
-systemctl start docker
 
 time docker buildx build \
     --platform="${PLATFORMS}" \
