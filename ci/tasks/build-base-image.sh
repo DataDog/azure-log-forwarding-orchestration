@@ -42,7 +42,7 @@ readonly fixed_image_tag="registry.ddbuild.io/${repository}:${version_tag}"
     # --tag "${floating_image_tag}" \
     # --metadata-file "${metadata_file}" \
     # --no-cache \
-service docker start
+# service docker start
 
 time docker buildx build \
     --platform="${PLATFORMS}" \
