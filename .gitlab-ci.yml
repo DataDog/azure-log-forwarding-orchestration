@@ -1,6 +1,6 @@
 variables:
   DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:24.0.4-gbi-focal
-  PYTHON_IMAGE: registry.ddbuild.io/images/mirror/python:3.11
+  PYTHON_IMAGE: registry.ddbuild.io/images/python:3.11.6
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
   PLATFORMS:
     description: |
