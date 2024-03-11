@@ -16,7 +16,7 @@ stages:
 build-container-image:
   image: $DOCKER_CI_IMAGE
   stage: build
-  tags: ["arch:amd64", "specific:true"]
+  tags: ["arch:amd64"]
   script:
     - ci/tasks/build-base-image.sh
 
