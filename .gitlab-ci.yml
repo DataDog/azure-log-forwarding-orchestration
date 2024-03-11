@@ -1,14 +1,12 @@
 variables:
-  BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
+  PYTHON_IMAGE: registry.ddbuild.io/images/python:3.11.6
 
 stages:
-  - publish
+  - test
 
-publish-workflow:
-  image: $BAZEL_CI_IMAGE
-  stage: publish
-  tags: ["runner:main"]
-  before_script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+run-tests:
+  image: $PYTHON_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
   script:
-    - echo "Hello world!"
+    - ci/run-tests.sh
