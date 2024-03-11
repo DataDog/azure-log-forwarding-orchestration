@@ -1,5 +1,6 @@
 variables:
   DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:24.0.4-gbi-focal
+  PYTHON_IMAGE: registry.ddbuild.io/images/mirror/python:3.11
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
   PLATFORMS:
     description: |
@@ -8,18 +9,18 @@ variables:
     value: "linux/amd64,linux/arm64"
 
 stages:
-  - run
+  # - run
   # - build
-  # - test
+  - test
   - publish
 
-build-and-test:
-  image: $DOCKER_CI_IMAGE
-  stage: run
-  tags: ["arch:amd64"]
-  script:
-    - ci/tasks/build-base-image.sh
-    - ci/tasks/run-tests.sh
+# build-and-test:
+#   image: $DOCKER_CI_IMAGE
+#   stage: run
+#   tags: ["arch:amd64"]
+#   script:
+#     - ci/tasks/build-base-image.sh
+#     - ci/tasks/run-tests.sh
 
 
 # build-container-image:
@@ -29,12 +30,12 @@ build-and-test:
 #   script:
 #     - ci/tasks/build-base-image.sh
 
-# run-tests:
-#   image: $DOCKER_CI_IMAGE
-#   stage: test
-#   tags: ["arch:amd64"]
-#   script:
-#     - ci/tasks/run-tests.sh
+run-tests:
+  image: $PYTHON_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - ci/tasks/run-tests.sh
 
 publish-workflow:
   image: $DOCKER_CI_IMAGE
