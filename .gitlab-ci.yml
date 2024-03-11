@@ -16,14 +16,14 @@ stages:
 build-workflow:
   image: $DOCKER_CI_IMAGE
   stage: build
-  tags: ["arch:amd64", "specific:true", "runner:docker"]
+  tags: ["arch:amd64", "specific:true"]
   script:
     - ci/tasks/build-base-image.sh
 
 test-workflow:
   image: $DOCKER_CI_IMAGE
   stage: test
-  tags: ["arch:amd64", "specific:true", "runner:docker"]
+  tags: ["arch:amd64", "specific:true"]
   script:
     - ci/tasks/run-tests.sh
 
