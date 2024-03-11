@@ -11,4 +11,4 @@ pip install -r build_requirements.txt
 
 cd diagnostic_settings_task
 pip install -r requirements.txt
-pytest tests
+python -m pytest tests
