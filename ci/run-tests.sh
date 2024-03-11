@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # install pytest
-pip install -r build_requirements.txt
+pip install -r ci/requirements.txt
 
 # run diagnostic_settings tests
 cd diagnostic_settings_task
