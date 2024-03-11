@@ -3,8 +3,6 @@ variables:
 
 stages:
   - test
-  # - publish
-
 
 run-tests:
   image: $PYTHON_IMAGE
@@ -12,12 +10,3 @@ run-tests:
   tags: ["arch:amd64"]
   script:
     - ci/run-tests.sh
-
-publish-workflow:
-  image: $PYTHON_IMAGE
-  stage: publish
-  tags: ["arch:amd64"]
-  before_script:
-    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-  script:
-    - echo "Hello world!"
