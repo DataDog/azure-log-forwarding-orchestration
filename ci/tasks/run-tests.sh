@@ -2,13 +2,13 @@
 
 set -euo pipefail
 
-# image_tag=$(cat ci/image_tag.txt)
-# readonly image_tag
-
-# time docker run $image_tag
-
+# install pytest
 pip install -r build_requirements.txt
 
+# run diagnostic_settings tests
 cd diagnostic_settings_task
 pip install -r requirements.txt
 python -m pytest tests
+
+# TODO run log_forwarding tests
+
