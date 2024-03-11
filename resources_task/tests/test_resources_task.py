@@ -20,15 +20,15 @@ def make_agen_func(field_name: str, *values: str) -> AsyncIterableFunc:
     return Mock(return_value=agen(*(Mock(**{field_name: value}) for value in values)))
 
 
-class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
-    def get_mock_client(self, client_name: str) -> AsyncMock:
-        client_patch = patch(f"function_app.{client_name}")
-        self.addCleanup(client_patch.stop)
-        return client_patch.start()
+class TestResourcesTask(IsolatedAsyncioTestCase):
+    def patch(self, path: str):
+        p = patch(f"function_app.{path}")
+        self.addCleanup(p.stop)
+        return p.start()
 
     def setUp(self) -> None:
-        self.sub_client: AsyncMock = self.get_mock_client("SubscriptionClient").return_value.__aenter__.return_value
-        self.resource_client = self.get_mock_client("ResourceManagementClient")
+        self.sub_client: AsyncMock = self.patch("SubscriptionClient").return_value.__aenter__.return_value
+        self.resource_client = self.patch("ResourceManagementClient")
         self.resource_client_mapping: dict[SubscriptionId, AsyncIterableFunc] = {}
 
         def create_resource_client(_: Any, sub_id: SubscriptionId):
