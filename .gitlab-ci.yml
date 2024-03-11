@@ -1,5 +1,4 @@
 variables:
-  BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
   DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:24.0.4-gbi-focal
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
   PLATFORMS:
