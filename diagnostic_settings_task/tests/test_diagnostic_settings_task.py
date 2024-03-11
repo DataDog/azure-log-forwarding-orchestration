@@ -1,5 +1,4 @@
 from json import dumps, loads
-import resource
 from typing import AsyncIterable, TypeVar
 from unittest.mock import ANY, AsyncMock, Mock, patch
 from function_app import (
@@ -37,7 +36,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.list_diagnostic_settings_categories: Mock = client.diagnostic_settings_category.list
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
         client.subscription_diagnostic_settings.list = Mock(return_value=agen())  # nothing to test here yet
-        self.credential = Mock()
+        self.credential = AsyncMock()
         self.out_mock = Mock()
 
     @property
