@@ -40,6 +40,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# python tools cache
+.pytest_cache
+.ruff_cache
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
