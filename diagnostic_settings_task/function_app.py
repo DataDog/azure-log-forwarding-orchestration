@@ -49,7 +49,9 @@ DiagnosticSettingType = TypeVar("DiagnosticSettingType", bound=Resource)
 
 
 async def get_existing_diagnostic_setting(
-    resource_id: ResourceId, settings: AsyncIterable[DiagnosticSettingType], existing_diagnostic_setting_name: str | None = None
+    resource_id: ResourceId,
+    settings: AsyncIterable[DiagnosticSettingType],
+    existing_diagnostic_setting_name: str | None = None,
 ) -> DiagnosticSettingType | None:
     try:
         async for s in settings:
@@ -108,7 +110,6 @@ class DiagnosticSettingsTask:
             )
 
     async def update_subscription_settings(self, subscription_id: str, client: MonitorManagementClient) -> None:
-
         if (
             setting := await get_existing_diagnostic_setting(
                 subscription_id, client.subscription_diagnostic_settings.list()
@@ -129,7 +130,6 @@ class DiagnosticSettingsTask:
         event_hub_namespace = resource_configuration.get("event_hub_namespace")
 
         if diagnostic_setting_id and event_hub_name and event_hub_namespace:
-
             existing_setting = await get_existing_diagnostic_setting(
                 resource_id,
                 client.diagnostic_settings.list(resource_id),
@@ -218,7 +218,7 @@ class DiagnosticSettingsTask:
             num_resources = sum(len(resources) for resources in self.resource_cache.values())
             log.info(f"Updated Resources, {num_resources} resources stored in the cache")
         else:
-            log.info(f"Resources have not changed, no update needed")
+            log.info("Resources have not changed, no update needed")
 
 
 def now() -> str:

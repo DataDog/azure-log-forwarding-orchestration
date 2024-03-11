@@ -37,8 +37,7 @@ ResourceCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, ResourceConfigu
 
 
 class ResourcesTask:
-
-    def __init__(self, credential:DefaultAzureCredential, resources: str, cache: Out[str]) -> None:
+    def __init__(self, credential: DefaultAzureCredential, resources: str, cache: Out[str]) -> None:
         self.credential = credential
         self.resource_ids_per_subscription: dict[str, set[str]] = {}
         self._cache = cache
@@ -86,7 +85,7 @@ class ResourcesTask:
             self._cache.set(dumps(new_cache))
             log.info(f"Updated Resources, {len(new_cache)} resources stored in the cache")
         else:
-            log.info(f"Resources have not changed, no update needed")
+            log.info("Resources have not changed, no update needed")
 
 
 def now() -> str:
