@@ -1,47 +1,23 @@
 variables:
-  DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:24.0.4-gbi-focal
   PYTHON_IMAGE: registry.ddbuild.io/images/python:3.11.6
-  BASE_PIPELINE_ID: $CI_PIPELINE_ID
-  PLATFORMS:
-    description: |
-      A list of platforms to build images for; corresponds to the
-      `--platform` option of `docker buildx build`.
-    value: "linux/amd64,linux/arm64"
 
 stages:
-  # - run
-  # - build
   - test
-  - publish
+  # - publish
 
-# build-and-test:
-#   image: $DOCKER_CI_IMAGE
-#   stage: run
-#   tags: ["arch:amd64"]
-#   script:
-#     - ci/tasks/build-base-image.sh
-#     - ci/tasks/run-tests.sh
-
-
-# build-container-image:
-#   image: $DOCKER_CI_IMAGE
-#   stage: build
-#   tags: ["arch:amd64"]
-#   script:
-#     - ci/tasks/build-base-image.sh
 
 run-tests:
   image: $PYTHON_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/run-tests.sh
+    - ci/run-tests.sh
 
 publish-workflow:
-  image: $DOCKER_CI_IMAGE
+  image: $PYTHON_IMAGE
   stage: publish
   tags: ["arch:amd64"]
-  # before_script:
-  #   - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
+  before_script:
+    - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
   script:
     - echo "Hello world!"
