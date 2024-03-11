@@ -11,7 +11,7 @@ variables:
 stages:
   - build
   - test
-  - publish
+  # - publish
 
 build-container-image:
   image: $DOCKER_CI_IMAGE
@@ -23,14 +23,14 @@ build-container-image:
 run-tests:
   image: $DOCKER_CI_IMAGE
   stage: test
-  tags: ["arch:amd64", "specific:true"]
+  tags: ["arch:amd64"]
   script:
     - ci/tasks/run-tests.sh
 
 publish-workflow:
   image: $BAZEL_CI_IMAGE
   stage: publish
-  tags: ["arch:amd64", "specific:true"]
+  tags: ["arch:amd64"]
   before_script:
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
   script:
