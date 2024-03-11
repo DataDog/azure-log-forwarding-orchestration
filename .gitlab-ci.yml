@@ -1,6 +1,6 @@
 variables:
   BAZEL_CI_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/bazel:4
-  DOCKER_CI_IMAGE: registry.ddbuild.io/ci/dogweb/docker-builder:evaluation-v19967295-81b4ae8e
+  DOCKER_CI_IMAGE: registry.ddbuild.io/images/docker:24.0.4-gbi-focal
   BASE_PIPELINE_ID: $CI_PIPELINE_ID
   PLATFORMS:
     description: |
@@ -13,14 +13,14 @@ stages:
   - test
   - publish
 
-build-workflow:
+build-container-image:
   image: $DOCKER_CI_IMAGE
   stage: build
   tags: ["arch:amd64", "specific:true"]
   script:
     - ci/tasks/build-base-image.sh
 
-test-workflow:
+run-tests:
   image: $DOCKER_CI_IMAGE
   stage: test
   tags: ["arch:amd64", "specific:true"]
