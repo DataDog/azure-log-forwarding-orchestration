@@ -8,13 +8,13 @@ variables:
     value: "linux/amd64,linux/arm64"
 
 stages:
-  - build
+  # - build
   - test
   - publish
 
 build-container-image:
   image: $DOCKER_CI_IMAGE
-  stage: build
+  stage: test
   tags: ["arch:amd64"]
   script:
     - ci/tasks/build-base-image.sh
