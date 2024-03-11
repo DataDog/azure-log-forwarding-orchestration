@@ -12,6 +12,8 @@ Set up Local Dev Environment:
 ```bash
 pyenv install 3.11.7
 pyenv virtualenv 3.11.7 lfo
+pip install -r requirements-dev.txt
+pre-commit install
 ```
 
 ### For each function app
@@ -29,4 +31,13 @@ Either in the command pallete "Azure Functions: Deploy to Function App..."
 or via the cli:
 ```bash
 func azure functionapp publish <function-app-name> --build remote 
+```
+
+
+## Running Tests
+
+Just run pytest in the function app directory you care about:
+
+```bash
+pytest tests
 ```
