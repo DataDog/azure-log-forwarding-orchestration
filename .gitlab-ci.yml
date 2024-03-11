@@ -8,23 +8,33 @@ variables:
     value: "linux/amd64,linux/arm64"
 
 stages:
+  - run
   # - build
-  - test
+  # - test
   - publish
 
-build-container-image:
+build-and-test:
   image: $DOCKER_CI_IMAGE
-  stage: test
+  stage: run
   tags: ["arch:amd64"]
   script:
     - ci/tasks/build-base-image.sh
-
-run-tests:
-  image: $DOCKER_CI_IMAGE
-  stage: test
-  tags: ["arch:amd64"]
-  script:
     - ci/tasks/run-tests.sh
+
+
+# build-container-image:
+#   image: $DOCKER_CI_IMAGE
+#   stage: build
+#   tags: ["arch:amd64"]
+#   script:
+#     - ci/tasks/build-base-image.sh
+
+# run-tests:
+#   image: $DOCKER_CI_IMAGE
+#   stage: test
+#   tags: ["arch:amd64"]
+#   script:
+#     - ci/tasks/run-tests.sh
 
 publish-workflow:
   image: $DOCKER_CI_IMAGE
