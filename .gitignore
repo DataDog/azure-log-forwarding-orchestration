@@ -43,6 +43,7 @@ venv.bak/
 # python tools cache
 .pytest_cache
 .ruff_cache
+.mypy_cache
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -3,7 +3,7 @@
 set -euxo pipefail
 
 # install pytest
-pip install -r ci/requirements.txt
+pip install pytest==8.0.2
 
 # run diagnostic_settings tests
 cd diagnostic_settings_task
