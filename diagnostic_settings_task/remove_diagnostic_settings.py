@@ -74,7 +74,7 @@ async def process_subscription(cred: AsyncTokenCredential, sub_id: str) -> list[
     ):
         print(f"Processing subscription {sub_id}")
         res = await run_parallel(
-            lambda resource: process_resource(monitor_client, resource.id),
+            lambda resource: process_resource(monitor_client, resource.id),  # type: ignore
             resource_client.resources.list(),  # type: ignore
         )
         return list(flatten(res))

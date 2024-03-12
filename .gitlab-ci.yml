@@ -3,10 +3,17 @@ variables:
 
 stages:
   - test
+  - type-check
 
 run-tests:
   image: $PYTHON_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/run-tests.sh
+    - ci/tasks/test.sh
+run-type-check:
+  image: $PYTHON_IMAGE
+  stage: type-check
+  tags: ["arch:amd64"]
+  script:
+    - ci/tasks/type-check.sh

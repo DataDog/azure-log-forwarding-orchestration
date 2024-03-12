@@ -62,13 +62,14 @@ async def get_existing_diagnostic_setting(
         log.debug("No existing diagnostic setting found for resource %s", resource_id)
     except ResourceNotFoundError as e:
         log.warning("Resource %s not found: %s", resource_id, e.error)
-        return
+        return None
     except HttpResponseError as e:
         if e.error and e.error.code == "ResourceTypeNotSupported":
             # This resource does not support diagnostic settings
-            return
+            return None
         log.error("Failed to get diagnostic settings for %s", resource_id, exc_info=True)
         raise
+    return None
 
 
 class DiagnosticSettingsTask:
