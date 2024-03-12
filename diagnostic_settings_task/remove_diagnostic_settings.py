@@ -13,7 +13,6 @@ from typing import Any, AsyncIterable, Callable, Coroutine, Iterable, TypeVar
 # requires `pip install azure-mgmt-resource`
 from azure.identity.aio import DefaultAzureCredential
 from azure.core.credentials_async import AsyncTokenCredential
-from azure.mgmt.resource import SubscriptionClient
 from azure.mgmt.resource.resources.aio import ResourceManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 
@@ -28,6 +27,7 @@ R = TypeVar("R")
 # resource_idx = 0
 
 DRY_RUN = False
+
 
 def flatten(items: Iterable[Any]) -> Iterable[Any]:
     """Yield items from any nested iterable; see REF."""
@@ -61,7 +61,7 @@ async def process_resource(monitor_client: MonitorManagementClient, resource_id:
     # resource_idx += 1
     # get all diagnostic settings
     res = await run_parallel(
-        lambda setting: delete_setting(monitor_client, resource_id, setting.name), # type: ignore
+        lambda setting: delete_setting(monitor_client, resource_id, setting.name),  # type: ignore
         monitor_client.diagnostic_settings.list(resource_id),
     )
     return list(filter(None, res))
@@ -74,7 +74,8 @@ async def process_subscription(cred: AsyncTokenCredential, sub_id: str) -> list[
     ):
         print(f"Processing subscription {sub_id}")
         res = await run_parallel(
-            lambda resource: process_resource(monitor_client, resource.id), resource_client.resources.list() # type: ignore
+            lambda resource: process_resource(monitor_client, resource.id),
+            resource_client.resources.list(),  # type: ignore
         )
         return list(flatten(res))
 
