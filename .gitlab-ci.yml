@@ -10,7 +10,7 @@ run-tests:
   tags: ["arch:amd64"]
   script:
     - ci/tasks/test.sh
-run-type-check:
+type-check:
   image: $PYTHON_IMAGE
   stage: test
   tags: ["arch:amd64"]
