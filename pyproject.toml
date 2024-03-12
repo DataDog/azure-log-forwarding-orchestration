@@ -9,5 +9,4 @@ docstring-code-format = true
 [tool.mypy]
 follow_imports = "skip"
 ignore_missing_imports = true
-warn_no_return = false
 check_untyped_defs = true
