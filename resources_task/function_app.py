@@ -1,9 +1,9 @@
 # stdlib
 from asyncio import gather
-from datetime import datetime, timezone
-from json import dumps, loads
+from datetime import datetime
+from json import JSONDecodeError, dumps, loads
 from logging import INFO, WARNING, getLogger
-from typing import NotRequired, TypeAlias, TypedDict
+from typing import TypeAlias
 
 
 # 3p
@@ -25,23 +25,38 @@ log = getLogger(RESOURCES_TASK_NAME)
 log.setLevel(INFO)
 
 
-class ResourceConfiguration(TypedDict):
-    diagnostic_setting_id: NotRequired[str]
-    event_hub_name: NotRequired[str]
-    event_hub_namespace: NotRequired[str]
+ResourceCache: TypeAlias = dict[str, set[str]]
+"mapping of subscription_id to resource_ids"
+
+INVALID_CACHE_MSG = "Cache is in an invalid format, task will reset the cache"
 
 
-SubscriptionId: TypeAlias = str
-ResourceId: TypeAlias = str
-ResourceCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, ResourceConfiguration]]
+def deserialize_cache(cache_str: str) -> ResourceCache:
+    try:
+        cache = loads(cache_str)
+    except JSONDecodeError:
+        log.warning(INVALID_CACHE_MSG)
+        return {}
+    if not isinstance(cache, dict):
+        log.warning(INVALID_CACHE_MSG)
+        return {}
+    for sub_id, resources in cache.items():
+        if not isinstance(resources, list):
+            log.warning(INVALID_CACHE_MSG)
+            cache = {}
+            break
+        cache[sub_id] = set(resources)
+    return cache
 
 
 class ResourcesTask:
-    def __init__(self, credential: DefaultAzureCredential, resources: str, cache: Out[str]) -> None:
+    def __init__(self, credential: DefaultAzureCredential, cache_initial_state: str, cache: Out[str]) -> None:
         self.credential = credential
-        self.resource_ids_per_subscription: dict[str, set[str]] = {}
+        self.resource_cache: ResourceCache = {}
+        "in-memory cache of subscription_id to resource_ids"
         self._cache = cache
-        self._resources_cache_initial_state: ResourceCache = loads(resources) if resources else {}
+        self._resource_cache_initial_state: ResourceCache = deserialize_cache(cache_initial_state)
+
         """Cache of subscription_id to resource_id to diagnostic_setting_id, or None if the resource is new/has no diagnotic setting."""
 
     async def run(self) -> None:
@@ -59,37 +74,20 @@ class ResourcesTask:
         async with ResourceManagementClient(self.credential, subscription_id) as client:
             resource_ids: set[str] = {r.id async for r in client.resources.list()}  # type: ignore
             log.info(f"Subscription {subscription_id}: Collected {len(resource_ids)} resources")
-            self.resource_ids_per_subscription[subscription_id] = resource_ids
+            self.resource_cache[subscription_id] = resource_ids
 
     def store_resources(self) -> None:
-        if not isinstance(self._resources_cache_initial_state, dict):
-            log.warning("Cache is in an invalid format, resetting the cache")
-            self._cache.set(
-                dumps(
-                    {
-                        sub_id: {resource_id: {} for resource_id in resource_ids}
-                        for sub_id, resource_ids in self.resource_ids_per_subscription.items()
-                    }
-                )
-            )
-            return
-
-        new_cache: ResourceCache = {
-            subscription_id: {
-                resource_id: self._resources_cache_initial_state.get(subscription_id, {}).get(resource_id, {})
-                for resource_id in resource_ids
-            }
-            for subscription_id, resource_ids in self.resource_ids_per_subscription.items()
-        }
-        if new_cache != self._resources_cache_initial_state:
-            self._cache.set(dumps(new_cache))
-            log.info(f"Updated Resources, {len(new_cache)} resources stored in the cache")
+        if self.resource_cache != self._resource_cache_initial_state:
+            # since sets cannot be json serialized, we convert them to lists before storing
+            self._cache.set(dumps(self.resource_cache, default=list))
+            resources_count = sum(len(resources) for resources in self.resource_cache.values())
+            log.info(f"Updated Resources, {resources_count} resources stored in the cache")
         else:
             log.info("Resources have not changed, no update needed")
 
 
 def now() -> str:
-    return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    return datetime.now().isoformat()
 
 
 app = FunctionApp()
@@ -98,7 +96,7 @@ app = FunctionApp()
 @app.function_name(name=RESOURCES_TASK_NAME)
 @app.schedule(schedule="0 */5 * * * *", arg_name="req", run_on_startup=False)
 @app.blob_input(
-    arg_name="resources",
+    arg_name="cache_initial_state",
     path=BLOB_STORAGE_CACHE + "/resources.json",
     connection=BLOB_CONNECTION_SETTING_NAME,
 )
@@ -107,10 +105,10 @@ app = FunctionApp()
     path=BLOB_STORAGE_CACHE + "/resources.json",
     connection=BLOB_CONNECTION_SETTING_NAME,
 )
-async def run_job(req: TimerRequest, resources: str, cache: Out[str]) -> None:
+async def run_job(req: TimerRequest, cache_initial_state: str, cache: Out[str]) -> None:
     if req.past_due:
         log.info("The task is past due!")
     log.info("Started task at %s", now())
     async with DefaultAzureCredential() as cred:
-        await ResourcesTask(cred, resources, cache).run()
+        await ResourcesTask(cred, cache_initial_state, cache).run()
     log.info("Task finished at %s", now())
