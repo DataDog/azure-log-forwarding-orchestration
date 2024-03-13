@@ -3,13 +3,13 @@ from asyncio import gather
 from datetime import datetime
 from json import JSONDecodeError, dumps, loads
 from logging import INFO, WARNING, getLogger
-from typing import TypeAlias
+from typing import TypeAlias, cast
 
 
 # 3p
 from azure.functions import FunctionApp, TimerRequest, Out
-from azure.mgmt.resource.subscriptions.aio import SubscriptionClient
-from azure.mgmt.resource.resources.aio import ResourceManagementClient
+from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
+from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
 from azure.identity.aio import DefaultAzureCredential
 
 # silence azure logging except for warnings
@@ -63,7 +63,7 @@ class ResourcesTask:
         async with SubscriptionClient(self.credential) as subscription_client:
             await gather(
                 *[
-                    self.process_subscription(sub.subscription_id)  # type: ignore
+                    self.process_subscription(cast(str, sub.subscription_id))
                     async for sub in subscription_client.subscriptions.list()
                 ]
             )
@@ -72,7 +72,7 @@ class ResourcesTask:
     async def process_subscription(self, subscription_id: str) -> None:
         log.info("Processing the following subscription: %s", subscription_id)
         async with ResourceManagementClient(self.credential, subscription_id) as client:
-            resource_ids: set[str] = {r.id async for r in client.resources.list()}  # type: ignore
+            resource_ids: set[str] = {cast(str, r.id) async for r in client.resources.list()}
             log.info(f"Subscription {subscription_id}: Collected {len(resource_ids)} resources")
             self.resource_cache[subscription_id] = resource_ids
 
