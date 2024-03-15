@@ -59,7 +59,7 @@ async def get_existing_diagnostic_setting(
         raise
     except HttpResponseError as e:
         if e.error and e.error.code == "ResourceTypeNotSupported":
-            # This resource does not support diagnostic settings
+            log.debug("Got ResourceTypeNotSupported error for resource id %s", resource_id)
             raise
         log.error("Failed to get diagnostic settings for %s", resource_id, exc_info=True)
         raise
