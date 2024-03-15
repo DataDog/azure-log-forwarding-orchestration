@@ -1,7 +1,7 @@
-from json import dumps, loads
+from json import dumps
 from typing import Any, AsyncIterable, Callable, TypeAlias, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from function_app import ResourcesTask, ResourceCache, INVALID_CACHE_MSG
+from function_app import ResourcesTask, ResourceCache, INVALID_CACHE_MSG, deserialize_cache
 from unittest import IsolatedAsyncioTestCase
 
 
@@ -44,7 +44,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
 
     @property
     def out_value(self) -> ResourceCache:
-        return loads(self.out_mock.set.call_args[0][0])
+        return deserialize_cache(self.out_mock.set.call_args[0][0])
 
     def run_resources_task(self, cache: ResourceCache):
         return ResourcesTask(self.credential, dumps(cache, default=list), self.out_mock).run()
@@ -58,7 +58,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
         await ResourcesTask(self.credential, "[[[[{{{{{asjdklahjs]]]}}}", self.out_mock).run()
 
         self.log.warning.assert_called_once_with(INVALID_CACHE_MSG)
-        self.assertEqual(self.out_value, {"sub1": ["res1", "res2"], "sub2": ["res3"]})
+        self.assertEqual(self.out_value, {"sub1": {"res1", "res2"}, "sub2": {"res3"}})
 
     async def test_empty_cache_adds_resources(self):
         self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
@@ -70,7 +70,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
         await ResourcesTask(self.credential, "", self.out_mock).run()
 
         self.log.warning.assert_called_once_with(INVALID_CACHE_MSG)
-        self.assertEqual(self.out_value, {"sub1": ["res1", "res2"], "sub2": ["res3"]})
+        self.assertEqual(self.out_value, {"sub1": {"res1", "res2"}, "sub2": {"res3"}})
 
     async def test_no_new_resources_doesnt_cache(self):
         self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
@@ -100,7 +100,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
                 "sub2": {"res3"},
             }
         )
-        self.assertEqual(self.out_value, {"sub1": [], "sub2": []})
+        self.assertEqual(self.out_value, {"sub1": set(), "sub2": set()})
 
     async def test_subscriptions_gone(self):
         self.sub_client.subscriptions.list = make_agen_func("subscription_id")
