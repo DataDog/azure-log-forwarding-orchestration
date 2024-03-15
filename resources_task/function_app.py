@@ -96,19 +96,19 @@ app = FunctionApp()
 @app.function_name(name=RESOURCES_TASK_NAME)
 @app.schedule(schedule="0 */5 * * * *", arg_name="req", run_on_startup=False)
 @app.blob_input(
-    arg_name="cache_initial_state",
+    arg_name="resourceCacheState",  # snake case is illegal in arg names
     path=BLOB_STORAGE_CACHE + "/resources.json",
     connection=BLOB_CONNECTION_SETTING_NAME,
 )
 @app.blob_output(
-    arg_name="cache",
+    arg_name="resourceCache",
     path=BLOB_STORAGE_CACHE + "/resources.json",
     connection=BLOB_CONNECTION_SETTING_NAME,
 )
-async def run_job(req: TimerRequest, cache_initial_state: str, cache: Out[str]) -> None:
+async def run_job(req: TimerRequest, resourceCacheState: str, resourceCache: Out[str]) -> None:
     if req.past_due:
         log.info("The task is past due!")
     log.info("Started task at %s", now())
     async with DefaultAzureCredential() as cred:
-        await ResourcesTask(cred, cache_initial_state, cache).run()
+        await ResourcesTask(cred, resourceCacheState, resourceCache).run()
     log.info("Task finished at %s", now())
