@@ -227,24 +227,28 @@ app = FunctionApp()
 @app.function_name(name=DIAGNOSTIC_SETTINGS_TASK_NAME)
 @app.schedule(schedule="0 */6 * * * *", arg_name="req", run_on_startup=False)
 @app.blob_input(
-    arg_name="resources",
+    arg_name="resourceCacheState",
     path=BLOB_STORAGE_CACHE + "/resources.json",
     connection=BLOB_CONNECTION_SETTING,
 )
 @app.blob_input(
-    arg_name="diagnostic_settings",
+    arg_name="diagnosticSettingsCacheState",
     path=BLOB_STORAGE_CACHE + "/settings.json",
     connection=BLOB_CONNECTION_SETTING,
 )
 @app.blob_output(
-    arg_name="cache",
+    arg_name="diagnosticSettingsCache",
     path=BLOB_STORAGE_CACHE + "/settings.json",
     connection=BLOB_CONNECTION_SETTING,
 )
-async def run_job(req: TimerRequest, resources: str, diagnostic_settings: str, cache: Out[str]) -> None:
+async def run_job(
+    req: TimerRequest, resourceCacheState: str, diagnosticSettingsCacheState: str, diagnosticSettingsCache: Out[str]
+) -> None:
     if req.past_due:
         log.info("The timer is past due!")
     log.info("Started crawl at %s", now())
     async with DefaultAzureCredential() as cred:
-        await DiagnosticSettingsTask(cred, resources, diagnostic_settings, cache).run()
+        await DiagnosticSettingsTask(
+            cred, resourceCacheState, diagnosticSettingsCacheState, diagnosticSettingsCache
+        ).run()
     log.info("Crawl finished at %s", now())
