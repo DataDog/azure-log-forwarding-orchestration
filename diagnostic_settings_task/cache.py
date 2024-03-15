@@ -42,17 +42,17 @@ DiagnosticSettingsCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, Resou
 
 
 def _is_diagnostic_settings_cache(cache: Any) -> TypeGuard[DiagnosticSettingsCache]:
-    return isinstance(cache, dict) and all(
-        isinstance(sub_id, str)
-        and isinstance(resources, dict)
-        and all(
-            isinstance(resource_id, str)
-            and isinstance(config, dict)
-            and all(key in config for key in ("diagnostic_setting_id", "event_hub_name", "event_hub_namespace"))
-            for resource_id, config in resources.values()
-        )
-        for sub_id, resources in cache.values()
-    )
+    if not isinstance(cache, dict):
+        return False
+    for sub_id, resources in cache.items():
+        if not isinstance(sub_id, str) or not isinstance(resources, dict):
+            return False
+        for resource_id, config in resources.items():
+            if not isinstance(resource_id, str) or not isinstance(config, dict):
+                return False
+            if not all(key in config for key in ("diagnostic_setting_id", "event_hub_name", "event_hub_namespace")):
+                return False
+    return True
 
 
 def deserialize_diagnostic_settings_cache(cache_str: str) -> DiagnosticSettingsCache:

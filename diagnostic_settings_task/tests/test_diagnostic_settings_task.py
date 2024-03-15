@@ -8,7 +8,7 @@ from function_app import (
     DiagnosticSettingsTask,
     environ,
 )
-from cache import DiagnosticSettingsCache, ResourceCache, ResourceConfiguration
+from cache import DiagnosticSettingsCache, ResourceCache, ResourceCacheError, ResourceConfiguration
 from unittest import IsolatedAsyncioTestCase
 from azure.mgmt.monitor.models import CategoryType
 
@@ -106,3 +106,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.create_or_update_setting.assert_not_called()
         self.create_or_update_setting.assert_not_awaited()
         self.out_mock.set.assert_not_called()
+
+    def test_malformed_resources_cache_errors_in_constructor(self):
+        with self.assertRaises(ResourceCacheError):
+            DiagnosticSettingsTask(self.credential, "malformed", "{}", self.out_mock)
