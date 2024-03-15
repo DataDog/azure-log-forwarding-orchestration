@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -euxo pipefail
 
 # install pytest
 pip install pytest==8.0.2
@@ -10,4 +10,7 @@ cd diagnostic_settings_task
 pip install -r requirements.txt
 python -m pytest tests
 
-# TODO run log_forwarding tests
+# run resources_task tests
+cd ../resources_task
+pip install -r requirements.txt
+python -m pytest tests

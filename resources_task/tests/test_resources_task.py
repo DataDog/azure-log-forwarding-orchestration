@@ -1,0 +1,134 @@
+from json import dumps, loads
+from typing import Any, AsyncIterable, Callable, TypeAlias, TypeVar
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from function_app import ResourceConfiguration, ResourcesTask, ResourceCache, SubscriptionId
+from unittest import IsolatedAsyncioTestCase
+
+
+T = TypeVar("T")
+
+AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
+
+
+async def agen(*items: T) -> AsyncIterable[T]:
+    for x in items:
+        yield x
+
+
+def make_agen_func(field_name: str, *values: str) -> AsyncIterableFunc:
+    """useful wrapper for client methods which return an `AsyncIterable` of objects with a single field."""
+    return Mock(return_value=agen(*(Mock(**{field_name: value}) for value in values)))
+
+
+config1: ResourceConfiguration = {
+    "diagnostic_setting_id": "hi",
+    "event_hub_name": "meh",
+    "event_hub_namespace": "cool",
+}
+
+config2: ResourceConfiguration = {
+    "diagnostic_setting_id": "ava",
+    "event_hub_name": "matt",
+    "event_hub_namespace": "rebecca",
+}
+
+
+class TestResourcesTask(IsolatedAsyncioTestCase):
+    def patch(self, path: str):
+        p = patch(f"function_app.{path}")
+        self.addCleanup(p.stop)
+        return p.start()
+
+    def setUp(self) -> None:
+        self.sub_client: AsyncMock = self.patch("SubscriptionClient").return_value.__aenter__.return_value
+        self.resource_client = self.patch("ResourceManagementClient")
+        self.resource_client_mapping: dict[SubscriptionId, AsyncIterableFunc] = {}
+
+        def create_resource_client(_: Any, sub_id: SubscriptionId):
+            c = MagicMock()
+            c.__aenter__.return_value.resources.list = self.resource_client_mapping[sub_id]
+            return c
+
+        self.resource_client.side_effect = create_resource_client
+        self.credential = AsyncMock()
+        self.out_mock = Mock()
+
+    @property
+    def out_value(self) -> ResourceCache:
+        return loads(self.out_mock.set.call_args[0][0])
+
+    def run_resources_task(self, cache: ResourceCache):
+        return ResourcesTask(self.credential, dumps(cache), self.out_mock).run()
+
+    async def test_empty_cache_adds_resources(self):
+        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.resource_client_mapping = {
+            "sub1": make_agen_func("id", "res1", "res2"),
+            "sub2": make_agen_func("id", "res3"),
+        }
+
+        await ResourcesTask(self.credential, "", self.out_mock).run()
+
+        self.assertEqual(
+            self.out_value,
+            {
+                "sub1": {"res1": {}, "res2": {}},
+                "sub2": {"res3": {}},
+            },
+        )
+
+    async def test_no_new_resources_doesnt_cache(self):
+        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.resource_client_mapping = {
+            "sub1": make_agen_func("id", "res1", "res2"),
+            "sub2": make_agen_func("id", "res3"),
+        }
+
+        await self.run_resources_task(
+            {
+                "sub1": {"res1": {}, "res2": {}},
+                "sub2": {"res3": {}},
+            }
+        )
+
+        self.out_mock.set.assert_not_called()
+
+    async def test_resources_gone(self):
+        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.resource_client_mapping = {
+            "sub1": make_agen_func("id"),
+            "sub2": make_agen_func("id"),
+        }
+        await self.run_resources_task(
+            {
+                "sub1": {"res1": {}, "res2": {}},
+                "sub2": {"res3": {}},
+            }
+        )
+        self.assertEqual(self.out_value, {"sub1": {}, "sub2": {}})
+
+    async def test_subscriptions_gone(self):
+        self.sub_client.subscriptions.list = make_agen_func("subscription_id")
+        # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
+        await self.run_resources_task(
+            {
+                "sub1": {"res1": {}, "res2": {}},
+                "sub2": {"res3": {}},
+            }
+        )
+        self.assertEqual(self.out_value, {})
+
+    async def test_change_in_resources_keep_existing_config(self):
+        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.resource_client_mapping = {
+            "sub1": make_agen_func("id", "res1"),
+            "sub2": make_agen_func("id", "res4"),
+        }
+
+        await self.run_resources_task(
+            {
+                "sub1": {"res1": config1},
+                "sub2": {"res3": config2},
+            }
+        )
+        self.assertEqual(self.out_value, {"sub1": {"res1": config1}, "sub2": {"res4": {}}})
