@@ -1,7 +1,7 @@
 from json import dumps
 from typing import Any, AsyncIterable, Callable, TypeAlias, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from function_app import ResourcesTask, ResourceCache, INVALID_CACHE_MSG, deserialize_cache
+from resources_task.function_app import ResourcesTask, ResourceCache, INVALID_CACHE_MSG, deserialize_cache
 from unittest import IsolatedAsyncioTestCase
 
 
@@ -22,7 +22,7 @@ def make_agen_func(field_name: str, *values: str) -> AsyncIterableFunc:
 
 class TestResourcesTask(IsolatedAsyncioTestCase):
     def patch(self, path: str):
-        p = patch(f"function_app.{path}")
+        p = patch(f"resources_task.function_app.{path}")
         self.addCleanup(p.stop)
         return p.start()
 

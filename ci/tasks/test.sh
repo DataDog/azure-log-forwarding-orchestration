@@ -2,15 +2,14 @@
 
 set -euxo pipefail
 
-# install pytest
-pip install pytest==8.0.2
+# install testing/coverage dependencies
+pip install pytest==8.0.2 coverage==7.4.4
 
-# run diagnostic_settings tests
-cd diagnostic_settings_task
-pip install -r requirements.txt
-python -m pytest tests
+# install project dependencies
+pip install -r diagnostic_settings_task/requirements.txt -r resources_task/requirements.txt
 
-# run resources_task tests
-cd ../resources_task
-pip install -r requirements.txt
-python -m pytest tests
+# run tests and coverage
+python -m coverage run -m pytest diagnostic_settings_task resources_task
+
+# generate coverage report
+python -m coverage report --skip-empty --show-missing > ci/coverage.txt
