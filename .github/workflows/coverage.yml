@@ -9,7 +9,8 @@ jobs:
     steps:
       - name: Install Deps
         run: |
-          pip install pytest==8.0.2 coverage==7.4.4 -r diagnostic_settings_task/requirements.txt -r resources_task/requirements.txt
+          ls -la
+          pip install pytest==8.0.2 coverage==7.4.4 # -r diagnostic_settings_task/requirements.txt -r resources_task/requirements.txt
       - name: Run Tests with Coverage
         run: |
           coverage run -m pytest diagnostic_settings_task resources_task
