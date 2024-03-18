@@ -8,3 +8,4 @@ docstring-code-format = true
 
 [tool.mypy]
 check_untyped_defs = true
+ignore_missing_imports = true

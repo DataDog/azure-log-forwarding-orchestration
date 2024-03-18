@@ -21,12 +21,12 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 from azure.identity.aio import DefaultAzureCredential
 
 # project
-if "FUNCTIONS_WORKER_RUNTIME" in environ:
-    # import in script mode
-    import cache  # type: ignore
-else:
+if "FUNCTIONS_WORKER_RUNTIME" not in environ:
     # import as a module
     import diagnostic_settings_task.cache as cache
+else:
+    # import in script mode (azure function runtime)
+    import cache  # type: ignore
 
 
 # silence azure logging except for errors
