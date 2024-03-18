@@ -1,0 +1,21 @@
+name: 'coverage'
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Deps
+        run: |
+          pip install pytest==8.0.2 coverage==7.4.4 -r diagnostic_settings_task/requirements.txt -r resources_task/requirements.txt
+      - name: Run Tests with Coverage
+        run: |
+          coverage run -m pytest diagnostic_settings_task resources_task
+          coverage xml
+      - name: Get Cover
+        uses: orgoro/coverage@v3.1
+        with:
+          coverageFile: coverage.xml
+          token: ${{ secrets.GITHUB_TOKEN }}

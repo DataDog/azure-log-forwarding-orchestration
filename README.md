@@ -30,7 +30,7 @@ Either in the command pallete "Azure Functions: Deploy to Function App..."
 
 or via the cli:
 ```bash
-func azure functionapp publish <function-app-name> --build remote 
+func azure functionapp publish <function-app-name> --build remote
 ```
 
 
@@ -40,4 +40,10 @@ Just run pytest in the function app directory you care about:
 
 ```bash
 pytest tests
+```
+
+## Checking Code Coverage
+
+```bash
+coverage run -m pytest diagnostic_settings_task resources_task > /dev/null ; coverage report -m
 ```

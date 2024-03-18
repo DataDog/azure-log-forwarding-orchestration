@@ -5,12 +5,5 @@ set -euxo pipefail
 # install pytest
 pip install pytest==8.0.2
 
-# run diagnostic_settings tests
-cd diagnostic_settings_task
-pip install -r requirements.txt
-python -m pytest tests
-
-# run resources_task tests
-cd ../resources_task
-pip install -r requirements.txt
-python -m pytest tests
+pip install -r diagnostic_settings_task/requirements.txt -r resources_task/requirements.txt
+python -m pytest diagnostic_settings_task resources_task
