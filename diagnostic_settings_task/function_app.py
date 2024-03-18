@@ -21,11 +21,11 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 from azure.identity.aio import DefaultAzureCredential
 
 # project
-try:
-    # hack because azure functions are only run in script mode
-    # but when testing we want to be able to run as a module
+if "FUNCTIONS_WORKER_RUNTIME" in environ:
+    # import in script mode
     import cache
-except ImportError:
+else:
+    # import as a module
     import diagnostic_settings_task.cache as cache
 
 
