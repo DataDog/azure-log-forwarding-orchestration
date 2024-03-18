@@ -22,7 +22,8 @@ from azure.identity.aio import DefaultAzureCredential
 
 # project
 try:
-    # hack because azure functions are only run in script mode, but when testing we want to be able to run as a module
+    # hack because azure functions are only run in script mode
+    # but when testing we want to be able to run as a module
     import cache
 except ImportError:
     import diagnostic_settings_task.cache as cache
