@@ -23,7 +23,7 @@ from azure.identity.aio import DefaultAzureCredential
 # project
 if "FUNCTIONS_WORKER_RUNTIME" in environ:
     # import in script mode
-    import cache
+    import cache  # type: ignore
 else:
     # import as a module
     import diagnostic_settings_task.cache as cache
