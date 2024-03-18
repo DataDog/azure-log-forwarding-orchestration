@@ -1,7 +1,7 @@
 from unittest import TestCase
 from json import dumps
 from unittest.mock import patch
-from cache import (
+from diagnostic_settings_task.cache import (
     DIAGNOSTIC_SETTINGS_CACHE_ERROR_MSG,
     DiagnosticSettingsCache,
     deserialize_diagnostic_settings_cache,
@@ -41,7 +41,7 @@ class TestDeserializeResourceCache(TestCase):
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):
     def setUp(self) -> None:
-        log_patch = patch("cache.log")
+        log_patch = patch("diagnostic_settings_task.cache.log")
         self.addCleanup(log_patch.stop)
         self.log = log_patch.start()
 

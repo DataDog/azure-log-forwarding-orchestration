@@ -1,14 +1,19 @@
 from json import dumps, loads
 from typing import AsyncIterable, TypeVar
 from unittest.mock import ANY, AsyncMock, Mock, patch
-from ..function_app import (
+from diagnostic_settings_task.function_app import (
     DIAGNOSTIC_SETTING_PREFIX,
     EVENT_HUB_NAME_SETTING,
     EVENT_HUB_NAMESPACE_SETTING,
     DiagnosticSettingsTask,
     environ,
 )
-from cache import DiagnosticSettingsCache, ResourceCache, ResourceCacheError, ResourceConfiguration
+from diagnostic_settings_task.cache import (
+    DiagnosticSettingsCache,
+    ResourceCache,
+    ResourceCacheError,
+    ResourceConfiguration,
+)
 from unittest import IsolatedAsyncioTestCase
 from azure.mgmt.monitor.models import CategoryType
 

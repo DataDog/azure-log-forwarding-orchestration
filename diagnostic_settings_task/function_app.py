@@ -21,7 +21,12 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 from azure.identity.aio import DefaultAzureCredential
 
 # project
-from cache import ResourceId, SubscriptionId, deserialize_diagnostic_settings_cache, deserialize_resource_cache
+try:
+    # hack because azure functions are only run in script mode, but when testing we want to be able to run as a module
+    import cache
+except ImportError:
+    import diagnostic_settings_task.cache as cache
+
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
@@ -42,7 +47,7 @@ DiagnosticSettingType = TypeVar("DiagnosticSettingType", bound=Resource)
 
 
 async def get_existing_diagnostic_setting(
-    resource_id: ResourceId,
+    resource_id: str,
     settings: AsyncIterable[DiagnosticSettingType],
     existing_diagnostic_setting_name: str | None = None,
 ) -> DiagnosticSettingType | None:
@@ -74,8 +79,10 @@ class DiagnosticSettingsTask:
         diagnostic_settings_cache: Out[str],
     ) -> None:
         self._cache = diagnostic_settings_cache
-        self.resource_cache = deserialize_resource_cache(resource_cache_state)
-        self._diagnostic_settings_cache_initial = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
+        self.resource_cache = cache.deserialize_resource_cache(resource_cache_state)
+        self._diagnostic_settings_cache_initial = cache.deserialize_diagnostic_settings_cache(
+            diagnostic_settings_cache_state
+        )
         self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
         self.credential = credential
         if (event_hub_name := environ.get(EVENT_HUB_NAME_SETTING)) and (
@@ -95,7 +102,7 @@ class DiagnosticSettingsTask:
         finally:
             self.update_diagnostic_settings_cache()
 
-    async def process_subscription(self, sub_id: SubscriptionId, resource_ids: Collection[ResourceId]) -> None:
+    async def process_subscription(self, sub_id: str, resource_ids: Collection[str]) -> None:
         log.info(f"Crawling {len(resource_ids)} resources for subscription {sub_id}")
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # client.management_group_diagnostic_settings.list("management_group_id") TODO: do we want to do anything with this?
@@ -118,8 +125,8 @@ class DiagnosticSettingsTask:
     async def process_resource(
         self,
         client: MonitorManagementClient,
-        sub_id: SubscriptionId,
-        resource_id: ResourceId,
+        sub_id: str,
+        resource_id: str,
     ) -> None:
         if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
             setting_id = configuration["diagnostic_setting_id"]
@@ -158,8 +165,8 @@ class DiagnosticSettingsTask:
     async def add_diagnostic_setting(
         self,
         client: MonitorManagementClient,
-        sub_id: SubscriptionId,
-        resource_id: ResourceId,
+        sub_id: str,
+        resource_id: str,
         diagnostic_setting_id: str,
         event_hub_name: str,
         event_hub_namespace: str,
