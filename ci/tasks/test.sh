@@ -12,4 +12,4 @@ pip install -r diagnostic_settings_task/requirements.txt -r resources_task/requi
 python -m coverage run -m pytest diagnostic_settings_task resources_task
 
 # generate coverage report
-python -m coverage report > ci/coverage.txt
+python -m coverage report --skip-empty --show-missing > ci/coverage.txt
