@@ -2,6 +2,13 @@
 
 set -euxo pipefail
 
-cat ci/coverage.txt
-echo "[$CI_COMMIT_REF_NAME] - hello from pr-commenter" \
-    | pr-commenter --header "Service pr-commenter test k8s" --for-pr $CI_COMMIT_REF_NAME
+curl -f -v 'https://pr-commenter.us1.ddbuild.io/internal/cit/pr-comment'\
+    -H "$(/bin/authanywhere)"\
+    -X PATCH \
+    -d '{
+    "commit": "'"$CI_COMMIT_REF_NAME"'",
+    "message": "'"$(cat ci/coverage.txt)"'",
+    "header": "Coverage Report",
+    "org": "Datadog",
+    "repo": "azure-log-forwarding-offering"
+}'
