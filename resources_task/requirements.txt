@@ -6,3 +6,4 @@ aiohttp==3.8.5
 azure-functions==1.18.0
 azure-identity==1.15.0
 azure-mgmt-resource==23.0.1
+jsonschema-4.21.1

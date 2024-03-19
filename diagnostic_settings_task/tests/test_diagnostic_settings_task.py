@@ -62,7 +62,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
     @patch.dict(
         environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
     )
-    async def test_azure_diagnostic_settings_crawler_adds_missing_settings(self):
+    async def test_task_adds_missing_settings(self):
         self.list_diagnostic_settings.return_value = agen()
         self.list_diagnostic_settings_categories.return_value = agen(
             Mock(name="cool_logs", category_type=CategoryType.LOGS)
@@ -88,7 +88,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
     @patch.dict(
         environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
     )
-    async def test_azure_diagnostic_settings_crawler_leaves_existing_settings_unchanged(self):
+    async def test_task_leaves_existing_settings_unchanged(self):
         setting_id = "12345"
 
         self.list_diagnostic_settings.return_value = agen(

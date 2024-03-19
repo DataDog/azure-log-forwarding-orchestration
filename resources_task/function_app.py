@@ -11,6 +11,7 @@ from azure.functions import FunctionApp, TimerRequest, Out
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
 from azure.identity.aio import DefaultAzureCredential
+from jsonschema import ValidationError, validate
 
 # silence azure logging except for warnings
 getLogger("azure").setLevel(WARNING)
@@ -31,22 +32,24 @@ ResourceCache: TypeAlias = dict[str, set[str]]
 INVALID_CACHE_MSG = "Cache is in an invalid format, task will reset the cache"
 
 
+UUID_REGEX = r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$"
+
+RESOURCE_CACHE_SCHEMA = {
+    "type": "object",
+    "patternProperties": {
+        UUID_REGEX: {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
 def deserialize_cache(cache_str: str) -> ResourceCache:
     try:
         cache = loads(cache_str)
-    except JSONDecodeError:
+        validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
+    except (JSONDecodeError, ValidationError):
         log.warning(INVALID_CACHE_MSG)
         return {}
-    if not isinstance(cache, dict):
-        log.warning(INVALID_CACHE_MSG)
-        return {}
-    for sub_id, resources in cache.items():
-        if not isinstance(resources, list):
-            log.warning(INVALID_CACHE_MSG)
-            cache = {}
-            break
-        cache[sub_id] = set(resources)
-    return cache
+    return {sub_id: set(resources) for sub_id, resources in cache.items()}
 
 
 class ResourcesTask:
