@@ -7,6 +7,5 @@ indent-style = "space"
 docstring-code-format = true
 
 [tool.mypy]
-follow_imports = "skip"
-ignore_missing_imports = true
 check_untyped_defs = true
+ignore_missing_imports = true

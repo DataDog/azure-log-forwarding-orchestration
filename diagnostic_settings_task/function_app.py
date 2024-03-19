@@ -1,10 +1,10 @@
 # stdlib
 from asyncio import gather
 from copy import deepcopy
-from datetime import datetime, timezone
-from json import dumps, loads
+from datetime import datetime
+from json import dumps
 from logging import ERROR, INFO, getLogger
-from typing import AsyncIterable, NotRequired, TypeAlias, TypeVar, TypedDict
+from typing import AsyncIterable, Collection, Final, TypeVar
 from uuid import uuid4
 from os import environ
 
@@ -19,6 +19,15 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
     Resource,
 )
 from azure.identity.aio import DefaultAzureCredential
+
+# project
+if "FUNCTIONS_WORKER_RUNTIME" not in environ:
+    # import as a module
+    import diagnostic_settings_task.cache as cache
+else:
+    # import in script mode (azure function runtime)
+    import cache  # type: ignore
+
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
@@ -35,21 +44,11 @@ log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 log.setLevel(INFO)
 
 
-class ResourceConfiguration(TypedDict):
-    diagnostic_setting_id: NotRequired[str]
-    event_hub_name: NotRequired[str]
-    event_hub_namespace: NotRequired[str]
-
-
-SubscriptionId: TypeAlias = str
-ResourceId: TypeAlias = str
-ResourceCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, ResourceConfiguration]]
-
 DiagnosticSettingType = TypeVar("DiagnosticSettingType", bound=Resource)
 
 
 async def get_existing_diagnostic_setting(
-    resource_id: ResourceId,
+    resource_id: str,
     settings: AsyncIterable[DiagnosticSettingType],
     existing_diagnostic_setting_name: str | None = None,
 ) -> DiagnosticSettingType | None:
@@ -60,52 +59,57 @@ async def get_existing_diagnostic_setting(
             ):
                 return s
         log.debug("No existing diagnostic setting found for resource %s", resource_id)
+        return None
     except ResourceNotFoundError as e:
         log.warning("Resource %s not found: %s", resource_id, e.error)
-        return None
+        raise
     except HttpResponseError as e:
         if e.error and e.error.code == "ResourceTypeNotSupported":
-            # This resource does not support diagnostic settings
-            return None
+            log.debug("Got ResourceTypeNotSupported error for resource id %s", resource_id)
+            raise
         log.error("Failed to get diagnostic settings for %s", resource_id, exc_info=True)
         raise
-    return None
 
 
 class DiagnosticSettingsTask:
-    def __init__(self, credential: DefaultAzureCredential, resources: str, cache: Out[str]) -> None:
-        self._cache = cache
-        self._resource_cache_initial_state: ResourceCache = loads(resources) if resources else {}
-        """Cache of subscription_id to resource_id to diagnostic_setting_id, or None if the resource is new/has no diagnotic setting."""
-        if not isinstance(self._resource_cache_initial_state, dict):
-            raise ValueError(f"Cache is in an invalid format: {str(self._resource_cache_initial_state)[:100]}...")
-        self.resource_cache: ResourceCache = deepcopy(self._resource_cache_initial_state)
+    def __init__(
+        self,
+        credential: DefaultAzureCredential,
+        resource_cache_state: str,
+        diagnostic_settings_cache_state: str,
+        diagnostic_settings_cache: Out[str],
+    ) -> None:
+        self._cache = diagnostic_settings_cache
+        self.resource_cache = cache.deserialize_resource_cache(resource_cache_state)
+        self._diagnostic_settings_cache_initial = cache.deserialize_diagnostic_settings_cache(
+            diagnostic_settings_cache_state
+        )
+        self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
         self.credential = credential
+        if (event_hub_name := environ.get(EVENT_HUB_NAME_SETTING)) and (
+            event_hub_namespace := environ.get(EVENT_HUB_NAMESPACE_SETTING)
+        ):
+            self.EVENT_HUB_NAME: Final[str] = event_hub_name
+            self.EVENT_HUB_NAMESPACE: Final[str] = event_hub_namespace
+        else:
+            raise ValueError("No event hub name/namespace found in environment")
 
     async def run(self) -> None:
         log.info(f"Crawling {len(self.resource_cache)} subscriptions")
         try:
             await gather(
-                *[
-                    self.process_subscription(sub_id, resource_configurations)
-                    for sub_id, resource_configurations in self.resource_cache.items()
-                ]
+                *[self.process_subscription(sub_id, resources) for sub_id, resources in self.resource_cache.items()]
             )
         finally:
             self.update_diagnostic_settings_cache()
 
-    async def process_subscription(
-        self, sub_id: SubscriptionId, resource_configurations: dict[ResourceId, ResourceConfiguration]
-    ) -> None:
-        log.info(f"Crawling {len(resource_configurations)} resources for subscription {sub_id}")
+    async def process_subscription(self, sub_id: str, resource_ids: Collection[str]) -> None:
+        log.info(f"Crawling {len(resource_ids)} resources for subscription {sub_id}")
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # client.management_group_diagnostic_settings.list("management_group_id") TODO: do we want to do anything with this?
             await gather(
                 *(
-                    [
-                        self.process_resource(client, sub_id, resource_id, resource_configuration)
-                        for resource_id, resource_configuration in resource_configurations.items()
-                    ]
+                    [self.process_resource(client, sub_id, resource_id) for resource_id in resource_ids]
                     + [self.update_subscription_settings(sub_id, client)]
                 )
             )
@@ -122,20 +126,19 @@ class DiagnosticSettingsTask:
     async def process_resource(
         self,
         client: MonitorManagementClient,
-        sub_id: SubscriptionId,
-        resource_id: ResourceId,
-        resource_configuration: ResourceConfiguration,
+        sub_id: str,
+        resource_id: str,
     ) -> None:
-        diagnostic_setting_id = resource_configuration.get("diagnostic_setting_id")
-        event_hub_name = resource_configuration.get("event_hub_name")
-        event_hub_namespace = resource_configuration.get("event_hub_namespace")
-
-        if diagnostic_setting_id and event_hub_name and event_hub_namespace:
-            existing_setting = await get_existing_diagnostic_setting(
-                resource_id,
-                client.diagnostic_settings.list(resource_id),
-                existing_diagnostic_setting_name=DIAGNOSTIC_SETTING_PREFIX + diagnostic_setting_id,
-            )
+        if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
+            setting_id = configuration["diagnostic_setting_id"]
+            try:
+                existing_setting = await get_existing_diagnostic_setting(
+                    resource_id,
+                    client.diagnostic_settings.list(resource_id),
+                    existing_diagnostic_setting_name=DIAGNOSTIC_SETTING_PREFIX + setting_id,
+                )
+            except Exception:
+                return
 
             if existing_setting:
                 # We have already added the setting for this resource
@@ -147,24 +150,24 @@ class DiagnosticSettingsTask:
                 # The setting has been removed, we should put it back
                 log.debug("Re-adding diagnostic setting for resource %s", resource_id)
                 await self.add_diagnostic_setting(
-                    client, sub_id, resource_id, diagnostic_setting_id, event_hub_name, event_hub_namespace
+                    client,
+                    sub_id,
+                    resource_id,
+                    setting_id,
+                    configuration["event_hub_name"],
+                    configuration["event_hub_namespace"],
                 )
         else:
             # We don't have a full configuration for this resource, we should add it
-            if (event_hub_name := environ.get(EVENT_HUB_NAME_SETTING)) and (
-                event_hub_namespace := environ.get(EVENT_HUB_NAMESPACE_SETTING)
-            ):
-                await self.add_diagnostic_setting(
-                    client, sub_id, resource_id, str(uuid4()), event_hub_name, event_hub_namespace
-                )
-            else:
-                log.error("No event hub name/namespace found in environment")
+            await self.add_diagnostic_setting(
+                client, sub_id, resource_id, str(uuid4()), self.EVENT_HUB_NAME, self.EVENT_HUB_NAMESPACE
+            )
 
     async def add_diagnostic_setting(
         self,
         client: MonitorManagementClient,
-        sub_id: SubscriptionId,
-        resource_id: ResourceId,
+        sub_id: str,
+        resource_id: str,
         diagnostic_setting_id: str,
         event_hub_name: str,
         event_hub_namespace: str,
@@ -189,7 +192,7 @@ class DiagnosticSettingsTask:
                     logs=[LogSettings(category=category.name, enabled=True) for category in categories],
                 ),
             )
-            self.resource_cache[sub_id][resource_id] = {
+            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = {
                 "diagnostic_setting_id": diagnostic_setting_id,
                 "event_hub_name": event_hub_name,
                 "event_hub_namespace": event_hub_namespace,
@@ -214,8 +217,8 @@ class DiagnosticSettingsTask:
             )
 
     def update_diagnostic_settings_cache(self) -> None:
-        if self.resource_cache != self._resource_cache_initial_state:
-            self._cache.set(dumps(self.resource_cache))
+        if self.diagnostic_settings_cache != self._diagnostic_settings_cache_initial:
+            self._cache.set(dumps(self.diagnostic_settings_cache))
             num_resources = sum(len(resources) for resources in self.resource_cache.values())
             log.info(f"Updated Resources, {num_resources} resources stored in the cache")
         else:
@@ -223,7 +226,7 @@ class DiagnosticSettingsTask:
 
 
 def now() -> str:
-    return datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
+    return datetime.now().isoformat()
 
 
 app = FunctionApp()
@@ -232,19 +235,28 @@ app = FunctionApp()
 @app.function_name(name=DIAGNOSTIC_SETTINGS_TASK_NAME)
 @app.schedule(schedule="0 */6 * * * *", arg_name="req", run_on_startup=False)
 @app.blob_input(
-    arg_name="resources",
+    arg_name="resourceCacheState",
     path=BLOB_STORAGE_CACHE + "/resources.json",
+    connection=BLOB_CONNECTION_SETTING,
+)
+@app.blob_input(
+    arg_name="diagnosticSettingsCacheState",
+    path=BLOB_STORAGE_CACHE + "/settings.json",
     connection=BLOB_CONNECTION_SETTING,
 )
 @app.blob_output(
-    arg_name="cache",
-    path=BLOB_STORAGE_CACHE + "/resources.json",
+    arg_name="diagnosticSettingsCache",
+    path=BLOB_STORAGE_CACHE + "/settings.json",
     connection=BLOB_CONNECTION_SETTING,
 )
-async def run_job(req: TimerRequest, resources: str, cache: Out[str]) -> None:
+async def run_job(
+    req: TimerRequest, resourceCacheState: str, diagnosticSettingsCacheState: str, diagnosticSettingsCache: Out[str]
+) -> None:
     if req.past_due:
         log.info("The timer is past due!")
     log.info("Started crawl at %s", now())
     async with DefaultAzureCredential() as cred:
-        await DiagnosticSettingsTask(cred, resources, cache).run()
+        await DiagnosticSettingsTask(
+            cred, resourceCacheState, diagnosticSettingsCacheState, diagnosticSettingsCache
+        ).run()
     log.info("Crawl finished at %s", now())
