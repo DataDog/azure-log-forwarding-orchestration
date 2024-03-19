@@ -1,5 +1,6 @@
 .venv/
 .vscode/
+.python-version
 __init__.py
 tests/
 local.settings.json
