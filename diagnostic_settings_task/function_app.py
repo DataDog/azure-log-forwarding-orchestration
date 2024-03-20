@@ -223,10 +223,10 @@ class DiagnosticSettingsTask:
     def update_diagnostic_settings_cache(self) -> None:
         if self.diagnostic_settings_cache != self._diagnostic_settings_cache_initial:
             self._cache.set(dumps(self.diagnostic_settings_cache))
-            num_resources = sum(len(resources) for resources in self.resource_cache.values())
-            log.info(f"Updated Resources, {num_resources} resources stored in the cache")
+            num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
+            log.info(f"Updated setting, {num_resources} resources stored in the settings cache")
         else:
-            log.info("Resources have not changed, no update needed")
+            log.info("Diagnostic settings have not changed, no update needed")
 
 
 def now() -> str:
