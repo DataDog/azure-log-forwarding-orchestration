@@ -16,8 +16,6 @@ from azure.core.credentials_async import AsyncTokenCredential
 from azure.mgmt.resource.resources.aio import ResourceManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 
-# project
-from function_app import DIAGNOSTIC_SETTING_PREFIX
 
 getLogger("azure").setLevel(WARNING)
 log = getLogger("extension_cleanup")
@@ -26,6 +24,7 @@ R = TypeVar("R")
 
 # resource_idx = 0
 
+DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 DRY_RUN = False
 
 
