@@ -206,8 +206,12 @@ class DiagnosticSettingsTask:
                 # todo this should not happen in the real implementation, for now ignore
                 return
             if "reused in different settings on the same category for the same resource" in str(e):
-                # the cache is likely out of sync, for now lets raise an error
-                log.error("Diagnostic setting for resource %s is out of sync with the cache", resource_id)
+                log.error(
+                    "Resource %s already has a diagnostic setting with the same eventhub (namespace: %s name: %s)",
+                    resource_id,
+                    event_hub_namespace,
+                    event_hub_name,
+                )
                 return
 
             log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
