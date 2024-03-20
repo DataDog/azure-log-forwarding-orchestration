@@ -254,9 +254,9 @@ async def run_job(
 ) -> None:
     if req.past_due:
         log.info("The timer is past due!")
-    log.info("Started crawl at %s", now())
+    log.info("Started task at %s", now())
     async with DefaultAzureCredential() as cred:
         await DiagnosticSettingsTask(
             cred, resourceCacheState, diagnosticSettingsCacheState, diagnosticSettingsCache
         ).run()
-    log.info("Crawl finished at %s", now())
+    log.info("Task finished at %s", now())
