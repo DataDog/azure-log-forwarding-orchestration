@@ -60,8 +60,6 @@ class ResourcesTask:
         self._cache = cache
         self._resource_cache_initial_state: ResourceCache = deserialize_cache(cache_initial_state)
 
-        """Cache of subscription_id to resource_id to diagnostic_setting_id, or None if the resource is new/has no diagnotic setting."""
-
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
             await gather(

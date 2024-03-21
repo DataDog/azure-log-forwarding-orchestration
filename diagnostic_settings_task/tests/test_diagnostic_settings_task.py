@@ -1,5 +1,5 @@
 from json import dumps, loads
-from typing import AsyncIterable, TypeVar
+from typing import AsyncIterable, TypeVar, cast
 from unittest.mock import ANY, AsyncMock, Mock, patch
 from diagnostic_settings_task.function_app import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -9,10 +9,10 @@ from diagnostic_settings_task.function_app import (
     environ,
 )
 from diagnostic_settings_task.cache import (
+    UUID_REGEX,
     DiagnosticSettingsCache,
     ResourceCache,
     ResourceCacheError,
-    ResourceConfiguration,
 )
 from unittest import IsolatedAsyncioTestCase
 from azure.mgmt.monitor.models import CategoryType
@@ -80,8 +80,8 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.create_or_update_setting.assert_awaited()
         self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
         self.out_mock.set.assert_called_once()
-        setting: ResourceConfiguration = loads(self.out_value)[sub_id][resource_id]
-        self.assertIsNotNone(setting.get("diagnostic_setting_id"))
+        setting = cast(DiagnosticSettingsCache, loads(self.out_value))[sub_id][resource_id]
+        self.assertRegex(setting["id"], UUID_REGEX)
         self.assertEqual(setting.get("event_hub_name"), TEST_EVENT_HUB_NAME)
         self.assertEqual(setting.get("event_hub_namespace"), TEST_EVENT_HUB_NAMESPACE)
 
@@ -101,7 +101,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
             diagnostic_settings_cache={
                 sub_id: {
                     resource_id: {
-                        "diagnostic_setting_id": setting_id,
+                        "id": setting_id,
                         "event_hub_name": TEST_EVENT_HUB_NAME,
                         "event_hub_namespace": TEST_EVENT_HUB_NAMESPACE,
                     }
