@@ -82,8 +82,8 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.out_mock.set.assert_called_once()
         setting = cast(DiagnosticSettingsCache, loads(self.out_value))[sub_id][resource_id]
         self.assertRegex(setting["id"], UUID_REGEX)
-        self.assertEqual(setting.get("event_hub_name"), TEST_EVENT_HUB_NAME)
-        self.assertEqual(setting.get("event_hub_namespace"), TEST_EVENT_HUB_NAMESPACE)
+        self.assertEqual(setting["event_hub_name"], TEST_EVENT_HUB_NAME)
+        self.assertEqual(setting["event_hub_namespace"], TEST_EVENT_HUB_NAMESPACE)
 
     @patch.dict(
         environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
