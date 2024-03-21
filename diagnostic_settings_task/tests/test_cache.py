@@ -51,12 +51,10 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
     def test_valid_cache(self):
         diagnostic_settings_cache: DiagnosticSettingsCache = {
             sub_id1: {
-                "resource1": {"diagnostic_setting_id": "hi", "event_hub_name": "eh", "event_hub_namespace": "ehn"},
-                "resource2": {"diagnostic_setting_id": "1234", "event_hub_name": "eh2", "event_hub_namespace": "ehn2"},
+                "resource1": {"id": "hi", "event_hub_name": "eh", "event_hub_namespace": "ehn"},
+                "resource2": {"id": "1234", "event_hub_name": "eh2", "event_hub_namespace": "ehn2"},
             },
-            sub_id2: {
-                "resource3": {"diagnostic_setting_id": "5678", "event_hub_name": "eh3", "event_hub_namespace": "ehn"}
-            },
+            sub_id2: {"resource3": {"id": "5678", "event_hub_name": "eh3", "event_hub_namespace": "ehn"}},
         }
         cache_str = dumps(diagnostic_settings_cache)
         self.assertEqual(
@@ -97,6 +95,6 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
         self.log.warning.assert_called_once_with(DIAGNOSTIC_SETTINGS_CACHE_ERROR_MSG)
 
     def test_partial_missing_config_keys(self):
-        cache_str = dumps({sub_id1: {"resource1": {"diagnostic_setting_id": "hi", "event_hub_name": "eh"}}})
+        cache_str = dumps({sub_id1: {"resource1": {"id": "hi", "event_hub_name": "eh"}}})
         self.assertEqual(deserialize_diagnostic_settings_cache(cache_str), {})
         self.log.warning.assert_called_once_with(DIAGNOSTIC_SETTINGS_CACHE_ERROR_MSG)
