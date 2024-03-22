@@ -18,3 +18,11 @@ repos:
   rev: 'v1.9.0'
   hooks:
   -   id: mypy
+- repo: local
+  hooks:
+    - id: check-json-schema
+      name: Validate ARM Templates
+      entry: ci/tasks/json-lint.sh
+      language: system
+      types: [json]
+      pass_filenames: true
