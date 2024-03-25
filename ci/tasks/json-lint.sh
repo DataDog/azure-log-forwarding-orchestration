@@ -15,4 +15,4 @@ if [ -z "$schemafile" ]; then
   exit
 fi
 
-check-jsonschema --schemafile=$schemafile $1
+python -m check_jsonschema --schemafile=$schemafile $1
