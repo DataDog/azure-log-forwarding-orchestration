@@ -1,5 +1,136 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json",
     "contentVersion": "1.0.0.0",
-    "resources": []
+    "parameters": {},
+    "functions": [],
+    "variables": {
+        "aspName": "datadog-log-forwarding-asp",
+        "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
+        "storageAccountName": "datadogstorage1000",
+        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+    },
+    "resources": [
+        {
+            "name": "[variables('aspName')]",
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "F1",
+                "capacity": 1
+            },
+            "tags": {
+                "displayName": "[variables('aspName')]"
+            },
+            "properties": {
+                "name": "[variables('aspName')]"
+            }
+        },
+        {
+            "name": "[variables('storageAccountName')]",
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2023-01-01",
+            "tags": {
+                "displayName": "[variables('storageAccountName')]"
+            },
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "accountType": "BlobStorage",
+                "accessTier": "Premium"
+            }
+        },
+        {
+            "name": "resources-task",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsDashboard",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTSHARE",
+                            "value": "[toLower('resources-task')]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~2"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('microsoft.insights/components/', 'resources-task'), '2015-05-01').InstrumentationKey]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "dotnet"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "name": "diagnostic-settings-task",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsDashboard",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'),'2015-05-01-preview').key1)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTSHARE",
+                            "value": "[toLower('diagnostic-settings-task')]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~2"
+                        },
+                        {
+                            "name": "APPINSIGHTS_INSTRUMENTATIONKEY",
+                            "value": "[reference(resourceId('microsoft.insights/components/', 'applicationInsightsName'), '2015-05-01').InstrumentationKey]"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "dotnet"
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "outputs": {}
 }
