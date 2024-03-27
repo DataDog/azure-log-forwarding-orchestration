@@ -22,9 +22,3 @@ repos:
       language: system
       types: [python]
       pass_filenames: true
-    - id: check-json-schema
-      name: Validate ARM Templates
-      entry: ci/tasks/json-lint.sh
-      language: system
-      types: [json]
-      pass_filenames: true

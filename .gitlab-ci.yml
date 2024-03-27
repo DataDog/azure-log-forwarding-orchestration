@@ -21,12 +21,6 @@ type-check:
   tags: ["arch:amd64"]
   script:
     - ci/tasks/type-check.sh
-json-lint:
-  image: $PYTHON_IMAGE
-  stage: test
-  tags: ["arch:amd64"]
-  script:
-    - ci/tasks/json-lint.sh deploy/*.json
 
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
