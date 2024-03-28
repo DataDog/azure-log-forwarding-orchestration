@@ -19,7 +19,7 @@ getLogger("azure").setLevel(WARNING)
 
 RESOURCES_TASK_NAME = "resources_task"
 BLOB_STORAGE_CACHE = "resources-cache"
-BLOB_CONNECTION_SETTING_NAME = "BLOB_CONNECTION_STRING"
+STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 
 
 log = getLogger(RESOURCES_TASK_NAME)
@@ -99,12 +99,12 @@ app = FunctionApp()
 @app.blob_input(
     arg_name="resourceCacheState",  # snake case is illegal in arg names
     path=BLOB_STORAGE_CACHE + "/resources.json",
-    connection=BLOB_CONNECTION_SETTING_NAME,
+    connection=STORAGE_CONNECTION_SETTING,
 )
 @app.blob_output(
     arg_name="resourceCache",
     path=BLOB_STORAGE_CACHE + "/resources.json",
-    connection=BLOB_CONNECTION_SETTING_NAME,
+    connection=STORAGE_CONNECTION_SETTING,
 )
 async def run_job(req: TimerRequest, resourceCacheState: str, resourceCache: Out[str]) -> None:
     if req.past_due:
