@@ -130,7 +130,7 @@ class DiagnosticSettingsTask:
         resource_id: str,
     ) -> None:
         if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
-            setting_id = configuration["diagnostic_setting_id"]
+            setting_id = configuration["id"]
             try:
                 existing_setting = await get_existing_diagnostic_setting(
                     resource_id,
@@ -193,7 +193,7 @@ class DiagnosticSettingsTask:
                 ),
             )
             self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = {
-                "diagnostic_setting_id": diagnostic_setting_id,
+                "id": diagnostic_setting_id,
                 "event_hub_name": event_hub_name,
                 "event_hub_namespace": event_hub_namespace,
             }

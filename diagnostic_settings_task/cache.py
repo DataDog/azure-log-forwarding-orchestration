@@ -41,13 +41,13 @@ def deserialize_resource_cache(cache_str: str) -> ResourceCache:
 DIAGNOSTIC_SETTINGS_CACHE_ERROR_MSG = "Diagnostic settings cache is in an invalid format, task will reset the cache"
 
 
-class ResourceConfiguration(TypedDict):
-    diagnostic_setting_id: str
+class DiagnosticSettingConfiguration(TypedDict):
+    id: str
     event_hub_name: str
     event_hub_namespace: str
 
 
-DiagnosticSettingsCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, ResourceConfiguration]]
+DiagnosticSettingsCache: TypeAlias = dict[SubscriptionId, dict[ResourceId, DiagnosticSettingConfiguration]]
 
 DIAGNOSTIC_SETTINGS_CACHE_SCHEMA = {
     "type": "object",
@@ -58,11 +58,11 @@ DIAGNOSTIC_SETTINGS_CACHE_SCHEMA = {
                 ".*": {
                     "type": "object",
                     "properties": {
-                        "diagnostic_setting_id": {"type": "string"},
+                        "id": {"type": "string"},
                         "event_hub_name": {"type": "string"},
                         "event_hub_namespace": {"type": "string"},
                     },
-                    "required": ["diagnostic_setting_id", "event_hub_name", "event_hub_namespace"],
+                    "required": ["id", "event_hub_name", "event_hub_namespace"],
                     "additionalProperties": False,
                 },
             },
