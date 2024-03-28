@@ -49,7 +49,10 @@
                     "apiVersion": "2023-01-01",
                     "dependsOn": [
                         "[variables('storageAccountName')]"
-                    ]
+                    ],
+                    "properties": {
+                        "publicAccess": "None"
+                    }
                 }
             ]
         },
