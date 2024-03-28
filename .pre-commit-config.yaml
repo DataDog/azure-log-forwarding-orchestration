@@ -21,4 +21,3 @@ repos:
       entry: ci/tasks/type-check.sh
       language: system
       types: [python]
-      pass_filenames: true
