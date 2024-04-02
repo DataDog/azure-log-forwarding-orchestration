@@ -62,6 +62,9 @@
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
             "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
             "dependsOn": [
                 "[variables('aspId')]",
                 "[variables('storageAccountId')]"
@@ -99,6 +102,9 @@
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
             "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
             "dependsOn": [
                 "[variables('aspId')]",
                 "[variables('storageAccountId')]"
