@@ -35,7 +35,7 @@ getLogger("azure").setLevel(ERROR)
 
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 BLOB_STORAGE_CACHE = "resources-cache"
-BLOB_CONNECTION_SETTING = "BLOB_CONNECTION_STRING"
+STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
 EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
@@ -241,17 +241,17 @@ app = FunctionApp()
 @app.blob_input(
     arg_name="resourceCacheState",
     path=BLOB_STORAGE_CACHE + "/resources.json",
-    connection=BLOB_CONNECTION_SETTING,
+    connection=STORAGE_CONNECTION_SETTING,
 )
 @app.blob_input(
     arg_name="diagnosticSettingsCacheState",
     path=BLOB_STORAGE_CACHE + "/settings.json",
-    connection=BLOB_CONNECTION_SETTING,
+    connection=STORAGE_CONNECTION_SETTING,
 )
 @app.blob_output(
     arg_name="diagnosticSettingsCache",
     path=BLOB_STORAGE_CACHE + "/settings.json",
-    connection=BLOB_CONNECTION_SETTING,
+    connection=STORAGE_CONNECTION_SETTING,
 )
 async def run_job(
     req: TimerRequest, resourceCacheState: str, diagnosticSettingsCacheState: str, diagnosticSettingsCache: Out[str]
