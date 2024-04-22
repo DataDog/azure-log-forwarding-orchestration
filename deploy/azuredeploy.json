@@ -37,7 +37,7 @@
             },
             "location": "[resourceGroup().location]",
             "sku": {
-                "name": "Premium_LRS"
+                "name": "Standard_LRS"
             },
             "properties": {
                 "accountType": "BlobStorage"
