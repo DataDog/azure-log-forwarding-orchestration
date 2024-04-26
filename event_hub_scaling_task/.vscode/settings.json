@@ -1,0 +1,12 @@
+{
+    "python.defaultInterpreterPath": "~/.pyenv/versions/3.11.7/envs/lfo/bin/python",
+    "azureFunctions.deploySubpath": ".",
+    "azureFunctions.scmDoBuildDuringDeployment": true,
+    "azureFunctions.pythonVenv": "~/.pyenv/versions/3.11.7/envs/lfo",
+    "azureFunctions.projectLanguage": "Python",
+    "azureFunctions.projectRuntime": "~4",
+    "debug.internalConsoleOptions": "neverOpen",
+    "azureFunctions.projectLanguageModel": 2,
+    "azureFunctions.createPythonVenv": false,
+    "azureFunctions.showPythonVenvWarning": false
+}
