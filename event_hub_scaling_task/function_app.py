@@ -1,8 +1,9 @@
 # stdlib
+from copy import deepcopy
 from datetime import datetime
-from json import JSONDecodeError, loads
+from json import JSONDecodeError, dumps, loads
 from logging import INFO, WARNING, getLogger
-from typing import TypedDict
+from typing import AsyncContextManager, TypedDict
 
 
 # 3p
@@ -76,19 +77,29 @@ def deserialize_cache(cache_str: str) -> EventHubScalingCache:
         return cache
     except (JSONDecodeError, ValidationError):
         log.warning(INVALID_CACHE_MSG)
-        # here we should figure out how to restore the cache
-        raise NotImplementedError
+        raise NotImplementedError("TODO: figure out how to restore the cache from a broken state")
 
 
-class EventHubScalingTask:
-    def __init__(self, credential: DefaultAzureCredential, cache_initial_state: str, cache: Out[str]) -> None:
-        self.credential = credential
+class EventHubScalingTask(AsyncContextManager):
+    def __init__(self, cache_initial_state: str, cache: Out[str], resource_cache: str) -> None:
+        self.credential = DefaultAzureCredential()
         self._event_hub_cache_initial_state = deserialize_cache(cache_initial_state)
-
-        self._event_hub_cache = cache
+        self.event_hub_cache = deepcopy(self._event_hub_cache_initial_state)
+        self._raw_cache = cache
 
     async def run(self) -> None:
         pass
+
+    async def __aexit__(self, *_) -> None:
+        self._write_cache()
+        await self.credential.close()
+
+    def _write_cache(self) -> None:
+        if self.event_hub_cache == self._event_hub_cache_initial_state:
+            log.info("Cache has not changed, skipping write")
+            return
+        log.info("Writing cache to blob storage")
+        self._raw_cache.set(dumps(self._event_hub_cache))
 
 
 def now() -> str:
@@ -105,15 +116,22 @@ app = FunctionApp()
     path=BLOB_STORAGE_CACHE + "/event_hub_scaling.json",
     connection=STORAGE_CONNECTION_SETTING,
 )
+@app.blob_input(
+    arg_name="resourceCacheState",
+    path=BLOB_STORAGE_CACHE + "/resources.json",
+    connection=STORAGE_CONNECTION_SETTING,
+)
 @app.blob_output(
     arg_name="eventHubScalingCache",
     path=BLOB_STORAGE_CACHE + "/event_hub_scaling.json",
     connection=STORAGE_CONNECTION_SETTING,
 )
-async def run_job(req: TimerRequest, eventHubScalingCacheState: str, eventHubScalingCache: Out[str]) -> None:
+async def run_job(
+    req: TimerRequest, eventHubScalingCacheState: str, eventHubScalingCache: Out[str], resourceCacheState: str
+) -> None:
     if req.past_due:
         log.info("The task is past due!")
     log.info("Started task at %s", now())
-    async with DefaultAzureCredential() as cred:
-        await EventHubScalingTask(cred, eventHubScalingCacheState, eventHubScalingCache).run()
+    async with EventHubScalingTask(eventHubScalingCacheState, eventHubScalingCache, resourceCacheState) as task:
+        await task.run()
     log.info("Task finished at %s", now())
