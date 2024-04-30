@@ -8,12 +8,11 @@ from diagnostic_settings_task.function_app import (
     DiagnosticSettingsTask,
     environ,
 )
-from diagnostic_settings_task.cache import (
+from cache.diagnostic_settings_cache import (
     UUID_REGEX,
     DiagnosticSettingsCache,
-    ResourceCache,
-    ResourceCacheError,
 )
+from cache.resources_cache import ResourceCache
 from unittest import IsolatedAsyncioTestCase
 from azure.mgmt.monitor.models import CategoryType
 
@@ -113,5 +112,8 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.out_mock.set.assert_not_called()
 
     def test_malformed_resources_cache_errors_in_constructor(self):
-        with self.assertRaises(ResourceCacheError):
+        with self.assertRaises(ValueError) as e:
             DiagnosticSettingsTask(self.credential, "malformed", "{}", self.out_mock)
+        self.assertEqual(
+            str(e.exception), "Resource Cache is in an invalid format, failing this task until it is valid"
+        )

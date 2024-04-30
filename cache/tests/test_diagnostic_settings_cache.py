@@ -11,7 +11,7 @@ from cache.tests import sub_id1, sub_id2
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):
     def setUp(self) -> None:
-        log_patch = patch("diagnostic_settings_task.cache.log")
+        log_patch = patch("diagnostic_settings_task.function_app.log")
         self.addCleanup(log_patch.stop)
         self.log = log_patch.start()
 
@@ -24,8 +24,10 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
             sub_id2: {"resource3": {"id": "5678", "event_hub_name": "eh3", "event_hub_namespace": "ehn"}},
         }
         cache_str = dumps(diagnostic_settings_cache)
+        success, cache = deserialize_diagnostic_settings_cache(cache_str)
+        self.assertTrue(success)
         self.assertEqual(
-            deserialize_diagnostic_settings_cache(cache_str),
+            cache,
             diagnostic_settings_cache,
         )
 

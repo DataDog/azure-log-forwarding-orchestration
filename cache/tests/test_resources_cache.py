@@ -9,8 +9,10 @@ from cache.tests import sub_id1, sub_id2
 class TestDeserializeResourceCache(TestCase):
     def test_valid_cache(self):
         cache_str = dumps({sub_id1: ["resource1", "resource2"], sub_id2: ["resource3"]})
+        success, cache = deserialize_resource_cache(cache_str)
+        self.assertTrue(success)
         self.assertEqual(
-            deserialize_resource_cache(cache_str),
+            cache,
             {sub_id1: frozenset(["resource1", "resource2"]), sub_id2: frozenset(["resource3"])},
         )
 
