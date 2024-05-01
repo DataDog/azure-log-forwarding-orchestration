@@ -1,7 +1,7 @@
 from json import dumps
 from typing import Any, AsyncIterable, Callable, TypeAlias, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
-from resources_task.function_app import ResourcesTask, ResourceCache, INVALID_CACHE_MSG, deserialize_cache
+from resources_task.function_app import ResourcesTask, ResourceCache, deserialize_resource_cache
 from unittest import IsolatedAsyncioTestCase
 
 
@@ -44,7 +44,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
 
     @property
     def out_value(self) -> ResourceCache:
-        return deserialize_cache(self.out_mock.set.call_args[0][0])
+        return deserialize_resource_cache(self.out_mock.set.call_args[0][0])[1]
 
     def run_resources_task(self, cache: ResourceCache):
         return ResourcesTask(self.credential, dumps(cache, default=list), self.out_mock).run()
@@ -57,7 +57,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
         }
         await ResourcesTask(self.credential, "[[[[{{{{{asjdklahjs]]]}}}", self.out_mock).run()
 
-        self.log.warning.assert_called_once_with(INVALID_CACHE_MSG)
+        self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
         self.assertEqual(self.out_value, {"sub1": {"res1", "res2"}, "sub2": {"res3"}})
 
     async def test_empty_cache_adds_resources(self):
@@ -69,7 +69,7 @@ class TestResourcesTask(IsolatedAsyncioTestCase):
 
         await ResourcesTask(self.credential, "", self.out_mock).run()
 
-        self.log.warning.assert_called_once_with(INVALID_CACHE_MSG)
+        self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
         self.assertEqual(self.out_value, {"sub1": {"res1", "res2"}, "sub2": {"res3"}})
 
     async def test_no_new_resources_doesnt_cache(self):
