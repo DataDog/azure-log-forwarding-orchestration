@@ -26,39 +26,20 @@ log = getLogger(RESOURCES_TASK_NAME)
 log.setLevel(INFO)
 
 
-ResourceCache: TypeAlias = dict[str, set[str]]
-"mapping of subscription_id to resource_ids"
-
-INVALID_CACHE_MSG = "Cache is in an invalid format, task will reset the cache"
-
-
-UUID_REGEX = r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$"
-
-RESOURCE_CACHE_SCHEMA = {
-    "type": "object",
-    "patternProperties": {
-        UUID_REGEX: {"type": "array", "items": {"type": "string"}},
-    },
-}
-
-
-def deserialize_cache(cache_str: str) -> ResourceCache:
-    try:
-        cache = loads(cache_str)
-        validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
-    except (JSONDecodeError, ValidationError):
-        log.warning(INVALID_CACHE_MSG)
-        return {}
-    return {sub_id: set(resources) for sub_id, resources in cache.items()}
-
-
 class ResourcesTask:
-    def __init__(self, credential: DefaultAzureCredential, cache_initial_state: str, cache: Out[str]) -> None:
+    def __init__(
+        self, credential: DefaultAzureCredential, cache_initial_state: str, resources_cache_out: Out[str]
+    ) -> None:
         self.credential = credential
+        self._cache = resources_cache_out
+        success, resource_cache = deserialize_resource_cache(cache_initial_state)
+        if not success:
+            log.warning("Resource Cache is in an invalid format, task will reset the cache")
+            resource_cache = {}
+        self._resource_cache_initial_state = resource_cache
+
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
-        self._cache = cache
-        self._resource_cache_initial_state: ResourceCache = deserialize_cache(cache_initial_state)
 
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
@@ -113,3 +94,29 @@ async def run_job(req: TimerRequest, resourceCacheState: str, resourceCache: Out
     async with DefaultAzureCredential() as cred:
         await ResourcesTask(cred, resourceCacheState, resourceCache).run()
     log.info("Task finished at %s", now())
+
+
+### cache/resources_cache.py
+
+UUID_REGEX = r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$"
+
+ResourceCache: TypeAlias = dict[str, set[str]]
+"mapping of subscription_id to resource_ids"
+
+
+RESOURCE_CACHE_SCHEMA = {
+    "type": "object",
+    "patternProperties": {
+        UUID_REGEX: {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
+def deserialize_resource_cache(cache_str: str) -> tuple[bool, ResourceCache]:
+    """Deserialize the resource cache, returning a tuple of success and the cache dict."""
+    try:
+        cache = loads(cache_str)
+        validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
+        return True, {sub_id: set(resources) for sub_id, resources in cache.items()}
+    except (JSONDecodeError, ValidationError):
+        return False, {}
