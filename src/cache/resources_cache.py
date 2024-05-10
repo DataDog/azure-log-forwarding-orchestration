@@ -3,7 +3,7 @@ from typing import TypeAlias
 
 from jsonschema import ValidationError, validate
 
-from cache.common import UUID_REGEX
+from src.cache.common import UUID_REGEX
 
 RESOURCE_CACHE_BLOB = "resources.json"
 

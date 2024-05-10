@@ -27,6 +27,7 @@ local.settings.json
 
 node_modules
 dist
+build
 
 # Local python packages
 .python_packages/

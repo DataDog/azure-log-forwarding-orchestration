@@ -19,9 +19,9 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_CACHE_BLOB, deserialize_diagnostic_settings_cache
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.common import Task, get_env, read_cache, write_cache
+from src.cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_CACHE_BLOB, deserialize_diagnostic_settings_cache
+from src.cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from src.tasks.common import Task, get_env, read_cache, write_cache
 
 
 # silence azure logging except for errors

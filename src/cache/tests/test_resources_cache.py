@@ -1,9 +1,9 @@
 from json import dumps
 from unittest import TestCase
 
-from cache.resources_cache import deserialize_resource_cache
+from src.cache.resources_cache import deserialize_resource_cache
 
-from cache.tests import sub_id1, sub_id2
+from src.cache.tests import sub_id1, sub_id2
 
 
 class TestDeserializeResourceCache(TestCase):

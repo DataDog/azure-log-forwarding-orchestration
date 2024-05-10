@@ -3,7 +3,7 @@ from typing import TypeAlias, TypedDict
 
 from jsonschema import ValidationError, validate
 
-from cache.common import UUID_REGEX
+from src.cache.common import UUID_REGEX
 
 
 DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"

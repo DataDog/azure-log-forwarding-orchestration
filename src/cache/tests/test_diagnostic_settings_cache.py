@@ -1,12 +1,12 @@
 from unittest import TestCase
 from json import dumps
 from unittest.mock import patch
-from cache.diagnostic_settings_cache import (
+from src.cache.diagnostic_settings_cache import (
     DiagnosticSettingsCache,
     deserialize_diagnostic_settings_cache,
 )
 
-from cache.tests import sub_id1, sub_id2
+from src.cache.tests import sub_id1, sub_id2
 
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):

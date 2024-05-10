@@ -1,18 +1,18 @@
+import os
 from json import dumps, loads
 from typing import AsyncIterable, TypeVar, cast
 from unittest.mock import ANY, AsyncMock, Mock, patch
-from diagnostic_settings_task.function_app import (
+from src.tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     EVENT_HUB_NAME_SETTING,
     EVENT_HUB_NAMESPACE_SETTING,
     DiagnosticSettingsTask,
-    environ,
 )
-from cache.diagnostic_settings_cache import (
+from src.cache.diagnostic_settings_cache import (
     UUID_REGEX,
     DiagnosticSettingsCache,
 )
-from cache.resources_cache import ResourceCache
+from src.cache.resources_cache import ResourceCache
 from unittest import IsolatedAsyncioTestCase
 from azure.mgmt.monitor.models import CategoryType
 
@@ -51,15 +51,16 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
     def out_value(self):
         return self.out_mock.set.call_args[0][0]
 
-    def run_diagnostic_settings_task(
+    async def run_diagnostic_settings_task(
         self, resource_cache: ResourceCache, diagnostic_settings_cache: DiagnosticSettingsCache
     ):
-        return DiagnosticSettingsTask(
-            self.credential, dumps(resource_cache, default=list), dumps(diagnostic_settings_cache), self.out_mock
-        ).run()
+        async with DiagnosticSettingsTask(
+            dumps(resource_cache, default=list), dumps(diagnostic_settings_cache)
+        ) as task:
+            return await task.run()
 
     @patch.dict(
-        environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
+        os.environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
     )
     async def test_task_adds_missing_settings(self):
         self.list_diagnostic_settings.return_value = agen()
@@ -85,7 +86,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
         self.assertEqual(setting["event_hub_namespace"], TEST_EVENT_HUB_NAMESPACE)
 
     @patch.dict(
-        environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
+        os.environ, {EVENT_HUB_NAME_SETTING: TEST_EVENT_HUB_NAME, EVENT_HUB_NAMESPACE_SETTING: TEST_EVENT_HUB_NAMESPACE}
     )
     async def test_task_leaves_existing_settings_unchanged(self):
         setting_id = "12345"
@@ -113,7 +114,7 @@ class TestAzureDiagnosticSettingsCrawler(IsolatedAsyncioTestCase):
 
     def test_malformed_resources_cache_errors_in_constructor(self):
         with self.assertRaises(ValueError) as e:
-            DiagnosticSettingsTask(self.credential, "malformed", "{}", self.out_mock)
+            DiagnosticSettingsTask("malformed", "{}")
         self.assertEqual(
             str(e.exception), "Resource Cache is in an invalid format, failing this task until it is valid"
         )
