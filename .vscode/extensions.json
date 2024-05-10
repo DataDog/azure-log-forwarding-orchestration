@@ -1,6 +1,9 @@
 {
     "recommendations": [
+        "ms-python.python",
         "bencoleman.armview",
-        "msazurermtools.azurerm-vscode-tools"
+        "msazurermtools.azurerm-vscode-tools",
+        "ms-azuretools.vscode-azurefunctions",
+        "azurite.azurite"
     ]
 }

@@ -3,12 +3,10 @@ from typing import TypeAlias
 
 from jsonschema import ValidationError, validate
 
+from cache.common import UUID_REGEX
 
-### COPY BELOW ###
+RESOURCE_CACHE_BLOB = "resources.json"
 
-### cache/resources_cache.py
-
-UUID_REGEX = r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$"
 
 ResourceCache: TypeAlias = dict[str, set[str]]
 "mapping of subscription_id to resource_ids"

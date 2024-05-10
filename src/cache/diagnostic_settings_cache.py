@@ -3,13 +3,10 @@ from typing import TypeAlias, TypedDict
 
 from jsonschema import ValidationError, validate
 
-
-### COPY BELOW ###
-
-### cache/diagnostic_settings_cache.py
+from cache.common import UUID_REGEX
 
 
-UUID_REGEX = r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$"
+DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"
 
 
 class DiagnosticSettingConfiguration(TypedDict):

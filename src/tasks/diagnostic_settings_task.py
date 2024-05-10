@@ -1,16 +1,15 @@
 # stdlib
 from asyncio import gather
+import asyncio
 from copy import deepcopy
 from datetime import datetime
-from json import JSONDecodeError, dumps, loads
+from json import dumps
 from logging import ERROR, INFO, getLogger
-from typing import AsyncIterable, Collection, Final, TypeAlias, TypeVar, TypedDict
+from typing import AsyncIterable, Collection, Final, TypeVar
 from uuid import uuid4
-from os import environ
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
-from azure.functions import FunctionApp, TimerRequest, Out
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
     DiagnosticSettingsResource,
@@ -18,8 +17,11 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
     CategoryType,
     Resource,
 )
-from azure.identity.aio import DefaultAzureCredential
-from jsonschema import ValidationError, validate
+
+# project
+from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_CACHE_BLOB, deserialize_diagnostic_settings_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from tasks.common import Task, get_env, read_cache, write_cache
 
 
 # silence azure logging except for errors
@@ -27,8 +29,6 @@ getLogger("azure").setLevel(ERROR)
 
 
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
-BLOB_STORAGE_CACHE = "resources-cache"
-STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
 EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
@@ -64,44 +64,32 @@ async def get_existing_diagnostic_setting(
         raise
 
 
-class DiagnosticSettingsTask:
-    def __init__(
-        self,
-        credential: DefaultAzureCredential,
-        resource_cache_state: str,
-        diagnostic_settings_cache_state: str,
-        diagnostic_settings_cache_out: Out[str],
-    ) -> None:
-        self._cache = diagnostic_settings_cache_out
+EVENT_HUB_NAME: Final[str] = get_env(EVENT_HUB_NAME_SETTING)
+EVENT_HUB_NAMESPACE: Final[str] = get_env(EVENT_HUB_NAMESPACE_SETTING)
 
+
+class DiagnosticSettingsTask(Task):
+    def __init__(self, resource_cache_state: str, diagnostic_settings_cache_state: str) -> None:
+        super().__init__()
+
+        # read caches
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
         if not success:
             raise ValueError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
-        success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
 
+        success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
         if not success:
             log.warning("Diagnostic Settings Cache is in an invalid format, resetting the cache")
             diagnostic_settings_cache = {}
         self._diagnostic_settings_cache_initial = diagnostic_settings_cache
         self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
-        self.credential = credential
-        if (event_hub_name := environ.get(EVENT_HUB_NAME_SETTING)) and (
-            event_hub_namespace := environ.get(EVENT_HUB_NAMESPACE_SETTING)
-        ):
-            self.EVENT_HUB_NAME: Final[str] = event_hub_name
-            self.EVENT_HUB_NAMESPACE: Final[str] = event_hub_namespace
-        else:
-            raise ValueError("No event hub name/namespace found in environment")
 
     async def run(self) -> None:
         log.info(f"Crawling {len(self.resource_cache)} subscriptions")
-        try:
-            await gather(
-                *[self.process_subscription(sub_id, resources) for sub_id, resources in self.resource_cache.items()]
-            )
-        finally:
-            self.update_diagnostic_settings_cache()
+        await gather(
+            *[self.process_subscription(sub_id, resources) for sub_id, resources in self.resource_cache.items()]
+        )
 
     async def process_subscription(self, sub_id: str, resource_ids: Collection[str]) -> None:
         log.info(f"Crawling {len(resource_ids)} resources for subscription {sub_id}")
@@ -160,7 +148,7 @@ class DiagnosticSettingsTask:
         else:
             # We don't have a full configuration for this resource, we should add it
             await self.add_diagnostic_setting(
-                client, sub_id, resource_id, str(uuid4()), self.EVENT_HUB_NAME, self.EVENT_HUB_NAMESPACE
+                client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
             )
 
     async def add_diagnostic_setting(
@@ -220,9 +208,9 @@ class DiagnosticSettingsTask:
                 "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
             )
 
-    def update_diagnostic_settings_cache(self) -> None:
+    async def write_caches(self) -> None:
         if self.diagnostic_settings_cache != self._diagnostic_settings_cache_initial:
-            self._cache.set(dumps(self.diagnostic_settings_cache))
+            await write_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB, dumps(self.diagnostic_settings_cache))
             num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
             log.info(f"Updated setting, {num_resources} resources stored in the settings cache")
         else:
@@ -233,104 +221,15 @@ def now() -> str:
     return datetime.now().isoformat()
 
 
-app = FunctionApp()
-
-
-@app.function_name(name=DIAGNOSTIC_SETTINGS_TASK_NAME)
-@app.schedule(schedule="0 */6 * * * *", arg_name="req", run_on_startup=False)
-@app.blob_input(
-    arg_name="resourceCacheState",
-    path=BLOB_STORAGE_CACHE + "/resources.json",
-    connection=STORAGE_CONNECTION_SETTING,
-)
-@app.blob_input(
-    arg_name="diagnosticSettingsCacheState",
-    path=BLOB_STORAGE_CACHE + "/settings.json",
-    connection=STORAGE_CONNECTION_SETTING,
-)
-@app.blob_output(
-    arg_name="diagnosticSettingsCache",
-    path=BLOB_STORAGE_CACHE + "/settings.json",
-    connection=STORAGE_CONNECTION_SETTING,
-)
-async def run_job(
-    req: TimerRequest, resourceCacheState: str, diagnosticSettingsCacheState: str, diagnosticSettingsCache: Out[str]
-) -> None:
-    if req.past_due:
-        log.info("The timer is past due!")
+async def main():
     log.info("Started task at %s", now())
-    async with DefaultAzureCredential() as cred:
-        await DiagnosticSettingsTask(
-            cred, resourceCacheState, diagnosticSettingsCacheState, diagnosticSettingsCache
-        ).run()
+    resources, diagnostic_settings = await gather(
+        read_cache(RESOURCE_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
+    )
+    async with DiagnosticSettingsTask(resources, diagnostic_settings) as task:
+        await task.run()
     log.info("Task finished at %s", now())
 
 
-### cache/diagnostic_settings_cache.py
-
-
-UUID_REGEX = r"^[a-f0-9]{8}-([a-f0-9]{4}-){3}[a-f0-9]{12}$"
-
-
-class DiagnosticSettingConfiguration(TypedDict):
-    id: str
-    event_hub_name: str
-    event_hub_namespace: str
-
-
-DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, DiagnosticSettingConfiguration]]
-"Mapping of subscription_id to resource_id to DiagnosticSettingConfiguration"
-
-DIAGNOSTIC_SETTINGS_CACHE_SCHEMA = {
-    "type": "object",
-    "patternProperties": {
-        UUID_REGEX: {
-            "type": "object",
-            "patternProperties": {
-                ".*": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "event_hub_name": {"type": "string"},
-                        "event_hub_namespace": {"type": "string"},
-                    },
-                    "required": ["id", "event_hub_name", "event_hub_namespace"],
-                    "additionalProperties": False,
-                },
-            },
-        }
-    },
-}
-
-
-def deserialize_diagnostic_settings_cache(cache_str: str) -> tuple[bool, DiagnosticSettingsCache]:
-    try:
-        cache = loads(cache_str)
-        validate(instance=cache, schema=DIAGNOSTIC_SETTINGS_CACHE_SCHEMA)
-        return True, cache
-    except (JSONDecodeError, ValidationError):
-        return False, {}
-
-
-### cache/resources_cache.py
-
-ResourceCache: TypeAlias = dict[str, set[str]]
-"mapping of subscription_id to resource_ids"
-
-
-RESOURCE_CACHE_SCHEMA = {
-    "type": "object",
-    "patternProperties": {
-        UUID_REGEX: {"type": "array", "items": {"type": "string"}},
-    },
-}
-
-
-def deserialize_resource_cache(cache_str: str) -> tuple[bool, ResourceCache]:
-    """Deserialize the resource cache, returning a tuple of success and the cache dict."""
-    try:
-        cache = loads(cache_str)
-        validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
-        return True, {sub_id: set(resources) for sub_id, resources in cache.items()}
-    except (JSONDecodeError, ValidationError):
-        return False, {}
+if __name__ == "__main__":
+    asyncio.run(main())
