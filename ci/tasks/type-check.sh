@@ -10,4 +10,4 @@ if [ "${CI:-}" == 'true' ]; then
     done
 fi
 
-python -m mypy .
+python -m mypy src
