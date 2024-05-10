@@ -9,7 +9,8 @@ pip install -U pyinstaller
 tasks=(diagnostic_settings_task.py resources_task.py)
 
 for task in $tasks; do
-    pyinstaller --onefile src/tasks/$task
+    pyinstaller src/tasks/$task
+
     exit
 
 done
