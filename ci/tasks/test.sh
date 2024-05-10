@@ -6,6 +6,7 @@ set -euxo pipefail
 pip install pytest==8.0.2 coverage==7.4.4
 
 # install project dependencies
+pip install -r config/requirements.txt
 for file in config/*/requirements.txt; do
     pip install -r $file
 done
