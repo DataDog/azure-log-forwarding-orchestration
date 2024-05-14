@@ -17,7 +17,6 @@ from src.tasks.common import Task, read_cache, write_cache
 
 RESOURCES_TASK_NAME = "resources_task"
 BLOB_STORAGE_CACHE = "resources-cache"
-STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 
 
 log = getLogger(RESOURCES_TASK_NAME)

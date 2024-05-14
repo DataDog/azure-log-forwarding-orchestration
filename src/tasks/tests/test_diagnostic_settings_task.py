@@ -2,6 +2,7 @@ import os
 from json import dumps, loads
 from typing import AsyncIterable, TypeVar, cast
 from unittest.mock import ANY, AsyncMock, Mock, patch
+
 from src.tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     EVENT_HUB_NAME_SETTING,
