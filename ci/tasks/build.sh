@@ -2,15 +2,33 @@
 
 set -euo pipefail
 
-mkdir -p build
 
-pip install -U pyinstaller
+if [ "${CI:-}" == 'true' ]; then
+    pip install -U pyinstaller
+    run-installer() {
+        pyinstaller $@
+    }
+else
+    run-installer() {
+        docker run -v "$(pwd):/src/" cdrx/pyinstaller-linux "pyinstaller $@"
+    }
+fi
 
-tasks=(diagnostic_settings_task.py resources_task.py)
-
-for task in $tasks; do
-    pyinstaller src/tasks/$task
-
-    exit
-
+for task in resources_task diagnostic_settings_task; do
+    echo "Building $task"
+    run-installer \
+        --onefile \
+        --noconfirm \
+        --nowindow \
+        --clean \
+        --distpath ./dist/$task/ \
+        --specpath ./specs \
+        --log-level INFO \
+        --paths ./src \
+        ./src/tasks/$task.py
+    cp ./config/$task/* ./dist/$task/
+    cp ./config/host.json ./dist/$task/
+    cat ./config/requirements.txt >> ./dist/$task/requirements.txt
+    zip ./dist/$task.zip ./dist/$task/*
+    echo "Built $task"
 done
