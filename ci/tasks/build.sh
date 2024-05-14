@@ -32,3 +32,5 @@ for task in resources_task diagnostic_settings_task; do
     zip ./dist/$task.zip ./dist/$task/*
     echo "Built $task"
 done
+
+ls -la dist/*

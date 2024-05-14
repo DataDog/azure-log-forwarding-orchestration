@@ -5,6 +5,7 @@ variables:
 stages:
   - test
   - coverage
+  - build
 
 run-tests:
   image: $PYTHON_IMAGE
@@ -30,3 +31,10 @@ coverage-comment:
     - run-tests
   script:
     - ci/tasks/coverage-comment.sh
+
+build:
+  image: $PYTHON_IMAGE
+  stage: build
+  tags: ["arch:amd64"]
+  script:
+    - ci/tasks/build.sh
