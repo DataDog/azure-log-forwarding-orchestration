@@ -10,7 +10,7 @@ if [ "${CI:-}" == 'true' ]; then
     }
 else
     run-installer() {
-        docker run -v "$(pwd):/src/" cdrx/pyinstaller-linux "pyinstaller $@"
+        eval "docker run -v \"$(pwd):/src/\" cdrx/pyinstaller-linux \"pyinstaller $@\""
     }
 fi
 
