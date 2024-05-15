@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
+set -euxo pipefail
 
 
 if [ "${CI:-}" == 'true' ]; then
@@ -14,7 +14,7 @@ else
 fi
 
 for task in resources_task diagnostic_settings_task; do
-    echo "Building $task"
+    : "Building $task"
     run-installer \
         --onefile \
         --noconfirm \
@@ -29,7 +29,7 @@ for task in resources_task diagnostic_settings_task; do
     cp ./config/host.json ./dist/$task/
     cat ./config/requirements.txt >> ./dist/$task/requirements.txt
     zip ./dist/$task.zip ./dist/$task/*
-    echo "Built $task"
+    : "Built $task"
 done
 
 ls -la dist/*
