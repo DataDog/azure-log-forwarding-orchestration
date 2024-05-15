@@ -1,5 +1,4 @@
 variables:
-  PYTHON_IMAGE: registry.ddbuild.io/images/python:3.11.6
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   BUILD_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest
@@ -23,7 +22,7 @@ ci-build-image:
     - echo -e "=======\nImage:$BUILD_IMAGE@$SHA\n======="
 
 run-tests:
-  image: $PYTHON_IMAGE
+  image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
@@ -32,7 +31,7 @@ run-tests:
     paths:
       - ci/coverage.txt
 type-check:
-  image: $PYTHON_IMAGE
+  image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
