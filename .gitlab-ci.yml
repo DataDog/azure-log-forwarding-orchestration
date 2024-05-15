@@ -2,6 +2,7 @@ variables:
   PYTHON_IMAGE: registry.ddbuild.io/images/python:3.11.6
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
+  BUILD_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest
 
 stages:
   - ci-image
@@ -17,10 +18,9 @@ ci-build-image:
       allow_failure: true
   tags: ["arch:amd64"]
   script:
-    - FULL_IMAGE_TAG="registry.ddbuild.io/ci/web-api-controlplane:latest"
-    - docker buildx build --platform linux/amd64 --tag "$FULL_IMAGE_TAG" -f "ci/build-image/Dockerfile" . --push
-    - SHA=$(crane digest $FULL_IMAGE_TAG)
-    - echo -e "=======\nImage:$FULL_IMAGE_TAG@$SHA\n======="
+    - docker buildx build --platform linux/amd64 --tag "$BUILD_IMAGE" -f "ci/build-image/Dockerfile" . --push
+    - SHA=$(crane digest $BUILD_IMAGE)
+    - echo -e "=======\nImage:$BUILD_IMAGE@$SHA\n======="
 
 run-tests:
   image: $PYTHON_IMAGE
