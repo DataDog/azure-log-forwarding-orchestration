@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 
-
-set -euo pipefail
-
 source /venv/bin/activate
 
-set -x
+set -euxo pipefail
 
 if [ "${CI:-}" == 'true' ]; then
     run-installer() {

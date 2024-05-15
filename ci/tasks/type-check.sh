@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
-
 source /venv/bin/activate
 
-set -x
+set -euxo pipefail
+
 : run mypy
 python -m mypy ./src

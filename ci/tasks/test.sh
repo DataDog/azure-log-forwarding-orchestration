@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
-set -euo pipefail
 
 source /venv/bin/activate
 
-set -x
+set -euxo pipefail
 
 : run tests and coverage
 python -m coverage run -m pytest ./src
