@@ -4,7 +4,7 @@ set -euo pipefail
 
 
 if [ "${CI:-}" == 'true' ]; then
-    apt-get install binutils
+    sudo apt-get install binutils
     pip install -U pyinstaller
     run-installer() {
         $HOME/.local/bin/pyinstaller $@
