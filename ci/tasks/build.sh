@@ -5,7 +5,7 @@ set -euo pipefail
 
 if [ "${CI:-}" == 'true' ]; then
     run-installer() {
-        pyinstaller $@
+        $HOME/.local/bin/pyinstaller $@
     }
 else
     run-installer() {
