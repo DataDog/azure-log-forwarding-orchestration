@@ -1,6 +1,5 @@
 from unittest import TestCase
 from json import dumps
-from unittest.mock import patch
 from src.cache.diagnostic_settings_cache import (
     DiagnosticSettingsCache,
     deserialize_diagnostic_settings_cache,
@@ -10,11 +9,6 @@ from src.cache.tests import sub_id1, sub_id2
 
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):
-    def setUp(self) -> None:
-        log_patch = patch("diagnostic_settings_task.function_app.log")
-        self.addCleanup(log_patch.stop)
-        self.log = log_patch.start()
-
     def test_valid_cache(self):
         diagnostic_settings_cache: DiagnosticSettingsCache = {
             sub_id1: {

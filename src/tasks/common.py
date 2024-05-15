@@ -1,7 +1,7 @@
 # stdlib
 from abc import ABC, abstractmethod
 from os import getenv
-from typing import AsyncContextManager
+from typing import AsyncContextManager, Self
 from logging import ERROR, getLogger
 
 # 3p
@@ -46,6 +46,9 @@ class Task(AsyncContextManager, ABC):
 
     @abstractmethod
     async def run(self) -> None: ...
+
+    async def __aenter__(self) -> Self:
+        return self
 
     async def __aexit__(self, *_) -> None:
         await self.write_caches()
