@@ -5,6 +5,6 @@ RUN python3 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 RUN pip install pyinstaller
 COPY ./config/ /config/
-RUN find /config/ -name 'requirements.txt' -exec pip install -r {} \;
+RUN find /config -name 'requirements.txt' -exec pip install -r {} \;
 COPY ./requirements-dev.txt /requirements-dev.txt
 RUN pip install -r /requirements-dev.txt
