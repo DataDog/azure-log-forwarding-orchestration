@@ -4,8 +4,7 @@ variables:
 
 stages:
   - test
-  - coverage
-  - build
+  - after-test
 
 run-tests:
   image: $PYTHON_IMAGE
@@ -25,7 +24,7 @@ type-check:
 
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
-  stage: coverage
+  stage: after-test
   tags: ["arch:amd64"]
   dependencies:
     - run-tests
@@ -34,7 +33,7 @@ coverage-comment:
 
 build:
   image: $PYTHON_IMAGE
-  stage: build
+  stage: after-test
   tags: ["arch:amd64"]
   script:
     - ci/tasks/build.sh
