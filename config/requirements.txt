@@ -1,5 +1,0 @@
-# Common requiremnts for all the tasks
-aiohttp==3.8.5
-azure-identity==1.15.0
-jsonschema==4.21.1
-azure-storage-blob==12.20.0

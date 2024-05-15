@@ -2,9 +2,6 @@
 
 set -euxo pipefail
 
-# list all installed python packages
-pip list
-
 # run tests and coverage
 python -m coverage run -m pytest ./src
 

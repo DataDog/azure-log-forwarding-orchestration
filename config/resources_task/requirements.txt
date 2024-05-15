@@ -1,2 +1,0 @@
-# Requirements only for the resources task
-azure-mgmt-resource==23.0.1

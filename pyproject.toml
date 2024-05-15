@@ -1,3 +1,26 @@
+[project]
+version = "0.0.1"
+name = "azure-log-forwarding-offering"
+requires-python = ">= 3.12"
+readme = "README.md"
+dependencies = [
+    "aiohttp==3.9.5",
+    "azure-identity==1.15.0",
+    "jsonschema==4.21.1",
+    "azure-mgmt-monitor==6.0.2",
+    "azure-mgmt-resource==23.0.1",
+    "azure-storage-blob==12.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit==3.6.2",
+    "pytest==8.0.2",
+    "coverage==7.4.4",
+    "pyinstaller==6.6.0",
+    "mypy==1.9.0",
+]
+
 [tool.ruff]
 line-length = 120
 

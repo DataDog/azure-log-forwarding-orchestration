@@ -14,7 +14,7 @@ Publish
 *.cscfg
 *.Cache
 project.lock.json
-
+*.egg-info
 /packages
 /TestResults
 

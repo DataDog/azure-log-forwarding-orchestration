@@ -1,2 +1,0 @@
-# Requirements only for the diagnostic settings task
-azure-mgmt-monitor==6.0.2

@@ -10,9 +10,9 @@ brew install azure-functions-core-tools@4
 
 Set up Local Dev Environment:
 ```bash
-pyenv install 3.11.7
-pyenv virtualenv 3.11.7 lfo
-pip install -r requirements-dev.txt
+pyenv install 3.12.3
+pyenv virtualenv 3.12.3 lfo
+pip install -e '.[dev]'
 find config/ -name 'requirements.txt' -exec pip install -r {} \;
 pre-commit install
 ```
