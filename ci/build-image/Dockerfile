@@ -1,6 +1,6 @@
 FROM registry.ddbuild.io/images/python:3.11.6
 USER root
-RUN apt-get update && apt-get install binutils python-dev python3-dev -y
+RUN apt-get update && apt-get install binutils python3.11-dev -y
 USER dog
 RUN pip install -U pyinstaller
 COPY ./config/ /config/
