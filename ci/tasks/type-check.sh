@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
+set -euo pipefail
 
 source /venv/bin/activate
 
+set -x
 : run mypy
-python -m mypy diagnostic_settings_task resources_task
+python -m mypy ./src
