@@ -2,6 +2,8 @@
 
 set -euxo pipefail
 
+PATH="/venv/bin:$PATH"
+
 
 if [ "${CI:-}" == 'true' ]; then
     run-installer() {

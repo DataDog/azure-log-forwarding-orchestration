@@ -33,7 +33,7 @@ type-check:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - python -m mypy ./src
+    - ci/tasks/type-check.sh
 
 coverage-comment:
   image: $PR_COMMENTER_IMAGE

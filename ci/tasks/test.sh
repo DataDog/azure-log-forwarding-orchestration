@@ -2,6 +2,8 @@
 
 set -euxo pipefail
 
+source /venv/bin/activate
+
 : run tests and coverage
 python -m coverage run -m pytest ./src
 
