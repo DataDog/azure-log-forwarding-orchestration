@@ -1,7 +1,8 @@
-FROM registry.ddbuild.io/images/python:3.11.6
-USER root
-RUN apt-get update && apt-get install binutils python3-dev -y
-USER dog
-RUN pip install -U pyinstaller
+FROM ubuntu:24.04
+RUN apt-get update
+RUN apt-get install -y binutils python3 python3-dev python3-pip python3-venv
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+RUN pip install pyinstaller
 COPY ./config/ /config/
 RUN find /config/ -name 'requirements.txt' -exec pip install -r {} \;
