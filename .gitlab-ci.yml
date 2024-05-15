@@ -18,8 +18,6 @@ ci-build-image:
   tags: ["arch:amd64"]
   script:
     - docker buildx build --platform linux/amd64 --tag "$BUILD_IMAGE" -f "ci/build-image/Dockerfile" . --push
-    - SHA=$(crane digest $BUILD_IMAGE)
-    - echo -e "=======\nImage:$BUILD_IMAGE@$SHA\n======="
 
 run-tests:
   image: $BUILD_IMAGE
@@ -35,7 +33,7 @@ type-check:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/type-check.sh
+    - python -m mypy ./src
 
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
