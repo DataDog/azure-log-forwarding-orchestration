@@ -5,9 +5,9 @@ variables:
   BUILD_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest
 
 stages:
+  - ci-image
   - test
   - after-test
-  - ci-image
 
 
 ci-build-image:
