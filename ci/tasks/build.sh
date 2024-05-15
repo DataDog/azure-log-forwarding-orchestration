@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
 
-PATH="/venv/bin:$PATH"
+set -euo pipefail
 
+source /venv/bin/activate
+
+set -x
 
 if [ "${CI:-}" == 'true' ]; then
     run-installer() {
@@ -16,7 +18,7 @@ else
 fi
 
 for task in resources_task diagnostic_settings_task; do
-    : "Building $task"
+    echo "Building $task"
     run-installer \
         --onefile \
         --noconfirm \
@@ -29,9 +31,8 @@ for task in resources_task diagnostic_settings_task; do
         ./src/tasks/$task.py
     cp ./config/$task/* ./dist/$task/
     cp ./config/host.json ./dist/$task/
-    cat ./config/requirements.txt >> ./dist/$task/requirements.txt
     zip ./dist/$task.zip ./dist/$task/*
-    : "Built $task"
+    echo "Built $task"
 done
 
 ls -la dist/*
