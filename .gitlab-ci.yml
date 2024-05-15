@@ -48,7 +48,7 @@ coverage-comment:
     - ci/tasks/coverage-comment.sh
 
 build:
-  image: $PYTHON_IMAGE
+  image: $BUILD_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
   script:
