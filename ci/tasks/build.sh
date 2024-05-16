@@ -4,19 +4,10 @@ source /venv/bin/activate
 
 set -euxo pipefail
 
-if [ "${CI:-}" == 'true' ]; then
-    run-installer() {
-        pyinstaller $@
-    }
-else
-    run-installer() {
-        eval "docker run -v \"$(pwd):/src/\" cdrx/pyinstaller-linux \"pyinstaller $@\""
-    }
-fi
 
 for task in resources_task diagnostic_settings_task; do
     echo "Building $task"
-    run-installer \
+    pyinstaller \
         --onefile \
         --noconfirm \
         --nowindow \
