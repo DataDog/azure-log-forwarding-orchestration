@@ -1,5 +1,5 @@
 from json import dumps, loads
-from typing import AsyncIterable, TypeVar, cast
+from typing import cast
 from unittest.mock import ANY, AsyncMock, Mock
 
 from src.tasks.diagnostic_settings_task import (
@@ -15,16 +15,8 @@ from src.cache.diagnostic_settings_cache import (
 from src.cache.resources_cache import ResourceCache
 from azure.mgmt.monitor.models import CategoryType
 
-from src.tasks.tests.common import TaskTestCase
+from src.tasks.tests.common import TaskTestCase, agen
 from src.tasks.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
-
-
-T = TypeVar("T")
-
-
-async def agen(*items: T) -> AsyncIterable[T]:
-    for x in items:
-        yield x
 
 
 sub_id = "sub1"

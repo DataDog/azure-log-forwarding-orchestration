@@ -1,3 +1,4 @@
+from typing import AsyncIterable, TypeVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, patch
 
@@ -21,3 +22,11 @@ class TaskTestCase(IsolatedAsyncioTestCase):
     def cache_value(self, cache_name: str) -> str:
         self.write_cache.assert_called_with(cache_name, ANY)
         return self.write_cache.call_args_list[-1][0][1]
+
+
+T = TypeVar("T")
+
+
+async def agen(*items: T) -> AsyncIterable[T]:
+    for x in items:
+        yield x
