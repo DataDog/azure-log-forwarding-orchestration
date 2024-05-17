@@ -1,3 +1,3 @@
 {
-    "python.defaultInterpreterPath": "~/.pyenv/versions/3.11.7/envs/lfo/bin/python",
+    "python.defaultInterpreterPath": "~/.pyenv/versions/3.12.3/envs/lfo/bin/python",
 }

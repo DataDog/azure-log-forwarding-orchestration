@@ -15,7 +15,6 @@
     "customHandler": {
         "description": {
             "defaultExecutablePath": "main",
-            "workingDirectory": "",
             "arguments": []
         }
     }
