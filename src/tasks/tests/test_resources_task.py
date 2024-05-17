@@ -40,7 +40,7 @@ class TestResourcesTask(TaskTestCase):
 
         self.log = self.patch("log")
 
-    async def run_diagnostic_settings_task(self, cache: ResourceCache):
+    async def run_resources_task(self, cache: ResourceCache):
         async with ResourcesTask(dumps(cache, default=list)) as task:
             await task.run()
 
@@ -83,7 +83,7 @@ class TestResourcesTask(TaskTestCase):
             "sub2": make_agen_func("id", "res3"),
         }
 
-        await self.run_diagnostic_settings_task(
+        await self.run_resources_task(
             {
                 "sub1": {"res1", "res2"},
                 "sub2": {"res3"},
@@ -98,7 +98,7 @@ class TestResourcesTask(TaskTestCase):
             "sub1": make_agen_func("id"),
             "sub2": make_agen_func("id"),
         }
-        await self.run_diagnostic_settings_task(
+        await self.run_resources_task(
             {
                 "sub1": {"res1", "res2"},
                 "sub2": {"res3"},
@@ -111,7 +111,7 @@ class TestResourcesTask(TaskTestCase):
     async def test_subscriptions_gone(self):
         self.sub_client.subscriptions.list = make_agen_func("subscription_id")
         # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
-        await self.run_diagnostic_settings_task(
+        await self.run_resources_task(
             {
                 "sub1": {"res1", "res2"},
                 "sub2": {"res3"},
