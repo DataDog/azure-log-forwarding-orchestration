@@ -13,7 +13,7 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 
 from src.cache.common import read_cache, write_cache
 from src.cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
-from src.tasks.common import Task
+from src.tasks.task import Task
 
 
 RESOURCES_TASK_NAME = "resources_task"
