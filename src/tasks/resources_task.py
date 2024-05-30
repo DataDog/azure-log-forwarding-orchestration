@@ -51,13 +51,13 @@ class ResourcesTask(Task):
             self.resource_cache[subscription_id] = resource_ids
 
     async def write_caches(self) -> None:
-        if self.resource_cache != self._resource_cache_initial_state:
-            # since sets cannot be json serialized, we convert them to lists before storing
-            await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
-            resources_count = sum(len(resources) for resources in self.resource_cache.values())
-            log.info(f"Updated Resources, {resources_count} resources stored in the cache")
-        else:
+        if self.resource_cache == self._resource_cache_initial_state:
             log.info("Resources have not changed, no update needed")
+            return
+        # since sets cannot be json serialized, we convert them to lists before storing
+        await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
+        resources_count = sum(len(resources) for resources in self.resource_cache.values())
+        log.info(f"Updated Resources, {resources_count} resources stored in the cache")
 
 
 def now() -> str:

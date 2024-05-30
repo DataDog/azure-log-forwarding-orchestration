@@ -211,12 +211,12 @@ class DiagnosticSettingsTask(Task):
             )
 
     async def write_caches(self) -> None:
-        if self.diagnostic_settings_cache != self._diagnostic_settings_cache_initial:
-            await write_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB, dumps(self.diagnostic_settings_cache))
-            num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
-            log.info(f"Updated setting, {num_resources} resources stored in the settings cache")
-        else:
+        if self.diagnostic_settings_cache == self._diagnostic_settings_cache_initial:
             log.info("Diagnostic settings have not changed, no update needed")
+            return
+        await write_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB, dumps(self.diagnostic_settings_cache))
+        num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
+        log.info(f"Updated setting, {num_resources} resources stored in the settings cache")
 
 
 def now() -> str:
