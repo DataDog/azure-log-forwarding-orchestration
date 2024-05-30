@@ -27,6 +27,6 @@ class TaskTestCase(IsolatedAsyncioTestCase):
 T = TypeVar("T")
 
 
-async def agen(*items: T) -> AsyncIterable[T]:
+async def async_generator(*items: T) -> AsyncIterable[T]:
     for x in items:
         yield x

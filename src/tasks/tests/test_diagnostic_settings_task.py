@@ -1,6 +1,7 @@
 from json import dumps, loads
 from typing import cast
 from unittest.mock import ANY, AsyncMock, Mock
+from uuid import UUID
 
 from src.tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -9,14 +10,13 @@ from src.tasks.diagnostic_settings_task import (
 )
 from src.cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
-    UUID_REGEX,
     DiagnosticSettingsCache,
 )
 from src.cache.resources_cache import ResourceCache
 from azure.mgmt.monitor.models import CategoryType
 
-from src.tasks.tests.common import TaskTestCase, agen
-from src.tasks.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
+from src.tasks.tests.common import TaskTestCase, async_generator
+from src.cache.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
 
 
 sub_id = "sub1"
@@ -34,7 +34,7 @@ class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
         client.diagnostic_settings_category.list = Mock()
         self.list_diagnostic_settings_categories: Mock = client.diagnostic_settings_category.list
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
-        client.subscription_diagnostic_settings.list = Mock(return_value=agen())  # nothing to test here yet
+        client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
 
     async def run_diagnostic_settings_task(
         self, resource_cache: ResourceCache, diagnostic_settings_cache: DiagnosticSettingsCache
@@ -45,8 +45,8 @@ class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
             await task.run()
 
     async def test_task_adds_missing_settings(self):
-        self.list_diagnostic_settings.return_value = agen()
-        self.list_diagnostic_settings_categories.return_value = agen(
+        self.list_diagnostic_settings.return_value = async_generator()
+        self.list_diagnostic_settings_categories.return_value = async_generator(
             Mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
@@ -64,17 +64,17 @@ class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
         setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][
             resource_id
         ]
-        self.assertRegex(setting["id"], UUID_REGEX)
+        self.assertEqual(str(UUID(setting["id"])), setting["id"])
         self.assertEqual(setting["event_hub_name"], TEST_EVENT_HUB_NAME)
         self.assertEqual(setting["event_hub_namespace"], TEST_EVENT_HUB_NAMESPACE)
 
     async def test_task_leaves_existing_settings_unchanged(self):
         setting_id = "12345"
 
-        self.list_diagnostic_settings.return_value = agen(
+        self.list_diagnostic_settings.return_value = async_generator(
             Mock(name=DIAGNOSTIC_SETTING_PREFIX + setting_id, event_hub_name=TEST_EVENT_HUB_NAME)
         )
-        self.list_diagnostic_settings_categories.return_value = agen()
+        self.list_diagnostic_settings_categories.return_value = async_generator()
 
         await self.run_diagnostic_settings_task(
             resource_cache={sub_id: {resource_id}},

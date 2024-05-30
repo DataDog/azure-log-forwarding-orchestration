@@ -3,8 +3,6 @@ from typing import TypeAlias, TypedDict
 
 from jsonschema import ValidationError, validate
 
-from src.cache.common import UUID_REGEX
-
 
 DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"
 
@@ -20,22 +18,21 @@ DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, DiagnosticSettingConfig
 
 DIAGNOSTIC_SETTINGS_CACHE_SCHEMA = {
     "type": "object",
-    "patternProperties": {
-        UUID_REGEX: {
-            "type": "object",
-            "patternProperties": {
-                ".*": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "event_hub_name": {"type": "string"},
-                        "event_hub_namespace": {"type": "string"},
-                    },
-                    "required": ["id", "event_hub_name", "event_hub_namespace"],
-                    "additionalProperties": False,
+    "propertyNames": {"format": "uuid"},
+    "additionalProperties": {
+        "type": "object",
+        "patternProperties": {
+            ".*": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "event_hub_name": {"type": "string"},
+                    "event_hub_namespace": {"type": "string"},
                 },
+                "required": ["id", "event_hub_name", "event_hub_namespace"],
+                "additionalProperties": False,
             },
-        }
+        },
     },
 }
 

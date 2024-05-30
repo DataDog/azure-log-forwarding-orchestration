@@ -3,7 +3,6 @@ from typing import TypeAlias
 
 from jsonschema import ValidationError, validate
 
-from src.cache.common import UUID_REGEX
 
 RESOURCE_CACHE_BLOB = "resources.json"
 
@@ -14,9 +13,8 @@ ResourceCache: TypeAlias = dict[str, set[str]]
 
 RESOURCE_CACHE_SCHEMA = {
     "type": "object",
-    "patternProperties": {
-        UUID_REGEX: {"type": "array", "items": {"type": "string"}},
-    },
+    "propertyNames": {"format": "uuid"},
+    "additionalProperties": {"type": "array", "items": {"type": "string"}},
 }
 
 
