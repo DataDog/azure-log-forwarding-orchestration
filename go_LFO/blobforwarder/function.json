@@ -1,0 +1,10 @@
+{
+    "bindings": [
+        {
+            "name": "blob_forwarder",
+            "type": "timerTrigger",
+            "direction": "in",
+            "schedule": "*/30 * * * * *"
+        }
+    ]
+}
