@@ -1,7 +1,7 @@
 {
     "bindings": [
         {
-            "name": "blob_forwarder",
+            "name": "blobForwarder",
             "type": "timerTrigger",
             "direction": "in",
             "schedule": "*/30 * * * * *"

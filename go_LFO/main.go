@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/FormatAzureLogs"
+	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/blobCache"
 	"log"
 	"os"
 )
@@ -63,6 +64,7 @@ func testLocalFile() {
 
 func main() {
 	//logs := getTheLogs()
-	testLocalFile()
+	blobCache.BlobC()
+	//testLocalFile()
 	//formattedLogs
 }

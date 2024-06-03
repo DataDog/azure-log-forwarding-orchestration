@@ -9,17 +9,17 @@ import (
 
 type BlobLogFormatter struct {
 	Context            context.Context
-	logSplittingConfig interface{}
+	LogSplittingConfig interface{}
 }
 
 func NewBlobLogFormatter(context context.Context) BlobLogFormatter {
 	return BlobLogFormatter{
 		Context:            context,
-		logSplittingConfig: getLogSplittingConfig(),
+		LogSplittingConfig: getLogSplittingConfig(),
 	}
 }
 
-func getAzureLogFieldsFromJson(logStruct *AzureLogs, tempJson map[string]json.RawMessage) {
+func GetAzureLogFieldsFromJson(logStruct *AzureLogs, tempJson map[string]json.RawMessage) {
 	if err := json.Unmarshal(tempJson["resourceId"], &logStruct.DDRequire.ResourceId); err != nil {
 		panic(err)
 	}
@@ -31,7 +31,7 @@ func getAzureLogFieldsFromJson(logStruct *AzureLogs, tempJson map[string]json.Ra
 	delete(tempJson, "category")
 }
 
-func unmarshallToPartialStruct(azureLog []byte) AzureLogs {
+func UnmarshallToPartialStruct(azureLog []byte) AzureLogs {
 	var err error
 	// partially unmarshall json to struct and keep remaining data as Raw json
 	var azureStruct AzureLogs
@@ -40,7 +40,7 @@ func unmarshallToPartialStruct(azureLog []byte) AzureLogs {
 		panic(err)
 	}
 
-	getAzureLogFieldsFromJson(&azureStruct, tempJson)
+	GetAzureLogFieldsFromJson(&azureStruct, tempJson)
 
 	azureStruct.Rest, err = json.Marshal(tempJson)
 	if err != nil {
@@ -55,8 +55,8 @@ func (b *BlobLogFormatter) ParseBlobData(data []byte) ([]AzureLogs, int) {
 	logs := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
 	for _, azureLog := range logs {
 		azureLog = bytes.ReplaceAll(azureLog, []byte("'"), []byte("\""))
-		azureStruct := unmarshallToPartialStruct(azureLog)
-		addTagsToJsonLog(&azureStruct)
+		azureStruct := UnmarshallToPartialStruct(azureLog)
+		AddTagsToJsonLog(&azureStruct)
 
 		azureStruct.ByteSize = len(azureLog)
 		totalSize += azureStruct.ByteSize
@@ -65,7 +65,7 @@ func (b *BlobLogFormatter) ParseBlobData(data []byte) ([]AzureLogs, int) {
 	return parsedLogs, totalSize
 }
 
-func createDDTags(tags []string, name string) string {
+func CreateDDTags(tags []string, name string) string {
 	forwarderVersionTag := "forwarderversion:" + VERSION
 	tags = append(tags, forwarderVersionTag)
 
@@ -81,16 +81,16 @@ func createDDTags(tags []string, name string) string {
 	return ddTags
 }
 
-func addTagsToJsonLog(record *AzureLogs) {
-	source, tags := parseResourceIdArray(record.DDRequire.ResourceId)
+func AddTagsToJsonLog(record *AzureLogs) {
+	source, tags := ParseResourceIdArray(record.DDRequire.ResourceId)
 	record.DDRequire.Ddsource = source
-	record.DDRequire.Ddtags = createDDTags(tags, record.ForwarderName)
+	record.DDRequire.Ddtags = CreateDDTags(tags, record.ForwarderName)
 
 	record.DDRequire.Ddsourcecategory = DdSourceCategory
 	record.DDRequire.Service = DdService
 }
 
-func parseResourceIdArray(resourceId string) (source string, tags []string) {
+func ParseResourceIdArray(resourceId string) (source string, tags []string) {
 	// Convert a valid resource ID to an array, handling beginning/ending slashes
 	resourceIdArray := strings.Split(strings.ToLower(strings.TrimSpace(resourceId)), "/")
 

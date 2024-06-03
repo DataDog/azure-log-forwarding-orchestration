@@ -1,9 +1,5 @@
 package FormatAzureLogs
 
-import (
-	"encoding/json"
-)
-
 type Batcher struct {
 	MaxItemSizeBytes  int
 	MaxBatchSizeBytes int
@@ -48,9 +44,4 @@ func (b *Batcher) Batch(items []AzureLogs, totalSize int) [][]AzureLogs {
 	}
 
 	return batches
-}
-
-func (b *Batcher) getSizeInBytes(v interface{}) int {
-	data, _ := json.Marshal(v)
-	return len(data)
 }

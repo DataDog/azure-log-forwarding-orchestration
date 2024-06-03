@@ -10,10 +10,10 @@ import (
 )
 
 type HTTPClient struct {
-	context      context.Context
-	functionName string
-	httpOptions  *http.Request
-	scrubber     *Scrubber
+	Context      context.Context
+	FunctionName string
+	HttpOptions  *http.Request
+	Scrubber     *Scrubber
 }
 
 func NewHTTPClient(context context.Context, scrubberConfig []ScrubberRuleConfigs) *HTTPClient {
@@ -31,12 +31,12 @@ func NewHTTPClient(context context.Context, scrubberConfig []ScrubberRuleConfigs
 	}
 
 	return &HTTPClient{
-		context:     context,
-		httpOptions: httpOptions,
-		scrubber:    NewScrubber(scrubberConfig)}
+		Context:     context,
+		HttpOptions: httpOptions,
+		Scrubber:    NewScrubber(scrubberConfig)}
 }
 
-func marshallAppend(azureLog AzureLogs) json.RawMessage {
+func MarshallAppend(azureLog AzureLogs) json.RawMessage {
 	myRawMessage, err := json.Marshal(azureLog.DDRequire)
 	if err != nil {
 		panic(err)
@@ -58,7 +58,7 @@ func (c *HTTPClient) SendAll(batches [][]AzureLogs) error {
 
 func (c *HTTPClient) SendWithRetry(batch []AzureLogs) error {
 	for _, azureLogs := range batch {
-		marshalledLog := marshallAppend(azureLogs)
+		marshalledLog := MarshallAppend(azureLogs)
 		err := c.Send(marshalledLog)
 		if err != nil {
 			err = c.Send(marshalledLog)
@@ -71,13 +71,13 @@ func (c *HTTPClient) SendWithRetry(batch []AzureLogs) error {
 }
 
 func (c *HTTPClient) Send(batchedLog []byte) error {
-	batchedLog = c.scrubber.Scrub(batchedLog)
+	batchedLog = c.Scrubber.Scrub(batchedLog)
 
-	req, err := http.NewRequest(c.httpOptions.Method, c.httpOptions.URL.String(), bytes.NewBuffer(batchedLog))
+	req, err := http.NewRequest(c.HttpOptions.Method, c.HttpOptions.URL.String(), bytes.NewBuffer(batchedLog))
 	if err != nil {
 		return err
 	}
-	req.Header = c.httpOptions.Header
+	req.Header = c.HttpOptions.Header
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
