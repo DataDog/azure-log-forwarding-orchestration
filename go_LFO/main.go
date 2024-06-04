@@ -64,7 +64,8 @@ func testLocalFile() {
 
 func main() {
 	//logs := getTheLogs()
-	blobCache.BlobC()
+	client := blobCache.NewBlobClient(context.Background(), FormatAzureLogs.StorageAccount)
+	client.BlobC()
 	//testLocalFile()
 	//formattedLogs
 }
