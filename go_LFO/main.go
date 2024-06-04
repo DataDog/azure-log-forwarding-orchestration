@@ -9,20 +9,20 @@ import (
 )
 
 func run(ctx context.Context, data []byte) {
-	if FormatAzureLogs.DdApiKey == "" || FormatAzureLogs.DdApiKey == "<DATADOG_API_KEY>" {
+	if formatAzureLogs.DdApiKey == "" || formatAzureLogs.DdApiKey == "<DATADOG_API_KEY>" {
 		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
 		return
 	}
 
 	// format the logs
-	handler := FormatAzureLogs.NewBlobLogFormatter(ctx)
+	handler := formatAzureLogs.NewBlobLogFormatter(ctx)
 	azureLogs, totalSize := handler.ParseBlobData(data)
 	// batch logs to avoid sending too many logs in a single request
-	batcher := FormatAzureLogs.NewBatcher(256*1000, 4*1000*1000, 400)
+	batcher := formatAzureLogs.NewBatcher(256*1000, 4*1000*1000, 400)
 	formatedLogs := batcher.Batch(azureLogs, totalSize)
 
 	// scrub the logs
-	scrubberConfig := []FormatAzureLogs.ScrubberRuleConfigs{
+	scrubberConfig := []formatAzureLogs.ScrubberRuleConfigs{
 		{
 			"REDACT_IP": {
 				Pattern:     `[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`,
@@ -36,7 +36,7 @@ func run(ctx context.Context, data []byte) {
 	}
 
 	// submit logs to Datadog
-	err := FormatAzureLogs.NewHTTPClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
+	err := formatAzureLogs.NewHTTPClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
 	if err != nil {
 		return
 	}
@@ -63,9 +63,12 @@ func testLocalFile() {
 }
 
 func main() {
-	//logs := getTheLogs()
-	client := blobCache.NewBlobClient(context.Background(), FormatAzureLogs.StorageAccount)
-	client.BlobC()
+	client := blobCache.NewBlobClient(context.Background(), formatAzureLogs.StorageAccount)
+	//initialize container for cursor cache
 	//testLocalFile()
-	//formattedLogs
+	client.BlobC()
+	//get logs as byte array
+	data := client.GetLogsFromSpecificBlobContainer("insights-logs-functionapplogs")
+	//parse and send logs
+	run(context.Background(), data)
 }

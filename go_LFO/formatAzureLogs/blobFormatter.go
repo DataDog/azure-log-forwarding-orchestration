@@ -1,4 +1,4 @@
-package FormatAzureLogs
+package formatAzureLogs
 
 import (
 	"bytes"

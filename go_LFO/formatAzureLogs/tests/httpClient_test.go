@@ -14,7 +14,7 @@ func TestHTTPClient_Send(t *testing.T) {
 		context      context.Context
 		functionName string
 		httpOptions  *http.Request
-		scrubber     *FormatAzureLogs.Scrubber
+		scrubber     *formatAzureLogs.Scrubber
 	}
 	type args struct {
 		batchedLog []byte
@@ -29,7 +29,7 @@ func TestHTTPClient_Send(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &FormatAzureLogs.HTTPClient{
+			c := &formatAzureLogs.HTTPClient{
 				Context:      tt.fields.context,
 				FunctionName: tt.fields.functionName,
 				HttpOptions:  tt.fields.httpOptions,
@@ -47,10 +47,10 @@ func TestHTTPClient_SendAll(t *testing.T) {
 		context      context.Context
 		functionName string
 		httpOptions  *http.Request
-		scrubber     *FormatAzureLogs.Scrubber
+		scrubber     *formatAzureLogs.Scrubber
 	}
 	type args struct {
-		batches [][]FormatAzureLogs.AzureLogs
+		batches [][]formatAzureLogs.AzureLogs
 	}
 	tests := []struct {
 		name    string
@@ -62,7 +62,7 @@ func TestHTTPClient_SendAll(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &FormatAzureLogs.HTTPClient{
+			c := &formatAzureLogs.HTTPClient{
 				Context:      tt.fields.context,
 				FunctionName: tt.fields.functionName,
 				HttpOptions:  tt.fields.httpOptions,
@@ -80,10 +80,10 @@ func TestHTTPClient_SendWithRetry(t *testing.T) {
 		context      context.Context
 		functionName string
 		httpOptions  *http.Request
-		scrubber     *FormatAzureLogs.Scrubber
+		scrubber     *formatAzureLogs.Scrubber
 	}
 	type args struct {
-		batch []FormatAzureLogs.AzureLogs
+		batch []formatAzureLogs.AzureLogs
 	}
 	tests := []struct {
 		name    string
@@ -95,7 +95,7 @@ func TestHTTPClient_SendWithRetry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &FormatAzureLogs.HTTPClient{
+			c := &formatAzureLogs.HTTPClient{
 				Context:      tt.fields.context,
 				FunctionName: tt.fields.functionName,
 				HttpOptions:  tt.fields.httpOptions,
@@ -111,18 +111,18 @@ func TestHTTPClient_SendWithRetry(t *testing.T) {
 func TestNewHTTPClient(t *testing.T) {
 	type args struct {
 		context        context.Context
-		scrubberConfig []FormatAzureLogs.ScrubberRuleConfigs
+		scrubberConfig []formatAzureLogs.ScrubberRuleConfigs
 	}
 	tests := []struct {
 		name string
 		args args
-		want *FormatAzureLogs.HTTPClient
+		want *formatAzureLogs.HTTPClient
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := FormatAzureLogs.NewHTTPClient(tt.args.context, tt.args.scrubberConfig); !reflect.DeepEqual(got, tt.want) {
+			if got := formatAzureLogs.NewHTTPClient(tt.args.context, tt.args.scrubberConfig); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewHTTPClient() = %v, want %v", got, tt.want)
 			}
 		})
@@ -131,7 +131,7 @@ func TestNewHTTPClient(t *testing.T) {
 
 func Test_marshallAppend(t *testing.T) {
 	type args struct {
-		azureLog FormatAzureLogs.AzureLogs
+		azureLog formatAzureLogs.AzureLogs
 	}
 	tests := []struct {
 		name string
@@ -142,7 +142,7 @@ func Test_marshallAppend(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := FormatAzureLogs.MarshallAppend(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
+			if got := formatAzureLogs.MarshallAppend(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("marshallAppend() = %v, want %v", got, tt.want)
 			}
 		})

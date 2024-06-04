@@ -11,14 +11,14 @@ import (
 
 func (c *AzureBlobClient) BlobC() {
 	//containerName := "insights-logs-functionapplogs"
-	c.initializeCursorCacheContainer()
+	c.InitializeCursorCacheContainer()
 	//containers := c.getLogContainers(false)
 	cursor := c.DownloadBlobCursor()
 	fmt.Println(cursor)
 }
 
-func (c *AzureBlobClient) initializeCursorCacheContainer() {
-	_, err := c.client.CreateContainer(c.context, cursorContainerName, nil)
+func (c *AzureBlobClient) InitializeCursorCacheContainer() {
+	_, err := c.Client.CreateContainer(c.Context, cursorContainerName, nil)
 	if err != nil {
 		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 409 {
 			fmt.Println(e.RawResponse)
@@ -32,20 +32,20 @@ func (c *AzureBlobClient) initializeCursorCacheContainer() {
 	fmt.Println(response)
 }
 
-func (c *AzureBlobClient) teardownCursorCache() {
-	_, err := c.client.DeleteBlob(c.context, cursorContainerName, cursorBlobName, nil)
+func (c *AzureBlobClient) TeardownCursorCache() {
+	_, err := c.Client.DeleteBlob(c.Context, cursorContainerName, cursorBlobName, nil)
 	handleError(err)
-	_, err = c.client.DeleteContainer(c.context, cursorContainerName, nil)
+	_, err = c.Client.DeleteContainer(c.Context, cursorContainerName, nil)
 	handleError(err)
 }
 
 func (c *AzureBlobClient) DownloadBlobCursor() CursorConfigs {
 	// Download the blob
-	get, err := c.client.DownloadStream(c.context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
+	get, err := c.Client.DownloadStream(c.Context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
 	handleError(err)
 
 	var downloadedData bytes.Buffer
-	retryReader := get.NewRetryReader(c.context, &azblob.RetryReaderOptions{})
+	retryReader := get.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
 	_, err = downloadedData.ReadFrom(retryReader)
 	handleError(err)
 
@@ -73,20 +73,20 @@ func (c *AzureBlobClient) UploadBlobCursor(cursorData CursorConfigs) azblob.Uplo
 	blobContentReader := bytes.NewReader(marshalledCursor)
 
 	// Upload the file to the specified container with the cursorBlobName
-	response, err := c.client.UploadStream(c.context, cursorContainerName, cursorBlobName, blobContentReader, nil)
+	response, err := c.Client.UploadStream(c.Context, cursorContainerName, cursorBlobName, blobContentReader, nil)
 	handleError(err)
 	return response
 }
 
-func (c *AzureBlobClient) getLogContainers(defaultOnly bool) []string {
+func (c *AzureBlobClient) GetLogContainers(defaultOnly bool) []string {
 	if defaultOnly {
 		return logContainerNames
 	}
 
 	var azureLogContainerNames []string
-	containerPager := c.client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
+	containerPager := c.Client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
 	for containerPager.More() {
-		resp, err := containerPager.NextPage(c.context)
+		resp, err := containerPager.NextPage(c.Context)
 		handleError(err)
 		for _, container := range resp.ContainerItems {
 			containerName := *container.Name

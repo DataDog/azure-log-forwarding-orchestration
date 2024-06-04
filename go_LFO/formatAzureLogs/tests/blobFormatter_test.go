@@ -20,14 +20,14 @@ func TestBlobLogFormatter_ParseBlobData(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   []FormatAzureLogs.AzureLogs
+		want   []formatAzureLogs.AzureLogs
 		want1  int
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &FormatAzureLogs.BlobLogFormatter{
+			b := &formatAzureLogs.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				LogSplittingConfig: tt.fields.logSplittingConfig,
 			}
@@ -49,13 +49,13 @@ func TestNewBlobLogFormatter(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want FormatAzureLogs.BlobLogFormatter
+		want formatAzureLogs.BlobLogFormatter
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := FormatAzureLogs.NewBlobLogFormatter(tt.args.context); !reflect.DeepEqual(got, tt.want) {
+			if got := formatAzureLogs.NewBlobLogFormatter(tt.args.context); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewBlobLogFormatter() = %v, want %v", got, tt.want)
 			}
 		})
@@ -64,7 +64,7 @@ func TestNewBlobLogFormatter(t *testing.T) {
 
 func Test_addTagsToJsonLog(t *testing.T) {
 	type args struct {
-		record *FormatAzureLogs.AzureLogs
+		record *formatAzureLogs.AzureLogs
 	}
 	tests := []struct {
 		name string
@@ -74,7 +74,7 @@ func Test_addTagsToJsonLog(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			FormatAzureLogs.AddTagsToJsonLog(tt.args.record)
+			formatAzureLogs.AddTagsToJsonLog(tt.args.record)
 		})
 	}
 }
@@ -93,7 +93,7 @@ func Test_createDDTags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := FormatAzureLogs.CreateDDTags(tt.args.tags, tt.args.name); got != tt.want {
+			if got := formatAzureLogs.CreateDDTags(tt.args.tags, tt.args.name); got != tt.want {
 				t.Errorf("createDDTags() = %v, want %v", got, tt.want)
 			}
 		})
@@ -102,7 +102,7 @@ func Test_createDDTags(t *testing.T) {
 
 func Test_getAzureLogFieldsFromJson(t *testing.T) {
 	type args struct {
-		logStruct *FormatAzureLogs.AzureLogs
+		logStruct *formatAzureLogs.AzureLogs
 		tempJson  map[string]json.RawMessage
 	}
 	tests := []struct {
@@ -113,7 +113,7 @@ func Test_getAzureLogFieldsFromJson(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			FormatAzureLogs.GetAzureLogFieldsFromJson(tt.args.logStruct, tt.args.tempJson)
+			formatAzureLogs.GetAzureLogFieldsFromJson(tt.args.logStruct, tt.args.tempJson)
 		})
 	}
 }
@@ -132,7 +132,7 @@ func Test_parseResourceIdArray(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSource, gotTags := FormatAzureLogs.ParseResourceIdArray(tt.args.resourceId)
+			gotSource, gotTags := formatAzureLogs.ParseResourceIdArray(tt.args.resourceId)
 			if gotSource != tt.wantSource {
 				t.Errorf("parseResourceIdArray() gotSource = %v, want %v", gotSource, tt.wantSource)
 			}
@@ -150,13 +150,13 @@ func Test_unmarshallToPartialStruct(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want FormatAzureLogs.AzureLogs
+		want formatAzureLogs.AzureLogs
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := FormatAzureLogs.UnmarshallToPartialStruct(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
+			if got := formatAzureLogs.UnmarshallToPartialStruct(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("unmarshallToPartialStruct() = %v, want %v", got, tt.want)
 			}
 		})

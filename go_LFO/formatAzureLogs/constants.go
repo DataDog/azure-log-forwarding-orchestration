@@ -1,4 +1,4 @@
-package FormatAzureLogs
+package formatAzureLogs
 
 import (
 	"encoding/json"
@@ -76,6 +76,7 @@ var (
 	DdService        = getEnvOrDefault("DD_SERVICE", "azure")
 	DdSource         = getEnvOrDefault("DD_SOURCE", "azure")
 	DdSourceCategory = getEnvOrDefault("DD_SOURCE_CATEGORY", "azure")
+	StorageAccount   = getEnvOrDefault("DD_STORAGE_ACCOUNT", "ninateststorage") //"<STORAGE_ACCOUNT_NAME>")
 )
 
 func getEnvOrDefault(key string, defaultValue string) string {
