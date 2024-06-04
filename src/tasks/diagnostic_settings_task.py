@@ -20,7 +20,7 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from src.cache.common import read_cache, write_cache
+from src.cache.cache import read_cache, write_cache
 from src.cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_CACHE_BLOB, deserialize_diagnostic_settings_cache
 from src.cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from src.tasks.task import Task

@@ -11,7 +11,7 @@ from typing import cast
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
 
-from src.cache.common import read_cache, write_cache
+from src.cache.cache import read_cache, write_cache
 from src.cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from src.tasks.task import Task
 
