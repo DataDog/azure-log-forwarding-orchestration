@@ -25,9 +25,7 @@ In your storage account, select Access Control (IAM). Click Add and select add r
 Set up Datadog Environment:
 ```bash
 pre-commit install
-go get github.com/DataDog/datadog-api-client-go/v2
-go get github.com/DataDog/datadog-api-client-go/v2/api/datadogV1
-go get github.com/DataDog/datadog-api-client-go/v2/datadog
+go get github.com/golang/mock/gomock
 go mod vedor
 ```
 

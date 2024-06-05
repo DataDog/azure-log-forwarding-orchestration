@@ -28,7 +28,7 @@ func TestAzureBlobClient_DownloadBlobLogContent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -61,7 +61,7 @@ func TestAzureBlobClient_DownloadBlobLogWithOffset(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -92,7 +92,7 @@ func TestAzureBlobClient_GetLogsFromSpecificBlobContainer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -118,7 +118,7 @@ func TestAzureBlobClient_getLogsFromBlobContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -136,14 +136,14 @@ func TestNewBlobClient(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want *blobCache.AzureBlobClient
+		want *blobCache.AzureClient
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := blobCache.NewBlobClient(tt.args.context, tt.args.storageAccount); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewBlobClient() = %v, want %v", got, tt.want)
+			if got := blobCache.NewAzureBlobClient(tt.args.context, tt.args.storageAccount); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NewAzureBlobClient() = %v, want %v", got, tt.want)
 			}
 		})
 	}

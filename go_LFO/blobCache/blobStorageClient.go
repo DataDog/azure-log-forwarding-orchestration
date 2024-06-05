@@ -2,17 +2,20 @@ package blobCache
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"log"
 )
 
-type AzureBlobClient struct {
-	Client         *azblob.Client
-	Context        context.Context
-	StorageAccount string
+//go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
+
+var _ AzureStorageClient = (*AzureClient)(nil)
+
+type AzureStorageClient interface {
+	DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) []byte
+	DownloadBlobLogContent(blobName string, blobContainer string) []byte
+	GetLogsFromSpecificBlobContainer(containerName string) []byte
+	GetLogsFromBlobContainers()
 }
 
 func handleError(err error) {
@@ -21,31 +24,15 @@ func handleError(err error) {
 	}
 }
 
-func NewBlobClient(context context.Context, storageAccount string) *AzureBlobClient {
-	url := fmt.Sprintf(azureBlobURL, storageAccount)
-
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
-	handleError(err)
-
-	client, err := azblob.NewClient(url, credential, nil)
-	handleError(err)
-
-	return &AzureBlobClient{
-		Context:        context,
-		Client:         client,
-		StorageAccount: storageAccount,
-	}
-}
-
-func (c *AzureBlobClient) DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) []byte {
+func (c *AzureClient) DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) []byte {
 	// Range with an offset and zero value count indicates from the offset to the resource's end.
 	cursor := azblob.HTTPRange{Offset: byteRange, Count: 0}
 	// Download the blob
-	get, err := c.Client.DownloadStream(context.TODO(), blobContainer, blobName, &azblob.DownloadStreamOptions{Range: cursor})
+	streamResponse, err := c.Client.DownloadStream(c.Context, blobContainer, blobName, &azblob.DownloadStreamOptions{Range: cursor})
 	handleError(err)
 
 	downloadedData := bytes.Buffer{}
-	retryReader := get.NewRetryReader(context.TODO(), &azblob.RetryReaderOptions{})
+	retryReader := streamResponse.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
 	_, err = downloadedData.ReadFrom(retryReader)
 	handleError(err)
 
@@ -55,13 +42,13 @@ func (c *AzureBlobClient) DownloadBlobLogWithOffset(blobName string, blobContain
 	return downloadedData.Bytes()
 }
 
-func (c *AzureBlobClient) DownloadBlobLogContent(blobName string, blobContainer string) []byte {
+func (c *AzureClient) DownloadBlobLogContent(blobName string, blobContainer string) []byte {
 	// Download the blob
-	get, err := c.Client.DownloadStream(context.TODO(), blobContainer, blobName, &azblob.DownloadStreamOptions{})
+	get, err := c.Client.DownloadStream(c.Context, blobContainer, blobName, &azblob.DownloadStreamOptions{})
 	handleError(err)
 
 	downloadedData := bytes.Buffer{}
-	retryReader := get.NewRetryReader(context.TODO(), &azblob.RetryReaderOptions{})
+	retryReader := get.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
 	_, err = downloadedData.ReadFrom(retryReader)
 	handleError(err)
 
@@ -73,32 +60,32 @@ func (c *AzureBlobClient) DownloadBlobLogContent(blobName string, blobContainer 
 	//fmt.Println(downloadedData.String())
 }
 
-func (c *AzureBlobClient) GetLogsFromSpecificBlobContainer(containerName string) []byte {
+func (c *AzureClient) GetLogsFromSpecificBlobContainer(containerName string) []byte {
 	pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
 	var blobByes []byte
 	for pager.More() {
-		resp, err := pager.NextPage(context.TODO())
+		resp, err := pager.NextPage(c.Context)
 		handleError(err)
 
 		for _, blob := range resp.Segment.BlobItems {
 			blobByes = append(blobByes, c.DownloadBlobLogContent(*blob.Name, containerName)...)
 			fmt.Println(*blob.Name)
-			//return blobByes
+			return blobByes
 		}
 	}
 	return blobByes
 }
 
-func (c *AzureBlobClient) GetLogsFromBlobContainers() {
+func (c *AzureClient) GetLogsFromBlobContainers() {
 	for _, containerName := range logContainerNames {
 		pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 		})
 
 		for pager.More() {
-			resp, err := pager.NextPage(context.TODO())
+			resp, err := pager.NextPage(c.Context)
 			handleError(err)
 
 			for _, blob := range resp.Segment.BlobItems {

@@ -9,15 +9,18 @@ import (
 	"strings"
 )
 
-func (c *AzureBlobClient) BlobC() {
-	//containerName := "insights-logs-functionapplogs"
-	c.InitializeCursorCacheContainer()
-	//containers := c.getLogContainers(false)
-	cursor := c.DownloadBlobCursor()
-	fmt.Println(cursor)
+//go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
+
+var _ AzureCursorClient = (*AzureClient)(nil)
+
+type AzureCursorClient interface {
+	DownloadBlobCursor() CursorConfigs
+	UploadBlobCursor(cursorData CursorConfigs) azblob.UploadStreamResponse
+	InitializeCursorCacheContainer()
+	TeardownCursorCache()
 }
 
-func (c *AzureBlobClient) InitializeCursorCacheContainer() {
+func (c *AzureClient) InitializeCursorCacheContainer() {
 	_, err := c.Client.CreateContainer(c.Context, cursorContainerName, nil)
 	if err != nil {
 		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 409 {
@@ -27,19 +30,19 @@ func (c *AzureBlobClient) InitializeCursorCacheContainer() {
 		}
 	}
 	// This will always reset the cursor to nill when ran.
-	// Should only be ran once or during sa hard reset of the cache
+	// Should only be run once or during sa hard reset of the cache
 	response := c.UploadBlobCursor(nil)
 	fmt.Println(response)
 }
 
-func (c *AzureBlobClient) TeardownCursorCache() {
+func (c *AzureClient) TeardownCursorCache() {
 	_, err := c.Client.DeleteBlob(c.Context, cursorContainerName, cursorBlobName, nil)
 	handleError(err)
 	_, err = c.Client.DeleteContainer(c.Context, cursorContainerName, nil)
 	handleError(err)
 }
 
-func (c *AzureBlobClient) DownloadBlobCursor() CursorConfigs {
+func (c *AzureClient) DownloadBlobCursor() CursorConfigs {
 	// Download the blob
 	get, err := c.Client.DownloadStream(c.Context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
 	handleError(err)
@@ -65,7 +68,7 @@ func (c *AzureBlobClient) DownloadBlobCursor() CursorConfigs {
 	//fmt.Println(downloadedData.String())
 }
 
-func (c *AzureBlobClient) UploadBlobCursor(cursorData CursorConfigs) azblob.UploadStreamResponse {
+func (c *AzureClient) UploadBlobCursor(cursorData CursorConfigs) azblob.UploadStreamResponse {
 	marshalledCursor, err := json.Marshal(cursorData)
 	if err != nil {
 		panic(err)
@@ -78,7 +81,7 @@ func (c *AzureBlobClient) UploadBlobCursor(cursorData CursorConfigs) azblob.Uplo
 	return response
 }
 
-func (c *AzureBlobClient) GetLogContainers(defaultOnly bool) []string {
+func (c *AzureClient) GetLogContainers(defaultOnly bool) []string {
 	if defaultOnly {
 		return logContainerNames
 	}

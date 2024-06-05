@@ -63,7 +63,7 @@ func testLocalFile() {
 }
 
 func main() {
-	client := blobCache.NewBlobClient(context.Background(), formatAzureLogs.StorageAccount)
+	client := blobCache.NewAzureBlobClient(context.Background(), formatAzureLogs.StorageAccount)
 	//initialize container for cursor cache
 	//testLocalFile()
 	client.BlobC()

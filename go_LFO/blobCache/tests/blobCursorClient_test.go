@@ -22,7 +22,7 @@ func TestAzureBlobClient_BlobC(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.client,
 				Context:        tt.fields.context,
 				StorageAccount: tt.fields.storageAccount,
@@ -47,7 +47,7 @@ func TestAzureBlobClient_DownloadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.client,
 				Context:        tt.fields.context,
 				StorageAccount: tt.fields.storageAccount,
@@ -78,7 +78,7 @@ func TestAzureBlobClient_UploadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.client,
 				Context:        tt.fields.context,
 				StorageAccount: tt.fields.storageAccount,
@@ -109,7 +109,7 @@ func TestAzureBlobClient_getLogContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.client,
 				Context:        tt.fields.context,
 				StorageAccount: tt.fields.storageAccount,
@@ -135,7 +135,7 @@ func TestAzureBlobClient_initializeCursorCacheContainer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.client,
 				Context:        tt.fields.context,
 				StorageAccount: tt.fields.storageAccount,
@@ -159,7 +159,7 @@ func TestAzureBlobClient_teardownCursorCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureBlobClient{
+			c := &blobCache.AzureClient{
 				Client:         tt.fields.client,
 				Context:        tt.fields.context,
 				StorageAccount: tt.fields.storageAccount,
