@@ -1,15 +1,12 @@
 #!/usr/bin/env bash
 
+
+source /venv/bin/activate
+
 set -euxo pipefail
 
-# install testing/coverage dependencies
-pip install pytest==8.0.2 coverage==7.4.4
+: run tests and coverage
+python -m coverage run -m pytest ./src
 
-# install project dependencies
-pip install -r diagnostic_settings_task/requirements.txt -r resources_task/requirements.txt
-
-# run tests and coverage
-python -m coverage run -m pytest diagnostic_settings_task resources_task
-
-# generate coverage report
+: generate coverage report
 python -m coverage report --skip-empty --show-missing > ci/coverage.txt

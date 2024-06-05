@@ -7,13 +7,14 @@ csx
 .vs
 edge
 Publish
+.coverage
 
 *.user
 *.suo
 *.cscfg
 *.Cache
 project.lock.json
-
+*.egg-info
 /packages
 /TestResults
 
@@ -27,6 +28,8 @@ local.settings.json
 
 node_modules
 dist
+build
+specs
 
 # Local python packages
 .python_packages/
@@ -54,3 +57,6 @@ __pycache__/
 __blobstorage__
 __queuestorage__
 __azurite_db*__.json
+
+# coverage artifact
+ci/coverage.txt
