@@ -23,7 +23,7 @@ sub_id = "sub1"
 resource_id = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
 
 
-class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
+class TestAzureDiagnosticSettingsTask(TaskTestCase):
     TASK_NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
     def setUp(self) -> None:

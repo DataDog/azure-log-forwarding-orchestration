@@ -8,12 +8,12 @@ from src.cache.tests import sub_id1, sub_id2
 
 class TestDeserializeResourceCache(TestCase):
     def test_valid_cache(self):
-        cache_str = dumps({sub_id1: ["resource1", "resource2"], sub_id2: ["resource3"]})
+        cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}, sub_id2: {"region3": ["resource3"]}})
         success, cache = deserialize_resource_cache(cache_str)
         self.assertTrue(success)
         self.assertEqual(
             cache,
-            {sub_id1: frozenset(["resource1", "resource2"]), sub_id2: frozenset(["resource3"])},
+            {sub_id1: {"region2": {"resource1", "resource2"}}, sub_id2: {"region3": {"resource3"}}},
         )
 
     def test_invalid_json(self):
@@ -26,12 +26,17 @@ class TestDeserializeResourceCache(TestCase):
         success, _ = deserialize_resource_cache(cache_str)
         self.assertFalse(success)
 
-    def test_dict_with_non_list_values(self):
-        cache_str = dumps({sub_id1: "not_a_list"})
+    def test_dict_with_non_dict_regions(self):
+        cache_str = dumps({sub_id1: "not_a_dict"})
+        success, _ = deserialize_resource_cache(cache_str)
+        self.assertFalse(success)
+
+    def test_dict_with_non_list_resources(self):
+        cache_str = dumps({sub_id1: {"region": "not_a_list"}})
         success, _ = deserialize_resource_cache(cache_str)
         self.assertFalse(success)
 
     def test_dict_with_some_non_list_values(self):
-        cache_str = dumps({sub_id1: ["r1"], sub_id2: {"hi": "value"}})
+        cache_str = dumps({sub_id1: {"region1": ["r1"]}, sub_id2: {"region2": {"hi": "value"}}})
         success, _ = deserialize_resource_cache(cache_str)
         self.assertFalse(success)

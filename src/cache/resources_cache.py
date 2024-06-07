@@ -14,7 +14,7 @@ ResourceCache: TypeAlias = dict[str, dict[str, set[str]]]
 RESOURCE_CACHE_SCHEMA = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
-    "additionalProperties": {"type": "object", "properties": {"type": "array", "items": {"type": "string"}}},
+    "additionalProperties": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
 }
 
 
