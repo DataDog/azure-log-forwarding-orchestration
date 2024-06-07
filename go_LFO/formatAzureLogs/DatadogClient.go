@@ -9,14 +9,13 @@ import (
 	"net/url"
 )
 
-type HTTPClient struct {
-	Context      context.Context
-	FunctionName string
-	HttpOptions  *http.Request
-	Scrubber     *Scrubber
+type DatadogClient struct {
+	Context     context.Context
+	HttpOptions *http.Request
+	Scrubber    *Scrubber
 }
 
-func NewHTTPClient(context context.Context, scrubberConfig []ScrubberRuleConfigs) *HTTPClient {
+func NewDDClient(context context.Context, scrubberConfig []ScrubberRuleConfigs) *DatadogClient {
 	httpOptions := &http.Request{
 		Method: "POST",
 		URL: &url.URL{
@@ -30,7 +29,7 @@ func NewHTTPClient(context context.Context, scrubberConfig []ScrubberRuleConfigs
 		},
 	}
 
-	return &HTTPClient{
+	return &DatadogClient{
 		Context:     context,
 		HttpOptions: httpOptions,
 		Scrubber:    NewScrubber(scrubberConfig)}
@@ -47,7 +46,7 @@ func MarshallAppend(azureLog AzureLogs) json.RawMessage {
 	return joinedLog
 }
 
-func (c *HTTPClient) SendAll(batches [][]AzureLogs) error {
+func (c *DatadogClient) SendAll(batches [][]AzureLogs) error {
 	for _, batch := range batches {
 		if err := c.SendWithRetry(batch); err != nil {
 			return err
@@ -56,7 +55,7 @@ func (c *HTTPClient) SendAll(batches [][]AzureLogs) error {
 	return nil
 }
 
-func (c *HTTPClient) SendWithRetry(batch []AzureLogs) error {
+func (c *DatadogClient) SendWithRetry(batch []AzureLogs) error {
 	for _, azureLogs := range batch {
 		marshalledLog := MarshallAppend(azureLogs)
 		err := c.Send(marshalledLog)
@@ -70,7 +69,7 @@ func (c *HTTPClient) SendWithRetry(batch []AzureLogs) error {
 	return nil
 }
 
-func (c *HTTPClient) Send(batchedLog []byte) error {
+func (c *DatadogClient) Send(batchedLog []byte) error {
 	batchedLog = c.Scrubber.Scrub(batchedLog)
 
 	req, err := http.NewRequest(c.HttpOptions.Method, c.HttpOptions.URL.String(), bytes.NewBuffer(batchedLog))

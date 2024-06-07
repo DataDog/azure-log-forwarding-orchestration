@@ -9,7 +9,7 @@ import (
 
 type BlobLogFormatter struct {
 	Context            context.Context
-	LogSplittingConfig interface{}
+	LogSplittingConfig AzureLogSplittingConfig
 }
 
 func NewBlobLogFormatter(context context.Context) BlobLogFormatter {
@@ -81,19 +81,18 @@ func CreateDDTags(tags []string, name string) string {
 	return ddTags
 }
 
-func AddTagsToJsonLog(record *AzureLogs) {
-	source, tags := ParseResourceIdArray(record.DDRequire.ResourceId)
-	record.DDRequire.Ddsource = source
-	record.DDRequire.Ddtags = CreateDDTags(tags, record.ForwarderName)
+func AddTagsToJsonLog(blob *AzureLogs) {
+	source, tags := ParseResourceIdArray(blob.DDRequire.ResourceId)
+	blob.DDRequire.Ddsource = source
+	blob.DDRequire.Ddtags = CreateDDTags(tags, blob.ForwarderName)
 
-	record.DDRequire.Ddsourcecategory = DdSourceCategory
-	record.DDRequire.Service = DdService
+	blob.DDRequire.Ddsourcecategory = DdSourceCategory
+	blob.DDRequire.Service = DdService
 }
 
 func ParseResourceIdArray(resourceId string) (source string, tags []string) {
 	// Convert a valid resource ID to an array, handling beginning/ending slashes
 	resourceIdArray := strings.Split(strings.ToLower(strings.TrimSpace(resourceId)), "/")
-
 	for i := range resourceIdArray {
 		switch resourceIdArray[i] {
 		case "subscriptions":

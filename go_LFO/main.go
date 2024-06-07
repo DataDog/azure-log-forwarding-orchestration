@@ -36,7 +36,7 @@ func run(ctx context.Context, data []byte) {
 	}
 
 	// submit logs to Datadog
-	err := formatAzureLogs.NewHTTPClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
+	err := formatAzureLogs.NewDDClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
 	if err != nil {
 		return
 	}
@@ -44,17 +44,8 @@ func run(ctx context.Context, data []byte) {
 }
 
 func testLocalFile() {
-	m := map[string]interface{}{
-		"log": log.New(os.Stderr, "", 0),
-		"executionContext": map[string]string{
-			"functionName": "test",
-		},
-		"done": func() {},
-	}
-	log.Println(m)
 
-	//data, err := os.ReadFile("/Users/nina.rei/Downloads/azure_op_0530.json")
-	data, err := os.ReadFile("/Users/nina.rei/Downloads/azure_op_530.json")
+	data, err := os.ReadFile("<path to your local file>")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -63,10 +54,11 @@ func testLocalFile() {
 }
 
 func main() {
-	client := blobCache.NewAzureBlobClient(context.Background(), formatAzureLogs.StorageAccount)
-	//initialize container for cursor cache
 	//testLocalFile()
-	client.BlobC()
+	inChan := make(chan []byte)
+	//initialize container for cursor cache
+	blobCache.InitializeCursorCacheContainer()
+	client := blobCache.NewAzureStorageClient(context.Background(), formatAzureLogs.StorageAccount, inChan)
 	//get logs as byte array
 	data := client.GetLogsFromSpecificBlobContainer("insights-logs-functionapplogs")
 	//parse and send logs

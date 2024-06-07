@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"strings"
 )
 
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
@@ -16,23 +15,7 @@ var _ AzureCursorClient = (*AzureClient)(nil)
 type AzureCursorClient interface {
 	DownloadBlobCursor() CursorConfigs
 	UploadBlobCursor(cursorData CursorConfigs) azblob.UploadStreamResponse
-	InitializeCursorCacheContainer()
 	TeardownCursorCache()
-}
-
-func (c *AzureClient) InitializeCursorCacheContainer() {
-	_, err := c.Client.CreateContainer(c.Context, cursorContainerName, nil)
-	if err != nil {
-		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 409 {
-			fmt.Println(e.RawResponse)
-		} else {
-			handleError(err)
-		}
-	}
-	// This will always reset the cursor to nill when ran.
-	// Should only be run once or during sa hard reset of the cache
-	response := c.UploadBlobCursor(nil)
-	fmt.Println(response)
 }
 
 func (c *AzureClient) TeardownCursorCache() {
@@ -45,7 +28,16 @@ func (c *AzureClient) TeardownCursorCache() {
 func (c *AzureClient) DownloadBlobCursor() CursorConfigs {
 	// Download the blob
 	get, err := c.Client.DownloadStream(c.Context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
-	handleError(err)
+	if err != nil {
+		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 404 {
+			_, err = c.Client.CreateContainer(c.Context, cursorContainerName, nil)
+			if err == nil {
+				c.UploadBlobCursor(nil)
+				return nil
+			}
+		}
+		handleError(err)
+	}
 
 	var downloadedData bytes.Buffer
 	retryReader := get.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
@@ -79,25 +71,4 @@ func (c *AzureClient) UploadBlobCursor(cursorData CursorConfigs) azblob.UploadSt
 	response, err := c.Client.UploadStream(c.Context, cursorContainerName, cursorBlobName, blobContentReader, nil)
 	handleError(err)
 	return response
-}
-
-func (c *AzureClient) GetLogContainers(defaultOnly bool) []string {
-	if defaultOnly {
-		return logContainerNames
-	}
-
-	var azureLogContainerNames []string
-	containerPager := c.Client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
-	for containerPager.More() {
-		resp, err := containerPager.NextPage(c.Context)
-		handleError(err)
-		for _, container := range resp.ContainerItems {
-			containerName := *container.Name
-			if strings.Contains(containerName, "insights-logs-") {
-				fmt.Println(containerName)
-				azureLogContainerNames = append(azureLogContainerNames, containerName)
-			}
-		}
-	}
-	return azureLogContainerNames
 }

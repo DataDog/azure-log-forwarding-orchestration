@@ -2,20 +2,24 @@ package blobCache
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"log"
+	"strings"
 )
 
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
 
-var _ AzureStorageClient = (*AzureClient)(nil)
+var _ AzureStorageClient = (*AzureStorage)(nil)
 
 type AzureStorageClient interface {
 	DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) []byte
 	DownloadBlobLogContent(blobName string, blobContainer string) []byte
 	GetLogsFromSpecificBlobContainer(containerName string) []byte
+	GetLogContainers() []string
 	GetLogsFromBlobContainers()
+	GetLogsFromDefaultBlobContainers()
 }
 
 func handleError(err error) {
@@ -24,7 +28,21 @@ func handleError(err error) {
 	}
 }
 
-func (c *AzureClient) DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) []byte {
+type AzureStorage struct {
+	inChan  chan []byte
+	OutChan chan []byte
+	*AzureClient
+}
+
+func NewAzureStorageClient(context context.Context, storageAccount string, inChan chan []byte) *AzureStorage {
+	return &AzureStorage{
+		inChan:      inChan,
+		OutChan:     make(chan []byte),
+		AzureClient: NewAzureBlobClient(context, storageAccount),
+	}
+}
+
+func (c *AzureStorage) DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) []byte {
 	// Range with an offset and zero value count indicates from the offset to the resource's end.
 	cursor := azblob.HTTPRange{Offset: byteRange, Count: 0}
 	// Download the blob
@@ -42,7 +60,7 @@ func (c *AzureClient) DownloadBlobLogWithOffset(blobName string, blobContainer s
 	return downloadedData.Bytes()
 }
 
-func (c *AzureClient) DownloadBlobLogContent(blobName string, blobContainer string) []byte {
+func (c *AzureStorage) DownloadBlobLogContent(blobName string, blobContainer string) []byte {
 	// Download the blob
 	get, err := c.Client.DownloadStream(c.Context, blobContainer, blobName, &azblob.DownloadStreamOptions{})
 	handleError(err)
@@ -60,7 +78,7 @@ func (c *AzureClient) DownloadBlobLogContent(blobName string, blobContainer stri
 	//fmt.Println(downloadedData.String())
 }
 
-func (c *AzureClient) GetLogsFromSpecificBlobContainer(containerName string) []byte {
+func (c *AzureStorage) GetLogsFromSpecificBlobContainer(containerName string) []byte {
 	pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
@@ -78,7 +96,42 @@ func (c *AzureClient) GetLogsFromSpecificBlobContainer(containerName string) []b
 	return blobByes
 }
 
-func (c *AzureClient) GetLogsFromBlobContainers() {
+func (c *AzureStorage) GetLogContainers() []string {
+	var azureLogContainerNames []string
+	containerPager := c.Client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
+	for containerPager.More() {
+		resp, err := containerPager.NextPage(c.Context)
+		handleError(err)
+		for _, container := range resp.ContainerItems {
+			containerName := *container.Name
+			if strings.Contains(containerName, "insights-logs-") {
+				c.OutChan <- []byte(containerName)
+				azureLogContainerNames = append(azureLogContainerNames, containerName)
+			}
+		}
+	}
+	return azureLogContainerNames
+}
+
+func (c *AzureStorage) GetLogsFromBlobContainers() {
+	for _, containerName := range logContainerNames {
+		pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
+			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
+		})
+
+		for pager.More() {
+			resp, err := pager.NextPage(c.Context)
+			handleError(err)
+
+			for _, blob := range resp.Segment.BlobItems {
+				c.DownloadBlobLogContent(*blob.Name, containerName)
+				fmt.Println(*blob.Name)
+			}
+		}
+	}
+}
+
+func (c *AzureStorage) GetLogsFromDefaultBlobContainers() {
 	for _, containerName := range logContainerNames {
 		pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},

@@ -1,20 +1,20 @@
 package formatAzureLogs
 
-type Batcher struct {
+type BatchLogs struct {
 	MaxItemSizeBytes  int
 	MaxBatchSizeBytes int
 	MaxItemsCount     int
 }
 
-func NewBatcher(maxItemSizeBytes, maxBatchSizeBytes, maxItemsCount int) *Batcher {
-	return &Batcher{
+func NewBatcher(maxItemSizeBytes, maxBatchSizeBytes, maxItemsCount int) *BatchLogs {
+	return &BatchLogs{
 		MaxItemSizeBytes:  maxItemSizeBytes,
 		MaxBatchSizeBytes: maxBatchSizeBytes,
 		MaxItemsCount:     maxItemsCount,
 	}
 }
 
-func (b *Batcher) Batch(items []AzureLogs, totalSize int) [][]AzureLogs {
+func (b *BatchLogs) Batch(items []AzureLogs, totalSize int) [][]AzureLogs {
 	var batches [][]AzureLogs
 	var batch []AzureLogs
 	sizeBytes := 0

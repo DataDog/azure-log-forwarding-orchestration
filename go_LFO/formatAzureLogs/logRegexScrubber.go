@@ -14,14 +14,14 @@ type Scrubber struct {
 	rules []*scrubberRule
 }
 
-func (s Scrubber) Scrub(record []byte) []byte {
+func (s Scrubber) Scrub(blob []byte) []byte {
 	if s.rules != nil {
-		return record
+		return blob
 	}
 	for _, rule := range s.rules {
-		record = rule.Pattern.ReplaceAll(record, []byte(rule.Replacement))
+		blob = rule.Pattern.ReplaceAll(blob, []byte(rule.Replacement))
 	}
-	return record
+	return blob
 }
 
 func NewScrubber(configs []ScrubberRuleConfigs) *Scrubber {
