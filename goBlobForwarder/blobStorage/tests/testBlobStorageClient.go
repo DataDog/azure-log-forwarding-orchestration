@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 	"golang.org/x/sync/errgroup"
 	"reflect"
@@ -271,33 +270,6 @@ func TestAzureStorage_GoGetLogsFromChannelContainer(t *testing.T) {
 			}
 			if err := c.GoGetLogsFromChannelContainer(); (err != nil) != tt.wantErr {
 				t.Errorf("GoGetLogsFromChannelContainer() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestNewAzureStorageClient(t *testing.T) {
-	type args struct {
-		context        context.Context
-		storageAccount string
-		inChan         chan []byte
-	}
-	tests := []struct {
-		name  string
-		args  args
-		want  error
-		want1 *blobStorage.AzureStorage
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, got1 := blobStorage.NewAzureStorageClient(tt.args.context, tt.args.storageAccount, tt.args.inChan)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewAzureStorageClient() got = %v, want %v", got, tt.want)
-			}
-			if !reflect.DeepEqual(got1, tt.want1) {
-				t.Errorf("NewAzureStorageClient() got1 = %v, want %v", got1, tt.want1)
 			}
 		})
 	}

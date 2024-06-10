@@ -42,7 +42,7 @@ func NewDDClient(context context.Context, logsChan chan []AzureLogs, scrubberCon
 	}
 }
 
-func MarshallAppend(azureLog AzureLogs) (json.RawMessage, error) {
+func marshallAppend(azureLog AzureLogs) (json.RawMessage, error) {
 	myRawMessage, err := json.Marshal(azureLog.DDRequire)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (c *DatadogClient) SendAll(batches [][]AzureLogs) error {
 
 func (c *DatadogClient) SendWithRetry(batch []AzureLogs) error {
 	for _, azureLogs := range batch {
-		marshalledLog, err := MarshallAppend(azureLogs)
+		marshalledLog, err := marshallAppend(azureLogs)
 		if err != nil {
 			return fmt.Errorf("unable to marshal log, err: %v", err)
 		}
@@ -96,7 +96,7 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 
 			c.Group.Go(func() error {
 				for _, azureLogs := range batch {
-					marshalledLog, err := MarshallAppend(azureLogs)
+					marshalledLog, err := marshallAppend(azureLogs)
 					if err != nil {
 						return fmt.Errorf("unable to marshal log, err: %v", err)
 					}

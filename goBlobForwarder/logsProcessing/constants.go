@@ -1,4 +1,4 @@
-package LogsProcessing
+package logsProcessing
 
 import (
 	"encoding/json"
@@ -22,8 +22,8 @@ type AzureLogs struct {
 type DDLogs struct {
 	ResourceId       string `json:"resourceId"` // important
 	Category         string `json:"category"`
-	Ddsource         string `json:"ddsource"`
-	Ddsourcecategory string `json:"ddsourcecategory"`
+	DDSource         string `json:"ddsource"`
+	DDSourcecategory string `json:"ddsourcecategory"`
 	Service          string `json:"service"`
 	Ddtags           string `json:"ddtags"` // string array of tags
 }
@@ -81,8 +81,8 @@ var (
 	DdService        = getEnvOrDefault("DD_SERVICE", "azure")
 	DdSource         = getEnvOrDefault("DD_SOURCE", "azure")
 	DdSourceCategory = getEnvOrDefault("DD_SOURCE_CATEGORY", "azure")
-	StorageAccount   = getEnvOrDefault("DD_STORAGE_ACCOUNT", "ninateststorage") //"<STORAGE_ACCOUNT_NAME>")
-	ForwarderName    = getEnvOrDefault("WEBSITE_SITE_NAME", "dd_azure")         //"<STORAGE_ACCOUNT_NAME>")
+	StorageAccount   = getEnvOrDefault("DD_STORAGE_ACCOUNT", "<STORAGE_ACCOUNT_NAME>")
+	ForwarderName    = getEnvOrDefault("WEBSITE_SITE_NAME", "<WEBSITE_SITE_NAME>")
 )
 
 func getEnvOrDefault(key string, defaultValue string) string {

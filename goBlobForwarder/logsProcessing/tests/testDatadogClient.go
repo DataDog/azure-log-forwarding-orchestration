@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/logsProcessing"
 	"golang.org/x/sync/errgroup"
 	"net/http"
@@ -10,6 +9,28 @@ import (
 	"testing"
 	"time"
 )
+
+func TestNewDDClient(t *testing.T) {
+	type args struct {
+		context        context.Context
+		logsChan       chan []logsProcessing.AzureLogs
+		scrubberConfig []logsProcessing.ScrubberRuleConfigs
+	}
+	tests := []struct {
+		name string
+		args args
+		want *logsProcessing.DatadogClient
+	}{
+		// TODO: Add test cases.
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := logsProcessing.NewDDClient(tt.args.context, tt.args.logsChan, tt.args.scrubberConfig); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("NewDDClient() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestDatadogClient_GoSendWithRetry(t *testing.T) {
 	type fields struct {
@@ -146,54 +167,6 @@ func TestDatadogClient_SendWithRetry(t *testing.T) {
 			}
 			if err := c.SendWithRetry(tt.args.batch); (err != nil) != tt.wantErr {
 				t.Errorf("SendWithRetry() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func TestMarshallAppend(t *testing.T) {
-	type args struct {
-		azureLog logsProcessing.AzureLogs
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    json.RawMessage
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := logsProcessing.MarshallAppend(tt.args.azureLog)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("MarshallAppend() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("MarshallAppend() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestNewDDClient(t *testing.T) {
-	type args struct {
-		context        context.Context
-		logsChan       chan []logsProcessing.AzureLogs
-		scrubberConfig []logsProcessing.ScrubberRuleConfigs
-	}
-	tests := []struct {
-		name string
-		args args
-		want *logsProcessing.DatadogClient
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := logsProcessing.NewDDClient(tt.args.context, tt.args.logsChan, tt.args.scrubberConfig); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewDDClient() = %v, want %v", got, tt.want)
 			}
 		})
 	}
