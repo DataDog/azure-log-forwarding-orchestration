@@ -1,4 +1,4 @@
-package LogsProcessing
+package logsProcessing
 
 import (
 	"regexp"

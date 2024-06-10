@@ -1,4 +1,4 @@
-package blobCache
+package blobStorage
 
 var logContainerNames = []string{
 	"insights-logs-functionapplogs",

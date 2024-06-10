@@ -1,4 +1,4 @@
-module github.com/DataDog/azure-log-forwarding-offering/go_LFO
+module github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder
 
 go 1.22.2
 

@@ -1,4 +1,4 @@
-package blobCache
+package blobStorage
 
 import (
 	"context"

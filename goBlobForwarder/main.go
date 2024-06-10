@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/LogsProcessing"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/blobCache"
+	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
+	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/logsProcessing"
 	"golang.org/x/sync/errgroup"
 	_ "golang.org/x/sync/errgroup"
 	"log"
@@ -15,11 +15,11 @@ type azurePool struct {
 	group         *errgroup.Group
 	containerChan *chan []byte
 	blobChan      *chan []byte
-	LogsChan      *chan []LogsProcessing.AzureLogs
+	LogsChan      *chan []logsProcessing.AzureLogs
 }
 
 func runPool() {
-	if LogsProcessing.DdApiKey == "" || LogsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
+	if logsProcessing.DdApiKey == "" || logsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
 		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
 		return
 	}
@@ -28,7 +28,7 @@ func runPool() {
 	mainPool := new(errgroup.Group)
 
 	// Get containers with logs from storage account
-	err, containersPool := blobCache.NewAzureStorageClient(context.Background(), LogsProcessing.StorageAccount, nil)
+	err, containersPool := blobStorage.NewAzureStorageClient(context.Background(), logsProcessing.StorageAccount, nil)
 	if err != nil {
 		return
 	}
@@ -38,7 +38,7 @@ func runPool() {
 	})
 
 	// Get logs from blob storage
-	err, blobPool := blobCache.NewAzureStorageClient(context.Background(), LogsProcessing.StorageAccount, containersPool.OutChan)
+	err, blobPool := blobStorage.NewAzureStorageClient(context.Background(), logsProcessing.StorageAccount, containersPool.OutChan)
 	if err != nil {
 		return
 	}
@@ -48,7 +48,7 @@ func runPool() {
 	})
 
 	// Format and batch logs
-	processingPool := LogsProcessing.NewBlobLogFormatter(context.Background(), blobPool.OutChan)
+	processingPool := logsProcessing.NewBlobLogFormatter(context.Background(), blobPool.OutChan)
 	mainPool.Go(func() error {
 		err := processingPool.GoFormatAndBatchLogs()
 		return err
@@ -56,7 +56,7 @@ func runPool() {
 
 	// Send logs to Datadog
 	mainPool.Go(func() error {
-		err := LogsProcessing.NewDDClient(context.Background(), processingPool.LogsChan, nil).GoSendWithRetry(start)
+		err := logsProcessing.NewDDClient(context.Background(), processingPool.LogsChan, nil).GoSendWithRetry(start)
 		return err
 	})
 

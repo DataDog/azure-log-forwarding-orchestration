@@ -3,7 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/LogsProcessing"
+	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/logsProcessing"
 	"golang.org/x/sync/errgroup"
 	"reflect"
 	"testing"
@@ -11,7 +11,7 @@ import (
 
 func TestAddTagsToJsonLog(t *testing.T) {
 	type args struct {
-		blob *LogsProcessing.AzureLogs
+		blob *logsProcessing.AzureLogs
 	}
 	tests := []struct {
 		name string
@@ -21,7 +21,7 @@ func TestAddTagsToJsonLog(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			LogsProcessing.AddTagsToJsonLog(tt.args.blob)
+			logsProcessing.AddTagsToJsonLog(tt.args.blob)
 		})
 	}
 }
@@ -30,9 +30,9 @@ func TestBlobLogFormatter_BatchBlobData(t *testing.T) {
 	type fields struct {
 		Context            context.Context
 		Group              *errgroup.Group
-		LogSplittingConfig LogsProcessing.AzureLogSplittingConfig
+		LogSplittingConfig logsProcessing.AzureLogSplittingConfig
 		InChan             chan []byte
-		LogsChan           chan []LogsProcessing.AzureLogs
+		LogsChan           chan []logsProcessing.AzureLogs
 	}
 	type args struct {
 		data []byte
@@ -41,14 +41,14 @@ func TestBlobLogFormatter_BatchBlobData(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    [][]LogsProcessing.AzureLogs
+		want    [][]logsProcessing.AzureLogs
 		wantErr bool
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LogsProcessing.BlobLogFormatter{
+			b := &logsProcessing.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				Group:              tt.fields.Group,
 				LogSplittingConfig: tt.fields.LogSplittingConfig,
@@ -71,9 +71,9 @@ func TestBlobLogFormatter_FormatBlobLogData(t *testing.T) {
 	type fields struct {
 		Context            context.Context
 		Group              *errgroup.Group
-		LogSplittingConfig LogsProcessing.AzureLogSplittingConfig
+		LogSplittingConfig logsProcessing.AzureLogSplittingConfig
 		InChan             chan []byte
-		LogsChan           chan []LogsProcessing.AzureLogs
+		LogsChan           chan []logsProcessing.AzureLogs
 	}
 	type args struct {
 		logBytes []byte
@@ -82,7 +82,7 @@ func TestBlobLogFormatter_FormatBlobLogData(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    LogsProcessing.AzureLogs
+		want    logsProcessing.AzureLogs
 		want1   int
 		wantErr bool
 	}{
@@ -90,7 +90,7 @@ func TestBlobLogFormatter_FormatBlobLogData(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LogsProcessing.BlobLogFormatter{
+			b := &logsProcessing.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				Group:              tt.fields.Group,
 				LogSplittingConfig: tt.fields.LogSplittingConfig,
@@ -116,9 +116,9 @@ func TestBlobLogFormatter_GoFormatAndBatchLogs(t *testing.T) {
 	type fields struct {
 		Context            context.Context
 		Group              *errgroup.Group
-		LogSplittingConfig LogsProcessing.AzureLogSplittingConfig
+		LogSplittingConfig logsProcessing.AzureLogSplittingConfig
 		InChan             chan []byte
-		LogsChan           chan []LogsProcessing.AzureLogs
+		LogsChan           chan []logsProcessing.AzureLogs
 	}
 	tests := []struct {
 		name    string
@@ -129,7 +129,7 @@ func TestBlobLogFormatter_GoFormatAndBatchLogs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &LogsProcessing.BlobLogFormatter{
+			c := &logsProcessing.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				Group:              tt.fields.Group,
 				LogSplittingConfig: tt.fields.LogSplittingConfig,
@@ -147,12 +147,12 @@ func TestBlobLogFormatter_getAzureLogFieldsFromJson(t *testing.T) {
 	type fields struct {
 		Context            context.Context
 		Group              *errgroup.Group
-		LogSplittingConfig LogsProcessing.AzureLogSplittingConfig
+		LogSplittingConfig logsProcessing.AzureLogSplittingConfig
 		InChan             chan []byte
-		LogsChan           chan []LogsProcessing.AzureLogs
+		LogsChan           chan []logsProcessing.AzureLogs
 	}
 	type args struct {
-		logStruct *LogsProcessing.AzureLogs
+		logStruct *logsProcessing.AzureLogs
 		tempJson  map[string]json.RawMessage
 	}
 	tests := []struct {
@@ -165,7 +165,7 @@ func TestBlobLogFormatter_getAzureLogFieldsFromJson(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LogsProcessing.BlobLogFormatter{
+			b := &logsProcessing.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				Group:              tt.fields.Group,
 				LogSplittingConfig: tt.fields.LogSplittingConfig,
@@ -183,9 +183,9 @@ func TestBlobLogFormatter_unmarshallToPartialStruct(t *testing.T) {
 	type fields struct {
 		Context            context.Context
 		Group              *errgroup.Group
-		LogSplittingConfig LogsProcessing.AzureLogSplittingConfig
+		LogSplittingConfig logsProcessing.AzureLogSplittingConfig
 		InChan             chan []byte
-		LogsChan           chan []LogsProcessing.AzureLogs
+		LogsChan           chan []logsProcessing.AzureLogs
 	}
 	type args struct {
 		azureLog []byte
@@ -194,14 +194,14 @@ func TestBlobLogFormatter_unmarshallToPartialStruct(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    LogsProcessing.AzureLogs
+		want    logsProcessing.AzureLogs
 		wantErr bool
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &LogsProcessing.BlobLogFormatter{
+			b := &logsProcessing.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				Group:              tt.fields.Group,
 				LogSplittingConfig: tt.fields.LogSplittingConfig,
@@ -234,7 +234,7 @@ func TestCreateDDTags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := LogsProcessing.CreateDDTags(tt.args.tags, tt.args.name); got != tt.want {
+			if got := logsProcessing.CreateDDTags(tt.args.tags, tt.args.name); got != tt.want {
 				t.Errorf("CreateDDTags() = %v, want %v", got, tt.want)
 			}
 		})
@@ -249,13 +249,13 @@ func TestNewBlobLogFormatter(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want LogsProcessing.BlobLogFormatter
+		want logsProcessing.BlobLogFormatter
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := LogsProcessing.NewBlobLogFormatter(tt.args.context, tt.args.inChan); !reflect.DeepEqual(got, tt.want) {
+			if got := logsProcessing.NewBlobLogFormatter(tt.args.context, tt.args.inChan); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewBlobLogFormatter() = %v, want %v", got, tt.want)
 			}
 		})
@@ -276,7 +276,7 @@ func TestParseResourceIdArray(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSource, gotTags := LogsProcessing.ParseResourceIdArray(tt.args.resourceId)
+			gotSource, gotTags := logsProcessing.ParseResourceIdArray(tt.args.resourceId)
 			if gotSource != tt.wantSource {
 				t.Errorf("ParseResourceIdArray() gotSource = %v, want %v", gotSource, tt.wantSource)
 			}

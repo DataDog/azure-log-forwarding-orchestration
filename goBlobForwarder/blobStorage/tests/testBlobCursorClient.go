@@ -3,7 +3,7 @@ package tests
 import (
 	"context"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/blobCache"
+	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 	"reflect"
 	"testing"
 )
@@ -18,13 +18,13 @@ func TestAzureClient_DownloadBlobCursor(t *testing.T) {
 		name   string
 		fields fields
 		want   error
-		want1  blobCache.CursorConfigs
+		want1  blobStorage.CursorConfigs
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureClient{
+			c := &blobStorage.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -55,7 +55,7 @@ func TestAzureClient_TeardownCursorCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureClient{
+			c := &blobStorage.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -74,7 +74,7 @@ func TestAzureClient_UploadBlobCursor(t *testing.T) {
 		StorageAccount string
 	}
 	type args struct {
-		cursorData blobCache.CursorConfigs
+		cursorData blobStorage.CursorConfigs
 	}
 	tests := []struct {
 		name    string
@@ -86,7 +86,7 @@ func TestAzureClient_UploadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobCache.AzureClient{
+			c := &blobStorage.AzureClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,

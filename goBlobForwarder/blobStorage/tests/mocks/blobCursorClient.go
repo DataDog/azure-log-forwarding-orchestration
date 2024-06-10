@@ -7,7 +7,7 @@ package mocks
 import (
 	reflect "reflect"
 
-	blobCache "github.com/DataDog/azure-log-forwarding-offering/go_LFO/blobCache"
+	blobStorage "github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -35,11 +35,11 @@ func (m *MockAzureCursorClient) EXPECT() *MockAzureCursorClientMockRecorder {
 }
 
 // DownloadBlobCursor mocks base method.
-func (m *MockAzureCursorClient) DownloadBlobCursor() (error, blobCache.CursorConfigs) {
+func (m *MockAzureCursorClient) DownloadBlobCursor() (error, blobStorage.CursorConfigs) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DownloadBlobCursor")
 	ret0, _ := ret[0].(error)
-	ret1, _ := ret[1].(blobCache.CursorConfigs)
+	ret1, _ := ret[1].(blobStorage.CursorConfigs)
 	return ret0, ret1
 }
 
@@ -64,7 +64,7 @@ func (mr *MockAzureCursorClientMockRecorder) TeardownCursorCache() *gomock.Call 
 }
 
 // UploadBlobCursor mocks base method.
-func (m *MockAzureCursorClient) UploadBlobCursor(cursorData blobCache.CursorConfigs) error {
+func (m *MockAzureCursorClient) UploadBlobCursor(cursorData blobStorage.CursorConfigs) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UploadBlobCursor", cursorData)
 	ret0, _ := ret[0].(error)
