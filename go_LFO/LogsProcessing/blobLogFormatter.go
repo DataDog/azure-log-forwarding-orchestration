@@ -65,7 +65,7 @@ func (b *BlobLogFormatter) FormatBlobLogData(logBytes []byte) (AzureLogs, int, e
 	AddTagsToJsonLog(&azureStruct)
 	byteSize := len(logBytes)
 	azureStruct.ByteSize = byteSize
-
+	azureStruct.ForwarderName = ForwarderName
 	return azureStruct, byteSize, nil
 }
 
