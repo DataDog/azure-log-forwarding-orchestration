@@ -5,17 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type DatadogClient struct {
 	Context     context.Context
 	HttpOptions *http.Request
 	Scrubber    *Scrubber
+	Group       *errgroup.Group
+	LogsChan    chan []AzureLogs
 }
 
-func NewDDClient(context context.Context, scrubberConfig []ScrubberRuleConfigs) *DatadogClient {
+func NewDDClient(context context.Context, logsChan chan []AzureLogs, scrubberConfig []ScrubberRuleConfigs) *DatadogClient {
 	httpOptions := &http.Request{
 		Method: "POST",
 		URL: &url.URL{
@@ -32,7 +36,10 @@ func NewDDClient(context context.Context, scrubberConfig []ScrubberRuleConfigs) 
 	return &DatadogClient{
 		Context:     context,
 		HttpOptions: httpOptions,
-		Scrubber:    NewScrubber(scrubberConfig)}
+		Scrubber:    NewScrubber(scrubberConfig),
+		Group:       new(errgroup.Group),
+		LogsChan:    logsChan,
+	}
 }
 
 func MarshallAppend(azureLog AzureLogs) (json.RawMessage, error) {
@@ -71,6 +78,42 @@ func (c *DatadogClient) SendWithRetry(batch []AzureLogs) error {
 		}
 	}
 	return nil
+}
+
+func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
+	for {
+		select {
+		case <-c.Context.Done():
+			fmt.Println("Sender: Context closed GoSendWithRetry")
+			c.Group.Wait()
+			return c.Context.Err()
+		case batch, ok := <-c.LogsChan:
+			if !ok {
+				fmt.Printf("Sender: Channel closed GoSendWithRetry\n")
+				c.Group.Wait()
+				return nil
+			}
+
+			fmt.Println(time.Since(start))
+			for _, azureLogs := range batch {
+				c.Group.Go(func() error {
+					marshalledLog, err := MarshallAppend(azureLogs)
+					if err != nil {
+						return fmt.Errorf("unable to marshal log, err: %v", err)
+					}
+
+					err = c.Send(marshalledLog)
+					if err != nil {
+						err = c.Send(marshalledLog)
+						if err != nil {
+							return fmt.Errorf("unable to send request after 2 tries, err: %v", err)
+						}
+					}
+					return nil
+				})
+			}
+		}
+	}
 }
 
 func (c *DatadogClient) Send(batchedLog []byte) error {

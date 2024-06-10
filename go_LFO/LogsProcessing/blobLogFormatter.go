@@ -27,7 +27,7 @@ func NewBlobLogFormatter(context context.Context, inChan chan []byte) BlobLogFor
 	}
 }
 
-func (b *BlobLogFormatter) getAzureLogFieldsFromJson(logStruct *AzureLogs, tempJson map[string]json.RawMessage) error {
+func (b *BlobLogFormatter) GetAzureLogFieldsFromJson(logStruct *AzureLogs, tempJson map[string]json.RawMessage) error {
 	if err := json.Unmarshal(tempJson["resourceId"], &logStruct.DDRequire.ResourceId); err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func (b *BlobLogFormatter) getAzureLogFieldsFromJson(logStruct *AzureLogs, tempJ
 	return nil
 }
 
-func (b *BlobLogFormatter) unmarshallToPartialStruct(azureLog []byte) (AzureLogs, error) {
+func (b *BlobLogFormatter) UnmarshallToPartialStruct(azureLog []byte) (AzureLogs, error) {
 	var err error
 	// partially unmarshall json to struct and keep remaining data as Raw json
 	var azureStruct AzureLogs
@@ -49,7 +49,7 @@ func (b *BlobLogFormatter) unmarshallToPartialStruct(azureLog []byte) (AzureLogs
 		return azureStruct, err
 	}
 
-	err = b.getAzureLogFieldsFromJson(&azureStruct, tempJson)
+	err = b.GetAzureLogFieldsFromJson(&azureStruct, tempJson)
 	azureStruct.Rest, _ = json.Marshal(tempJson)
 	return azureStruct, err
 }
@@ -57,7 +57,7 @@ func (b *BlobLogFormatter) unmarshallToPartialStruct(azureLog []byte) (AzureLogs
 func (b *BlobLogFormatter) FormatBlobLogData(logBytes []byte) (AzureLogs, int, error) {
 	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
 
-	azureStruct, err := b.unmarshallToPartialStruct(logBytes)
+	azureStruct, err := b.UnmarshallToPartialStruct(logBytes)
 	if err != nil {
 		return azureStruct, 0, err
 	}

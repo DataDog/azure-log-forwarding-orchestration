@@ -8,37 +8,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	_ "golang.org/x/sync/errgroup"
 	"log"
-	"os"
 	"time"
 )
-
-func run(ctx context.Context, data []byte) {
-	if LogsProcessing.DdApiKey == "" || LogsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
-		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
-		return
-	}
-	inChan := make(chan []byte)
-	// format the logs
-	handler := LogsProcessing.NewBlobLogFormatter(ctx, inChan)
-	// batch logs to avoid sending too many logs in a single request 25KB 4MG
-	formatedLogs, _ := handler.BatchBlobData(data)
-
-	// scrub the logs
-	scrubberConfig := []LogsProcessing.ScrubberRuleConfigs{
-		{
-			"REDACT_IP": {
-				Pattern:     `[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`,
-				Replacement: "xxx.xxx.nn.xxx",
-			},
-			"REDACT_EMAIL": {
-				Pattern:     `[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+`,
-				Replacement: "xx@nn.co",
-			},
-		},
-	}
-	// submit logs to Datadog
-	LogsProcessing.NewDDClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
-}
 
 type azurePool struct {
 	group         *errgroup.Group
@@ -47,17 +18,12 @@ type azurePool struct {
 	LogsChan      []LogsProcessing.AzureLogs
 }
 
-func testLocalFile() {
-
-	data, err := os.ReadFile("<path to your local file>")
-	if err != nil {
-		log.Fatal(err)
+func runPool() {
+	if LogsProcessing.DdApiKey == "" || LogsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
+		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
+		return
 	}
 
-	run(context.Background(), data)
-}
-
-func testChannel() {
 	start := time.Now()
 	mainPool := new(errgroup.Group)
 
@@ -84,25 +50,17 @@ func testChannel() {
 		err := processingPool.GoFormatAndBatchLogs()
 		return err
 	})
+	mainPool.Go(func() error {
+		err := LogsProcessing.NewDDClient(context.Background(), processingPool.LogsChan, nil).GoSendWithRetry(start)
+		return err
+	})
 
-	for {
-		processedAzureLogs, ok := <-processingPool.LogsChan
-		if !ok {
-			return
-		}
-		_ = LogsProcessing.NewDDClient(context.Background(), nil).SendWithRetry(processedAzureLogs)
-		// fmt.Println(processedAzureLogs[0].DDRequire)
-		fmt.Println(time.Since(start))
-	}
+	mainPool.Wait()
 }
 
 func main() {
-	//testLocalFile()
 	start := time.Now()
-	testChannel()
-	fmt.Sprintf("Final time: %d\n", time.Since(start))
 	//cursor := client.DownloadBlobCursor()
-	//get logs as byte array
-	//parse and send logs
-	//run(context.Background(), data)
+	runPool()
+	fmt.Println(fmt.Sprintf("Final time: %v", time.Since(start).String()))
 }

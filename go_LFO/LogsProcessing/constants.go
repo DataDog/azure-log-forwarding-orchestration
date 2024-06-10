@@ -1,11 +1,16 @@
-package formatAzureLogs
+package LogsProcessing
 
 import (
 	"encoding/json"
 	"os"
 )
 
-const VERSION = "1.0.1"
+const (
+	VERSION           = "1.0.1"
+	MaxItemSizeBytes  = 256 * 1000
+	MaxBatchSizeBytes = 4 * 1000 * 1000
+	MaxItemsCount     = 400
+)
 
 type AzureLogs struct {
 	ByteSize      int
@@ -77,6 +82,7 @@ var (
 	DdSource         = getEnvOrDefault("DD_SOURCE", "azure")
 	DdSourceCategory = getEnvOrDefault("DD_SOURCE_CATEGORY", "azure")
 	StorageAccount   = getEnvOrDefault("DD_STORAGE_ACCOUNT", "ninateststorage") //"<STORAGE_ACCOUNT_NAME>")
+	ForwarderName    = getEnvOrDefault("WEBSITE_SITE_NAME", "dd_azure")         //"<STORAGE_ACCOUNT_NAME>")
 )
 
 func getEnvOrDefault(key string, defaultValue string) string {

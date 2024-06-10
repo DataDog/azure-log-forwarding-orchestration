@@ -25,16 +25,16 @@ type AzureStorageClient interface {
 }
 
 type AzureStorage struct {
-	inChan  chan []byte
+	InChan  chan []byte
 	OutChan chan []byte
-	Group   *errgroup.Group //TODO: move to AzureStorage not used in cursor
+	Group   *errgroup.Group
 	*AzureClient
 }
 
 func NewAzureStorageClient(context context.Context, storageAccount string, inChan chan []byte) (error, *AzureStorage) {
 	err, client := NewAzureBlobClient(context, storageAccount)
 	return err, &AzureStorage{
-		inChan:      inChan,
+		InChan:      inChan,
 		OutChan:     make(chan []byte),
 		Group:       new(errgroup.Group),
 		AzureClient: client,
@@ -170,7 +170,7 @@ func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
 			c.Group.Wait()
 			close(c.OutChan)
 			return c.Context.Err()
-		case containerName, ok := <-c.inChan:
+		case containerName, ok := <-c.InChan:
 			if !ok {
 				fmt.Printf("Sender: Channel closed GoGetLogsFromChannelContainer\n")
 				c.Group.Wait()
