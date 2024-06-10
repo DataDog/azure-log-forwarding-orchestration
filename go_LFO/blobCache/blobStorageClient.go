@@ -166,14 +166,14 @@ func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
 	for {
 		select {
 		case <-c.Context.Done():
-			fmt.Println("Sender: Context closed GoGetLogsFromChannelContainer")
 			c.Group.Wait()
+			fmt.Println("Sender GoGetLogsFromChannelContainer: Context closed")
 			close(c.OutChan)
 			return c.Context.Err()
 		case containerName, ok := <-c.InChan:
 			if !ok {
-				fmt.Printf("Sender: Channel closed GoGetLogsFromChannelContainer\n")
 				c.Group.Wait()
+				fmt.Println("Sender GoGetLogsFromChannelContainer: Channel closed")
 				close(c.OutChan)
 				return nil
 			}

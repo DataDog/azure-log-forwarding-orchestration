@@ -84,17 +84,16 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 	for {
 		select {
 		case <-c.Context.Done():
-			fmt.Println("Sender: Context closed GoSendWithRetry")
 			c.Group.Wait()
+			fmt.Println("Sender GoSendWithRetry: Context closed")
 			return c.Context.Err()
 		case batch, ok := <-c.LogsChan:
 			if !ok {
 				c.Group.Wait()
-				fmt.Printf("Sender: Channel closed GoSendWithRetry\n")
+				fmt.Println("Sender GoSendWithRetry: Channel closed")
 				return nil
 			}
 
-			fmt.Println(time.Since(start))
 			c.Group.Go(func() error {
 				for _, azureLogs := range batch {
 					marshalledLog, err := MarshallAppend(azureLogs)
@@ -109,6 +108,7 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 							return fmt.Errorf("unable to send request after 2 tries, err: %v", err)
 						}
 					}
+					fmt.Println(time.Since(start))
 				}
 				return nil
 			})

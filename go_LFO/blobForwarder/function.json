@@ -4,7 +4,7 @@
             "name": "blobForwarder",
             "type": "timerTrigger",
             "direction": "in",
-            "schedule": "*/30 * * * * *"
+            "schedule": "0 */5 * * * *"
         }
     ]
 }

@@ -108,14 +108,14 @@ func (c *BlobLogFormatter) GoFormatAndBatchLogs() error {
 	for {
 		select {
 		case <-c.Context.Done():
-			fmt.Printf("Sender %s: Channel closed\n", "GoFormatAndBatchLogs")
 			c.Group.Wait()
+			fmt.Println("Sender GoFormatAndBatchLogs: Context closed")
 			close(c.LogsChan)
 			return c.Context.Err()
 		case blobLog, ok := <-c.InChan:
 			if !ok {
-				fmt.Printf("Sender %s: Channel closed\n", "GoFormatAndBatchLogs")
 				c.Group.Wait()
+				fmt.Println("Sender GoFormatAndBatchLogs: Channel closed")
 				close(c.LogsChan)
 				return nil
 			}

@@ -14,8 +14,8 @@ import (
 type azurePool struct {
 	group         *errgroup.Group
 	containerChan *chan []byte
-	blobChan      chan []byte
-	LogsChan      []LogsProcessing.AzureLogs
+	blobChan      *chan []byte
+	LogsChan      *chan []LogsProcessing.AzureLogs
 }
 
 func runPool() {
@@ -27,6 +27,7 @@ func runPool() {
 	start := time.Now()
 	mainPool := new(errgroup.Group)
 
+	// Get containers with logs from storage account
 	err, containersPool := blobCache.NewAzureStorageClient(context.Background(), LogsProcessing.StorageAccount, nil)
 	if err != nil {
 		return
@@ -36,6 +37,7 @@ func runPool() {
 		return nil
 	})
 
+	// Get logs from blob storage
 	err, blobPool := blobCache.NewAzureStorageClient(context.Background(), LogsProcessing.StorageAccount, containersPool.OutChan)
 	if err != nil {
 		return
@@ -45,11 +47,14 @@ func runPool() {
 		return err
 	})
 
+	// Format and batch logs
 	processingPool := LogsProcessing.NewBlobLogFormatter(context.Background(), blobPool.OutChan)
 	mainPool.Go(func() error {
 		err := processingPool.GoFormatAndBatchLogs()
 		return err
 	})
+
+	// Send logs to Datadog
 	mainPool.Go(func() error {
 		err := LogsProcessing.NewDDClient(context.Background(), processingPool.LogsChan, nil).GoSendWithRetry(start)
 		return err
