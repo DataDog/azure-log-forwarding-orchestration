@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/FormatAzureLogs"
 	"reflect"
 	"testing"
 )
@@ -20,23 +19,23 @@ func TestBlobLogFormatter_ParseBlobData(t *testing.T) {
 		name   string
 		fields fields
 		args   args
-		want   []formatAzureLogs.AzureLogs
+		want   []LogsProcessing.AzureLogs
 		want1  int
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b := &formatAzureLogs.BlobLogFormatter{
+			b := &LogsProcessing.BlobLogFormatter{
 				Context:            tt.fields.Context,
 				LogSplittingConfig: tt.fields.logSplittingConfig,
 			}
 			got, got1 := b.ParseBlobData(tt.args.data)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ParseBlobData() got = %v, want %v", got, tt.want)
+				t.Errorf("FormatAndBatchBlobData() got = %v, want %v", got, tt.want)
 			}
 			if got1 != tt.want1 {
-				t.Errorf("ParseBlobData() got1 = %v, want %v", got1, tt.want1)
+				t.Errorf("FormatAndBatchBlobData() got1 = %v, want %v", got1, tt.want1)
 			}
 		})
 	}
@@ -49,13 +48,13 @@ func TestNewBlobLogFormatter(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want formatAzureLogs.BlobLogFormatter
+		want LogsProcessing.BlobLogFormatter
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatAzureLogs.NewBlobLogFormatter(tt.args.context); !reflect.DeepEqual(got, tt.want) {
+			if got := LogsProcessing.NewBlobLogFormatter(tt.args.context); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewBlobLogFormatter() = %v, want %v", got, tt.want)
 			}
 		})
@@ -64,7 +63,7 @@ func TestNewBlobLogFormatter(t *testing.T) {
 
 func Test_addTagsToJsonLog(t *testing.T) {
 	type args struct {
-		record *formatAzureLogs.AzureLogs
+		record *LogsProcessing.AzureLogs
 	}
 	tests := []struct {
 		name string
@@ -74,7 +73,7 @@ func Test_addTagsToJsonLog(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			formatAzureLogs.AddTagsToJsonLog(tt.args.record)
+			LogsProcessing.AddTagsToJsonLog(tt.args.record)
 		})
 	}
 }
@@ -93,7 +92,7 @@ func Test_createDDTags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatAzureLogs.CreateDDTags(tt.args.tags, tt.args.name); got != tt.want {
+			if got := LogsProcessing.CreateDDTags(tt.args.tags, tt.args.name); got != tt.want {
 				t.Errorf("createDDTags() = %v, want %v", got, tt.want)
 			}
 		})
@@ -102,7 +101,7 @@ func Test_createDDTags(t *testing.T) {
 
 func Test_getAzureLogFieldsFromJson(t *testing.T) {
 	type args struct {
-		logStruct *formatAzureLogs.AzureLogs
+		logStruct *LogsProcessing.AzureLogs
 		tempJson  map[string]json.RawMessage
 	}
 	tests := []struct {
@@ -113,7 +112,7 @@ func Test_getAzureLogFieldsFromJson(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			formatAzureLogs.GetAzureLogFieldsFromJson(tt.args.logStruct, tt.args.tempJson)
+			LogsProcessing.GetAzureLogFieldsFromJson(tt.args.logStruct, tt.args.tempJson)
 		})
 	}
 }
@@ -132,7 +131,7 @@ func Test_parseResourceIdArray(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotSource, gotTags := formatAzureLogs.ParseResourceIdArray(tt.args.resourceId)
+			gotSource, gotTags := LogsProcessing.ParseResourceIdArray(tt.args.resourceId)
 			if gotSource != tt.wantSource {
 				t.Errorf("parseResourceIdArray() gotSource = %v, want %v", gotSource, tt.wantSource)
 			}
@@ -150,13 +149,13 @@ func Test_unmarshallToPartialStruct(t *testing.T) {
 	tests := []struct {
 		name string
 		args args
-		want formatAzureLogs.AzureLogs
+		want LogsProcessing.AzureLogs
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatAzureLogs.UnmarshallToPartialStruct(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
+			if got := LogsProcessing.UnmarshallToPartialStruct(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("unmarshallToPartialStruct() = %v, want %v", got, tt.want)
 			}
 		})

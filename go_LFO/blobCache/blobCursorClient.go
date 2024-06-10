@@ -3,7 +3,6 @@ package blobCache
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
@@ -13,62 +12,61 @@ import (
 var _ AzureCursorClient = (*AzureClient)(nil)
 
 type AzureCursorClient interface {
-	DownloadBlobCursor() CursorConfigs
-	UploadBlobCursor(cursorData CursorConfigs) azblob.UploadStreamResponse
-	TeardownCursorCache()
+	DownloadBlobCursor() (error, CursorConfigs)
+	UploadBlobCursor(cursorData CursorConfigs) error
+	TeardownCursorCache() error
 }
 
-func (c *AzureClient) TeardownCursorCache() {
+func (c *AzureClient) TeardownCursorCache() error {
 	_, err := c.Client.DeleteBlob(c.Context, cursorContainerName, cursorBlobName, nil)
-	handleError(err)
 	_, err = c.Client.DeleteContainer(c.Context, cursorContainerName, nil)
-	handleError(err)
+	return err
 }
 
-func (c *AzureClient) DownloadBlobCursor() CursorConfigs {
+func (c *AzureClient) DownloadBlobCursor() (error, CursorConfigs) {
 	// Download the blob
 	get, err := c.Client.DownloadStream(c.Context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
 	if err != nil {
 		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 404 {
 			_, err = c.Client.CreateContainer(c.Context, cursorContainerName, nil)
 			if err == nil {
-				c.UploadBlobCursor(nil)
-				return nil
+				err := c.UploadBlobCursor(nil)
+				return err, nil
 			}
 		}
-		handleError(err)
+		return err, nil
 	}
 
 	var downloadedData bytes.Buffer
 	retryReader := get.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
 	_, err = downloadedData.ReadFrom(retryReader)
-	handleError(err)
+	retryReader.Close()
 
-	err = retryReader.Close()
-	handleError(err)
 	var cursor CursorConfigs
 	if err = json.Unmarshal(downloadedData.Bytes(), &cursor); err != nil {
-		panic(err)
+		return err, cursor
 	}
 
-	if cursor == nil {
-		fmt.Println(err)
-	}
-
-	return cursor
-	// Print the contents of the blob we created
-	//fmt.Println(downloadedData.String())
+	return nil, cursor
 }
 
-func (c *AzureClient) UploadBlobCursor(cursorData CursorConfigs) azblob.UploadStreamResponse {
+func (c *AzureClient) UploadBlobCursor(cursorData CursorConfigs) error {
 	marshalledCursor, err := json.Marshal(cursorData)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	blobContentReader := bytes.NewReader(marshalledCursor)
 
 	// Upload the file to the specified container with the cursorBlobName
-	response, err := c.Client.UploadStream(c.Context, cursorContainerName, cursorBlobName, blobContentReader, nil)
-	handleError(err)
-	return response
+	_, err = c.Client.UploadStream(c.Context, cursorContainerName, cursorBlobName, blobContentReader, nil)
+	if err != nil {
+		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 404 {
+			_, err = c.Client.CreateContainer(c.Context, cursorContainerName, nil)
+			if err == nil {
+				_, err = c.Client.UploadStream(c.Context, cursorContainerName, cursorBlobName, blobContentReader, nil)
+				return err
+			}
+		}
+	}
+	return err
 }

@@ -1,4 +1,4 @@
-package formatAzureLogs
+package LogsProcessing
 
 import (
 	"regexp"

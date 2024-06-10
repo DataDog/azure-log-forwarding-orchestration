@@ -2,27 +2,29 @@ package main
 
 import (
 	"context"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/FormatAzureLogs"
+	"fmt"
+	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/LogsProcessing"
 	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/blobCache"
+	"golang.org/x/sync/errgroup"
+	_ "golang.org/x/sync/errgroup"
 	"log"
 	"os"
+	"time"
 )
 
 func run(ctx context.Context, data []byte) {
-	if formatAzureLogs.DdApiKey == "" || formatAzureLogs.DdApiKey == "<DATADOG_API_KEY>" {
+	if LogsProcessing.DdApiKey == "" || LogsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
 		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
 		return
 	}
-
+	inChan := make(chan []byte)
 	// format the logs
-	handler := formatAzureLogs.NewBlobLogFormatter(ctx)
-	azureLogs, totalSize := handler.ParseBlobData(data)
-	// batch logs to avoid sending too many logs in a single request
-	batcher := formatAzureLogs.NewBatcher(256*1000, 4*1000*1000, 400)
-	formatedLogs := batcher.Batch(azureLogs, totalSize)
+	handler := LogsProcessing.NewBlobLogFormatter(ctx, inChan)
+	// batch logs to avoid sending too many logs in a single request 25KB 4MG
+	formatedLogs, _ := handler.BatchBlobData(data)
 
 	// scrub the logs
-	scrubberConfig := []formatAzureLogs.ScrubberRuleConfigs{
+	scrubberConfig := []LogsProcessing.ScrubberRuleConfigs{
 		{
 			"REDACT_IP": {
 				Pattern:     `[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`,
@@ -34,13 +36,15 @@ func run(ctx context.Context, data []byte) {
 			},
 		},
 	}
-
 	// submit logs to Datadog
-	err := formatAzureLogs.NewDDClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
-	if err != nil {
-		return
-	}
+	LogsProcessing.NewDDClient(context.TODO(), scrubberConfig).SendAll(formatedLogs)
+}
 
+type azurePool struct {
+	group         *errgroup.Group
+	containerChan *chan []byte
+	blobChan      chan []byte
+	LogsChan      []LogsProcessing.AzureLogs
 }
 
 func testLocalFile() {
@@ -53,14 +57,52 @@ func testLocalFile() {
 	run(context.Background(), data)
 }
 
+func testChannel() {
+	start := time.Now()
+	mainPool := new(errgroup.Group)
+
+	err, containersPool := blobCache.NewAzureStorageClient(context.Background(), LogsProcessing.StorageAccount, nil)
+	if err != nil {
+		return
+	}
+	mainPool.Go(func() error {
+		containersPool.GoGetLogContainers()
+		return nil
+	})
+
+	err, blobPool := blobCache.NewAzureStorageClient(context.Background(), LogsProcessing.StorageAccount, containersPool.OutChan)
+	if err != nil {
+		return
+	}
+	mainPool.Go(func() error {
+		err = blobPool.GoGetLogsFromChannelContainer()
+		return err
+	})
+
+	processingPool := LogsProcessing.NewBlobLogFormatter(context.Background(), blobPool.OutChan)
+	mainPool.Go(func() error {
+		err := processingPool.GoFormatAndBatchLogs()
+		return err
+	})
+
+	for {
+		processedAzureLogs, ok := <-processingPool.LogsChan
+		if !ok {
+			return
+		}
+		_ = LogsProcessing.NewDDClient(context.Background(), nil).SendWithRetry(processedAzureLogs)
+		// fmt.Println(processedAzureLogs[0].DDRequire)
+		fmt.Println(time.Since(start))
+	}
+}
+
 func main() {
 	//testLocalFile()
-	inChan := make(chan []byte)
-	//initialize container for cursor cache
-	blobCache.InitializeCursorCacheContainer()
-	client := blobCache.NewAzureStorageClient(context.Background(), formatAzureLogs.StorageAccount, inChan)
+	start := time.Now()
+	testChannel()
+	fmt.Sprintf("Final time: %d\n", time.Since(start))
+	//cursor := client.DownloadBlobCursor()
 	//get logs as byte array
-	data := client.GetLogsFromSpecificBlobContainer("insights-logs-functionapplogs")
 	//parse and send logs
-	run(context.Background(), data)
+	//run(context.Background(), data)
 }

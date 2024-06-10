@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"github.com/DataDog/azure-log-forwarding-offering/go_LFO/FormatAzureLogs"
 	"net/http"
 	"reflect"
 	"testing"
@@ -14,7 +13,7 @@ func TestHTTPClient_Send(t *testing.T) {
 		context      context.Context
 		functionName string
 		httpOptions  *http.Request
-		scrubber     *formatAzureLogs.Scrubber
+		scrubber     *LogsProcessing.Scrubber
 	}
 	type args struct {
 		batchedLog []byte
@@ -29,7 +28,7 @@ func TestHTTPClient_Send(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &formatAzureLogs.HTTPClient{
+			c := &LogsProcessing.HTTPClient{
 				Context:      tt.fields.context,
 				FunctionName: tt.fields.functionName,
 				HttpOptions:  tt.fields.httpOptions,
@@ -47,10 +46,10 @@ func TestHTTPClient_SendAll(t *testing.T) {
 		context      context.Context
 		functionName string
 		httpOptions  *http.Request
-		scrubber     *formatAzureLogs.Scrubber
+		scrubber     *LogsProcessing.Scrubber
 	}
 	type args struct {
-		batches [][]formatAzureLogs.AzureLogs
+		batches [][]LogsProcessing.AzureLogs
 	}
 	tests := []struct {
 		name    string
@@ -62,7 +61,7 @@ func TestHTTPClient_SendAll(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &formatAzureLogs.HTTPClient{
+			c := &LogsProcessing.HTTPClient{
 				Context:      tt.fields.context,
 				FunctionName: tt.fields.functionName,
 				HttpOptions:  tt.fields.httpOptions,
@@ -80,10 +79,10 @@ func TestHTTPClient_SendWithRetry(t *testing.T) {
 		context      context.Context
 		functionName string
 		httpOptions  *http.Request
-		scrubber     *formatAzureLogs.Scrubber
+		scrubber     *LogsProcessing.Scrubber
 	}
 	type args struct {
-		batch []formatAzureLogs.AzureLogs
+		batch []LogsProcessing.AzureLogs
 	}
 	tests := []struct {
 		name    string
@@ -95,7 +94,7 @@ func TestHTTPClient_SendWithRetry(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &formatAzureLogs.HTTPClient{
+			c := &LogsProcessing.HTTPClient{
 				Context:      tt.fields.context,
 				FunctionName: tt.fields.functionName,
 				HttpOptions:  tt.fields.httpOptions,
@@ -111,18 +110,18 @@ func TestHTTPClient_SendWithRetry(t *testing.T) {
 func TestNewHTTPClient(t *testing.T) {
 	type args struct {
 		context        context.Context
-		scrubberConfig []formatAzureLogs.ScrubberRuleConfigs
+		scrubberConfig []LogsProcessing.ScrubberRuleConfigs
 	}
 	tests := []struct {
 		name string
 		args args
-		want *formatAzureLogs.HTTPClient
+		want *LogsProcessing.HTTPClient
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatAzureLogs.NewHTTPClient(tt.args.context, tt.args.scrubberConfig); !reflect.DeepEqual(got, tt.want) {
+			if got := LogsProcessing.NewHTTPClient(tt.args.context, tt.args.scrubberConfig); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewHTTPClient() = %v, want %v", got, tt.want)
 			}
 		})
@@ -131,7 +130,7 @@ func TestNewHTTPClient(t *testing.T) {
 
 func Test_marshallAppend(t *testing.T) {
 	type args struct {
-		azureLog formatAzureLogs.AzureLogs
+		azureLog LogsProcessing.AzureLogs
 	}
 	tests := []struct {
 		name string
@@ -142,7 +141,7 @@ func Test_marshallAppend(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := formatAzureLogs.MarshallAppend(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
+			if got := LogsProcessing.MarshallAppend(tt.args.azureLog); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("marshallAppend() = %v, want %v", got, tt.want)
 			}
 		})

@@ -1,4 +1,4 @@
-package formatAzureLogs
+package LogsProcessing
 
 import (
 	"bytes"
@@ -35,15 +35,15 @@ func NewDDClient(context context.Context, scrubberConfig []ScrubberRuleConfigs) 
 		Scrubber:    NewScrubber(scrubberConfig)}
 }
 
-func MarshallAppend(azureLog AzureLogs) json.RawMessage {
+func MarshallAppend(azureLog AzureLogs) (json.RawMessage, error) {
 	myRawMessage, err := json.Marshal(azureLog.DDRequire)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	// remove the last comma from the first marshalled struct and first comma from the second struct to join bytes
 	marshalledStruct := [][]byte{myRawMessage[:len(myRawMessage)-1], azureLog.Rest[1:]}
 	joinedLog := bytes.Join(marshalledStruct, []byte(","))
-	return joinedLog
+	return joinedLog, nil
 }
 
 func (c *DatadogClient) SendAll(batches [][]AzureLogs) error {
@@ -57,8 +57,12 @@ func (c *DatadogClient) SendAll(batches [][]AzureLogs) error {
 
 func (c *DatadogClient) SendWithRetry(batch []AzureLogs) error {
 	for _, azureLogs := range batch {
-		marshalledLog := MarshallAppend(azureLogs)
-		err := c.Send(marshalledLog)
+		marshalledLog, err := MarshallAppend(azureLogs)
+		if err != nil {
+			return fmt.Errorf("unable to marshal log, err: %v", err)
+		}
+
+		err = c.Send(marshalledLog)
 		if err != nil {
 			err = c.Send(marshalledLog)
 			if err != nil {
@@ -70,7 +74,7 @@ func (c *DatadogClient) SendWithRetry(batch []AzureLogs) error {
 }
 
 func (c *DatadogClient) Send(batchedLog []byte) error {
-	batchedLog = c.Scrubber.Scrub(batchedLog)
+	//batchedLog = c.Scrubber.Scrub(batchedLog) TODO Scrubber is not implemented
 
 	req, err := http.NewRequest(c.HttpOptions.Method, c.HttpOptions.URL.String(), bytes.NewBuffer(batchedLog))
 	if err != nil {

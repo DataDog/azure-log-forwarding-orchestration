@@ -2,12 +2,11 @@ package blobCache
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"golang.org/x/sync/errgroup"
 	"io"
 )
 
@@ -27,6 +26,8 @@ type AzureBlobClient interface {
 	DeleteBlob(ctx context.Context, containerName string, blobName string, o *azblob.DeleteBlobOptions) (azblob.DeleteBlobResponse, error)
 }
 
+type Runnable func() error
+
 type ErrGroup interface {
 	Go(Runnable)
 	Wait() error
@@ -36,56 +37,25 @@ type ErrGroup interface {
 type AzureClient struct {
 	Client         *azblob.Client
 	Context        context.Context
-	group          *errgroup.Group
 	StorageAccount string
 }
 
-func NewAzureBlobClient(context context.Context, storageAccount string) *AzureClient {
+func NewAzureBlobClient(context context.Context, storageAccount string) (error, *AzureClient) {
 	url := fmt.Sprintf(azureBlobURL, storageAccount)
 
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
-	handleError(err)
+	if err != nil {
+		return errors.New("failed to create azure credential"), nil
+	}
 
 	client, err := azblob.NewClient(url, credential, nil)
-	handleError(err)
+	if err != nil {
+		return errors.New("failed to create azure client"), nil
+	}
 
-	return &AzureClient{
+	return err, &AzureClient{
 		Context:        context,
 		Client:         client,
 		StorageAccount: storageAccount,
 	}
-}
-
-func InitializeCursorCacheContainer() {
-	az := NewAzureBlobClient(context.Background(), "ninateststorage")
-	_, err := az.Client.CreateContainer(az.Context, cursorContainerName, nil)
-	if err != nil {
-		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 409 {
-			fmt.Println(e.RawResponse)
-		} else {
-			handleError(err)
-		}
-	}
-	// This will always reset the cursor to nill when ran.
-	// Should only be run once or during sa hard reset of the cache
-	response := az.UploadBlobCursor(nil)
-	fmt.Println(response)
-	az.TeardownCursorCache()
-	az.DownloadBlobCursor()
-}
-
-type Runnable func() error
-
-func (w *AzureClient) Go(runnable Runnable) {
-	w.group.Go(func() (err error) {
-		defer func() {
-			if r := recover(); r != nil {
-
-				return
-			}
-		}()
-
-		err = runnable()
-		return
-	})
 }
