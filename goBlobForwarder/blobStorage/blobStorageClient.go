@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"golang.org/x/sync/errgroup"
 	"strings"
+	"time"
 )
 
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
@@ -59,6 +60,24 @@ func (c *AzureStorage) DownloadBlobLogWithOffset(blobName string, blobContainer 
 
 	err = retryReader.Close()
 	return downloadedData.Bytes(), err
+}
+
+func filterByDayAndHour(blobName string) bool {
+	hour := time.Now().Hour()
+	day := time.Now().Day()
+	if strings.Contains(blobName, fmt.Sprintf("d=%02d", day)) && strings.Contains(blobName, fmt.Sprintf("h=%02d", hour)) {
+		return true
+	}
+	return false
+}
+
+// checkBlobIsFromToday checks if the blob is from today given the current time.Now Day
+func checkBlobIsFromToday(blobName string) bool {
+	day := time.Now().Day()
+	if strings.Contains(blobName, fmt.Sprintf("d=%02d", day)) {
+		return true
+	}
+	return false
 }
 
 func (c *AzureStorage) DownloadBlobLogContent(blobName string, blobContainer string) ([]byte, error) {
@@ -189,11 +208,13 @@ func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
 						return err
 					}
 					for _, blob := range resp.Segment.BlobItems {
-						blobByes, err := c.DownloadBlobLogContent(*blob.Name, string(containerName))
-						if blobByes == nil {
-							return err
+						if checkBlobIsFromToday(*blob.Name) {
+							blobByes, err := c.DownloadBlobLogContent(*blob.Name, string(containerName))
+							if blobByes == nil {
+								return err
+							}
+							c.OutChan <- blobByes
 						}
-						c.OutChan <- blobByes
 					}
 					return nil
 				})
