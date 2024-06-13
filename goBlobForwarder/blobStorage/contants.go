@@ -13,11 +13,11 @@ var cursorBlobName = "dd_temp"
 //
 //	{
 //	 "insights-logs-functionapplogs": {
-//		"resource1": "800byte",
-//		"resource2": "250byte",
+//		"resourceID1": "800byte",
+//		"resourceID2": "250byte",
 //	 },
 //	 "insights-logs-operationallogs": {
-//		"resource1": "300byte",
+//		"resourceId=/SUBSCRIPTIONS/xxx/RESOURCEGROUPS/xxx/PROVIDERS/MICROSOFT.WEB/SITES/xxx/": "300byte",
 //	 }
 //	}
 type CursorConfigs map[string]map[string]string

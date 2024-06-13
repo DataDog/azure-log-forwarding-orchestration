@@ -22,7 +22,7 @@ type AzureStorageClient interface {
 	GetLogsFromBlobContainers() error
 	GetLogsFromDefaultBlobContainers() error
 	GoGetLogsFromChannelContainer() error
-	GoGetLogContainers()
+	GoGetLogContainers() error
 }
 
 type AzureStorage struct {
@@ -32,12 +32,14 @@ type AzureStorage struct {
 	*AzureClient
 }
 
-func NewAzureStorageClient(context context.Context, storageAccount string, inChan chan []byte) (error, *AzureStorage) {
-	err, client := NewAzureBlobClient(context, storageAccount)
+func NewAzureStorageClient(ctx context.Context, cancel context.CancelFunc, storageAccount string, inChan chan []byte) (error, *AzureStorage) {
+	err, client := NewAzureBlobClient(ctx, cancel, storageAccount)
+	eg, ctx := errgroup.WithContext(ctx)
+
 	return err, &AzureStorage{
 		InChan:      inChan,
 		OutChan:     make(chan []byte),
-		Group:       new(errgroup.Group),
+		Group:       eg,
 		AzureClient: client,
 	}
 }
@@ -63,18 +65,20 @@ func (c *AzureStorage) DownloadBlobLogWithOffset(blobName string, blobContainer 
 }
 
 func filterByDayAndHour(blobName string) bool {
-	hour := time.Now().Hour()
-	day := time.Now().Day()
-	if strings.Contains(blobName, fmt.Sprintf("d=%02d", day)) && strings.Contains(blobName, fmt.Sprintf("h=%02d", hour)) {
+	isCurrentHour := strings.Contains(blobName, fmt.Sprintf("d=%02d", time.Now().Hour()))
+	if checkBlobIsFromToday(blobName) && isCurrentHour {
 		return true
 	}
 	return false
 }
 
-// checkBlobIsFromToday checks if the blob is from today given the current time.Now Day
+// checkBlobIsFromToday checks if the blob is from today given the current time.Now Day and Month
+// parses the blob file string to check for
+// EX: resourceId=/SUBSCRIPTIONS/xxx/RESOURCEGROUPS/xxx/PROVIDERS/MICROSOFT.WEB/SITES/xxx/y=2024/m=06/d=13/h=14/m=00/PT1H.json
 func checkBlobIsFromToday(blobName string) bool {
-	day := time.Now().Day()
-	if strings.Contains(blobName, fmt.Sprintf("d=%02d", day)) {
+	isCurrentMonth := strings.Contains(blobName, fmt.Sprintf("m=%02d", time.Now().Month()))
+	isCurrentDay := strings.Contains(blobName, fmt.Sprintf("d=%02d", time.Now().Day()))
+	if isCurrentMonth && isCurrentDay {
 		return true
 	}
 	return false
@@ -185,28 +189,33 @@ func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
 	for {
 		select {
 		case <-c.Context.Done():
-			c.Group.Wait()
+			err := c.Group.Wait()
+			if err != nil {
+				fmt.Println(err)
+			}
 			fmt.Println("Sender GoGetLogsFromChannelContainer: Context closed")
 			close(c.OutChan)
 			return c.Context.Err()
 		case containerName, ok := <-c.InChan:
 			if !ok {
-				c.Group.Wait()
+				err := c.Group.Wait()
+				if err != nil {
+					fmt.Println(err)
+				}
 				fmt.Println("Sender GoGetLogsFromChannelContainer: Channel closed")
 				close(c.OutChan)
-				return nil
+				return err
 			}
 
-			//fmt.Println(string(containerName))
 			pager := c.Client.NewListBlobsFlatPager(string(containerName), &azblob.ListBlobsFlatOptions{
 				Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 			})
 			for pager.More() {
 				resp, err := pager.NextPage(c.Context)
+				if err != nil {
+					return err
+				}
 				c.Group.Go(func() error {
-					if err != nil {
-						return err
-					}
 					for _, blob := range resp.Segment.BlobItems {
 						if checkBlobIsFromToday(*blob.Name) {
 							blobByes, err := c.DownloadBlobLogContent(*blob.Name, string(containerName))
@@ -216,32 +225,47 @@ func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
 							c.OutChan <- blobByes
 						}
 					}
-					return nil
+					return err
 				})
 			}
 		}
 	}
 }
 
-func (c *AzureStorage) GoGetLogContainers() {
-	var azureLogContainerNames []string
+func (c *AzureStorage) GoGetLogContainers() error {
 	containerPager := c.Client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
 	for containerPager.More() {
 		resp, err := containerPager.NextPage(c.Context)
+		if err != nil {
+			return err
+		}
 		c.Group.Go(func() error {
-			if err != nil {
-				return err
+			if c.Context.Err() != nil {
+				return c.Context.Err()
 			}
 			for _, container := range resp.ContainerItems {
 				containerName := *container.Name
 				if strings.Contains(containerName, "insights-logs-") {
-					c.OutChan <- []byte(containerName)
-					azureLogContainerNames = append(azureLogContainerNames, containerName)
+					select {
+					case <-c.Context.Done():
+						if err != nil {
+							fmt.Println(err)
+						}
+						fmt.Println("Sender GoGetLogContainers: Context closed")
+						return c.Context.Err()
+					case c.OutChan <- []byte(containerName):
+						fmt.Println("Sender GoGetLogContainers: Context closed")
+
+					}
 				}
 			}
 			return nil
 		})
 	}
-	c.Group.Wait()
+	err := c.Group.Wait()
+	if err != nil {
+		fmt.Println(err)
+	}
 	close(c.OutChan)
+	return nil
 }

@@ -37,10 +37,11 @@ type ErrGroup interface {
 type AzureClient struct {
 	Client         *azblob.Client
 	Context        context.Context
+	contextCancel  context.CancelFunc
 	StorageAccount string
 }
 
-func NewAzureBlobClient(context context.Context, storageAccount string) (error, *AzureClient) {
+func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (error, *AzureClient) {
 	url := fmt.Sprintf(azureBlobURL, storageAccount)
 
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
@@ -56,6 +57,7 @@ func NewAzureBlobClient(context context.Context, storageAccount string) (error, 
 	return err, &AzureClient{
 		Context:        context,
 		Client:         client,
+		contextCancel:  cancel,
 		StorageAccount: storageAccount,
 	}
 }

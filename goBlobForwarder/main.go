@@ -25,21 +25,24 @@ func runPool() {
 	}
 
 	start := time.Now()
-	mainPool := new(errgroup.Group)
+	ctx, cancel := context.WithCancel(context.Background())
+	mainPool, ctx := errgroup.WithContext(ctx)
 
 	// Get containers with logs from storage account
-	err, containersPool := blobStorage.NewAzureStorageClient(context.Background(), logsProcessing.StorageAccount, nil)
+	err, containersPool := blobStorage.NewAzureStorageClient(ctx, cancel, logsProcessing.StorageAccount, nil)
 	if err != nil {
 		return
 	}
 	mainPool.Go(func() error {
-		containersPool.GoGetLogContainers()
-		return nil
+		err := containersPool.GoGetLogContainers()
+		return err
 	})
 
 	// Get logs from blob storage
-	err, blobPool := blobStorage.NewAzureStorageClient(context.Background(), logsProcessing.StorageAccount, containersPool.OutChan)
+	err, blobPool := blobStorage.NewAzureStorageClient(ctx, cancel, logsProcessing.StorageAccount, containersPool.OutChan)
 	if err != nil {
+		log.Println(err)
+		fmt.Println(err)
 		return
 	}
 	mainPool.Go(func() error {
@@ -48,7 +51,7 @@ func runPool() {
 	})
 
 	// Format and batch logs
-	processingPool := logsProcessing.NewBlobLogFormatter(context.Background(), blobPool.OutChan)
+	processingPool := logsProcessing.NewBlobLogFormatter(ctx, blobPool.OutChan)
 	mainPool.Go(func() error {
 		err := processingPool.GoFormatAndBatchLogs()
 		return err
@@ -56,11 +59,15 @@ func runPool() {
 
 	// Send logs to Datadog
 	mainPool.Go(func() error {
-		err := logsProcessing.NewDDClient(context.Background(), processingPool.LogsChan, nil).GoSendWithRetry(start)
+		err := logsProcessing.NewDDClient(ctx, processingPool.LogsChan, nil).GoSendWithRetry(start)
 		return err
 	})
 
-	mainPool.Wait()
+	err = mainPool.Wait()
+	if err != nil {
+		log.Println(err)
+		fmt.Println(err)
+	}
 }
 
 func main() {

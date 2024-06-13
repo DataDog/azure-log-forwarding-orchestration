@@ -84,14 +84,20 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 	for {
 		select {
 		case <-c.Context.Done():
-			c.Group.Wait()
+			err := c.Group.Wait()
+			if err != nil {
+				fmt.Println(err)
+			}
 			fmt.Println("Sender GoSendWithRetry: Context closed")
 			return c.Context.Err()
 		case batch, ok := <-c.LogsChan:
 			if !ok {
-				c.Group.Wait()
+				err := c.Group.Wait()
+				if err != nil {
+					fmt.Println(err)
+				}
 				fmt.Println("Sender GoSendWithRetry: Channel closed")
-				return nil
+				return err
 			}
 
 			c.Group.Go(func() error {

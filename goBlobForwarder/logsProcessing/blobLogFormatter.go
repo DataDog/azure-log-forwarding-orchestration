@@ -17,10 +17,11 @@ type BlobLogFormatter struct {
 	LogsChan           chan []AzureLogs
 }
 
-func NewBlobLogFormatter(context context.Context, inChan chan []byte) BlobLogFormatter {
+func NewBlobLogFormatter(ctx context.Context, inChan chan []byte) BlobLogFormatter {
+	eg, ctx := errgroup.WithContext(ctx)
 	return BlobLogFormatter{
-		Context:            context,
-		Group:              new(errgroup.Group),
+		Context:            ctx,
+		Group:              eg,
 		LogSplittingConfig: getLogSplittingConfig(),
 		LogsChan:           make(chan []AzureLogs),
 		InChan:             inChan,
@@ -108,19 +109,28 @@ func (c *BlobLogFormatter) GoFormatAndBatchLogs() error {
 	for {
 		select {
 		case <-c.Context.Done():
-			c.Group.Wait()
+			err := c.Group.Wait()
+			if err != nil {
+				fmt.Println(err)
+			}
 			fmt.Println("Sender GoFormatAndBatchLogs: Context closed")
 			close(c.LogsChan)
 			return c.Context.Err()
 		case blobLog, ok := <-c.InChan:
 			if !ok {
-				c.Group.Wait()
+				err := c.Group.Wait()
+				if err != nil {
+					fmt.Println(err)
+				}
 				fmt.Println("Sender GoFormatAndBatchLogs: Channel closed")
 				close(c.LogsChan)
-				return nil
+				return err
 			}
 			c.Group.Go(func() error {
 				_, err := c.BatchBlobData(blobLog)
+				if err != nil {
+					c.Context.Done()
+				}
 				return err
 			})
 		}
