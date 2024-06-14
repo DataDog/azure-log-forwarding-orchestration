@@ -5,4 +5,4 @@ source /venv/bin/activate
 set -euxo pipefail
 
 : run mypy
-python -m mypy ./src
+python -m mypy ./control_plane

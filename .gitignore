@@ -43,6 +43,8 @@ ENV/
 env.bak/
 venv.bak/
 
+.python-version
+
 # python tools cache
 .pytest_cache
 .ruff_cache

@@ -3,20 +3,20 @@ from typing import cast
 from unittest.mock import ANY, AsyncMock, Mock
 from uuid import UUID
 
-from src.tasks.diagnostic_settings_task import (
+from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_NAME,
     DiagnosticSettingsTask,
 )
-from src.cache.diagnostic_settings_cache import (
+from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingsCache,
 )
-from src.cache.resources_cache import ResourceCache
+from cache.resources_cache import ResourceCache
 from azure.mgmt.monitor.models import CategoryType
 
-from src.tasks.tests.common import TaskTestCase, async_generator
-from src.cache.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
+from tasks.tests.common import TaskTestCase, async_generator
+from cache.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
 
 
 sub_id = "sub1"
