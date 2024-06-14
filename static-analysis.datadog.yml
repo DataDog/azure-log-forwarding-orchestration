@@ -5,3 +5,5 @@ rulesets:
 - python-code-style
 - python-inclusive
 - python-security
+- go-best-practices
+- go-security
