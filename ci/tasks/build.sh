@@ -16,8 +16,8 @@ for task in resources_task diagnostic_settings_task; do
         --distpath ./dist/$task/bin \
         --specpath ./specs \
         --log-level INFO \
-        --paths ./src \
-        ./src/tasks/$task.py
+        --paths ./control_plane \
+        ./control_plane/tasks/$task.py
     cp ./dist/$task/bin/$task ./dist/$task/main
     rm -rf ./dist/$task/bin
     cp ./config/$task/function.json ./dist/$task/$task/function.json

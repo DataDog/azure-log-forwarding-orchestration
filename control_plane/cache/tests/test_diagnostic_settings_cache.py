@@ -1,11 +1,11 @@
 from unittest import TestCase
 from json import dumps
-from src.cache.diagnostic_settings_cache import (
+from cache.diagnostic_settings_cache import (
     DiagnosticSettingsCache,
     deserialize_diagnostic_settings_cache,
 )
 
-from src.cache.tests import sub_id1, sub_id2
+from cache.tests import sub_id1, sub_id2
 
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):

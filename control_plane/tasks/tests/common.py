@@ -12,10 +12,10 @@ class TaskTestCase(IsolatedAsyncioTestCase):
         return p.start()
 
     def patch(self, obj: str):
-        return self.patch_path(f"src.tasks.{self.TASK_NAME}.{obj}")
+        return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}")
 
     def setUp(self) -> None:
-        self.credential = self.patch_path("src.tasks.task.DefaultAzureCredential")
+        self.credential = self.patch_path("tasks.task.DefaultAzureCredential")
         self.credential.side_effect = AsyncMock
         self.write_cache: AsyncMock = self.patch("write_cache")
 

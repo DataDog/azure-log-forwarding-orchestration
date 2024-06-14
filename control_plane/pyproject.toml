@@ -21,6 +21,15 @@ dev = [
     "mypy==1.9.0",
 ]
 
+[build-system]
+requires = ["setuptools>=70.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tasks", "cache"]
+
+
+
 [tool.ruff]
 line-length = 120
 
