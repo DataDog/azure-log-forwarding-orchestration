@@ -1,13 +1,26 @@
 variables:
-  PYTHON_IMAGE: registry.ddbuild.io/images/python:3.11.6
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
+  DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
+  BUILD_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest
 
 stages:
+  - ci-image
   - test
-  - coverage
+  - after-test
+
+
+ci-build-image:
+  image: $DOCKER_IMAGE
+  stage: ci-image
+  rules:
+    - when: manual
+      allow_failure: true
+  tags: ["arch:amd64"]
+  script:
+    - docker buildx build --platform linux/amd64 --tag "$BUILD_IMAGE" -f "ci/build-image/Dockerfile" . --push
 
 run-tests:
-  image: $PYTHON_IMAGE
+  image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
@@ -16,7 +29,7 @@ run-tests:
     paths:
       - ci/coverage.txt
 type-check:
-  image: $PYTHON_IMAGE
+  image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
@@ -24,9 +37,16 @@ type-check:
 
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
-  stage: coverage
+  stage: after-test
   tags: ["arch:amd64"]
   dependencies:
     - run-tests
   script:
     - ci/tasks/coverage-comment.sh
+
+build:
+  image: $BUILD_IMAGE
+  stage: after-test
+  tags: ["arch:amd64"]
+  script:
+    - ci/tasks/build.sh

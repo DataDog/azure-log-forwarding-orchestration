@@ -1,0 +1,7 @@
+schema-version: v1
+rulesets:
+- docker-best-practices
+- python-best-practices
+- python-code-style
+- python-inclusive
+- python-security
