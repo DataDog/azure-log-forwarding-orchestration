@@ -12,7 +12,7 @@ AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
 def make_agen_func(field_name: str, *values: str) -> AsyncIterableFunc:
     """useful wrapper for client methods which return an `AsyncIterable` of objects with a single field."""
-    return Mock(return_value=async_generator(*(Mock(**{field_name: value}) for value in values)))
+    return Mock(return_value=async_generator(*(Mock(**{field_name: value}) for value in values)))  # type: ignore
 
 
 class TestResourcesTask(TaskTestCase):

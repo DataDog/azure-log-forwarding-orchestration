@@ -5,4 +5,4 @@ RUN apt-get install -y binutils zip jq
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 COPY ./pyproject.toml /deps/pyproject.toml
-RUN pip install './deps[dev]'
+RUN pip install -e './deps[dev]'
