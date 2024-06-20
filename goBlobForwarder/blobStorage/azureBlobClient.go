@@ -36,7 +36,7 @@ type ErrGroup interface {
 type AzureClient struct {
 	Client         *azblob.Client
 	Context        context.Context
-	contextCancel  context.CancelFunc
+	ContextCancel  context.CancelFunc
 	StorageAccount string
 }
 
@@ -50,7 +50,7 @@ func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, stor
 	return &AzureClient{
 		Context:        context,
 		Client:         client,
-		contextCancel:  cancel,
+		ContextCancel:  cancel,
 		StorageAccount: storageAccount,
 	}, nil
 }
