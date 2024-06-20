@@ -3,11 +3,10 @@ package blobStorage
 import (
 	"context"
 	"errors"
-	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"io"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
 // Rerun if changes are made to the interface
@@ -41,23 +40,17 @@ type AzureClient struct {
 	StorageAccount string
 }
 
-func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (error, *AzureClient) {
-	url := fmt.Sprintf(azureBlobURL, storageAccount)
+func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (*AzureClient, error) {
 
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
+	client, err := azblob.NewClientFromConnectionString(storageAccount, nil)
 	if err != nil {
-		return errors.New("failed to create azure credential"), nil
+		return nil, errors.New("failed to create azure client")
 	}
 
-	client, err := azblob.NewClient(url, credential, nil)
-	if err != nil {
-		return errors.New("failed to create azure client"), nil
-	}
-
-	return err, &AzureClient{
+	return &AzureClient{
 		Context:        context,
 		Client:         client,
 		contextCancel:  cancel,
 		StorageAccount: storageAccount,
-	}
+	}, nil
 }

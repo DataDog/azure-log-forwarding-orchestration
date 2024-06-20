@@ -81,7 +81,7 @@ var (
 	DdService        = getEnvOrDefault("DD_SERVICE", "azure")
 	DdSource         = getEnvOrDefault("DD_SOURCE", "azure")
 	DdSourceCategory = getEnvOrDefault("DD_SOURCE_CATEGORY", "azure")
-	StorageAccount   = getEnvOrDefault("DD_STORAGE_ACCOUNT", "<STORAGE_ACCOUNT_NAME>")
+	StorageAccount   = getEnvOrDefault("AzureWebJobsStorage", "<STORAGE_CONNECTION_STRING>")
 	ForwarderName    = getEnvOrDefault("WEBSITE_SITE_NAME", "<WEBSITE_SITE_NAME>")
 )
 

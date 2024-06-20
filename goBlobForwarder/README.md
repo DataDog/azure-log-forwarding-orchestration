@@ -1,37 +1,23 @@
 ## Getting Started
 
-### One time setup
+Make sure you have go installed
+```
+$ go version
+go version go1.22.4 darwin/arm64
+```
 
-Install the Core Tools package:
+Install dependencies
 ```bash
-brew update && brew install azure-cli
-brew tap azure/functions
-brew install azure-functions-core-tools@4
 go mod vendor
 ```
 
-### Set up Azure Environment:
-#### Assign `Storage Blob Data Contributor` to the Storage Account:
+### Local Testing Environment
 
-In your storage account, select Access Control (IAM). Click Add and select add role assignment
-Select the role `Storage Blob Data Contributor`
+To test the blob forwarder locally, get the connection string for the storage account you want to test and add it as an environment variable.
+An example is below:
 
-#### Inside you terminal
 ```bash
-az upgrade
-az login
-```
-
-### Install Required Go packages:
-```bash
-az upgrade
-az login
-go get github.com/Azure/azure-sdk-for-go/sdk/storage/azblob
-go get github.com/Azure/azure-sdk-for-go/sdk/azidentity
-go mod tidy
-go get golang.org/x/sync/errgroup
-go get github.com/golang/mock/gomock
-go mod vedor
+AzureWebJobsStorage='DefaultEndpointsProtocol=https;AccountName=...' go run main.go
 ```
 
 ### Publishing and Running
