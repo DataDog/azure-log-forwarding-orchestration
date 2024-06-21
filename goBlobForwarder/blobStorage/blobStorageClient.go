@@ -34,7 +34,7 @@ type StorageClient struct {
 }
 
 func NewStorageClient(ctx context.Context, cancel context.CancelFunc, storageAccount string, inChan chan []byte) (*StorageClient, error) {
-	client, err := NewAzureBlobClient(ctx, cancel, storageAccount)
+	client, err := NewBlobClient(ctx, cancel, storageAccount)
 	if err != nil {
 		return nil, err
 	}

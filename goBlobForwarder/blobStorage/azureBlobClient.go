@@ -41,7 +41,7 @@ type BlobClient struct {
 	StorageAccount string
 }
 
-func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (*BlobClient, error) {
+func NewBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (*BlobClient, error) {
 
 	client, err := azblob.NewClientFromConnectionString(storageAccount, nil)
 	if err != nil {
