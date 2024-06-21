@@ -122,9 +122,11 @@ func (mr *MockAzureStorageClientMockRecorder) GetLogsFromSpecificBlobContainer(c
 }
 
 // GoGetLogContainers mocks base method.
-func (m *MockAzureStorageClient) GoGetLogContainers() {
+func (m *MockAzureStorageClient) GoGetLogContainers() error {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "GoGetLogContainers")
+	ret := m.ctrl.Call(m, "GoGetLogContainers")
+	ret0, _ := ret[0].(error)
+	return ret0
 }
 
 // GoGetLogContainers indicates an expected call of GoGetLogContainers.

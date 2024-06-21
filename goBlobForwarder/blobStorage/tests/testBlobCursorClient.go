@@ -2,10 +2,11 @@ package tests
 
 import (
 	"context"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 	"reflect"
 	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 )
 
 func TestAzureClient_DownloadBlobCursor(t *testing.T) {
@@ -24,7 +25,7 @@ func TestAzureClient_DownloadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureClient{
+			c := &blobStorage.BlobClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -55,7 +56,7 @@ func TestAzureClient_TeardownCursorCache(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureClient{
+			c := &blobStorage.BlobClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,
@@ -86,7 +87,7 @@ func TestAzureClient_UploadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureClient{
+			c := &blobStorage.BlobClient{
 				Client:         tt.fields.Client,
 				Context:        tt.fields.Context,
 				StorageAccount: tt.fields.StorageAccount,

@@ -34,21 +34,21 @@ type ErrGroup interface {
 	SetLimit(int)
 }
 
-type AzureClient struct {
+type BlobClient struct {
 	Client         *azblob.Client
 	Context        context.Context
 	ContextCancel  context.CancelFunc
 	StorageAccount string
 }
 
-func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (*AzureClient, error) {
+func NewAzureBlobClient(context context.Context, cancel context.CancelFunc, storageAccount string) (*BlobClient, error) {
 
 	client, err := azblob.NewClientFromConnectionString(storageAccount, nil)
 	if err != nil {
 		return nil, errors.New("failed to create azure client")
 	}
 
-	return &AzureClient{
+	return &BlobClient{
 		Context:        context,
 		Client:         client,
 		ContextCancel:  cancel,

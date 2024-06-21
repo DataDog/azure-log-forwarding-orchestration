@@ -3,13 +3,14 @@ package blobStorage
 import (
 	"bytes"
 	"encoding/json"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
 
-var _ AzureCursorClient = (*AzureClient)(nil)
+var _ AzureCursorClient = (*BlobClient)(nil)
 
 type AzureCursorClient interface {
 	DownloadBlobCursor() (error, CursorConfigs)
@@ -17,13 +18,13 @@ type AzureCursorClient interface {
 	TeardownCursorCache() error
 }
 
-func (c *AzureClient) TeardownCursorCache() error {
+func (c *BlobClient) TeardownCursorCache() error {
 	_, err := c.Client.DeleteBlob(c.Context, cursorContainerName, cursorBlobName, nil)
 	_, err = c.Client.DeleteContainer(c.Context, cursorContainerName, nil)
 	return err
 }
 
-func (c *AzureClient) DownloadBlobCursor() (error, CursorConfigs) {
+func (c *BlobClient) DownloadBlobCursor() (error, CursorConfigs) {
 	// Download the blob
 	get, err := c.Client.DownloadStream(c.Context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
 	if err != nil {
@@ -50,7 +51,7 @@ func (c *AzureClient) DownloadBlobCursor() (error, CursorConfigs) {
 	return nil, cursor
 }
 
-func (c *AzureClient) UploadBlobCursor(cursorData CursorConfigs) error {
+func (c *BlobClient) UploadBlobCursor(cursorData CursorConfigs) error {
 	marshalledCursor, err := json.Marshal(cursorData)
 	if err != nil {
 		return err

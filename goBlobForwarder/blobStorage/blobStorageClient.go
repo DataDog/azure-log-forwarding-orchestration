@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"golang.org/x/sync/errgroup"
 	"strings"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"golang.org/x/sync/errgroup"
 )
 
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
@@ -29,19 +30,22 @@ type AzureStorage struct {
 	InChan  chan []byte
 	OutChan chan []byte
 	Group   *errgroup.Group
-	*AzureClient
+	*BlobClient
 }
 
-func NewAzureStorageClient(ctx context.Context, cancel context.CancelFunc, storageAccount string, inChan chan []byte) (error, *AzureStorage) {
-	err, client := NewAzureBlobClient(ctx, cancel, storageAccount)
+func NewAzureStorageClient(ctx context.Context, cancel context.CancelFunc, storageAccount string, inChan chan []byte) (*AzureStorage, error) {
+	client, err := NewAzureBlobClient(ctx, cancel, storageAccount)
+	if err != nil {
+		return nil, err
+	}
 	eg, ctx := errgroup.WithContext(ctx)
 
-	return err, &AzureStorage{
-		InChan:      inChan,
-		OutChan:     make(chan []byte),
-		Group:       eg,
-		AzureClient: client,
-	}
+	return &AzureStorage{
+		InChan:     inChan,
+		OutChan:    make(chan []byte),
+		Group:      eg,
+		BlobClient: client,
+	}, err
 }
 
 func (c *AzureStorage) DownloadBlobLogWithOffset(blobName string, blobContainer string, startByte int64) ([]byte, error) {

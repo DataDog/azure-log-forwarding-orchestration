@@ -1,10 +1,11 @@
 package tests
 
 import (
-	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
-	"golang.org/x/sync/errgroup"
 	"reflect"
 	"testing"
+
+	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestAzureStorage_DownloadBlobLogContent(t *testing.T) {
@@ -12,7 +13,7 @@ func TestAzureStorage_DownloadBlobLogContent(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	type args struct {
 		blobName      string
@@ -30,10 +31,10 @@ func TestAzureStorage_DownloadBlobLogContent(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			got, err := c.DownloadBlobLogContent(tt.args.blobName, tt.args.blobContainer)
 			if (err != nil) != tt.wantErr {
@@ -52,7 +53,7 @@ func TestAzureStorage_DownloadBlobLogWithOffset(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	type args struct {
 		blobName      string
@@ -71,10 +72,10 @@ func TestAzureStorage_DownloadBlobLogWithOffset(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			got, err := c.DownloadBlobLogWithOffset(tt.args.blobName, tt.args.blobContainer, tt.args.startByte)
 			if (err != nil) != tt.wantErr {
@@ -93,7 +94,7 @@ func TestAzureStorage_GetLogContainers(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	tests := []struct {
 		name    string
@@ -106,10 +107,10 @@ func TestAzureStorage_GetLogContainers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			got, err := c.GetLogContainers()
 			if (err != nil) != tt.wantErr {
@@ -128,7 +129,7 @@ func TestAzureStorage_GetLogsFromBlobContainers(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	tests := []struct {
 		name    string
@@ -140,10 +141,10 @@ func TestAzureStorage_GetLogsFromBlobContainers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			if err := c.GetLogsFromBlobContainers(); (err != nil) != tt.wantErr {
 				t.Errorf("GetLogsFromBlobContainers() error = %v, wantErr %v", err, tt.wantErr)
@@ -157,7 +158,7 @@ func TestAzureStorage_GetLogsFromDefaultBlobContainers(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	tests := []struct {
 		name    string
@@ -169,10 +170,10 @@ func TestAzureStorage_GetLogsFromDefaultBlobContainers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			if err := c.GetLogsFromDefaultBlobContainers(); (err != nil) != tt.wantErr {
 				t.Errorf("GetLogsFromDefaultBlobContainers() error = %v, wantErr %v", err, tt.wantErr)
@@ -186,7 +187,7 @@ func TestAzureStorage_GetLogsFromSpecificBlobContainer(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	type args struct {
 		containerName string
@@ -203,10 +204,10 @@ func TestAzureStorage_GetLogsFromSpecificBlobContainer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			got, err := c.GetLogsFromSpecificBlobContainer(tt.args.containerName)
 			if (err != nil) != tt.wantErr {
@@ -225,7 +226,7 @@ func TestAzureStorage_GoGetLogContainers(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	tests := []struct {
 		name   string
@@ -236,10 +237,10 @@ func TestAzureStorage_GoGetLogContainers(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			c.GoGetLogContainers()
 		})
@@ -251,7 +252,7 @@ func TestAzureStorage_GoGetLogsFromChannelContainer(t *testing.T) {
 		inChan      chan []byte
 		OutChan     chan []byte
 		Group       *errgroup.Group
-		AzureClient *blobStorage.AzureClient
+		AzureClient *blobStorage.BlobClient
 	}
 	tests := []struct {
 		name    string
@@ -263,10 +264,10 @@ func TestAzureStorage_GoGetLogsFromChannelContainer(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &blobStorage.AzureStorage{
-				InChan:      tt.fields.inChan,
-				OutChan:     tt.fields.OutChan,
-				Group:       tt.fields.Group,
-				AzureClient: tt.fields.AzureClient,
+				InChan:     tt.fields.inChan,
+				OutChan:    tt.fields.OutChan,
+				Group:      tt.fields.Group,
+				BlobClient: tt.fields.AzureClient,
 			}
 			if err := c.GoGetLogsFromChannelContainer(); (err != nil) != tt.wantErr {
 				t.Errorf("GoGetLogsFromChannelContainer() error = %v, wantErr %v", err, tt.wantErr)

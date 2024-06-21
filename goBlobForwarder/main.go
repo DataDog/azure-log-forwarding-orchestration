@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"time"
+
 	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 	"github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/logsProcessing"
 	"golang.org/x/sync/errgroup"
 	_ "golang.org/x/sync/errgroup"
-	"log"
-	"time"
 )
 
 type azurePool struct {
@@ -29,7 +30,7 @@ func runPool() {
 	mainPool, ctx := errgroup.WithContext(ctx)
 
 	// Get containers with logs from storage account
-	err, containersPool := blobStorage.NewAzureStorageClient(ctx, cancel, logsProcessing.StorageAccount, nil)
+	containersPool, err := blobStorage.NewAzureStorageClient(ctx, cancel, logsProcessing.StorageAccount, nil)
 	if err != nil {
 		return
 	}
@@ -39,7 +40,7 @@ func runPool() {
 	})
 
 	// Get logs from blob storage
-	err, blobPool := blobStorage.NewAzureStorageClient(ctx, cancel, logsProcessing.StorageAccount, containersPool.OutChan)
+	blobPool, err := blobStorage.NewAzureStorageClient(ctx, cancel, logsProcessing.StorageAccount, containersPool.OutChan)
 	if err != nil {
 		log.Println(err)
 		fmt.Println(err)
