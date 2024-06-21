@@ -46,9 +46,14 @@ class ResourcesTask(Task):
     async def process_subscription(self, subscription_id: str) -> None:
         log.info("Processing the following subscription: %s", subscription_id)
         async with ResourceManagementClient(self.credential, subscription_id) as client:
-            resource_ids: set[str] = {cast(str, r.id) async for r in client.resources.list()}
-            log.info(f"Subscription {subscription_id}: Collected {len(resource_ids)} resources")
-            self.resource_cache[subscription_id] = resource_ids
+            resources_per_region: dict[str, set[str]] = {}
+            resource_count = 0
+            async for r in client.resources.list():
+                region = cast(str, r.location)
+                resources_per_region.setdefault(region, set()).add(cast(str, r.id))
+                resource_count += 1
+            log.info(f"Subscription {subscription_id}: Collected {resource_count} resources")
+            self.resource_cache[subscription_id] = resources_per_region
 
     async def write_caches(self) -> None:
         if self.resource_cache == self._resource_cache_initial_state:
