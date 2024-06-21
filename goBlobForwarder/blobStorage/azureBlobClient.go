@@ -12,7 +12,8 @@ import (
 // Rerun if changes are made to the interface
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
 
-// AzureBlobClient wraps around the azure blob Client struct these are the inherited and used methods
+// AzureBlobClient wraps around the azblob.Client struct, to allow for mocking.
+// these are the inherited and used methods.
 type AzureBlobClient interface {
 	UploadStream(ctx context.Context, containerName string, blobName string, body io.Reader, o *azblob.UploadStreamOptions) (azblob.UploadStreamResponse, error)
 	DownloadStream(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error)
