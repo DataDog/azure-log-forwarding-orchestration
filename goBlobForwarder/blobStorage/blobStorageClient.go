@@ -13,7 +13,7 @@ import (
 
 //go:generate mockgen -source=$GOFILE -destination=./tests/mocks/$GOFILE -package=mocks
 
-var _ AzureStorageClient = (*AzureStorage)(nil)
+var _ AzureStorageClient = (*StorageClient)(nil)
 
 type AzureStorageClient interface {
 	DownloadBlobLogWithOffset(blobName string, blobContainer string, byteRange int64) ([]byte, error)
@@ -26,21 +26,21 @@ type AzureStorageClient interface {
 	GoGetLogContainers() error
 }
 
-type AzureStorage struct {
+type StorageClient struct {
 	InChan  chan []byte
 	OutChan chan []byte
 	Group   *errgroup.Group
 	*BlobClient
 }
 
-func NewAzureStorageClient(ctx context.Context, cancel context.CancelFunc, storageAccount string, inChan chan []byte) (*AzureStorage, error) {
+func NewStorageClient(ctx context.Context, cancel context.CancelFunc, storageAccount string, inChan chan []byte) (*StorageClient, error) {
 	client, err := NewAzureBlobClient(ctx, cancel, storageAccount)
 	if err != nil {
 		return nil, err
 	}
 	eg, ctx := errgroup.WithContext(ctx)
 
-	return &AzureStorage{
+	return &StorageClient{
 		InChan:     inChan,
 		OutChan:    make(chan []byte),
 		Group:      eg,
@@ -48,7 +48,7 @@ func NewAzureStorageClient(ctx context.Context, cancel context.CancelFunc, stora
 	}, err
 }
 
-func (c *AzureStorage) DownloadBlobLogWithOffset(blobName string, blobContainer string, startByte int64) ([]byte, error) {
+func (c *StorageClient) DownloadBlobLogWithOffset(blobName string, blobContainer string, startByte int64) ([]byte, error) {
 	// Range with an offset and zero value count indicates from the offset to the resource's end.
 	cursor := azblob.HTTPRange{Offset: startByte, Count: 0}
 	// Download the blob
@@ -88,7 +88,7 @@ func checkBlobIsFromToday(blobName string) bool {
 	return false
 }
 
-func (c *AzureStorage) DownloadBlobLogContent(blobName string, blobContainer string) ([]byte, error) {
+func (c *StorageClient) DownloadBlobLogContent(blobName string, blobContainer string) ([]byte, error) {
 	// Download the blob
 	get, err := c.Client.DownloadStream(c.Context, blobContainer, blobName, &azblob.DownloadStreamOptions{})
 	if err != nil {
@@ -106,7 +106,7 @@ func (c *AzureStorage) DownloadBlobLogContent(blobName string, blobContainer str
 	return downloadedData.Bytes(), err
 }
 
-func (c *AzureStorage) GetLogsFromSpecificBlobContainer(containerName string) ([]byte, error) {
+func (c *StorageClient) GetLogsFromSpecificBlobContainer(containerName string) ([]byte, error) {
 	pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
@@ -128,7 +128,7 @@ func (c *AzureStorage) GetLogsFromSpecificBlobContainer(containerName string) ([
 	return blobByes, nil
 }
 
-func (c *AzureStorage) GetLogContainers() ([]string, error) {
+func (c *StorageClient) GetLogContainers() ([]string, error) {
 	var azureLogContainerNames []string
 	containerPager := c.Client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
 	for containerPager.More() {
@@ -147,7 +147,7 @@ func (c *AzureStorage) GetLogContainers() ([]string, error) {
 	return azureLogContainerNames, nil
 }
 
-func (c *AzureStorage) GetLogsFromBlobContainers() error {
+func (c *StorageClient) GetLogsFromBlobContainers() error {
 	for _, containerName := range logContainerNames {
 		pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
@@ -168,7 +168,7 @@ func (c *AzureStorage) GetLogsFromBlobContainers() error {
 	return nil
 }
 
-func (c *AzureStorage) GetLogsFromDefaultBlobContainers() error {
+func (c *StorageClient) GetLogsFromDefaultBlobContainers() error {
 	for _, containerName := range logContainerNames {
 		pager := c.Client.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
@@ -189,7 +189,7 @@ func (c *AzureStorage) GetLogsFromDefaultBlobContainers() error {
 	return nil
 }
 
-func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
+func (c *StorageClient) GoGetLogsFromChannelContainer() error {
 	for {
 		select {
 		case <-c.Context.Done():
@@ -236,7 +236,7 @@ func (c *AzureStorage) GoGetLogsFromChannelContainer() error {
 	}
 }
 
-func (c *AzureStorage) GoGetLogContainers() error {
+func (c *StorageClient) GoGetLogContainers() error {
 	containerPager := c.Client.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
 	for containerPager.More() {
 		resp, err := containerPager.NextPage(c.Context)

@@ -30,7 +30,7 @@ func TestAzureStorage_DownloadBlobLogContent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -71,7 +71,7 @@ func TestAzureStorage_DownloadBlobLogWithOffset(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -106,7 +106,7 @@ func TestAzureStorage_GetLogContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -140,7 +140,7 @@ func TestAzureStorage_GetLogsFromBlobContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -169,7 +169,7 @@ func TestAzureStorage_GetLogsFromDefaultBlobContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -203,7 +203,7 @@ func TestAzureStorage_GetLogsFromSpecificBlobContainer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -236,7 +236,7 @@ func TestAzureStorage_GoGetLogContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
@@ -263,7 +263,7 @@ func TestAzureStorage_GoGetLogsFromChannelContainer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				InChan:     tt.fields.inChan,
 				OutChan:    tt.fields.OutChan,
 				Group:      tt.fields.Group,
