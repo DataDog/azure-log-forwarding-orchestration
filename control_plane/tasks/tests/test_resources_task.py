@@ -2,9 +2,9 @@ from json import dumps
 from typing import Any, AsyncIterable, Callable, TypeAlias
 from unittest.mock import AsyncMock, MagicMock, Mock
 
-from src.cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
-from src.tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
-from src.tasks.tests.common import TaskTestCase, async_generator
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
+from tasks.tests.common import TaskTestCase, async_generator
 
 
 AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
@@ -12,7 +12,7 @@ AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
 def make_agen_func(field_name: str, *values: str) -> AsyncIterableFunc:
     """useful wrapper for client methods which return an `AsyncIterable` of objects with a single field."""
-    return Mock(return_value=async_generator(*(Mock(**{field_name: value}) for value in values)))
+    return Mock(return_value=async_generator(*(Mock(**{field_name: value}) for value in values)))  # type: ignore
 
 
 class TestResourcesTask(TaskTestCase):
