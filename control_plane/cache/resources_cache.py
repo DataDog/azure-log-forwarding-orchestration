@@ -24,7 +24,7 @@ def deserialize_resource_cache(cache_str: str) -> tuple[bool, ResourceCache]:
         cache = loads(cache_str)
         validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
         # Convert the list of resources to a set
-        for _, resources_per_region in cache.items():
+        for resources_per_region in cache.values():
             for region in resources_per_region.keys():
                 resources_per_region[region] = set(resources_per_region[region])
         return True, cache
