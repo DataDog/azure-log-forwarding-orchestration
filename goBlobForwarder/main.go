@@ -32,6 +32,7 @@ func runPool() {
 	// Get containers with logs from storage account
 	err, containersPool := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, nil)
 	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	mainPool.Go(func() error {
@@ -71,7 +72,7 @@ func runPool() {
 
 func main() {
 	start := time.Now()
-	//cursor := client.DownloadBlobCursor()
+	// TODO: cursor := client.DownloadBlobCursor()
 	runPool()
 	fmt.Println(fmt.Sprintf("Final time: %v", time.Since(start).String()))
 }
