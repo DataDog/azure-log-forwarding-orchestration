@@ -43,12 +43,12 @@ func NewDDClient(context context.Context, logsChan chan []AzureLogs, scrubberCon
 }
 
 func marshallAppend(azureLog AzureLogs) (json.RawMessage, error) {
-	myRawMessage, err := json.Marshal(azureLog.DDRequire)
+	rawMessage, err := json.Marshal(azureLog.DDRequire)
 	if err != nil {
 		return nil, err
 	}
 	// remove the last comma from the first marshalled struct and first comma from the second struct to join bytes
-	marshalledStruct := [][]byte{myRawMessage[:len(myRawMessage)-1], azureLog.Rest[1:]}
+	marshalledStruct := [][]byte{rawMessage[:len(rawMessage)-1], azureLog.Rest[1:]}
 	joinedLog := bytes.Join(marshalledStruct, []byte(","))
 	return joinedLog, nil
 }

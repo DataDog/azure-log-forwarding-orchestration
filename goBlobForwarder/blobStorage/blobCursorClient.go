@@ -5,10 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"errors"
-	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
@@ -23,28 +20,16 @@ type AzureCursorClient interface {
 }
 
 type BlobCursorClient struct {
-	AzureClient    AzureBlobClient
-	Context        context.Context
-	StorageAccount string
+	AzureClient AzureBlobClient
+	Context     context.Context
 }
 
-func NewAzureCursorClient(context context.Context, storageAccount string) (error, *BlobCursorClient) {
-	url := fmt.Sprintf(AzureBlobURL, storageAccount)
-
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return errors.New("failed to create azure credential"), nil
-	}
-
-	client, err := azblob.NewClient(url, credential, nil)
-	if err != nil {
-		return errors.New("failed to create azure client"), nil
-	}
+func NewBlobCursorClient(context context.Context, storageAccountConnectionString string) (error, *BlobCursorClient) {
+	client, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 
 	return err, &BlobCursorClient{
-		Context:        context,
-		AzureClient:    client,
-		StorageAccount: storageAccount,
+		Context:     context,
+		AzureClient: client,
 	}
 }
 
@@ -55,9 +40,10 @@ func (c *BlobCursorClient) TeardownCursorCache() error {
 }
 
 func (c *BlobCursorClient) DownloadBlobCursor() (error, CursorConfigs) {
-	// Download the blob
 	get, err := c.AzureClient.DownloadStream(c.Context, cursorContainerName, cursorBlobName, &azblob.DownloadStreamOptions{})
 	if err != nil {
+		// Download the blob cursor cache but if this it the first time we are attempting to download the cursor,
+		// and it does not exist, create the container and upload an empty cursor signifying a first pass
 		if e, ok := err.(*azcore.ResponseError); ok && e.StatusCode == 404 {
 			_, err = c.AzureClient.CreateContainer(c.Context, cursorContainerName, nil)
 			if err == nil {
@@ -74,11 +60,8 @@ func (c *BlobCursorClient) DownloadBlobCursor() (error, CursorConfigs) {
 	retryReader.Close()
 
 	var cursor CursorConfigs
-	if err = json.Unmarshal(downloadedData.Bytes(), &cursor); err != nil {
-		return err, cursor
-	}
-
-	return nil, cursor
+	err = json.Unmarshal(downloadedData.Bytes(), &cursor)
+	return err, cursor
 }
 
 func (c *BlobCursorClient) UploadBlobCursor(cursorData CursorConfigs) error {

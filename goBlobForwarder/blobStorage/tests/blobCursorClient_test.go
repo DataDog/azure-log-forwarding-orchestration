@@ -10,7 +10,6 @@ import (
 )
 
 func TestDownloadBlobCursor(t *testing.T) {
-	testStorageAccount := "testStorageAccount"
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
@@ -31,10 +30,9 @@ func TestDownloadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureCursor{
-				AzureClient:    tt.AzureClient(),
-				Context:        tt.Context,
-				StorageAccount: testStorageAccount,
+			c := &blobStorage.BlobCursorClient{
+				AzureClient: tt.AzureClient(),
+				Context:     tt.Context,
 			}
 			got, got1 := c.DownloadBlobCursor()
 			if !reflect.DeepEqual(got, tt.want) {
@@ -49,9 +47,8 @@ func TestDownloadBlobCursor(t *testing.T) {
 
 func TestUploadBlobCursor(t *testing.T) {
 	type fields struct {
-		AzureClient    blobStorage.AzureBlobClient
-		Context        context.Context
-		StorageAccount string
+		AzureClient blobStorage.AzureBlobClient
+		Context     context.Context
 	}
 	type args struct {
 		cursorData blobStorage.CursorConfigs
@@ -66,10 +63,9 @@ func TestUploadBlobCursor(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureCursor{
-				AzureClient:    tt.fields.AzureClient,
-				Context:        tt.fields.Context,
-				StorageAccount: tt.fields.StorageAccount,
+			c := &blobStorage.BlobCursorClient{
+				AzureClient: tt.fields.AzureClient,
+				Context:     tt.fields.Context,
 			}
 			if err := c.UploadBlobCursor(tt.args.cursorData); (err != nil) != tt.wantErr {
 				t.Errorf("UploadBlobCursor() error = %v, wantErr %v", err, tt.wantErr)

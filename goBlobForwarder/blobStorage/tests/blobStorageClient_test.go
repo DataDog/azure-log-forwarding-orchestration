@@ -21,7 +21,7 @@ func TestGetLogContainers(t *testing.T) {
 		name          string
 		blobName      string
 		blobContainer string
-		AzureClient   func() blobStorage.AzureStorage
+		AzureClient   func() blobStorage.StorageClient
 		want          []byte
 		wantErr       bool
 	}{
@@ -29,12 +29,12 @@ func TestGetLogContainers(t *testing.T) {
 			name:          "Test DownloadBlobLogContent",
 			blobName:      "testBlob",
 			blobContainer: "testContainer",
-			AzureClient: func() blobStorage.AzureStorage {
+			AzureClient: func() blobStorage.StorageClient {
 				//client, _ := azblob.NewClient(url, &azfake.TokenCredential{}, nil)
 				client := mocks.NewMockAzureBlobClient(mockCtrl)
-				//client := mockAzureStorageClient(mockCtrl, inChan)
+				//client := mockStorageClientClient(mockCtrl, inChan)
 				client.EXPECT().NewListContainersPager(gomock.Any()).Return(nil)
-				return blobStorage.AzureStorage{
+				return blobStorage.StorageClient{
 					Context:     context.Background(),
 					AzureClient: client,
 				}
@@ -74,7 +74,7 @@ func TestGetLogsFromDefaultBlobContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				Context:     tt.fields.Context,
 				InChan:      tt.fields.InChan,
 				OutChan:     tt.fields.OutChan,
@@ -109,7 +109,7 @@ func TestGetLogsFromSpecificBlobContainer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				Context:     tt.fields.Context,
 				InChan:      tt.fields.InChan,
 				OutChan:     tt.fields.OutChan,
@@ -145,7 +145,7 @@ func TestGoGetLogContainers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				Context:     tt.fields.Context,
 				InChan:      tt.fields.InChan,
 				OutChan:     tt.fields.OutChan,
@@ -176,7 +176,7 @@ func TestGoGetLogsFromChannelContainer(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := &blobStorage.AzureStorage{
+			c := &blobStorage.StorageClient{
 				Context:     tt.fields.Context,
 				InChan:      tt.fields.InChan,
 				OutChan:     tt.fields.OutChan,
@@ -239,7 +239,7 @@ func TestCheckBlobIsFrom(t *testing.T) {
 // TODO: need to mock goroutines asnd pager before we can test any of the azure blob storage functions
 // Azure does not provide a way to mock the pager or a good interface for their clients.
 // A lot of the necessary code is internal/private
-func mockContainerClient(mockCtrl *gomock.Controller, inChan chan []byte) blobStorage.AzureStorage {
+func mockContainerClient(mockCtrl *gomock.Controller, inChan chan []byte) blobStorage.StorageClient {
 
 	eg := new(errgroup.Group) //mocks.NewMockErrGroup(mockCtrl)
 
@@ -251,7 +251,7 @@ func mockContainerClient(mockCtrl *gomock.Controller, inChan chan []byte) blobSt
 	client := mocks.NewMockAzureBlobClient(mockCtrl)
 	client.EXPECT().NewListContainersPager(gomock.Any()).Return(azurePager)
 
-	return blobStorage.AzureStorage{
+	return blobStorage.StorageClient{
 		Context:     context.Background(),
 		InChan:      inChan,
 		OutChan:     make(chan []byte),

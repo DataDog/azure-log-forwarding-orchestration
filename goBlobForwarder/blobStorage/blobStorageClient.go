@@ -3,9 +3,7 @@ package blobStorage
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"golang.org/x/sync/errgroup"
 	"strings"
@@ -34,18 +32,9 @@ type StorageClient struct {
 	AzureClient AzureBlobClient
 }
 
-func NewAzureStorageClient(ctx context.Context, storageAccount string, inChan chan []byte) (error, *AzureStorage) {
-	url := fmt.Sprintf(AzureBlobURL, storageAccount)
+func NewStorageClient(ctx context.Context, storageAccountConnectionString string, inChan chan []byte) (error, *StorageClient) {
+	client, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return errors.New("failed to create azure credential"), nil
-	}
-
-	client, err := azblob.NewClient(url, credential, nil)
-	if err != nil {
-		return errors.New("failed to create azure client"), nil
-	}
 	//eg, ctx := NewErrGroupWithContext(ctx)
 	eg, ctx := errgroup.WithContext(ctx)
 	return err, &StorageClient{
@@ -120,22 +109,22 @@ func (c *StorageClient) GetLogsFromSpecificBlobContainer(containerName string) (
 	pager := c.AzureClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
-	var blobByes []byte
+	var blobBytes []byte
 	for pager.More() {
 		resp, err := pager.NextPage(c.Context)
 		if err != nil {
-			return blobByes, err
+			return blobBytes, err
 		}
 
 		for _, blob := range resp.Segment.BlobItems {
 			blobLogContent, err := c.DownloadBlobLogContent(*blob.Name, containerName)
-			blobByes = append(blobByes, blobLogContent...)
+			blobBytes = append(blobBytes, blobLogContent...)
 			if err != nil {
-				return blobByes, err
+				return blobBytes, err
 			}
 		}
 	}
-	return blobByes, nil
+	return blobBytes, nil
 }
 
 func (c *StorageClient) GetLogContainers() ([]string, error) {
@@ -158,7 +147,7 @@ func (c *StorageClient) GetLogContainers() ([]string, error) {
 }
 
 func (c *StorageClient) GetLogsFromDefaultBlobContainers() ([][]byte, error) {
-	var blobfiles [][]byte
+	var blobFiles [][]byte
 	for _, containerName := range logContainerNames {
 		pager := c.AzureClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
@@ -167,19 +156,19 @@ func (c *StorageClient) GetLogsFromDefaultBlobContainers() ([][]byte, error) {
 		for pager.More() {
 			resp, err := pager.NextPage(c.Context)
 			if err != nil {
-				return blobfiles, err
+				return blobFiles, err
 			}
 
 			for _, blob := range resp.Segment.BlobItems {
 				logContent, err := c.DownloadBlobLogContent(*blob.Name, containerName)
 				if err != nil {
-					return blobfiles, err
+					return blobFiles, err
 				}
-				blobfiles = append(blobfiles, logContent)
+				blobFiles = append(blobFiles, logContent)
 			}
 		}
 	}
-	return blobfiles, nil
+	return blobFiles, nil
 }
 
 func (c *StorageClient) GoGetLogsFromChannelContainer() error {
@@ -215,11 +204,11 @@ func (c *StorageClient) GoGetLogsFromChannelContainer() error {
 				c.Group.Go(func() error {
 					for _, blob := range resp.Segment.BlobItems {
 						if CheckBlobIsFromToday(*blob.Name) {
-							blobByes, err := c.DownloadBlobLogContent(*blob.Name, string(containerName))
-							if blobByes == nil {
+							blobBytes, err := c.DownloadBlobLogContent(*blob.Name, string(containerName))
+							if blobBytes == nil {
 								return err
 							}
-							c.OutChan <- blobByes
+							c.OutChan <- blobBytes
 						}
 					}
 					return err

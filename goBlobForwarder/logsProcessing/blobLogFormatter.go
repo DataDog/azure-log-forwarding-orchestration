@@ -156,9 +156,9 @@ func createDDTags(tags []string, name string) string {
 func addTagsToJsonLog(blob *AzureLogs) {
 	source, tags := parseResourceIdArray(blob.DDRequire.ResourceId)
 	blob.DDRequire.DDSource = source
-	blob.DDRequire.Ddtags = createDDTags(tags, blob.ForwarderName)
+	blob.DDRequire.DDTags = createDDTags(tags, blob.ForwarderName)
 
-	blob.DDRequire.DDSourcecategory = DdSourceCategory
+	blob.DDRequire.DDSourceCategory = DdSourceCategory
 	blob.DDRequire.Service = DdService
 }
 
