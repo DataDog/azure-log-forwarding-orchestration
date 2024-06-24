@@ -26,11 +26,11 @@ func runPool() {
 	}
 
 	start := time.Now()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, _ := context.WithCancel(context.Background())
 	mainPool, ctx := errgroup.WithContext(ctx)
 
 	// Get containers with logs from storage account
-	containersPool, err := blobStorage.NewStorageClient(ctx, cancel, logsProcessing.StorageAccount, nil)
+	err, containersPool := blobStorage.NewAzureStorageClient(ctx, logsProcessing.StorageAccount, nil)
 	if err != nil {
 		return
 	}
@@ -40,7 +40,7 @@ func runPool() {
 	})
 
 	// Get logs from blob storage
-	blobPool, err := blobStorage.NewStorageClient(ctx, cancel, logsProcessing.StorageAccount, containersPool.OutChan)
+	err, blobPool := blobStorage.NewAzureStorageClient(ctx, logsProcessing.StorageAccount, containersPool.OutChan)
 	if err != nil {
 		log.Println(err)
 		fmt.Println(err)

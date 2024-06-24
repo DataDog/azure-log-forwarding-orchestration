@@ -5,7 +5,7 @@ var logContainerNames = []string{
 	"insights-logs-operationallogs",
 }
 
-var azureBlobURL = "https://%s.blob.core.windows.net/"
+var AzureBlobURL = "https://%s.blob.core.windows.net/"
 var cursorContainerName = "blob-cursor-cache"
 var cursorBlobName = "dd_temp"
 
