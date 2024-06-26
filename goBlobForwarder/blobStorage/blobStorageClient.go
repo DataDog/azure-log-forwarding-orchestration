@@ -32,18 +32,18 @@ type StorageClient struct {
 	AzureClient AzureBlobClient
 }
 
-func NewStorageClient(ctx context.Context, storageAccountConnectionString string, inChan chan []byte) (error, *StorageClient) {
+func NewStorageClient(ctx context.Context, storageAccountConnectionString string, inChan chan []byte) (*StorageClient, error) {
 	client, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 
 	//eg, ctx := NewErrGroupWithContext(ctx)
 	eg, ctx := errgroup.WithContext(ctx)
-	return err, &StorageClient{
+	return &StorageClient{
 		Context:     ctx,
 		InChan:      inChan,
 		OutChan:     make(chan []byte),
 		Group:       eg,
 		AzureClient: client,
-	}
+	}, err
 }
 
 func CheckBlobIsFromCurrentHour(blobName string) bool {

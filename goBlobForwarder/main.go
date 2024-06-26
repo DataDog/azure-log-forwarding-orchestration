@@ -12,13 +12,6 @@ import (
 	_ "golang.org/x/sync/errgroup"
 )
 
-type azurePool struct {
-	group         *errgroup.Group
-	containerChan *chan []byte
-	blobChan      *chan []byte
-	LogsChan      *chan []logsProcessing.AzureLogs
-}
-
 func runPool() {
 	if logsProcessing.DdApiKey == "" || logsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
 		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
@@ -30,7 +23,7 @@ func runPool() {
 	mainPool, ctx := errgroup.WithContext(ctx)
 
 	// Get containers with logs from storage account
-	err, containersPool := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, nil)
+	containersPool, err := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, nil)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -41,7 +34,7 @@ func runPool() {
 	})
 
 	// Get logs from blob storage inside a container
-	err, blobPool := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, containersPool.OutChan)
+	blobPool, err := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, containersPool.OutChan)
 	if err != nil {
 		fmt.Println(err)
 		return
