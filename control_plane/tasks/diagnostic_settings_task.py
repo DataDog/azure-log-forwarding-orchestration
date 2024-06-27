@@ -73,10 +73,6 @@ def diagnostic_setting_name(config: DiagnosticSettingConfiguration) -> str:
     return DIAGNOSTIC_SETTING_PREFIX + config["id"]
 
 
-# EVENT_HUB_NAME: Final[str] = environ[EVENT_HUB_NAME_SETTING]
-# EVENT_HUB_NAMESPACE: Final[str] = environ[EVENT_HUB_NAMESPACE_SETTING]
-
-
 class DiagnosticSettingsTask(Task):
     def __init__(self, resource_cache_state: str, diagnostic_settings_cache_state: str) -> None:
         super().__init__()
