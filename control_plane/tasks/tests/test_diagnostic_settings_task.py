@@ -20,6 +20,7 @@ from cache.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
 
 
 sub_id = "sub1"
+region = "region1"
 resource_id = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
 
 
@@ -53,7 +54,9 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         await self.run_diagnostic_settings_task(
             resource_cache={
                 sub_id: {
-                    resource_id,
+                    region: {
+                        resource_id,
+                    }
                 }
             },
             diagnostic_settings_cache={},
@@ -62,9 +65,11 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.create_or_update_setting.assert_awaited()
         self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
         setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][
-            resource_id
-        ]
+            region
+        ][resource_id]
         self.assertEqual(str(UUID(setting["id"])), setting["id"])
+        self.assertEqual(setting["type"], "eventhub")
+        assert setting["type"] == "eventhub"  # for mypy typing
         self.assertEqual(setting["event_hub_name"], TEST_EVENT_HUB_NAME)
         self.assertEqual(setting["event_hub_namespace"], TEST_EVENT_HUB_NAMESPACE)
 
@@ -77,13 +82,16 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
         await self.run_diagnostic_settings_task(
-            resource_cache={sub_id: {resource_id}},
+            resource_cache={sub_id: {region: {resource_id}}},
             diagnostic_settings_cache={
                 sub_id: {
-                    resource_id: {
-                        "id": setting_id,
-                        "event_hub_name": TEST_EVENT_HUB_NAME,
-                        "event_hub_namespace": TEST_EVENT_HUB_NAMESPACE,
+                    region: {
+                        resource_id: {
+                            "id": setting_id,
+                            "type": "eventhub",
+                            "event_hub_name": TEST_EVENT_HUB_NAME,
+                            "event_hub_namespace": TEST_EVENT_HUB_NAMESPACE,
+                        }
                     }
                 }
             },
