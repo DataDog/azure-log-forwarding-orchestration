@@ -10,7 +10,7 @@ from tasks.tests.common import TaskTestCase, async_generator
 AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
 
-def mock_with_id(id: str, **kwargs) -> Mock:
+def mock_with_id(id: str, **kwargs: Any) -> Mock:
     """Needed because mock ignores the id kwarg, so we have to set it manually after init"""
     m = Mock(**kwargs)
     m.id = id

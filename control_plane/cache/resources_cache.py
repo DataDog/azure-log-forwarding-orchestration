@@ -1,5 +1,5 @@
 from json import JSONDecodeError, loads
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from jsonschema import ValidationError, validate
 
@@ -11,7 +11,7 @@ ResourceCache: TypeAlias = dict[str, dict[str, set[str]]]
 "mapping of subscription_id to region to resource_ids"
 
 
-RESOURCE_CACHE_SCHEMA = {
+RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
     "additionalProperties": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},

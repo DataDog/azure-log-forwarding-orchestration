@@ -1,5 +1,5 @@
 from json import JSONDecodeError, loads
-from typing import Literal, TypeAlias, TypedDict
+from typing import Any, Literal, TypeAlias, TypedDict
 
 from jsonschema import ValidationError, validate
 
@@ -30,7 +30,7 @@ DiagnosticSettingConfiguration: TypeAlias = (
 DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, dict[str, DiagnosticSettingConfiguration]]]
 "Mapping of subscription_id to region to resource_id to DiagnosticSettingConfiguration"
 
-DIAGNOSTIC_SETTINGS_CACHE_SCHEMA = {
+DIAGNOSTIC_SETTINGS_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
