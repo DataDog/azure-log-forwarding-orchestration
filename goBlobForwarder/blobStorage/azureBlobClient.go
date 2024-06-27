@@ -33,7 +33,7 @@ type AzureBlobClient interface {
 
 type Runnable func() error
 
-type ErrGroup interface {
+type ErrGroupInterface interface {
 	Go(Runnable)
 	Wait() error
 	SetLimit(int)

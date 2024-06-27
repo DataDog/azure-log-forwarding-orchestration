@@ -20,7 +20,7 @@ type azurePool struct {
 }
 
 func runPool() {
-	fmt.Println(fmt.Sprintf("Start time: %v", (time.Now()).String()))
+	log.Println(fmt.Sprintf("Start time: %v", (time.Now()).String()))
 	if logsProcessing.DdApiKey == "" || logsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
 		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
 		return
@@ -28,35 +28,32 @@ func runPool() {
 
 	start := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	mainPool, ctx := errgroup.WithContext(ctx)
 
 	// Get containers with logs from storage account
-	containersPool, err := blobStorage.NewStorageClient(ctx, cancel, logsProcessing.StorageAccount, nil)
+	containersPool, err := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, nil)
 	if err != nil {
 		log.Println(err)
-		fmt.Println(err)
 		return
 	}
 
 	mainPool.Go(func() error {
 		err := containersPool.GoGetLogContainers()
 		log.Println(err)
-		fmt.Println(err)
 		return err
 	})
 
 	// Get logs from blob storage
-	blobPool, err := blobStorage.NewStorageClient(ctx, cancel, logsProcessing.StorageAccount, containersPool.OutChan)
+	blobPool, err := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, containersPool.OutChan)
 	if err != nil {
 		log.Println(err)
-		fmt.Println(err)
 		return
 	}
 
 	mainPool.Go(func() error {
 		err = blobPool.GoGetLogsFromChannelContainer()
 		log.Println(err)
-		fmt.Println(err)
 		return err
 	})
 
@@ -65,7 +62,6 @@ func runPool() {
 	mainPool.Go(func() error {
 		err := processingPool.GoFormatAndBatchLogs()
 		log.Println(err)
-		fmt.Println(err)
 		return err
 	})
 
@@ -73,14 +69,12 @@ func runPool() {
 	mainPool.Go(func() error {
 		err := logsProcessing.NewDDClient(ctx, processingPool.LogsChan, nil).GoSendWithRetry(start)
 		log.Println(err)
-		fmt.Println(err)
 		return err
 	})
 
 	err = mainPool.Wait()
 	if err != nil {
 		log.Println(err)
-		fmt.Println(err)
 	}
 }
 
@@ -88,6 +82,6 @@ func main() {
 	start := time.Now()
 	//cursor := client.DownloadBlobCursor()
 	runPool()
-	fmt.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
-	fmt.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
+	log.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
+	log.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 }
