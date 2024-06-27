@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"golang.org/x/sync/errgroup"
+	"log"
 	"strings"
 )
 
@@ -111,18 +111,18 @@ func (c *BlobLogFormatter) GoFormatAndBatchLogs() error {
 		case <-c.Context.Done():
 			err := c.Group.Wait()
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			}
-			fmt.Println("Sender GoFormatAndBatchLogs: Context closed")
+			log.Println("Sender GoFormatAndBatchLogs: Context closed")
 			close(c.LogsChan)
 			return c.Context.Err()
 		case blobLog, ok := <-c.InChan:
 			if !ok {
 				err := c.Group.Wait()
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 				}
-				fmt.Println("Sender GoFormatAndBatchLogs: Channel closed")
+				log.Println("Sender GoFormatAndBatchLogs: Channel closed")
 				close(c.LogsChan)
 				return err
 			}

@@ -3,7 +3,6 @@ package blobStorage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 
@@ -51,7 +50,6 @@ func NewBlobClient(context context.Context, cancel context.CancelFunc, storageAc
 	client, err := azblob.NewClientFromConnectionString(storageAccount, nil)
 	if err != nil {
 		log.Println(err)
-		fmt.Println(err)
 		return nil, errors.New("failed to create azure client")
 	}
 

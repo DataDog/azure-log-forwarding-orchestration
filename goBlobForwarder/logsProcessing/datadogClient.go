@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"golang.org/x/sync/errgroup"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -86,17 +87,17 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 		case <-c.Context.Done():
 			err := c.Group.Wait()
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			}
-			fmt.Println("Sender GoSendWithRetry: Context closed")
+			log.Println("Sender GoSendWithRetry: Context closed")
 			return c.Context.Err()
 		case batch, ok := <-c.LogsChan:
 			if !ok {
 				err := c.Group.Wait()
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 				}
-				fmt.Println("Sender GoSendWithRetry: Channel closed")
+				log.Println("Sender GoSendWithRetry: Channel closed")
 				return err
 			}
 
@@ -114,7 +115,7 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 							return fmt.Errorf("unable to send request after 2 tries, err: %v", err)
 						}
 					}
-					fmt.Println(time.Since(start))
+					log.Println(time.Since(start))
 				}
 				return nil
 			})

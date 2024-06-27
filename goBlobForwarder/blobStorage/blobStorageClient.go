@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"golang.org/x/sync/errgroup"
+	"log"
 	"strings"
 	"time"
 )
@@ -177,18 +178,18 @@ func (c *StorageClient) GoGetLogsFromChannelContainer() error {
 		case <-c.Context.Done():
 			err := c.Group.Wait()
 			if err != nil {
-				fmt.Println(err)
+				log.Println(err)
 			}
-			fmt.Println("Sender GoGetLogsFromChannelContainer: Context closed")
+			log.Println("Sender GoGetLogsFromChannelContainer: Context closed")
 			close(c.OutChan)
 			return c.Context.Err()
 		case containerName, ok := <-c.InChan:
 			if !ok {
 				err := c.Group.Wait()
 				if err != nil {
-					fmt.Println(err)
+					log.Println(err)
 				}
-				fmt.Println("Sender GoGetLogsFromChannelContainer: Channel closed")
+				log.Println("Sender GoGetLogsFromChannelContainer: Channel closed")
 				close(c.OutChan)
 				return err
 			}
@@ -235,12 +236,12 @@ func (c *StorageClient) GoGetLogContainers() error {
 					select {
 					case <-c.Context.Done():
 						if err != nil {
-							fmt.Println(err)
+							log.Println(err)
 						}
-						fmt.Println("Sender GoGetLogContainers: Context closed")
+						log.Println("Sender GoGetLogContainers: Context closed")
 						return c.Context.Err()
 					case c.OutChan <- []byte(containerName):
-						fmt.Println("Sender GoGetLogContainers: Context closed")
+						log.Println("Sender GoGetLogContainers: Context closed")
 
 					}
 				}
@@ -250,7 +251,7 @@ func (c *StorageClient) GoGetLogContainers() error {
 	}
 	err := c.Group.Wait()
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 	close(c.OutChan)
 	return nil

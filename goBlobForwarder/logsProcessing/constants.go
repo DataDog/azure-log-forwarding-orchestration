@@ -74,7 +74,7 @@ type AzureLogSplittingConfig map[string]logSplitConfig
 
 var (
 	DdApiKey                       = getEnvOrDefault("DD_API_KEY", "<DATADOG_API_KEY>")
-	DdSite                         = getEnvOrDefault("DD_SITE", "datad0g.com")
+	DdSite                         = getEnvOrDefault("DD_SITE", "datadoghq.com")
 	DdHttpUrl                      = getEnvOrDefault("DD_URL", "http-intake.logs."+DdSite)
 	DdHttpPort                     = getEnvOrDefault("DD_PORT", "443")
 	DdTags                         = getEnvOrDefault("DD_TAGS", "") // TODO: Replace '' by your comma-separated list of tags
