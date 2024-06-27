@@ -25,5 +25,6 @@ Publish Custom function app in azure to run the main.go file in the function app
 
 Via the cli:
 ```bash
+GOOS=linux GOARCH=amd64 go build main.go
 func azure functionapp publish function-app-name --custom
 ```
