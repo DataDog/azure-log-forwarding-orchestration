@@ -23,6 +23,9 @@ type AzureBlobClient interface {
 	NewListBlobsFlatPager(containerName string, o *azblob.ListBlobsFlatOptions) *runtime.Pager[azblob.ListBlobsFlatResponse]
 	NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse]
 
+	// CreateContainer NewListBlobsFlatPager(containerName string, o *azblob.ListBlobsFlatOptions) *runtime.Pager[azblob.ListBlobsFlatResponse]
+	//NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse]
+
 	CreateContainer(ctx context.Context, containerName string, o *azblob.CreateContainerOptions) (azblob.CreateContainerResponse, error)
 	DeleteContainer(ctx context.Context, containerName string, o *azblob.DeleteContainerOptions) (azblob.DeleteContainerResponse, error)
 	DeleteBlob(ctx context.Context, containerName string, blobName string, o *azblob.DeleteBlobOptions) (azblob.DeleteBlobResponse, error)
@@ -58,4 +61,10 @@ func NewBlobClient(context context.Context, cancel context.CancelFunc, storageAc
 		ContextCancel:  cancel,
 		StorageAccount: storageAccount,
 	}, nil
+
+}
+
+type AzurePager[T any] interface {
+	NextPage(ctx context.Context) (T, error)
+	More() bool
 }

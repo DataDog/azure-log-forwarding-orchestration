@@ -23,9 +23,9 @@ type DDLogs struct {
 	ResourceId       string `json:"resourceId"` // important
 	Category         string `json:"category"`
 	DDSource         string `json:"ddsource"`
-	DDSourcecategory string `json:"ddsourcecategory"`
+	DDSourceCategory string `json:"ddsourcecategory"`
 	Service          string `json:"service"`
-	Ddtags           string `json:"ddtags"` // string array of tags
+	DDTags           string `json:"ddtags"` // string array of tags
 }
 
 // To scrub PII from your logs, uncomment the applicable configs below. If you'd like to scrub more than just
@@ -73,16 +73,16 @@ type logSplitConfig struct {
 type AzureLogSplittingConfig map[string]logSplitConfig
 
 var (
-	DdApiKey         = getEnvOrDefault("DD_API_KEY", "<DATADOG_API_KEY>")
-	DdSite           = getEnvOrDefault("DD_SITE", "datad0g.com")
-	DdHttpUrl        = getEnvOrDefault("DD_URL", "http-intake.logs."+DdSite)
-	DdHttpPort       = getEnvOrDefault("DD_PORT", "443")
-	DdTags           = getEnvOrDefault("DD_TAGS", "") // TODO: Replace '' by your comma-separated list of tags
-	DdService        = getEnvOrDefault("DD_SERVICE", "azure")
-	DdSource         = getEnvOrDefault("DD_SOURCE", "azure")
-	DdSourceCategory = getEnvOrDefault("DD_SOURCE_CATEGORY", "azure")
-	StorageAccount   = getEnvOrDefault("AzureWebJobsStorage", "<STORAGE_CONNECTION_STRING>")
-	ForwarderName    = getEnvOrDefault("WEBSITE_SITE_NAME", "<WEBSITE_SITE_NAME>")
+	DdApiKey                       = getEnvOrDefault("DD_API_KEY", "<DATADOG_API_KEY>")
+	DdSite                         = getEnvOrDefault("DD_SITE", "datad0g.com")
+	DdHttpUrl                      = getEnvOrDefault("DD_URL", "http-intake.logs."+DdSite)
+	DdHttpPort                     = getEnvOrDefault("DD_PORT", "443")
+	DdTags                         = getEnvOrDefault("DD_TAGS", "") // TODO: Replace '' by your comma-separated list of tags
+	DdService                      = getEnvOrDefault("DD_SERVICE", "azure")
+	DdSource                       = getEnvOrDefault("DD_SOURCE", "azure")
+	DdSourceCategory               = getEnvOrDefault("DD_SOURCE_CATEGORY", "azure")
+	ForwarderName                  = getEnvOrDefault("WEBSITE_SITE_NAME", "<WEBSITE_SITE_NAME>")
+	StorageAccountConnectionString = getEnvOrDefault("StorageAccountConnectionString", "<STORAGE_CONNECTION_STRING>")
 )
 
 func getEnvOrDefault(key string, defaultValue string) string {

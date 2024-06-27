@@ -11,7 +11,6 @@ import (
 
 	runtime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	azblob "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	blobStorage "github.com/DataDog/azure-log-forwarding-offering/goBlobForwarder/blobStorage"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -141,63 +140,54 @@ func (mr *MockAzureBlobClientMockRecorder) UploadStream(ctx, containerName, blob
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadStream", reflect.TypeOf((*MockAzureBlobClient)(nil).UploadStream), ctx, containerName, blobName, body, o)
 }
 
-// MockErrGroup is a mock of ErrGroup interface.
-type MockErrGroup struct {
+// MockAzurePager is a mock of AzurePager interface.
+type MockAzurePager[T any] struct {
 	ctrl     *gomock.Controller
-	recorder *MockErrGroupMockRecorder
+	recorder *MockAzurePagerMockRecorder[T]
 }
 
-// MockErrGroupMockRecorder is the mock recorder for MockErrGroup.
-type MockErrGroupMockRecorder struct {
-	mock *MockErrGroup
+// MockAzurePagerMockRecorder is the mock recorder for MockAzurePager.
+type MockAzurePagerMockRecorder[T any] struct {
+	mock *MockAzurePager[T]
 }
 
-// NewMockErrGroup creates a new mock instance.
-func NewMockErrGroup(ctrl *gomock.Controller) *MockErrGroup {
-	mock := &MockErrGroup{ctrl: ctrl}
-	mock.recorder = &MockErrGroupMockRecorder{mock}
+// NewMockAzurePager creates a new mock instance.
+func NewMockAzurePager[T any](ctrl *gomock.Controller) *MockAzurePager[T] {
+	mock := &MockAzurePager[T]{ctrl: ctrl}
+	mock.recorder = &MockAzurePagerMockRecorder[T]{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockErrGroup) EXPECT() *MockErrGroupMockRecorder {
+func (m *MockAzurePager[T]) EXPECT() *MockAzurePagerMockRecorder[T] {
 	return m.recorder
 }
 
-// Go mocks base method.
-func (m *MockErrGroup) Go(arg0 blobStorage.Runnable) {
+// More mocks base method.
+func (m *MockAzurePager[T]) More() bool {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Go", arg0)
-}
-
-// Go indicates an expected call of Go.
-func (mr *MockErrGroupMockRecorder) Go(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Go", reflect.TypeOf((*MockErrGroup)(nil).Go), arg0)
-}
-
-// SetLimit mocks base method.
-func (m *MockErrGroup) SetLimit(arg0 int) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "SetLimit", arg0)
-}
-
-// SetLimit indicates an expected call of SetLimit.
-func (mr *MockErrGroupMockRecorder) SetLimit(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetLimit", reflect.TypeOf((*MockErrGroup)(nil).SetLimit), arg0)
-}
-
-// Wait mocks base method.
-func (m *MockErrGroup) Wait() error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Wait")
-	ret0, _ := ret[0].(error)
+	ret := m.ctrl.Call(m, "More")
+	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
-// Wait indicates an expected call of Wait.
-func (mr *MockErrGroupMockRecorder) Wait() *gomock.Call {
+// More indicates an expected call of More.
+func (mr *MockAzurePagerMockRecorder[T]) More() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Wait", reflect.TypeOf((*MockErrGroup)(nil).Wait))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "More", reflect.TypeOf((*MockAzurePager[T])(nil).More))
+}
+
+// NextPage mocks base method.
+func (m *MockAzurePager[T]) NextPage(ctx context.Context) (T, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NextPage", ctx)
+	ret0, _ := ret[0].(T)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// NextPage indicates an expected call of NextPage.
+func (mr *MockAzurePagerMockRecorder[T]) NextPage(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NextPage", reflect.TypeOf((*MockAzurePager[T])(nil).NextPage), ctx)
 }
