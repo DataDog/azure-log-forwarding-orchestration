@@ -98,7 +98,7 @@ class TestResourcesTask(TaskTestCase):
         await self.run_resources_task(
             {
                 "sub1": {"region1": {"res1", "res2"}},
-                "sub2": {"region1": {"res3"}},
+                "sub2": {"region2": {"res3"}},
             }
         )
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from json import dumps
 from logging import ERROR, INFO, getLogger
 from typing import AsyncIterable, TypeVar
+from uuid import uuid4
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -166,11 +167,17 @@ class DiagnosticSettingsTask(Task):
                 )
         else:
             # We don't have a configuration for this resource, we should add it
+            diagnostic_setting_id = str(uuid4())
             # TODO determine the appropriate configuration for this resource based on region
             # await self.add_diagnostic_setting(
             #     client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
             # )
-            self.diagnostic_settings_cache.setdefault(sub_id, {}).setdefault(region, {})[resource_id] = {}  # type: ignore
+            self.diagnostic_settings_cache.setdefault(sub_id, {}).setdefault(region, {})[resource_id] = {
+                "id": diagnostic_setting_id,
+                "type": "eventhub",
+                "event_hub_name": "TODO",
+                "event_hub_namespace": "TODO",
+            }
 
     async def add_diagnostic_setting(
         self,
