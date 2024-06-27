@@ -20,6 +20,7 @@ type azurePool struct {
 }
 
 func runPool() {
+	fmt.Println(fmt.Sprintf("Start time: %v", (time.Now()).String()))
 	if logsProcessing.DdApiKey == "" || logsProcessing.DdApiKey == "<DATADOG_API_KEY>" {
 		log.Println("You must configure your API key before starting this function (see ## Parameters section)")
 		return
@@ -32,10 +33,15 @@ func runPool() {
 	// Get containers with logs from storage account
 	containersPool, err := blobStorage.NewStorageClient(ctx, cancel, logsProcessing.StorageAccount, nil)
 	if err != nil {
+		log.Println(err)
+		fmt.Println(err)
 		return
 	}
+
 	mainPool.Go(func() error {
 		err := containersPool.GoGetLogContainers()
+		log.Println(err)
+		fmt.Println(err)
 		return err
 	})
 
@@ -46,8 +52,11 @@ func runPool() {
 		fmt.Println(err)
 		return
 	}
+
 	mainPool.Go(func() error {
 		err = blobPool.GoGetLogsFromChannelContainer()
+		log.Println(err)
+		fmt.Println(err)
 		return err
 	})
 
@@ -55,12 +64,16 @@ func runPool() {
 	processingPool := logsProcessing.NewBlobLogFormatter(ctx, blobPool.OutChan)
 	mainPool.Go(func() error {
 		err := processingPool.GoFormatAndBatchLogs()
+		log.Println(err)
+		fmt.Println(err)
 		return err
 	})
 
 	// Send logs to Datadog
 	mainPool.Go(func() error {
 		err := logsProcessing.NewDDClient(ctx, processingPool.LogsChan, nil).GoSendWithRetry(start)
+		log.Println(err)
+		fmt.Println(err)
 		return err
 	})
 
@@ -75,5 +88,6 @@ func main() {
 	start := time.Now()
 	//cursor := client.DownloadBlobCursor()
 	runPool()
-	fmt.Println(fmt.Sprintf("Final time: %v", time.Since(start).String()))
+	fmt.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
+	fmt.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 }
