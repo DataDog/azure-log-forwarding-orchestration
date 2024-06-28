@@ -3,7 +3,7 @@ from asyncio import gather
 import asyncio
 from datetime import datetime
 from json import dumps
-from logging import INFO, getLogger
+from logging import DEBUG, getLogger
 from typing import cast
 
 
@@ -19,7 +19,7 @@ from tasks.task import Task
 RESOURCES_TASK_NAME = "resources_task"
 
 log = getLogger(RESOURCES_TASK_NAME)
-log.setLevel(INFO)
+log.setLevel(DEBUG)
 
 
 class ResourcesTask(Task):
@@ -44,7 +44,7 @@ class ResourcesTask(Task):
             )
 
     async def process_subscription(self, subscription_id: str) -> None:
-        log.info("Processing the following subscription: %s", subscription_id)
+        log.debug("Processing the following subscription: %s", subscription_id)
         async with ResourceManagementClient(self.credential, subscription_id) as client:
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
@@ -52,7 +52,7 @@ class ResourcesTask(Task):
                 region = cast(str, r.location)
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id))
                 resource_count += 1
-            log.info(f"Subscription {subscription_id}: Collected {resource_count} resources")
+            log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
             self.resource_cache[subscription_id] = resources_per_region
 
     async def write_caches(self) -> None:
