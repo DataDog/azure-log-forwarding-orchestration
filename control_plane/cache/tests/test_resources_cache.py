@@ -27,12 +27,12 @@ class TestDeserializeResourceCache(TestCase):
         self.assertFalse(success)
 
     def test_dict_with_non_dict_regions(self):
-        cache_str = dumps({sub_id1: "not_a_dict"})
+        cache_str = dumps({sub_id1: "not_a_dict_region_config"})
         success, _ = deserialize_resource_cache(cache_str)
         self.assertFalse(success)
 
     def test_dict_with_non_list_resources(self):
-        cache_str = dumps({sub_id1: {"region": "not_a_list"}})
+        cache_str = dumps({sub_id1: {"region": "not_a_list_of_resources"}})
         success, _ = deserialize_resource_cache(cache_str)
         self.assertFalse(success)
 
