@@ -17,20 +17,7 @@ class EventHubDiagnosticSettingConfiguration(TypedDict):
     event_hub_namespace: str
 
 
-class StorageAccountDiagnosticSettingConfiguration(TypedDict):
-    id: str
-    type: Literal["storageaccount"]
-    storage_account_id: str
-
-
-DiagnosticSettingConfiguration: TypeAlias = (
-    EventHubDiagnosticSettingConfiguration | StorageAccountDiagnosticSettingConfiguration
-)
-
-DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, dict[str, DiagnosticSettingConfiguration]]]
-"Mapping of subscription_id to region to resource_id to DiagnosticSettingConfiguration"
-
-EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION: dict[str, Any] = {
+EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "id": {"type": "string"},
@@ -45,7 +32,14 @@ EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_CONFIGURATION: dict[str, Any] = {
+
+class StorageAccountDiagnosticSettingConfiguration(TypedDict):
+    id: str
+    type: Literal["storageaccount"]
+    storage_account_id: str
+
+
+STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "id": {"type": "string"},
@@ -59,19 +53,24 @@ STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_CONFIGURATION: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+DiagnosticSettingConfiguration: TypeAlias = (
+    EventHubDiagnosticSettingConfiguration | StorageAccountDiagnosticSettingConfiguration
+)
+
+DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, DiagnosticSettingConfiguration]]
+"Mapping of subscription_id to resource_id to DiagnosticSettingConfiguration"
+
+
 DIAGNOSTIC_SETTINGS_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
-        "type": "object",  # region
+        "type": "object",  # resource_id
         "additionalProperties": {
-            "type": "object",  # resource_id
-            "additionalProperties": {
-                "oneOf": [
-                    EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION,
-                    STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_CONFIGURATION,
-                ],
-            },
+            "oneOf": [
+                EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+                STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+            ],
         },
     },
 }

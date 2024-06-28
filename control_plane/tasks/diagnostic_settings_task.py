@@ -168,7 +168,7 @@ class DiagnosticSettingsTask(Task):
             # await self.add_diagnostic_setting(
             #     client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
             # )
-            self.diagnostic_settings_cache.setdefault(sub_id, {}).setdefault(region, {})[resource_id] = {
+            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = {
                 "id": diagnostic_setting_id,
                 "type": "eventhub",
                 "event_hub_name": "TODO",

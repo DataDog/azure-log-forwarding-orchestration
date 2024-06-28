@@ -12,23 +12,19 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
     def test_valid_cache(self):
         diagnostic_settings_cache: DiagnosticSettingsCache = {
             sub_id1: {
-                "region1": {
-                    "resource1": {"id": "hi", "type": "eventhub", "event_hub_name": "eh", "event_hub_namespace": "ehn"},
-                    "resource2": {
-                        "id": "1234",
-                        "type": "storageaccount",
-                        "storage_account_id": "some_resource_id",
-                    },
-                }
+                "resource1": {"id": "hi", "type": "eventhub", "event_hub_name": "eh", "event_hub_namespace": "ehn"},
+                "resource2": {
+                    "id": "1234",
+                    "type": "storageaccount",
+                    "storage_account_id": "some_resource_id",
+                },
             },
             sub_id2: {
-                "region2": {
-                    "resource3": {
-                        "id": "5678",
-                        "type": "eventhub",
-                        "event_hub_name": "eh3",
-                        "event_hub_namespace": "ehn",
-                    }
+                "resource3": {
+                    "id": "5678",
+                    "type": "eventhub",
+                    "event_hub_name": "eh3",
+                    "event_hub_namespace": "ehn",
                 }
             },
         }
@@ -40,17 +36,17 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
             diagnostic_settings_cache,
         )
 
-    def test_invalid_json(self):
+    def test_invalid_json_is_invalid(self):
         cache_str = "{invalid_json}"
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
 
-    def test_not_dict(self):
+    def test_not_dict_cache_is_invalid(self):
         cache_str = dumps(["not_a_dict"])
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
 
-    def test_non_dict_region_config(self):
+    def test_non_dict_resources_config_is_invalid(self):
         cache_str = dumps({sub_id1: "not_a_dict"})
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
@@ -64,12 +60,10 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
         cache_str = dumps(
             {
                 sub_id1: {
-                    "region1": {
-                        "r1": {
-                            "id": "1234",
-                            "type": "storageaccount",
-                            "storage_account_id": "some_resource_id",
-                        }
+                    "r1": {
+                        "id": "1234",
+                        "type": "storageaccount",
+                        "storage_account_id": "some_resource_id",
                     }
                 },
                 sub_id2: ["not_a_dict"],
@@ -95,7 +89,9 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
 
-    def test_mismatch_config_type(self):
-        cache_str = dumps({sub_id1: {"resource1": {"id": "hi", "event_hub_name": "eh"}}})
+    def test_mismatch_config_type_eventhub_storageaccount(self):
+        cache_str = dumps(
+            {sub_id1: {"resource1": {"id": "hi", "type": "eventhub", "storage_account_id": "storage123"}}}
+        )
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
