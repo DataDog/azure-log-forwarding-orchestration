@@ -91,13 +91,13 @@ class DiagnosticSettingsTask(Task):
         self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
 
     async def run(self) -> None:
-        log.info(f"Crawling {len(self.resource_cache)} subscriptions")
+        log.info("Crawling %s subscriptions", len(self.resource_cache))
         await gather(
             *[self.process_subscription(sub_id, resources) for sub_id, resources in self.resource_cache.items()]
         )
 
     async def process_subscription(self, sub_id: str, resources_per_region: dict[str, set[str]]) -> None:
-        log.info(f"Crawling {len(resources_per_region)} regions for subscription {sub_id}")
+        log.info("Crawling %s regions for subscription %s", len(resources_per_region), sub_id)
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # client.management_group_diagnostic_settings.list("management_group_id") TODO: do we want to do anything with this?
             await gather(
@@ -239,7 +239,7 @@ class DiagnosticSettingsTask(Task):
             return
         await write_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB, dumps(self.diagnostic_settings_cache))
         num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
-        log.info(f"Updated setting, {num_resources} resources stored in the settings cache")
+        log.info("Updated setting, %s resources stored in the settings cache", num_resources)
 
 
 def now() -> str:
