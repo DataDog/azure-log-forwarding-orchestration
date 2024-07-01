@@ -10,7 +10,7 @@ EVENT_HUB_DIAGNOSTIC_SETTING_TYPE = "eventhub"
 STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE = "storageaccount"
 
 
-class EventHubDiagnosticSettingConfiguration(TypedDict):
+class EventHubDiagnosticSettingConfiguration(TypedDict, total=True):
     id: str
     type: Literal["eventhub"]
     event_hub_name: str
@@ -33,7 +33,7 @@ EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA: dict[str, Any] = {
 }
 
 
-class StorageAccountDiagnosticSettingConfiguration(TypedDict):
+class StorageAccountDiagnosticSettingConfiguration(TypedDict, total=True):
     id: str
     type: Literal["storageaccount"]
     storage_account_id: str

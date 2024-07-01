@@ -135,7 +135,7 @@ class DiagnosticSettingsTask(Task):
         region: str,
         resource_id: str,
     ) -> None:
-        if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(region, {}).get(resource_id):
+        if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
             try:
                 existing_setting = await get_existing_diagnostic_setting(
                     resource_id,

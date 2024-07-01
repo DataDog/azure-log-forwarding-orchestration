@@ -16,7 +16,7 @@ from cache.resources_cache import ResourceCache
 from azure.mgmt.monitor.models import CategoryType
 
 from tasks.tests.common import TaskTestCase, async_generator
-from cache.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
+from cache.tests import TEST_EVENT_HUB_NAME
 
 
 sub_id = "sub1"
@@ -66,8 +66,8 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         # self.create_or_update_setting.assert_awaited()
         # self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
         setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][
-            region
-        ][resource_id]
+            resource_id
+        ]
         self.assertEqual(str(UUID(setting["id"])), setting["id"])
         self.assertEqual(setting["type"], "eventhub")
         assert setting["type"] == "eventhub"  # for mypy typing
@@ -75,7 +75,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.assertEqual(setting["event_hub_namespace"], "TODO")
 
     async def test_task_leaves_existing_settings_unchanged(self):
-        setting_id = "12345"
+        setting_id = "f5503a8b-4b23-41d3-9e93-3168b2251a45"
 
         self.list_diagnostic_settings.return_value = async_generator(
             Mock(name=DIAGNOSTIC_SETTING_PREFIX + setting_id, event_hub_name=TEST_EVENT_HUB_NAME)
@@ -86,13 +86,11 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
             resource_cache={sub_id: {region: {resource_id}}},
             diagnostic_settings_cache={
                 sub_id: {
-                    region: {
-                        resource_id: {
-                            "id": setting_id,
-                            "type": "eventhub",
-                            "event_hub_name": TEST_EVENT_HUB_NAME,
-                            "event_hub_namespace": TEST_EVENT_HUB_NAMESPACE,
-                        }
+                    resource_id: {
+                        "id": setting_id,
+                        "type": "eventhub",
+                        "event_hub_name": "TODO",
+                        "event_hub_namespace": "TODO",
                     }
                 }
             },
