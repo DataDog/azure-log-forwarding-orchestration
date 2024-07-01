@@ -62,7 +62,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
             diagnostic_settings_cache={},
         )
 
-        # TODO: uncomment this line once we implement dynamic setting creation based on region
+        # TODO(AZINTS-2569): uncomment this line once we implement dynamic setting creation based on region
         # self.create_or_update_setting.assert_awaited()
         # self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
         setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][

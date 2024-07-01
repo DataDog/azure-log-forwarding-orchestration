@@ -164,7 +164,7 @@ class DiagnosticSettingsTask(Task):
         else:
             # We don't have a configuration for this resource, we should add it
             diagnostic_setting_id = str(uuid4())
-            # TODO determine the appropriate configuration for this resource based on region
+            # TODO(AZINTS-2569) determine the appropriate configuration for this resource based on region
             # await self.add_diagnostic_setting(
             #     client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
             # )
@@ -194,7 +194,7 @@ class DiagnosticSettingsTask(Task):
 
             log_config = [LogSettings(category=category.name, enabled=True) for category in categories]
             if configuration["type"] == "eventhub":
-                resource_group = "lfo"  # TODO: programatically get resource group of the eventhub
+                resource_group = "lfo"  # TODO(AZINTS-2569): programatically get resource group of the eventhub
                 authorization_rule_id = f"/subscriptions/{sub_id}/resourcegroups/{resource_group}/providers/Microsoft.EventHub/namespaces/{configuration['event_hub_namespace']}/authorizationrules/RootManageSharedAccessKey"
                 diagnostic_setting = DiagnosticSettingsResource(
                     event_hub_authorization_rule_id=authorization_rule_id,
