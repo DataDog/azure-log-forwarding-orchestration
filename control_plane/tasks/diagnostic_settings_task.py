@@ -19,7 +19,7 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from cache.cache import read_cache, write_cache
+from cache.common import InvalidCacheError, read_cache, write_cache
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingConfiguration,
@@ -80,7 +80,7 @@ class DiagnosticSettingsTask(Task):
         # read caches
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
         if not success:
-            raise ValueError("Resource Cache is in an invalid format, failing this task until it is valid")
+            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
 
         success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
