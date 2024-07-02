@@ -1,5 +1,5 @@
 from json import JSONDecodeError, loads
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, TypedDict
 
 from jsonschema import ValidationError, validate
 
@@ -9,8 +9,15 @@ from cache.common import DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA, DiagnosticSett
 ASSIGNMENT_CACHE_BLOB = "assignments.json"
 
 
-AssignmentCache: TypeAlias = dict[str, dict[str, dict[str, DiagnosticSettingConfiguration]]]
-"Mapping of subscription_id to region to resource_id to DiagnosticSettingConfiguration"
+class RegionAssignmentConfiguration(TypedDict, total=True):
+    configurations: dict[str, DiagnosticSettingConfiguration]
+    "Mapping of config_id to DiagnosticSettingConfiguration"
+    resources: dict[str, str]
+    "Mapping of resource_id to config_id"
+
+
+AssignmentCache: TypeAlias = dict[str, dict[str, RegionAssignmentConfiguration]]
+"Mapping of subscription_id to region to RegionAssignmentConfig"
 
 
 ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
@@ -18,9 +25,16 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
     "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
         "type": "object",  # region
-        "additionalProperties": {
-            "type": "object",  # resource_id
-            "additionalProperties": DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+        "properties": {
+            "configurations": {
+                "type": "object",
+                "propertyNames": {"format": "uuid"},  # config_id
+                "additionalProperties": DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+            },
+            "resources": {
+                "type": "object",  # resource_id
+                "additionalProperties": {"format": "uuid"},
+            },
         },
     },
 }
