@@ -9,7 +9,7 @@ from logging import DEBUG, getLogger
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
 from cache.common import InvalidCacheError, read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.task import Task, now
+from tasks.task import Task, get_config_option, now
 
 
 SCALING_TASK_NAME = "scaling_task"
@@ -19,8 +19,9 @@ log.setLevel(DEBUG)
 
 
 class ScalingTask(Task):
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str, resource_group: str) -> None:
         super().__init__()
+        self.resource_group = resource_group
 
         # Resource Cache
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
@@ -49,11 +50,12 @@ class ScalingTask(Task):
 
 async def main() -> None:
     log.info("Started task at %s", now())
+    resource_group = get_config_option("RESOURCE_GROUP")
     resources_cache_state, assignment_cache_state = await gather(
         read_cache(RESOURCE_CACHE_BLOB),
         read_cache(ASSIGNMENT_CACHE_BLOB),
     )
-    async with ScalingTask(resources_cache_state, assignment_cache_state) as task:
+    async with ScalingTask(resources_cache_state, assignment_cache_state, resource_group) as task:
         await task.run()
     log.info("Task finished at %s", now())
 
