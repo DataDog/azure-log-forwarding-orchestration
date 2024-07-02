@@ -9,7 +9,7 @@ from cache.tests import sub_id1, sub_id2
 
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):
-    def test_valid_cache(self):
+    def test_valid_cache(self) -> None:
         diagnostic_settings_cache: DiagnosticSettingsCache = {
             sub_id1: {
                 "resource1": {"id": "hi", "type": "eventhub", "event_hub_name": "eh", "event_hub_namespace": "ehn"},
