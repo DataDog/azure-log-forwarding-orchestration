@@ -51,22 +51,17 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
 
-    def test_some_non_dict_region_configs(self):
-        cache_str = dumps({sub_id1: {"r1": "setting1"}, sub_id2: ["not_a_dict"]})
-        success, _ = deserialize_diagnostic_settings_cache(cache_str)
-        self.assertFalse(success)
-
     def test_some_non_dict_resource_configs(self):
         cache_str = dumps(
             {
                 sub_id1: {
-                    "r1": {
+                    "resource1": {
                         "id": "1234",
                         "type": "storageaccount",
                         "storage_account_id": "some_resource_id",
                     }
                 },
-                sub_id2: {"r2": ["not_a_dict"]},
+                sub_id2: {"resource2": ["not_a_dict"]},
             }
         )
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
