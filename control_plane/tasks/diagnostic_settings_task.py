@@ -143,7 +143,7 @@ class DiagnosticSettingsTask(Task):
                     existing_diagnostic_setting_name=diagnostic_setting_name(configuration),
                 )
             except Exception:
-                # TODO Error handling
+                # TODO(AZINTS-2577) Error handling
                 return
 
             if existing_setting:
