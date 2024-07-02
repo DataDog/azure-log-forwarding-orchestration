@@ -3,6 +3,7 @@ from typing import cast
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
+from cache.common import InvalidCacheError
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_NAME,
@@ -99,7 +100,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.write_cache.assert_not_called()
 
     def test_malformed_resources_cache_errors_in_constructor(self):
-        with self.assertRaises(ValueError) as e:
+        with self.assertRaises(InvalidCacheError) as e:
             DiagnosticSettingsTask("malformed", "{}")
         self.assertEqual(
             str(e.exception), "Resource Cache is in an invalid format, failing this task until it is valid"
