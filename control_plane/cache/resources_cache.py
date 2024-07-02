@@ -1,5 +1,5 @@
 from json import JSONDecodeError, loads
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from jsonschema import ValidationError, validate
 
@@ -7,14 +7,14 @@ from jsonschema import ValidationError, validate
 RESOURCE_CACHE_BLOB = "resources.json"
 
 
-ResourceCache: TypeAlias = dict[str, set[str]]
-"mapping of subscription_id to resource_ids"
+ResourceCache: TypeAlias = dict[str, dict[str, set[str]]]
+"mapping of subscription_id to region to resource_ids"
 
 
-RESOURCE_CACHE_SCHEMA = {
+RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
-    "additionalProperties": {"type": "array", "items": {"type": "string"}},
+    "additionalProperties": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
 }
 
 
@@ -23,6 +23,10 @@ def deserialize_resource_cache(cache_str: str) -> tuple[bool, ResourceCache]:
     try:
         cache = loads(cache_str)
         validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
-        return True, {sub_id: set(resources) for sub_id, resources in cache.items()}
+        # Convert the list of resources to a set
+        for resources_per_region in cache.values():
+            for region in resources_per_region.keys():
+                resources_per_region[region] = set(resources_per_region[region])
+        return True, cache
     except (JSONDecodeError, ValidationError):
         return False, {}

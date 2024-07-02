@@ -1,6 +1,6 @@
 from json import dumps, loads
 from typing import cast
-from unittest.mock import ANY, AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 from tasks.diagnostic_settings_task import (
@@ -16,14 +16,15 @@ from cache.resources_cache import ResourceCache
 from azure.mgmt.monitor.models import CategoryType
 
 from tasks.tests.common import TaskTestCase, async_generator
-from cache.tests import TEST_EVENT_HUB_NAME, TEST_EVENT_HUB_NAMESPACE
+from cache.tests import TEST_EVENT_HUB_NAME
 
 
 sub_id = "sub1"
+region = "region1"
 resource_id = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
 
 
-class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
+class TestAzureDiagnosticSettingsTask(TaskTestCase):
     TASK_NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
     def setUp(self) -> None:
@@ -53,23 +54,28 @@ class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
         await self.run_diagnostic_settings_task(
             resource_cache={
                 sub_id: {
-                    resource_id,
+                    region: {
+                        resource_id,
+                    }
                 }
             },
             diagnostic_settings_cache={},
         )
 
-        self.create_or_update_setting.assert_awaited()
-        self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
+        # TODO(AZINTS-2569): uncomment this line once we implement dynamic setting creation based on region
+        # self.create_or_update_setting.assert_awaited()
+        # self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
         setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][
             resource_id
         ]
         self.assertEqual(str(UUID(setting["id"])), setting["id"])
-        self.assertEqual(setting["event_hub_name"], TEST_EVENT_HUB_NAME)
-        self.assertEqual(setting["event_hub_namespace"], TEST_EVENT_HUB_NAMESPACE)
+        self.assertEqual(setting["type"], "eventhub")
+        assert setting["type"] == "eventhub"  # for mypy typing
+        self.assertEqual(setting["event_hub_name"], "TODO")
+        self.assertEqual(setting["event_hub_namespace"], "TODO")
 
     async def test_task_leaves_existing_settings_unchanged(self):
-        setting_id = "12345"
+        setting_id = "f5503a8b-4b23-41d3-9e93-3168b2251a45"
 
         self.list_diagnostic_settings.return_value = async_generator(
             Mock(name=DIAGNOSTIC_SETTING_PREFIX + setting_id, event_hub_name=TEST_EVENT_HUB_NAME)
@@ -77,13 +83,14 @@ class TestAzureDiagnosticSettingsCrawler(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
         await self.run_diagnostic_settings_task(
-            resource_cache={sub_id: {resource_id}},
+            resource_cache={sub_id: {region: {resource_id}}},
             diagnostic_settings_cache={
                 sub_id: {
                     resource_id: {
                         "id": setting_id,
-                        "event_hub_name": TEST_EVENT_HUB_NAME,
-                        "event_hub_namespace": TEST_EVENT_HUB_NAMESPACE,
+                        "type": "eventhub",
+                        "event_hub_name": "TODO",
+                        "event_hub_namespace": "TODO",
                     }
                 }
             },

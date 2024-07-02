@@ -10,9 +10,11 @@ from tasks.tests.common import TaskTestCase, async_generator
 AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
 
-def make_agen_func(field_name: str, *values: str) -> AsyncIterableFunc:
-    """useful wrapper for client methods which return an `AsyncIterable` of objects with a single field."""
-    return Mock(return_value=async_generator(*(Mock(**{field_name: value}) for value in values)))  # type: ignore
+def mock_with_id(id: str, **kwargs: Any) -> Mock:
+    """Needed because mock ignores the id kwarg, so we have to set it manually after init"""
+    m = Mock(**kwargs)
+    m.id = id
+    return m
 
 
 class TestResourcesTask(TaskTestCase):
@@ -38,10 +40,16 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
     async def test_invalid_cache(self):
-        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
+        )
         self.resource_client_mapping = {
-            "sub1": make_agen_func("id", "res1", "res2"),
-            "sub2": make_agen_func("id", "res3"),
+            "sub1": Mock(
+                return_value=async_generator(
+                    mock_with_id(id="res1", location="region1"), mock_with_id(id="res2", location="region1")
+                )
+            ),
+            "sub2": Mock(return_value=async_generator(mock_with_id(id="res3", location="region2"))),
         }
 
         async with ResourcesTask("[[[[{{{{{asjdklahjs]]]}}}") as task:
@@ -50,14 +58,20 @@ class TestResourcesTask(TaskTestCase):
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
         self.assertEqual(
             deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1],
-            {"sub1": {"res1", "res2"}, "sub2": {"res3"}},
+            {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}},
         )
 
     async def test_empty_cache_adds_resources(self):
-        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
+        )
         self.resource_client_mapping = {
-            "sub1": make_agen_func("id", "res1", "res2"),
-            "sub2": make_agen_func("id", "res3"),
+            "sub1": Mock(
+                return_value=async_generator(
+                    mock_with_id(id="res1", location="region1"), mock_with_id(id="res2", location="region1")
+                )
+            ),
+            "sub2": Mock(return_value=async_generator(mock_with_id(id="res3", location="region2"))),
         }
 
         async with ResourcesTask("") as task:
@@ -66,48 +80,53 @@ class TestResourcesTask(TaskTestCase):
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
         self.assertEqual(
             deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1],
-            {"sub1": {"res1", "res2"}, "sub2": {"res3"}},
+            {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}},
         )
 
     async def test_no_new_resources_doesnt_cache(self):
-        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
+        )
         self.resource_client_mapping = {
-            "sub1": make_agen_func("id", "res1", "res2"),
-            "sub2": make_agen_func("id", "res3"),
+            "sub1": Mock(
+                return_value=async_generator(
+                    mock_with_id(id="res1", location="region1"), mock_with_id(id="res2", location="region1")
+                )
+            ),
+            "sub2": Mock(return_value=async_generator(mock_with_id(id="res3", location="region2"))),
         }
-
         await self.run_resources_task(
             {
-                "sub1": {"res1", "res2"},
-                "sub2": {"res3"},
+                "sub1": {"region1": {"res1", "res2"}},
+                "sub2": {"region2": {"res3"}},
             }
         )
 
         self.write_cache.assert_not_called()
 
     async def test_resources_gone(self):
-        self.sub_client.subscriptions.list = make_agen_func("subscription_id", "sub1", "sub2")
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
+        )
         self.resource_client_mapping = {
-            "sub1": make_agen_func("id"),
-            "sub2": make_agen_func("id"),
+            "sub1": Mock(return_value=async_generator()),
+            "sub2": Mock(return_value=async_generator()),
         }
         await self.run_resources_task(
             {
-                "sub1": {"res1", "res2"},
-                "sub2": {"res3"},
+                "sub1": {"region2": {"res1", "res2"}},
+                "sub2": {"region1": {"res3"}},
             }
         )
-        self.assertEqual(
-            deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1], {"sub1": set(), "sub2": set()}
-        )
+        self.assertEqual(deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1], {"sub1": {}, "sub2": {}})
 
     async def test_subscriptions_gone(self):
-        self.sub_client.subscriptions.list = make_agen_func("subscription_id")
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator())
         # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
         await self.run_resources_task(
             {
-                "sub1": {"res1", "res2"},
-                "sub2": {"res3"},
+                "sub1": {"region1": {"res1", "res2"}},
+                "sub2": {"region2": {"res3"}},
             }
         )
         self.assertEqual(deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1], {})
