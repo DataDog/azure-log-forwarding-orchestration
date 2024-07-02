@@ -66,7 +66,7 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
                         "storage_account_id": "some_resource_id",
                     }
                 },
-                sub_id2: ["not_a_dict"],
+                sub_id2: {"r2": ["not_a_dict"]},
             }
         )
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
