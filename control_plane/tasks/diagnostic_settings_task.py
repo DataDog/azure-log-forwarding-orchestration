@@ -2,7 +2,6 @@
 from asyncio import gather
 import asyncio
 from copy import deepcopy
-from datetime import datetime
 from json import dumps
 from logging import ERROR, INFO, getLogger
 from typing import AsyncIterable, TypeVar
@@ -26,7 +25,7 @@ from cache.diagnostic_settings_cache import (
     deserialize_diagnostic_settings_cache,
 )
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.task import Task
+from tasks.task import Task, now
 
 
 # silence azure logging except for errors
@@ -240,10 +239,6 @@ class DiagnosticSettingsTask(Task):
         await write_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB, dumps(self.diagnostic_settings_cache))
         num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
         log.info("Updated setting, %s resources stored in the settings cache", num_resources)
-
-
-def now() -> str:
-    return datetime.now().isoformat()
 
 
 async def main():

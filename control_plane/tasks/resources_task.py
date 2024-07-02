@@ -1,7 +1,6 @@
 # stdlib
 from asyncio import gather
 import asyncio
-from datetime import datetime
 from json import dumps
 from logging import DEBUG, getLogger
 from typing import cast
@@ -13,7 +12,7 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 
 from cache.common import read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
-from tasks.task import Task
+from tasks.task import Task, now
 
 
 RESOURCES_TASK_NAME = "resources_task"
@@ -63,10 +62,6 @@ class ResourcesTask(Task):
         await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
         resources_count = sum(len(resources) for resources in self.resource_cache.values())
         log.info(f"Updated Resources, {resources_count} resources stored in the cache")
-
-
-def now() -> str:
-    return datetime.now().isoformat()
 
 
 async def main() -> None:

@@ -1,9 +1,16 @@
+# stdlib
+from asyncio import gather, run
 from json import dumps
 from logging import DEBUG, getLogger
+
+# 3p
+
+# project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
-from cache.common import InvalidCacheError, write_cache
-from cache.resources_cache import deserialize_resource_cache
-from tasks.task import Task
+from cache.common import InvalidCacheError, read_cache, write_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from tasks.task import Task, now
+
 
 SCALING_TASK_NAME = "scaling_task"
 
@@ -31,7 +38,6 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
-        # TODO
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:
@@ -39,3 +45,18 @@ class ScalingTask(Task):
             return
         await write_cache(ASSIGNMENT_CACHE_BLOB, dumps(self.assignment_cache))
         log.info("Updated assignments stored in the cache")
+
+
+async def main() -> None:
+    log.info("Started task at %s", now())
+    resources_cache_state, assignment_cache_state = await gather(
+        read_cache(RESOURCE_CACHE_BLOB),
+        read_cache(ASSIGNMENT_CACHE_BLOB),
+    )
+    async with ScalingTask(resources_cache_state, assignment_cache_state) as task:
+        await task.run()
+    log.info("Task finished at %s", now())
+
+
+if __name__ == "__main__":
+    run(main())
