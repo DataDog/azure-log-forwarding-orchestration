@@ -89,7 +89,7 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
         success, _ = deserialize_diagnostic_settings_cache(cache_str)
         self.assertFalse(success)
 
-    def test_mismatch_config_type_eventhub_storageaccount(self):
+    def test_mismatch_config_forwarding_type(self):
         cache_str = dumps(
             {sub_id1: {"resource1": {"id": "hi", "type": "eventhub", "storage_account_id": "storage123"}}}
         )
