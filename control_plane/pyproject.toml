@@ -9,6 +9,7 @@ dependencies = [
     "jsonschema==4.21.1",
     "azure-mgmt-monitor==6.0.2",
     "azure-mgmt-resource==23.0.1",
+    "azure-mgmt-storage==21.2.1",
     "azure-mgmt-web==7.3.0",
     "azure-storage-blob==12.20.0",
 ]
