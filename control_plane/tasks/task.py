@@ -19,12 +19,14 @@ class MissingConfigOptionError(Exception):
 
 
 def get_config_option(name: str) -> str:
+    """Get a configuration option from the environment or raise a helpful error"""
     if option := environ.get(name):
         return option
     raise MissingConfigOptionError(name)
 
 
 def now() -> str:
+    """Return the current time in ISO format"""
     return datetime.now().isoformat()
 
 

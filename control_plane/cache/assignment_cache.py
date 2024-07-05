@@ -33,7 +33,7 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
             },
             "resources": {
                 "type": "object",  # resource_id
-                "additionalProperties": {"format": "uuid"},
+                "additionalProperties": {"format": "uuid"},  # config_id
             },
         },
     },
