@@ -1,17 +1,19 @@
 # stdlib
-from asyncio import gather, run
+from asyncio import Lock, gather, run
 from copy import deepcopy
 from json import dumps
 from logging import DEBUG, getLogger
-from typing import Any, Coroutine, AsyncContextManager, Self
+from typing import Any, Coroutine, AsyncContextManager, Self, cast
 from uuid import UUID
 
 # 3p
+from aiohttp import ClientSession
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
-from azure.mgmt.web.v2023_12_01.models import AppServicePlan, SkuDescription
+from azure.mgmt.web.v2023_12_01.models import AppServicePlan, SkuDescription, Site, SiteConfig, NameValuePair
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
-from azure.mgmt.storage.v2023_05_01.models import StorageAccountCreateParameters, Sku
+from azure.mgmt.storage.v2023_05_01.models import StorageAccountCreateParameters, Sku, StorageAccountKey
+from azure.storage.blob.aio import ContainerClient
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
@@ -21,6 +23,8 @@ from tasks.task import Task, get_config_option, now
 
 
 SCALING_TASK_NAME = "scaling_task"
+BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
+
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
@@ -28,10 +32,14 @@ log.setLevel(DEBUG)
 
 class LogForwarderClient(AsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
+        self.control_plane_storage_connection_string = get_config_option("AzureWebJobsStorage")
         self.web_client = WebSiteManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
+        self.rest_client = ClientSession()
         self.subscription_id = subscription_id
         self.resource_group = resource_group
+        self._blob_forwarder_data_lock = Lock()
+        self._blob_forwarder_data: bytes | None = None
 
     async def __aenter__(self) -> Self:
         await gather(self.web_client.__aenter__(), self.storage_client.__aenter__())
@@ -39,16 +47,22 @@ class LogForwarderClient(AsyncContextManager):
 
     async def __aexit__(self, *_) -> None:
         await gather(self.web_client.__aexit__(), self.storage_client.__aexit__())
-        pass
 
-    async def create_log_forwarder(self, region: str) -> tuple[str, DiagnosticSettingConfiguration]:
+    async def create_log_forwarder(self, region: str) -> DiagnosticSettingConfiguration:
         log_forwarder_id = str(UUID())
         # storage account
         storage_account_name = f"log-forwarder-storage-{log_forwarder_id}"
         storage_account_future = await self.storage_client.storage_accounts.begin_create(
             resource_group_name=self.resource_group,
             account_name=storage_account_name,
-            parameters=StorageAccountCreateParameters(sku=Sku(name="Standard_LRS"), kind="StorageV2", location=region),
+            parameters=StorageAccountCreateParameters(
+                sku=Sku(
+                    # TODO: figure out which SKU we should be using here
+                    name="Standard_LRS"
+                ),
+                kind="StorageV2",
+                location=region,
+            ),
         )
         # app service plan
         app_service_plan_name = f"log-forwarder-plan-{log_forwarder_id}"
@@ -56,18 +70,81 @@ class LogForwarderClient(AsyncContextManager):
             self.resource_group,
             app_service_plan_name,
             AppServicePlan(
-                location=region, sku=SkuDescription(name="Y1", tier="Dynamic", size="Y1", family="Y", capacity=0)
+                location=region,
+                sku=SkuDescription(
+                    # TODO: figure out which SKU we should be using here
+                    name="Y1",
+                    tier="Dynamic",
+                    size="Y1",
+                    family="Y",
+                    capacity=0,
+                ),
             ),
         )
         try:
-            await storage_account_future.result()
-            await app_service_plan_future.result()
+            storage_account, app_service_plan = await gather(
+                storage_account_future.result(), app_service_plan_future.result()
+            )
         except Exception:
             log.exception("Failed to create log forwarder resources")
             raise
 
         # self.storage_client.blob_containers.create()
-        return log_forwarder_id, NotImplemented
+        function_app_name = f"blob-log-forwarder-{log_forwarder_id}"
+        connection_string = await self.get_connection_string(storage_account_name)
+        function_app_future = await self.web_client.web_apps.begin_create_or_update(
+            self.resource_group,
+            function_app_name,
+            Site(
+                location=region,
+                kind="functionapp",
+                server_farm_id=app_service_plan.id,
+                site_config=SiteConfig(
+                    app_settings=[
+                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="python"),
+                        NameValuePair(name="AzureWebJobsStorage", value=connection_string),
+                    ]
+                ),
+            ),
+        )
+
+        _, blob_forwarder_data = await gather(function_app_future.result(), self.get_blob_forwarder_data())
+
+        # deploy code to function app
+        # https://learn.microsoft.com/en-us/azure/app-service/deploy-configure-credentials?tabs=cli#userscope
+        deploy_user = ""
+        deploy_password = ""
+
+        # curl -X POST -u <deployment_user> --data-binary "@<zip_file_path>" https://<app_name>.scm.azurewebsites.net/api/zipdeploy
+        resp = await self.rest_client.post(
+            f"https://{deploy_user}:{deploy_password}@{function_app_name}.scm.azurewebsites.net/api/zipdeploy",
+            data=blob_forwarder_data,
+        )
+        resp.raise_for_status()
+
+        return {
+            "type": "storageaccount",
+            "id": log_forwarder_id,
+            "storage_account_id": cast(str, storage_account.id),
+        }
+
+    async def get_connection_string(self, storage_account_name: str) -> str:
+        keys_result = await self.storage_client.storage_accounts.list_keys(self.resource_group, storage_account_name)
+        keys: list[StorageAccountKey] = keys_result.keys  # type: ignore
+        if len(keys) == 0:
+            raise ValueError("No keys found for storage account")
+        key = keys[0].value
+        return f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key};EndpointSuffix=core.windows.net"
+
+    async def get_blob_forwarder_data(self) -> bytes:
+        async with self._blob_forwarder_data_lock:
+            if self._blob_forwarder_data is None:
+                async with ContainerClient.from_connection_string(
+                    self.control_plane_storage_connection_string, BLOB_FORWARDER_DATA_CONTAINER
+                ) as client:
+                    stream = await client.download_blob(BLOB_FORWARDER_DATA_BLOB)
+                    self._blob_forwarder_data = await stream.content_as_bytes(max_concurrency=4)
+            return self._blob_forwarder_data
 
     async def delete_log_forwarder(self, region: str) -> str:
         return NotImplemented
@@ -118,9 +195,9 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         log.info("Creating log forwarder for subscription %s in region %s", client.subscription_id, region)
-        config_id, configuration = await client.create_log_forwarder(region)
+        configuration = await client.create_log_forwarder(region)
         self.assignment_cache[client.subscription_id][region] = {
-            "configurations": {config_id: configuration},
+            "configurations": {configuration["id"]: configuration},
             "resources": {},
         }
 
