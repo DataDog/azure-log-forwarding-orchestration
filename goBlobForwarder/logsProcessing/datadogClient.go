@@ -115,7 +115,7 @@ func (c *DatadogClient) GoSendWithRetry(start time.Time) error {
 							return fmt.Errorf("unable to send request after 2 tries, err: %v", err)
 						}
 					}
-					log.Println(time.Since(start))
+					//log.Println(time.Since(start))
 				}
 				return nil
 			})

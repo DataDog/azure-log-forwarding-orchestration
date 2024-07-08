@@ -49,10 +49,7 @@ func NewStorageClient(ctx context.Context, storageAccountConnectionString string
 
 func CheckBlobIsFromCurrentHour(blobName string) bool {
 	isCurrentHour := strings.Contains(blobName, fmt.Sprintf("h=%02d", time.Now().Hour()))
-	if CheckBlobIsFromToday(blobName) && isCurrentHour {
-		return true
-	}
-	return false
+	return CheckBlobIsFromToday(blobName) && isCurrentHour
 }
 
 // CheckBlobIsFromToday checks if the blob is from today given the current time.Now Day and Month
@@ -81,11 +78,14 @@ func (c *StorageClient) DownloadBlobLogWithOffset(blobName string, blobContainer
 	retryReader := streamResponse.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
 	_, err = downloadedData.ReadFrom(retryReader)
 	if err != nil {
-		return downloadedData.Bytes(), err
+		return nil, err
 	}
 
 	err = retryReader.Close()
-	return downloadedData.Bytes(), err
+	if err != nil {
+		return nil, err
+	}
+	return downloadedData.Bytes(), nil
 }
 
 func (c *StorageClient) DownloadBlobLogContent(blobName string, blobContainer string) ([]byte, error) {
@@ -99,11 +99,14 @@ func (c *StorageClient) DownloadBlobLogContent(blobName string, blobContainer st
 	retryReader := get.NewRetryReader(c.Context, &azblob.RetryReaderOptions{})
 	_, err = downloadedData.ReadFrom(retryReader)
 	if err != nil {
-		return downloadedData.Bytes(), err
+		return nil, err
 	}
 
 	err = retryReader.Close()
-	return downloadedData.Bytes(), err
+	if err != nil {
+		return nil, err
+	}
+	return downloadedData.Bytes(), nil
 }
 
 func (c *StorageClient) GetLogsFromSpecificBlobContainer(containerName string) ([]byte, error) {
@@ -149,6 +152,7 @@ func (c *StorageClient) GetLogContainers() ([]string, error) {
 
 func (c *StorageClient) GetLogsFromDefaultBlobContainers() ([][]byte, error) {
 	var blobFiles [][]byte
+	fileCount := 0
 	for _, containerName := range logContainerNames {
 		pager := c.AzureClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 			Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
@@ -166,9 +170,11 @@ func (c *StorageClient) GetLogsFromDefaultBlobContainers() ([][]byte, error) {
 					return blobFiles, err
 				}
 				blobFiles = append(blobFiles, logContent)
+				fileCount += len(logContent)
 			}
 		}
 	}
+	log.Println(fmt.Sprintf("Processed %d files", fileCount))
 	return blobFiles, nil
 }
 

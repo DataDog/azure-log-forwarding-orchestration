@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"golang.org/x/sync/errgroup"
 	"log"
 	"strings"
@@ -76,6 +77,7 @@ func (b *BlobLogFormatter) BatchBlobData(data []byte) ([][]AzureLogs, error) {
 	sizeBytes := 0
 	sizeCount := 0
 	logs := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	log.Println(fmt.Sprintf("Processing %d logs", len(logs)))
 	for _, azureLog := range logs {
 		formattedLog, itemSizeBytes, err := b.FormatBlobLogData(azureLog)
 		if err != nil {

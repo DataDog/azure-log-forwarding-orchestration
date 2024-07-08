@@ -1,5 +1,6 @@
 # use vscode settings here
 !.vscode
+!.idea
 
 bin
 obj
@@ -55,6 +56,7 @@ venv.bak/
 __pycache__/
 *.py[cod]
 *$py.class
+goBlobForwarder/main
 
 # Azurite artifacts
 __blobstorage__

@@ -34,42 +34,50 @@ func runPool() {
 	// Get containers with logs from storage account
 	containersPool, err := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, nil)
 	if err != nil {
-		log.Println(err)
+		log.Println(fmt.Errorf("error creating containers pool: %v", err))
 		return
 	}
 
 	mainPool.Go(func() error {
 		err := containersPool.GoGetLogContainers()
-		log.Println(err)
-		return err
+		if err != nil {
+			return fmt.Errorf("error getting container list: %v", err)
+		}
+		return nil
 	})
 
 	// Get logs from blob storage
 	blobPool, err := blobStorage.NewStorageClient(ctx, logsProcessing.StorageAccountConnectionString, containersPool.OutChan)
 	if err != nil {
-		log.Println(err)
+		log.Println(fmt.Errorf("error creating blob storage client: %w", err))
 		return
 	}
 
 	mainPool.Go(func() error {
 		err = blobPool.GoGetLogsFromChannelContainer()
-		log.Println(err)
-		return err
+		if err != nil {
+			return fmt.Errorf("error getting container logs: %w", err)
+		}
+		return nil
 	})
 
 	// Format and batch logs
 	processingPool := logsProcessing.NewBlobLogFormatter(ctx, blobPool.OutChan)
 	mainPool.Go(func() error {
 		err := processingPool.GoFormatAndBatchLogs()
-		log.Println(err)
-		return err
+		if err != nil {
+			return fmt.Errorf("error processing logs: %w", err)
+		}
+		return nil
 	})
 
 	// Send logs to Datadog
 	mainPool.Go(func() error {
 		err := logsProcessing.NewDDClient(ctx, processingPool.LogsChan, nil).GoSendWithRetry(start)
-		log.Println(err)
-		return err
+		if err != nil {
+			return fmt.Errorf("error creating DD client: %v", err)
+		}
+		return nil
 	})
 
 	err = mainPool.Wait()
@@ -80,6 +88,7 @@ func runPool() {
 
 func main() {
 	start := time.Now()
+	log.Println(fmt.Sprintf("Start time: %v", (time.Now()).String()))
 	//cursor := client.DownloadBlobCursor()
 	runPool()
 	log.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
