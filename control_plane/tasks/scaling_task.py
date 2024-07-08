@@ -69,7 +69,8 @@ class LogForwarderClient(AsyncContextManager):
         # self.storage_client.blob_containers.create()
         return log_forwarder_id, NotImplemented
 
-    async def delete_log_forwarder(self, region: str) -> str: ...
+    async def delete_log_forwarder(self, region: str) -> str:
+        return NotImplemented
 
 
 class ScalingTask(Task):
