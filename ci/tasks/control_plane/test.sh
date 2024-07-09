@@ -9,4 +9,4 @@ set -euxo pipefail
 python -m coverage run -m pytest ./control_plane
 
 : generate coverage report
-python -m coverage report --skip-empty --show-missing > ci/coverage.txt
+python -m coverage report --skip-empty --show-missing > ci/control_plane_coverage.txt
