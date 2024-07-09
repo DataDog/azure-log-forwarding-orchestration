@@ -2,7 +2,7 @@
 from asyncio import gather
 import asyncio
 from json import dumps
-from logging import DEBUG, getLogger
+from logging import DEBUG, basicConfig, getLogger
 from typing import cast
 
 
@@ -18,7 +18,6 @@ from tasks.task import Task, now
 RESOURCES_TASK_NAME = "resources_task"
 
 log = getLogger(RESOURCES_TASK_NAME)
-log.setLevel(DEBUG)
 
 
 class ResourcesTask(Task):
@@ -65,6 +64,7 @@ class ResourcesTask(Task):
 
 
 async def main() -> None:
+    basicConfig(level=DEBUG)
     log.info("Started task at %s", now())
     resources_cache_state = await read_cache(RESOURCE_CACHE_BLOB)
     async with ResourcesTask(resources_cache_state) as task:

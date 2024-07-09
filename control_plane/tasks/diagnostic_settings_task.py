@@ -3,7 +3,7 @@ from asyncio import gather
 import asyncio
 from copy import deepcopy
 from json import dumps
-from logging import ERROR, INFO, getLogger
+from logging import ERROR, INFO, basicConfig, getLogger
 from typing import AsyncIterable, TypeVar
 from uuid import uuid4
 
@@ -38,7 +38,6 @@ EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
-log.setLevel(INFO)
 
 
 DiagnosticSettingType = TypeVar("DiagnosticSettingType", bound=Resource)
@@ -242,6 +241,7 @@ class DiagnosticSettingsTask(Task):
 
 
 async def main():
+    basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resources, diagnostic_settings = await gather(
         read_cache(RESOURCE_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)

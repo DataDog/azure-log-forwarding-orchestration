@@ -2,10 +2,10 @@
 from asyncio import Lock, gather, run
 from copy import deepcopy
 from json import dumps
-from logging import DEBUG, getLogger
+from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
 from typing import Any, Coroutine, AsyncContextManager, Self, cast
-from uuid import UUID
+from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
@@ -24,6 +24,9 @@ from tasks.task import Task, get_config_option, now
 
 
 SCALING_TASK_NAME = "scaling_task"
+FUNCTION_APP_PREFIX = "blob-log-forwarder-"
+ASP_PREFIX = "log-forwarder-plan-"
+STORAGE_ACCOUNT_PREFIX = "logstorage"
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
 
@@ -59,9 +62,15 @@ class LogForwarderClient(AsyncContextManager):
         )
 
     async def create_log_forwarder(self, region: str) -> DiagnosticSettingConfiguration:
-        log_forwarder_id = str(UUID())
+        log_forwarder_id = str(uuid4())[-12:]  # take the last section since we are length limited
+        storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
+        app_service_plan_name = ASP_PREFIX + log_forwarder_id
+        log.info(
+            "Creating log forwarder storage (%s) and app service plan (%s)",
+            storage_account_name,
+            app_service_plan_name,
+        )
         # storage account
-        storage_account_name = f"log-forwarder-storage-{log_forwarder_id}"
         storage_account_future = await self.storage_client.storage_accounts.begin_create(
             resource_group_name=self.resource_group,
             account_name=storage_account_name,
@@ -75,7 +84,6 @@ class LogForwarderClient(AsyncContextManager):
             ),
         )
         # app service plan
-        app_service_plan_name = f"log-forwarder-plan-{log_forwarder_id}"
         app_service_plan_future = await self.web_client.app_service_plans.begin_create_or_update(
             self.resource_group,
             app_service_plan_name,
@@ -104,7 +112,8 @@ class LogForwarderClient(AsyncContextManager):
             log.exception("Failed to create log forwarder resources")
             raise
 
-        function_app_name = f"blob-log-forwarder-{log_forwarder_id}"
+        function_app_name = FUNCTION_APP_PREFIX + log_forwarder_id
+        log.info("Creating log forwarder app: %s", function_app_name)
         connection_string = await self.get_connection_string(storage_account_name)
         function_app_future = await self.web_client.web_apps.begin_create_or_update(
             self.resource_group,
@@ -121,9 +130,8 @@ class LogForwarderClient(AsyncContextManager):
                 ),
             ),
         )
-
         function_app, blob_forwarder_data = await gather(function_app_future.result(), self.get_blob_forwarder_data())
-        log.info("Created log forwarder function app (%s)", function_app.id)
+        log.info("Created log forwarder function app: %s", function_app.id)
 
         # deploy code to function app
         resp = await self.rest_client.post(
@@ -246,6 +254,7 @@ class ScalingTask(Task):
 
 
 async def main() -> None:
+    basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resource_group = get_config_option("RESOURCE_GROUP")
     resources_cache_state, assignment_cache_state = await gather(
