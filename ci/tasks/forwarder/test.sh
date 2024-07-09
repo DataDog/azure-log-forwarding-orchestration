@@ -1,3 +1,6 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-go test -coverprofile=c.out ./... && go tool cover -html="c.out"
+cd forwarder
+go test -coverprofile=c.out ./...
+go tool cover -html=c.out -o coverage.html
