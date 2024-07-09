@@ -25,7 +25,7 @@ control-plane-tests:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/control_plane/test.sh
+    - ci/scripts/control_plane/test.sh
   artifacts:
     paths:
       - ci/control_plane_coverage.txt
@@ -34,13 +34,13 @@ type-check:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/control_plane/type-check.sh
+    - ci/scripts/control_plane/type-check.sh
 build:
   image: $BUILD_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/control_plane/build.sh
+    - ci/scripts/control_plane/build.sh
 
 # ------------- FORWARDER -------------
 forwarder-tests:
@@ -48,7 +48,7 @@ forwarder-tests:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/forwarder/test.sh
+    - ci/scripts/forwarder/test.sh
   artifacts:
     paths:
       - ci/forwarder_coverage.txt
@@ -62,4 +62,4 @@ coverage-comment:
     - control-plane-tests
     - forwarder-tests
   script:
-    - ci/tasks/coverage-comment.sh
+    - ci/scripts/coverage-comment.sh
