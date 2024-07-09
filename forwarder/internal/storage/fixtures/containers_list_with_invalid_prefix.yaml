@@ -9,7 +9,7 @@ interactions:
         content_length: 0
         transfer_encoding: []
         trailer: {}
-        host: mattlogger.blob.core.windows.net
+        host: test.blob.core.windows.net
         remote_addr: ""
         request_uri: ""
         body: ""
@@ -18,14 +18,14 @@ interactions:
             Accept:
                 - application/xml
             Authorization:
-                - SharedKey mattlogger:piZPD4u1h9S4iY+TZK8FE0ObJdxZzqBnHk8EFfnEjS8=
+                - SharedKey test:piZPD4u1h9S4iY+TZK8FE0ObJdxZzqBnHk8EFfnEjS8=
             User-Agent:
                 - azsdk-go-azblob/v1.3.2 (go1.22.2; darwin)
             X-Ms-Date:
                 - Mon, 08 Jul 2024 22:00:39 GMT
             x-ms-version:
                 - "2023-11-03"
-        url: https://mattlogger.blob.core.windows.net/?comp=list&include=metadata&prefix=nonexistentprefix
+        url: https://test.blob.core.windows.net/?comp=list&include=metadata&prefix=nonexistentprefix
         method: GET
       response:
         proto: HTTP/1.1

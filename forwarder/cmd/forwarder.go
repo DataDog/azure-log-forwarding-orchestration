@@ -11,21 +11,24 @@ import (
 	"time"
 )
 
-func RunWithClient(client storage.AzureBlobClient) {
+func RunWithClient(client *storage.Client) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, ctx = errgroup.WithContext(ctx)
 
 	// Get containers with logs from storage account
-	_, err := storage.GetContainersMatchingPrefix(ctx, client, storage.LogPrefix)
+	containers, err := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 	if err != nil {
-		log.Println(fmt.Errorf("error getting contains with prefix %s: %v", storage.LogPrefix, err))
+		log.Println(fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err))
 		return
+	}
+	for _, container := range containers {
+		log.Println(fmt.Sprintf("Container: %s", *container))
 	}
 }
 
 func Run(storageAccountConnectionString string) {
-	client, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+	client, err := storage.NewClient(storageAccountConnectionString, &azblob.ClientOptions{})
 	if err != nil {
 		log.Println(err)
 		return

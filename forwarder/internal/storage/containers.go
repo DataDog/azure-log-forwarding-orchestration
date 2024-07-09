@@ -5,9 +5,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 )
 
-func GetContainersMatchingPrefix(ctx context.Context, client AzureBlobClient, prefix string) ([]*string, error) {
+func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) ([]*string, error) {
 	var containerNames = make([]*string, 0)
-	containerPager := client.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
+	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
 	for containerPager.More() {
 		resp, err := containerPager.NextPage(ctx)
 		if err != nil {

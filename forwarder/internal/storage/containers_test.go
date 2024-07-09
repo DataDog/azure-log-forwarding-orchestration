@@ -2,53 +2,53 @@ package storage_test
 
 import (
 	"context"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
-	"path"
+	"go.uber.org/mock/gomock"
 	"testing"
 )
 
-func TestGetContainersMatchingPrefix_ReturnsArrayOfContainerNames(t *testing.T) {
-	// GIVEN
-	rec, err := recorder.New(path.Join("fixtures", "containers_list_with_prefix"))
-	assert.NoErrorf(t, err, "failed creating recorder ")
-	defer rec.Stop()
+func TestGetContainersMatchingPrefix_ReturnsNamesOfContainers(t *testing.T) {
+	// Given
+	ctrl := gomock.NewController(t)
 
-	options := &azblob.ClientOptions{}
-	options.Transport = rec.GetDefaultClient()
+	testString := "test"
 
-	client, err := azblob.NewClientWithNoCredential("https://mattlogger.blob.core.windows.net/", options)
-	assert.NoError(t, err)
+	handler := runtime.PagingHandler[azblob.ListContainersResponse]{
+		Fetcher: func(ctx context.Context, response *azblob.ListContainersResponse) (azblob.ListContainersResponse, error) {
+			return azblob.ListContainersResponse{
+				ListContainersSegmentResponse: service.ListContainersSegmentResponse{
+					ContainerItems: []*service.ContainerItem{
+						{Name: to.StringPtr(testString)},
+						{Name: to.StringPtr(testString)},
+					},
+				},
+			}, nil
+		},
+		More: func(response azblob.ListContainersResponse) bool {
+			return false
+		},
+	}
 
-	// WHEN
-	containers, err := storage.GetContainersMatchingPrefix(context.Background(), client, storage.LogPrefix)
+	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
 
-	// THEN
-	assert.NoError(t, err)
-	assert.NotNil(t, containers)
-	assert.Greater(t, len(containers), 0)
-	assert.Equal(t, "insights-logs-functionapplogs", *containers[0])
-}
+	mockClient := mocks.NewMockAzureBlobClient(ctrl)
+	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
-func TestGetContainersMatchingPrefix_ReturnsEmptyWhenNoMatchesFound(t *testing.T) {
-	// GIVEN
-	rec, err := recorder.New(path.Join("fixtures", "containers_list_with_invalid_prefix"))
-	assert.NoErrorf(t, err, "failed creating recorder ")
-	defer rec.Stop()
+	client := storage.NewClientWithClient(mockClient)
 
-	options := &azblob.ClientOptions{}
-	options.Transport = rec.GetDefaultClient()
+	// When
+	containers, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
 
-	client, err := azblob.NewClientWithNoCredential("https://mattlogger.blob.core.windows.net/", options)
-	assert.NoError(t, err)
-
-	// WHEN
-	containers, err := storage.GetContainersMatchingPrefix(context.Background(), client, "nonexistentprefix")
-
-	// THEN
+	// Then
 	assert.NoError(t, err)
 	assert.NotNil(t, containers)
-	assert.Equal(t, len(containers), 0)
+	assert.Len(t, containers, 2)
+	assert.Equal(t, testString, *containers[0])
+	assert.Equal(t, testString, *containers[1])
 }

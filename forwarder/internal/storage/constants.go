@@ -1,3 +1,3 @@
 package storage
 
-const LogPrefix = "insights-logs-"
+const LogContainerPrefix = "insights-logs-"
