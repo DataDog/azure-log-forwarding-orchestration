@@ -5,7 +5,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 	"path"
 	"testing"
@@ -52,16 +51,4 @@ func TestGetContainersMatchingPrefix_ReturnsEmptyWhenNoMatchesFound(t *testing.T
 	assert.NoError(t, err)
 	assert.NotNil(t, containers)
 	assert.Equal(t, len(containers), 0)
-}
-
-func TestMocking(t *testing.T) {
-	// GIVEN
-	ctrl := gomock.NewController(t)
-
-	mockPager := NewMockAzurePager[azblob.ListContainersResponse](ctrl)
-	mockPager.EXPECT().More().Return(false)
-
-	mockClient := NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(mockPager)
-
 }
