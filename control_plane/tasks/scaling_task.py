@@ -124,8 +124,9 @@ class LogForwarderClient(AsyncContextManager):
                 server_farm_id=app_service_plan.id,
                 site_config=SiteConfig(
                     app_settings=[
-                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="python"),
+                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="custom"),
                         NameValuePair(name="AzureWebJobsStorage", value=connection_string),
+                        NameValuePair(name="FUNCTIONS_EXTENSION_VERSION", value="~4"),
                     ]
                 ),
             ),
@@ -134,12 +135,19 @@ class LogForwarderClient(AsyncContextManager):
         log.info("Created log forwarder function app: %s", function_app.id)
 
         # deploy code to function app
+        log.info("Deploying log forwarder code to function app: %s", function_app.id)
         resp = await self.rest_client.post(
             f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
             data=blob_forwarder_data,
         )
         resp.raise_for_status()
-        log.info("Deployed log forwarder code to function app (zip size %s)", len(blob_forwarder_data))
+        body = await resp.text()
+        log.info(
+            "Deployed log forwarder code to function app (zip size %s)\nstatus code: %s\nbody: %s",
+            len(blob_forwarder_data),
+            resp.status,
+            body,
+        )
 
         return {
             "type": "storageaccount",
