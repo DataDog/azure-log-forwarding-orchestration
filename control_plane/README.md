@@ -47,3 +47,12 @@ pytest .
 ```bash
 coverage run -m pytest . > /dev/null ; coverage report -m
 ```
+
+## Building Function Apps Locally
+
+
+simply utter the holy incantation:
+```bash
+cd ~/dd/azure-log-forwarding-orchestration
+docker run -v "$(pwd):/src" registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest bash -c "cd /src/; ./ci/tasks/build.sh"
+```

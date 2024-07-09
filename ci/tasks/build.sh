@@ -20,13 +20,13 @@ for task in resources_task diagnostic_settings_task; do
         ./control_plane/tasks/$task.py
     cp ./dist/$task/bin/$task ./dist/$task/main
     rm -rf ./dist/$task/bin
-    cp ./config/$task/function.json ./dist/$task/$task/function.json
-    cp ./config/host.json ./dist/$task/host.json
+    cp ./control_plane/config/$task/function.json ./dist/$task/$task/function.json
+    cp ./control_plane/config/host.json ./dist/$task/host.json
     # if AzureWebJobsStorage is set, then update it in the local settings file
     if [ -n "${AzureWebJobsStorage:-}" ]; then
-        jq ".Values.AzureWebJobsStorage = \"$AzureWebJobsStorage\"" ./config/local.settings.example.json > ./dist/$task/local.settings.json
+        jq ".Values.AzureWebJobsStorage = \"$AzureWebJobsStorage\"" ./control_plane/config/local.settings.example.json > ./dist/$task/local.settings.json
     else
-        cp ./config/local.settings.example.json ./dist/$task/local.settings.json
+        cp ./control_plane/config/local.settings.example.json ./dist/$task/local.settings.json
     fi
     zip ./dist/$task.zip ./dist/$task/*
     echo "Built $task"
