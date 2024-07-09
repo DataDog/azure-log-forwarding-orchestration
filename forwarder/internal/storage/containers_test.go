@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"context"
+	"errors"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
@@ -86,6 +87,36 @@ func TestGetContainersMatchingPrefix_ReturnsEmptyArray(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, containers)
 	assert.Len(t, containers, 0)
+}
+
+func TestGetContainersMatchingPrefix_ErrorResponse(t *testing.T) {
+	// GIVEN
+	ctrl := gomock.NewController(t)
+
+	testString := "test"
+
+	handler := runtime.PagingHandler[azblob.ListContainersResponse]{
+		Fetcher: func(ctx context.Context, response *azblob.ListContainersResponse) (azblob.ListContainersResponse, error) {
+			return azblob.ListContainersResponse{}, errors.New(testString)
+		},
+		More: func(response azblob.ListContainersResponse) bool {
+			return false
+		},
+	}
+
+	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
+
+	mockClient := mocks.NewMockAzureBlobClient(ctrl)
+	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
+
+	client := storage.NewClientWithClient(mockClient)
+
+	// WHEN
+	_, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
+
+	// THEN
+	assert.Error(t, err)
+	assert.EqualError(t, err, testString)
 }
 
 func TestGetContainersMatchingPrefix_ReturnsArrayOfContainerNames(t *testing.T) {
