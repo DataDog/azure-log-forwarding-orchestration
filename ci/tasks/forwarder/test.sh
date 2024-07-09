@@ -2,5 +2,5 @@
 set -euo pipefail
 
 cd forwarder
-go test -coverprofile=c.out ./...
-go tool cover -html=c.out -o coverage.html
+go test -coverprofile=forwarder_coverage.txt ./...
+mv forwarder_coverage.txt ../ci/
