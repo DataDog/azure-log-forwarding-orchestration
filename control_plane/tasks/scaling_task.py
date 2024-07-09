@@ -42,11 +42,13 @@ class LogForwarderClient(AsyncContextManager):
         self._blob_forwarder_data: bytes | None = None
 
     async def __aenter__(self) -> Self:
-        await gather(self.web_client.__aenter__(), self.storage_client.__aenter__())
+        await gather(self.web_client.__aenter__(), self.storage_client.__aenter__(), self.rest_client.__aenter__())
+        token = await DefaultAzureCredential().get_token("https://management.azure.com/.default")
+        self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
 
     async def __aexit__(self, *_) -> None:
-        await gather(self.web_client.__aexit__(), self.storage_client.__aexit__())
+        await gather(self.web_client.__aexit__(), self.storage_client.__aexit__(), self.rest_client.__aexit__())
 
     async def create_log_forwarder(self, region: str) -> DiagnosticSettingConfiguration:
         log_forwarder_id = str(UUID())
@@ -111,13 +113,22 @@ class LogForwarderClient(AsyncContextManager):
         _, blob_forwarder_data = await gather(function_app_future.result(), self.get_blob_forwarder_data())
 
         # deploy code to function app
-        # https://learn.microsoft.com/en-us/azure/app-service/deploy-configure-credentials?tabs=cli#userscope
-        deploy_user = ""
-        deploy_password = ""
 
+        # option 1
+        # https://learn.microsoft.com/en-us/azure/app-service/deploy-configure-credentials?tabs=cli#userscope
+        # deploy_user = ""
+        # deploy_password = ""
         # curl -X POST -u <deployment_user> --data-binary "@<zip_file_path>" https://<app_name>.scm.azurewebsites.net/api/zipdeploy
+        # resp = await self.rest_client.post(
+        #     f"https://{deploy_user}:{deploy_password}@{function_app_name}.scm.azurewebsites.net/api/zipdeploy",
+        #     data=blob_forwarder_data,
+        # )
+        # resp.raise_for_status()
+
+        # option 2: kudu api
+        # curl -X POST -H "Authorization: Bearer $TOKEN" -T @"<zip-package-path>" "https://<app-name>.scm.azurewebsites.net/api/publish?type=zip"
         resp = await self.rest_client.post(
-            f"https://{deploy_user}:{deploy_password}@{function_app_name}.scm.azurewebsites.net/api/zipdeploy",
+            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
             data=blob_forwarder_data,
         )
         resp.raise_for_status()
