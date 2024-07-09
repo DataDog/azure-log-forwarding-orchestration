@@ -95,11 +95,15 @@ class LogForwarderClient(AsyncContextManager):
             storage_account, app_service_plan = await gather(
                 storage_account_future.result(), app_service_plan_future.result()
             )
+            log.info(
+                "Created log forwarder storage account (%s) and app service plan (%s)",
+                storage_account.id,
+                app_service_plan.id,
+            )
         except Exception:
             log.exception("Failed to create log forwarder resources")
             raise
 
-        # self.storage_client.blob_containers.create()
         function_app_name = f"blob-log-forwarder-{log_forwarder_id}"
         connection_string = await self.get_connection_string(storage_account_name)
         function_app_future = await self.web_client.web_apps.begin_create_or_update(
@@ -118,15 +122,16 @@ class LogForwarderClient(AsyncContextManager):
             ),
         )
 
-        _, blob_forwarder_data = await gather(function_app_future.result(), self.get_blob_forwarder_data())
+        function_app, blob_forwarder_data = await gather(function_app_future.result(), self.get_blob_forwarder_data())
+        log.info("Created log forwarder function app (%s)", function_app.id)
 
         # deploy code to function app
-        # curl -X POST -H "Authorization: Bearer $TOKEN" -T @"<zip-package-path>" "https://<app-name>.scm.azurewebsites.net/api/publish?type=zip"
         resp = await self.rest_client.post(
             f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
             data=blob_forwarder_data,
         )
         resp.raise_for_status()
+        log.info("Deployed log forwarder code to function app (zip size %s)", len(blob_forwarder_data))
 
         return {
             "type": "storageaccount",
