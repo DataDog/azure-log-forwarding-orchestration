@@ -48,7 +48,7 @@ forwarder-tests:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/control_plane/test.sh
+    - ci/tasks/forwarder/test.sh
   artifacts:
     paths:
       - ci/forwarder_coverage.txt
