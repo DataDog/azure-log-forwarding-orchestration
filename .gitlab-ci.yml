@@ -28,7 +28,7 @@ control-plane-tests:
     - ci/scripts/control_plane/test.sh
   artifacts:
     paths:
-      - ci/control_plane_coverage.xml
+      - ci/control_plane_coverage.md
 #  only:
 #    changes:
 #      - control_plane/**/*
@@ -52,7 +52,7 @@ control-plane-coverage-comment:
   dependencies:
     - control-plane-tests
   script:
-    - ci/scripts/coverage-comment.sh "Control Plane" "ci/control_plane_coverage.xml"
+    - ci/scripts/coverage-comment.sh "Control Plane" "ci/control_plane_coverage.md"
 #  only:
 #    changes:
 #      - control_plane/**/*
@@ -66,7 +66,7 @@ forwarder-tests:
     - ci/scripts/forwarder/test.sh
   artifacts:
     paths:
-      - ci/forwarder_coverage.xml
+      - ci/forwarder_coverage.md
 #  only:
 #    changes:
 #      - forwarder/**/*
@@ -78,7 +78,7 @@ forwarder-coverage-comment:
   dependencies:
     - forwarder-tests
   script:
-    - ci/scripts/coverage-comment.sh "Forwarder" "ci/forwarder_coverage.xml"
+    - ci/scripts/coverage-comment.sh "Forwarder" "ci/forwarder_coverage.md"
 #  only:
 #    changes:
 #      - control_plane/**/*
