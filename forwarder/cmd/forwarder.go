@@ -40,7 +40,7 @@ func Run(storageAccountConnectionString string) {
 func main() {
 	start := time.Now()
 	log.Println(fmt.Sprintf("Start time: %v", start.String()))
-	storageAccountConnectionString := os.Getenv("StorageAccountConnectionString")
+	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	Run(storageAccountConnectionString)
 	log.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	log.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
