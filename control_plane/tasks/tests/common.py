@@ -1,15 +1,18 @@
-from typing import AsyncIterable, TypeVar
+from typing import Any, TypeVar
+from collections.abc import AsyncIterable
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, patch
 
 
-class TaskTestCase(IsolatedAsyncioTestCase):
-    TASK_NAME: str = NotImplemented
-
-    def patch_path(self, path: str):
-        p = patch(path)
+class AsyncTestCase(IsolatedAsyncioTestCase):
+    def patch_path(self, path: str, **kwargs: Any):
+        p = patch(path, **kwargs)
         self.addCleanup(p.stop)
         return p.start()
+
+
+class TaskTestCase(AsyncTestCase):
+    TASK_NAME: str = NotImplemented
 
     def patch(self, obj: str):
         return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}")
@@ -22,6 +25,17 @@ class TaskTestCase(IsolatedAsyncioTestCase):
     def cache_value(self, cache_name: str) -> str:
         self.write_cache.assert_called_with(cache_name, ANY)
         return self.write_cache.call_args_list[-1][0][1]
+
+
+class AsyncMockClient(AsyncMock):
+    def __init__(self, *_args: Any, **_kwargs: Any) -> None:
+        super().__init__()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
+        pass
 
 
 T = TypeVar("T")

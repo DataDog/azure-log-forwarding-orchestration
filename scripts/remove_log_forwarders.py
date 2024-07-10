@@ -18,9 +18,9 @@ getLogger("azure").setLevel(WARNING)
 log = getLogger("extension_cleanup")
 
 
-FUNCTION_APP_PREFIX = "blob-log-forwarder-"
-ASP_PREFIX = "log-forwarder-plan-"
-STORAGE_ACCOUNT_PREFIX = "logstorage"
+FUNCTION_APP_PREFIX = "dd-blob-log-forwarder-"
+ASP_PREFIX = "dd-log-forwarder-plan-"
+STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
 DRY_RUN = False
 
 

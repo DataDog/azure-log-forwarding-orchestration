@@ -24,9 +24,9 @@ from tasks.task import Task, get_config_option, now
 
 
 SCALING_TASK_NAME = "scaling_task"
-FUNCTION_APP_PREFIX = "blob-log-forwarder-"
-ASP_PREFIX = "log-forwarder-plan-"
-STORAGE_ACCOUNT_PREFIX = "logstorage"
+FUNCTION_APP_PREFIX = "dd-blob-log-forwarder-"
+ASP_PREFIX = "dd-log-forwarder-plan-"
+STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
 
@@ -41,7 +41,6 @@ class LogForwarderClient(AsyncContextManager):
         self.web_client = WebSiteManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.rest_client = ClientSession()
-        self.subscription_id = subscription_id
         self.resource_group = resource_group
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
@@ -173,7 +172,7 @@ class LogForwarderClient(AsyncContextManager):
                     self._blob_forwarder_data = await stream.content_as_bytes(max_concurrency=4)
             return self._blob_forwarder_data
 
-    async def delete_log_forwarder(self, region: str) -> str:
+    async def delete_log_forwarder(self, region: str, forwarder_id: str) -> str:
         return NotImplemented
 
 
@@ -198,20 +197,22 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
-        await gather(*(self.process_subscription(sub_id) for sub_id in self.resource_cache))
+        all_subscriptions = set(self.resource_cache.keys()) | set(self.assignment_cache.keys())
+        await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
-        previous_region_assignments = set(self._assignment_cache_initial_state[subscription_id].keys())
-        current_regions = set(self.resource_cache[subscription_id].keys())
+        previous_region_assignments = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
+        current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
         regions_to_add = current_regions - previous_region_assignments
         regions_to_remove = previous_region_assignments - current_regions
-
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             tasks: list[Coroutine[Any, Any, None]] = []
             if regions_to_add:
-                tasks.extend(self.create_log_forwarder(client, region) for region in regions_to_add)
+                tasks.extend(self.create_log_forwarder(client, subscription_id, region) for region in regions_to_add)
             if regions_to_remove:
-                tasks.extend(self.delete_log_forwarder(client, region) for region in regions_to_remove)
+                tasks.extend(
+                    self.delete_region_log_forwarders(client, subscription_id, region) for region in regions_to_remove
+                )
             await gather(*tasks)
 
         self.update_assignments(subscription_id)
@@ -219,23 +220,30 @@ class ScalingTask(Task):
     async def create_log_forwarder(
         self,
         client: LogForwarderClient,
+        subscription_id: str,
         region: str,
     ) -> None:
-        log.info("Creating log forwarder for subscription %s in region %s", client.subscription_id, region)
+        log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
         configuration = await client.create_log_forwarder(region)
-        self.assignment_cache[client.subscription_id][region] = {
+        self.assignment_cache[subscription_id][region] = {
             "configurations": {configuration["id"]: configuration},
             "resources": {},
         }
 
-    async def delete_log_forwarder(
+    async def delete_region_log_forwarders(
         self,
         client: LogForwarderClient,
+        subscription_id: str,
         region: str,
     ) -> None:
-        log.info("Deleting log forwarder for subscription %s in region %s", client.subscription_id, region)
-        config_id = await client.delete_log_forwarder(region)
-        self.assignment_cache[client.subscription_id][region]["configurations"].pop(config_id, None)
+        log.info("Deleting log forwarder for subscription %s in region %s", subscription_id, region)
+        await gather(
+            *(
+                client.delete_log_forwarder(region, forwarder_id)
+                for forwarder_id in self.assignment_cache[subscription_id][region]["configurations"]
+            )
+        )
+        del self.assignment_cache[subscription_id][region]
 
     def update_assignments(self, sub_id: str) -> None:
         for region_config in self.assignment_cache[sub_id].values():
