@@ -12,4 +12,4 @@ python -m coverage run -m pytest ./control_plane
 python -m coverage xml --skip-empty -o ci/control_plane_coverage.xml
 
 pip install pycobertura
-pycobertura show --format markdown ci/control_plane_coverage.xml > ci/forwarder_coverage.md
+pycobertura show --format markdown ci/control_plane_coverage.xml > ci/control_plane_coverage.md
