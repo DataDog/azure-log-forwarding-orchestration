@@ -225,7 +225,7 @@ class ScalingTask(Task):
     ) -> None:
         log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
         configuration = await client.create_log_forwarder(region)
-        self.assignment_cache[subscription_id][region] = {
+        self.assignment_cache.setdefault(subscription_id, {})[region] = {
             "configurations": {configuration["id"]: configuration},
             "resources": {},
         }
@@ -246,7 +246,7 @@ class ScalingTask(Task):
         del self.assignment_cache[subscription_id][region]
 
     def update_assignments(self, sub_id: str) -> None:
-        for region_config in self.assignment_cache[sub_id].values():
+        for region, region_config in self.assignment_cache[sub_id].items():
             diagnostic_setting_configurations = region_config["configurations"]
             assert (
                 len(diagnostic_setting_configurations) == 1
@@ -258,7 +258,7 @@ class ScalingTask(Task):
             resource_assignments = region_config["resources"]
 
             # update all the resource assignments to use the new config
-            for resource_id in resource_assignments:
+            for resource_id in self.resource_cache[sub_id][region]:
                 resource_assignments[resource_id] = config_id
 
     async def write_caches(self) -> None:
