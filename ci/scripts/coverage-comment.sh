@@ -7,7 +7,7 @@ curl -f -v 'https://pr-commenter.us1.ddbuild.io/internal/cit/pr-comment'\
     -X PATCH \
     -d '{
     "commit": "'"$CI_COMMIT_REF_NAME"'",
-    "message": "'"$(echo $1)"''" Coverage:\n"$(awk -v ORS='\\n' '1' $2)"\n",
+    "message": "'"$1"'" Coverage:\n'"$(awk -v ORS='\\n' '1' "$2")"'",
     "header": "Coverage Report",
     "org": "Datadog",
     "repo": "azure-log-forwarding-offering"
