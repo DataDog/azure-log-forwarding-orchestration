@@ -9,7 +9,6 @@ require (
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/mock v0.4.0
 	golang.org/x/sync v0.7.0
-	gopkg.in/dnaeon/go-vcr.v3 v3.2.0
 )
 
 require (
