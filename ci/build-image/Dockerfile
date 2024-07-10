@@ -13,3 +13,7 @@ RUN pip install './control_plane[dev]'
 # Install deps for forwarder
 COPY ./forwarder /forwarder
 RUN cd forwarder; go mod vendor
+
+# Install deps for CI
+RUN pip install pycobertura
+RUN go install github.com/boumenot/gocover-cobertura
