@@ -29,9 +29,9 @@ control-plane-tests:
   artifacts:
     paths:
       - ci/control_plane_coverage.xml
-  only:
-    changes:
-      - control_plane/**/*
+#  only:
+#    changes:
+#      - control_plane/**/*
 type-check:
   image: $BUILD_IMAGE
   stage: test
@@ -54,9 +54,9 @@ control-plane-coverage-comment:
     - forwarder-tests
   script:
     - ci/scripts/coverage-comment.sh "Control Plane" "ci/control_plane_coverage.xml"
-  only:
-    changes:
-      - control_plane/**/*
+#  only:
+#    changes:
+#      - control_plane/**/*
 
 # ------------- FORWARDER -------------
 forwarder-tests:
@@ -68,9 +68,9 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.xml
-  only:
-    changes:
-      - forwarder/**/*
+#  only:
+#    changes:
+#      - forwarder/**/*
 
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE
@@ -81,7 +81,7 @@ forwarder-coverage-comment:
     - forwarder-tests
   script:
     - ci/scripts/coverage-comment.sh "Forwarder" "ci/forwarder_coverage.xml"
-  only:
-    changes:
-      - control_plane/**/*
+#  only:
+#    changes:
+#      - control_plane/**/*
 
