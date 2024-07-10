@@ -2,6 +2,7 @@
 
 set -euxo pipefail
 
+source /venv/bin/activate
 pip install pycobertura
 
 OUTPUT=$(pycobertura show --format markdown $2)
