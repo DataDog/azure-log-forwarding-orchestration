@@ -28,6 +28,8 @@ func NewClientWithAzBlobClient(azBlobClient AzureBlobClient) *Client {
 
 // AzureBlobClient wraps around the azblob.Client struct, to allow for mocking.
 // these are the inherited and used methods.
+//
+//go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
 type AzureBlobClient interface {
 	NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse]
 }
