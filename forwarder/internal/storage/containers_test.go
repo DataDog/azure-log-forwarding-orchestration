@@ -41,7 +41,7 @@ func TestGetContainersMatchingPrefix_ReturnsNamesOfContainers(t *testing.T) {
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
-	client := storage.NewClientWithClient(mockClient)
+	client := storage.NewClientWithAzBlobClient(mockClient)
 
 	// WHEN
 	containers, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
@@ -76,7 +76,7 @@ func TestGetContainersMatchingPrefix_ReturnsEmptyArray(t *testing.T) {
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
-	client := storage.NewClientWithClient(mockClient)
+	client := storage.NewClientWithAzBlobClient(mockClient)
 
 	// WHEN
 	containers, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
@@ -107,7 +107,7 @@ func TestGetContainersMatchingPrefix_ErrorResponse(t *testing.T) {
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
-	client := storage.NewClientWithClient(mockClient)
+	client := storage.NewClientWithAzBlobClient(mockClient)
 
 	// WHEN
 	_, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)

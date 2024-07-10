@@ -20,7 +20,7 @@ func NewClient(storageAccountConnectionString string, options *azblob.ClientOpti
 	}, nil
 }
 
-func NewClientWithClient(azBlobClient AzureBlobClient) *Client {
+func NewClientWithAzBlobClient(azBlobClient AzureBlobClient) *Client {
 	return &Client{
 		azBlobClient: azBlobClient,
 	}
