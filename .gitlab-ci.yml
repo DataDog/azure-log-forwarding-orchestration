@@ -51,7 +51,6 @@ control-plane-coverage-comment:
   tags: ["arch:amd64"]
   dependencies:
     - control-plane-tests
-    - forwarder-tests
   script:
     - ci/scripts/coverage-comment.sh "Control Plane" "ci/control_plane_coverage.xml"
 #  only:
@@ -77,7 +76,6 @@ forwarder-coverage-comment:
   stage: after-test
   tags: ["arch:amd64"]
   dependencies:
-    - control-plane-tests
     - forwarder-tests
   script:
     - ci/scripts/coverage-comment.sh "Forwarder" "ci/forwarder_coverage.xml"
