@@ -24,17 +24,20 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
-        "type": "object",  # region
-        "properties": {
-            "configurations": {
-                "type": "object",
-                "propertyNames": {"format": "uuid"},  # config_id
-                "additionalProperties": DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+        "type": "object",  # region name
+        "additionalProperties": {
+            "properties": {  # region config
+                "configurations": {
+                    "type": "object",  # config_id
+                    "additionalProperties": DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+                },
+                "resources": {
+                    "type": "object",  # resource_id
+                    "additionalProperties": {"type": "string"},  # config_id
+                },
             },
-            "resources": {
-                "type": "object",  # resource_id
-                "additionalProperties": {"format": "uuid"},  # config_id
-            },
+            "required": ["configurations", "resources"],
+            "additionalProperties": False,
         },
     },
 }
