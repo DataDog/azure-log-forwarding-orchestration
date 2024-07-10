@@ -4,8 +4,9 @@ source /venv/bin/activate
 
 set -euxo pipefail
 
+tasks=($(cd control_plane; python3 -m tasks.__init__))
 
-for task in resources_task diagnostic_settings_task; do
+for task in $tasks; do
     echo "Building $task"
     mkdir -p ./dist/$task/$task
     pyinstaller \
