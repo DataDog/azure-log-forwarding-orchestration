@@ -28,7 +28,10 @@ control-plane-tests:
     - ci/scripts/control_plane/test.sh
   artifacts:
     paths:
-      - ci/control_plane_coverage.txt
+      - ci/control_plane_coverage.xml
+  only:
+    changes:
+      - control_plane/**/*
 type-check:
   image: $BUILD_IMAGE
   stage: test
@@ -42,6 +45,19 @@ build:
   script:
     - ci/scripts/control_plane/build.sh
 
+control-plane-coverage-comment:
+  image: $PR_COMMENTER_IMAGE
+  stage: after-test
+  tags: ["arch:amd64"]
+  dependencies:
+    - control-plane-tests
+    - forwarder-tests
+  script:
+    - ci/scripts/coverage-comment.sh "Control Plane" "ci/control_plane_coverage.xml"
+  only:
+    changes:
+      - control_plane/**/*
+
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $BUILD_IMAGE
@@ -51,10 +67,12 @@ forwarder-tests:
     - ci/scripts/forwarder/test.sh
   artifacts:
     paths:
-      - ci/forwarder_coverage.txt
+      - ci/forwarder_coverage.xml
+  only:
+    changes:
+      - forwarder/**/*
 
-# ------------- COVERAGE COMMENT -------------
-coverage-comment:
+forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
@@ -62,4 +80,8 @@ coverage-comment:
     - control-plane-tests
     - forwarder-tests
   script:
-    - ci/scripts/coverage-comment.sh
+    - ci/scripts/coverage-comment.sh "Forwarder" "ci/forwarder_coverage.xml"
+  only:
+    changes:
+      - control_plane/**/*
+
