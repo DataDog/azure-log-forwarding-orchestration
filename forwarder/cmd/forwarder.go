@@ -6,39 +6,62 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"golang.org/x/sync/errgroup"
+	"io"
 	"log"
 	"os"
 	"time"
 )
 
-func RunWithClient(client storage.AzureBlobClient) {
+func Run(client *storage.Client, output io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, ctx = errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	containerListChan := make(chan []*string, 1000)
+	defer close(containerListChan)
 
 	// Get containers with logs from storage account
-	_, err := storage.GetContainersMatchingPrefix(ctx, client, storage.LogPrefix)
-	if err != nil {
-		log.Println(fmt.Errorf("error getting contains with prefix %s: %v", storage.LogPrefix, err))
-		return
-	}
-}
+	eg.Go(func() error {
+		err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
+		if err != nil {
+			return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		select {
+		case result := <-containerListChan:
+			for _, container := range result {
+				output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
+			}
+		}
+		return nil
+	})
 
-func Run(storageAccountConnectionString string) {
-	client, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+	err := eg.Wait()
 	if err != nil {
-		log.Println(err)
-		return
+		return fmt.Errorf("error waiting for errgroup: %v", err)
 	}
 
-	RunWithClient(client)
+	return nil
 }
 
 func main() {
 	start := time.Now()
 	log.Println(fmt.Sprintf("Start time: %v", start.String()))
-	storageAccountConnectionString := os.Getenv("StorageAccountConnectionString")
-	Run(storageAccountConnectionString)
+	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
+	client, err := storage.NewClient(storageAccountConnectionString, &azblob.ClientOptions{})
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+
+	err = Run(client, log.Writer())
+
 	log.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	log.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
 }
