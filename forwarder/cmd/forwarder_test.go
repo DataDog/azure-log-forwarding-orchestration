@@ -24,6 +24,11 @@ func TestRun(t *testing.T) {
 		return nil
 	}
 	rec.AddHook(hook, recorder.AfterCaptureHook)
+	beforeSaveHook := func(i *cassette.Interaction) error {
+		i.Response.Uncompressed = true
+		return nil
+	}
+	rec.AddHook(beforeSaveHook, recorder.BeforeSaveHook)
 
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 

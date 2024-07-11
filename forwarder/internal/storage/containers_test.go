@@ -11,6 +11,7 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
 	"testing"
 )
 
@@ -42,16 +43,28 @@ func TestGetContainersMatchingPrefix_ReturnsNamesOfContainers(t *testing.T) {
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
 	client := storage.NewClientWithAzBlobClient(mockClient)
+	eg, egCtx := errgroup.WithContext(context.Background())
+	resultChan := make(chan []*string, 1)
 
 	// WHEN
-	containers, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
+	err := client.GetContainersMatchingPrefix(egCtx, eg, storage.LogContainerPrefix, resultChan)
 
 	// THEN
 	assert.NoError(t, err)
-	assert.NotNil(t, containers)
-	assert.Len(t, containers, 2)
-	assert.Equal(t, testString, *containers[0])
-	assert.Equal(t, testString, *containers[1])
+	err = eg.Wait()
+	assert.NoError(t, err)
+
+	results := []*string{}
+	select {
+	case result := <-resultChan:
+		results = append(results, result...)
+	}
+	close(resultChan)
+	assert.NoError(t, err)
+	assert.NotNil(t, results)
+	assert.Len(t, results, 2)
+	assert.Equal(t, testString, *results[0])
+	assert.Equal(t, testString, *results[1])
 }
 
 func TestGetContainersMatchingPrefix_ReturnsEmptyArray(t *testing.T) {
@@ -60,11 +73,7 @@ func TestGetContainersMatchingPrefix_ReturnsEmptyArray(t *testing.T) {
 
 	handler := runtime.PagingHandler[azblob.ListContainersResponse]{
 		Fetcher: func(ctx context.Context, response *azblob.ListContainersResponse) (azblob.ListContainersResponse, error) {
-			return azblob.ListContainersResponse{
-				ListContainersSegmentResponse: service.ListContainersSegmentResponse{
-					ContainerItems: []*service.ContainerItem{},
-				},
-			}, nil
+			return azblob.ListContainersResponse{}, nil
 		},
 		More: func(response azblob.ListContainersResponse) bool {
 			return false
@@ -77,14 +86,25 @@ func TestGetContainersMatchingPrefix_ReturnsEmptyArray(t *testing.T) {
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
 	client := storage.NewClientWithAzBlobClient(mockClient)
+	eg, egCtx := errgroup.WithContext(context.Background())
+	resultChan := make(chan []*string, 1)
 
 	// WHEN
-	containers, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
+	err := client.GetContainersMatchingPrefix(egCtx, eg, storage.LogContainerPrefix, resultChan)
 
 	// THEN
 	assert.NoError(t, err)
-	assert.NotNil(t, containers)
-	assert.Len(t, containers, 0)
+	err = eg.Wait()
+	assert.NoError(t, err)
+
+	results := []*string{}
+	select {
+	case result := <-resultChan:
+		results = append(results, result...)
+	}
+	close(resultChan)
+	assert.NoError(t, err)
+	assert.Len(t, results, 0)
 }
 
 func TestGetContainersMatchingPrefix_ErrorResponse(t *testing.T) {
@@ -108,11 +128,15 @@ func TestGetContainersMatchingPrefix_ErrorResponse(t *testing.T) {
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
 	client := storage.NewClientWithAzBlobClient(mockClient)
+	eg, egCtx := errgroup.WithContext(context.Background())
+	resultChan := make(chan []*string, 1)
 
 	// WHEN
-	_, err := client.GetContainersMatchingPrefix(context.Background(), storage.LogContainerPrefix)
+	err := client.GetContainersMatchingPrefix(egCtx, eg, storage.LogContainerPrefix, resultChan)
 
 	// THEN
+
+	close(resultChan)
 	assert.Error(t, err)
 	assert.EqualError(t, err, testString)
 }

@@ -12,20 +12,30 @@ import (
 	"time"
 )
 
-func Run(client *storage.Client, output io.Writer) {
+func Run(client *storage.Client, output io.Writer) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_, ctx = errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(ctx)
+
+	containerListChan := make(chan []*string, 1000)
 
 	// Get containers with logs from storage account
-	containers, err := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
+	err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
 	if err != nil {
-		output.Write([]byte(fmt.Sprintf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)))
-		return
+		return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
 	}
-	for _, container := range containers {
-		output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
+	err = eg.Wait()
+	if err != nil {
+		return fmt.Errorf("error waiting for errgroup: %v", err)
 	}
+	select {
+	case result := <-containerListChan:
+		for _, container := range result {
+			output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
+		}
+	}
+	close(containerListChan)
+	return nil
 }
 
 func main() {
