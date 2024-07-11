@@ -11,5 +11,6 @@ COPY ./control_plane /control_plane
 RUN pip install './control_plane[dev]'
 
 # Install deps for forwarder
-COPY ./forwarder /forwarder
-RUN cd forwarder; go mod vendor
+RUN go get -v -u github.com/boumenot/gocover-cobertura
+RUN go install github.com/boumenot/gocover-cobertura
+ENV PATH="/root/go/bin:$PATH"
