@@ -60,11 +60,7 @@ func TestGetContainersMatchingPrefix_ReturnsEmptyArray(t *testing.T) {
 
 	handler := runtime.PagingHandler[azblob.ListContainersResponse]{
 		Fetcher: func(ctx context.Context, response *azblob.ListContainersResponse) (azblob.ListContainersResponse, error) {
-			return azblob.ListContainersResponse{
-				ListContainersSegmentResponse: service.ListContainersSegmentResponse{
-					ContainerItems: []*service.ContainerItem{},
-				},
-			}, nil
+			return azblob.ListContainersResponse{}, nil
 		},
 		More: func(response azblob.ListContainersResponse) bool {
 			return false
