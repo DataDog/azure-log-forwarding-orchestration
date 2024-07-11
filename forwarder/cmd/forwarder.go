@@ -21,20 +21,28 @@ func Run(client *storage.Client, output io.Writer) error {
 	defer close(containerListChan)
 
 	// Get containers with logs from storage account
-	err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
-	if err != nil {
-		return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
-	}
-	err = eg.Wait()
+	eg.Go(func() error {
+		err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
+		if err != nil {
+			return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
+		}
+		return nil
+	})
+	eg.Go(func() error {
+		select {
+		case result := <-containerListChan:
+			for _, container := range result {
+				output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
+			}
+		}
+		return nil
+	})
+
+	err := eg.Wait()
 	if err != nil {
 		return fmt.Errorf("error waiting for errgroup: %v", err)
 	}
-	select {
-	case result := <-containerListChan:
-		for _, container := range result {
-			output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
-		}
-	}
+
 	return nil
 }
 
