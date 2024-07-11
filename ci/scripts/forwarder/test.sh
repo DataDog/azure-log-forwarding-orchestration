@@ -8,6 +8,4 @@ go install github.com/boumenot/gocover-cobertura
 /root/go/bin/gocover-cobertura < forwarder_coverage.txt > forwarder_coverage.xml
 
 source /venv/bin/activate
-pip install pycobertura
-pycobertura show --format markdown forwarder_coverage.xml > forwarder_coverage.md
-mv forwarder_coverage.md ../ci/
+python -m pycobertura show --format markdown forwarder_coverage.xml > ../ci/forwarder_coverage.md
