@@ -102,10 +102,11 @@ class LogForwarderClient(AsyncContextManager):
             AppServicePlan(
                 location=region,
                 kind="linux",
+                reserved=True,
                 sku=SkuDescription(
                     # TODO: figure out which SKU we should be using here
-                    name="Y1",
-                    tier="Dynamic",
+                    tier="Basic",
+                    name="B1",
                 ),
             ),
         )
