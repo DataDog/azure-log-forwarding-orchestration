@@ -24,7 +24,14 @@ STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
 DRY_RUN = False
 
 
-def should_delete(resource: Resource) -> bool:
+def parse_resource_group(resource_id: str) -> str:
+    return resource_id.split("/")[4]
+
+
+def should_delete(resource: Resource, resource_group: str | None) -> bool:
+    if parse_resource_group(resource.id) != resource_group:
+        return False
+
     name: str = resource.name
     match resource.type.lower():
         case "microsoft.web/sites":
@@ -35,6 +42,19 @@ def should_delete(resource: Resource) -> bool:
             return name.startswith(STORAGE_ACCOUNT_PREFIX)
         case _:
             return False
+
+
+def partition_resources(
+    resources: list[Resource],
+) -> tuple[list[Resource], list[Resource]]:
+    function_apps: list[Resource] = []
+    everything_else: list[Resource] = []
+    for resource in resources:
+        if resource.type.lower() == "microsoft.web/sites":
+            function_apps.append(resource)
+        else:
+            everything_else.append(resource)
+    return function_apps, everything_else
 
 
 async def delete_resource(client: ResourceManagementClient, resource: Resource):
@@ -52,16 +72,22 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
 
 async def main():
     sub_id = "0b62a232-b8db-4380-9da6-640f7272ed6d"
+    resource_group: str | None = "lfo"
     async with DefaultAzureCredential() as cred, ResourceManagementClient(
         cred, sub_id
     ) as client:
         resources = client.resources.list()
-        resources_to_delete = [
-            resource async for resource in resources if should_delete(resource)
-        ]
-        await gather(
-            *[delete_resource(client, resource) for resource in resources_to_delete]
+        function_apps, everything_else = partition_resources(
+            [
+                resource
+                async for resource in resources
+                if should_delete(resource, resource_group)
+            ]
         )
+
+        # delete any function apps before we delete the rest to avoid conflicts
+        await gather(*[delete_resource(client, r) for r in function_apps])
+        await gather(*[delete_resource(client, r) for r in everything_else])
 
 
 if __name__ == "__main__":
