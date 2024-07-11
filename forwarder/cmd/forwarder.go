@@ -18,6 +18,7 @@ func Run(client *storage.Client, output io.Writer) error {
 	eg, ctx := errgroup.WithContext(ctx)
 
 	containerListChan := make(chan []*string, 1000)
+	defer close(containerListChan)
 
 	// Get containers with logs from storage account
 	err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
@@ -34,7 +35,6 @@ func Run(client *storage.Client, output io.Writer) error {
 			output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
 		}
 	}
-	close(containerListChan)
 	return nil
 }
 
