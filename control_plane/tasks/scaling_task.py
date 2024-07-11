@@ -11,9 +11,21 @@ from uuid import uuid4
 from aiohttp import ClientSession
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
-from azure.mgmt.web.v2023_12_01.models import AppServicePlan, SkuDescription, Site, SiteConfig, NameValuePair
+from azure.mgmt.web.v2023_12_01.models import (
+    AppServicePlan,
+    SkuDescription,
+    Site,
+    SiteConfig,
+    NameValuePair,
+    ManagedServiceIdentity,
+)
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
-from azure.mgmt.storage.v2023_05_01.models import StorageAccountCreateParameters, Sku, StorageAccountKey
+from azure.mgmt.storage.v2023_05_01.models import (
+    StorageAccountCreateParameters,
+    Sku,
+    StorageAccountKey,
+    PublicNetworkAccess,
+)
 from azure.storage.blob.aio import ContainerClient
 
 # project
@@ -80,6 +92,7 @@ class LogForwarderClient(AsyncContextManager):
                 ),
                 kind="StorageV2",
                 location=region,
+                public_network_access=PublicNetworkAccess.DISABLED,
             ),
         )
         # app service plan
@@ -88,13 +101,14 @@ class LogForwarderClient(AsyncContextManager):
             app_service_plan_name,
             AppServicePlan(
                 location=region,
+                kind="linux",
+                target_worker_count=1,
+                target_worker_size_id=0,
+                reserved=True,
                 sku=SkuDescription(
                     # TODO: figure out which SKU we should be using here
                     name="Y1",
                     tier="Dynamic",
-                    size="Y1",
-                    family="Y",
-                    capacity=0,
                 ),
             ),
         )
@@ -120,7 +134,9 @@ class LogForwarderClient(AsyncContextManager):
             Site(
                 location=region,
                 kind="functionapp",
+                identity=ManagedServiceIdentity(type="SystemAssigned"),
                 server_farm_id=app_service_plan.id,
+                https_only=True,
                 site_config=SiteConfig(
                     app_settings=[
                         NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="custom"),
