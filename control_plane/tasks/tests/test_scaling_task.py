@@ -53,6 +53,33 @@ class TestLogForwarderClient(AsyncTestCase):
                 await self.client.create_log_forwarder(EAST_US)
         self.assertIn("No keys found for storage account", str(ctx.exception))
 
+    async def test_create_log_forwarder_app_service_plan_failure(self):
+        (await self.client.web_client.app_service_plans.begin_create_or_update()).result.side_effect = Exception(
+            "400: ASP creation failed"
+        )
+        with self.assertRaises(Exception) as ctx:
+            async with self.client:
+                await self.client.create_log_forwarder(EAST_US)
+        self.assertIn("400: ASP creation failed", str(ctx.exception))
+
+    async def test_create_log_forwarder_storage_account_failure(self):
+        (await self.client.storage_client.storage_accounts.begin_create()).result.side_effect = Exception(
+            "400: Storage Account creation failed"
+        )
+        with self.assertRaises(Exception) as ctx:
+            async with self.client:
+                await self.client.create_log_forwarder(EAST_US)
+        self.assertIn("400: Storage Account creation failed", str(ctx.exception))
+
+    async def test_create_log_forwarder_function_app_failure(self):
+        (await self.client.web_client.web_apps.begin_create_or_update()).result.side_effect = Exception(
+            "400: Function App creation failed"
+        )
+        with self.assertRaises(Exception) as ctx:
+            async with self.client:
+                await self.client.create_log_forwarder(EAST_US)
+        self.assertIn("400: Function App creation failed", str(ctx.exception))
+
     async def test_create_log_forwarder_deploying_failure(self):
         self.raise_for_status.side_effect = Exception("400: Deploying failed")
         with self.assertRaises(Exception) as ctx:

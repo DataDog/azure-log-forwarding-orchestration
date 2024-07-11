@@ -108,7 +108,7 @@ class LogForwarderClient(AsyncContextManager):
                 app_service_plan.id,
             )
         except Exception:
-            log.exception("Failed to create log forwarder resources")
+            log.exception("Failed to create storage account and/or app service plan")
             raise
 
         function_app_name = FUNCTION_APP_PREFIX + log_forwarder_id
@@ -130,7 +130,13 @@ class LogForwarderClient(AsyncContextManager):
                 ),
             ),
         )
-        function_app, blob_forwarder_data = await gather(function_app_future.result(), self.get_blob_forwarder_data())
+        try:
+            function_app, blob_forwarder_data = await gather(
+                function_app_future.result(), self.get_blob_forwarder_data()
+            )
+        except Exception:
+            log.exception("Failed to create function app and/or get blob forwarder data")
+            raise
         log.info("Created log forwarder function app: %s", function_app.id)
 
         # deploy code to function app
