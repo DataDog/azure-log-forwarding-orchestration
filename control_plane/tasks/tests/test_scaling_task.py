@@ -25,18 +25,26 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client = self.patch_path("tasks.scaling_task.ContainerClient")
 
+        self.raise_for_status = Mock()
+        (await self.client.rest_client.post()).raise_for_status = self.raise_for_status
+        self.client.rest_client.post.reset_mock()
+
     async def test_create_log_forwarder(self):
         async with self.client:
             await self.client.create_log_forwarder(EAST_US)
 
         # app service plan
-        self.client.web_client.app_service_plans.begin_create_or_update.assert_called_once()
+        asp_create: AsyncMock = self.client.web_client.app_service_plans.begin_create_or_update
+        asp_create.assert_awaited_once()
+        (await asp_create()).result.assert_awaited_once()
         # storage account
-        self.client.storage_client.storage_accounts.begin_create.assert_called_once()
+        storage_create: AsyncMock = self.client.storage_client.storage_accounts.begin_create
+        (await storage_create()).result.assert_awaited_once()
         # function app
-        self.client.web_client.web_apps.begin_create_or_update.assert_called_once()
+        function_create: AsyncMock = self.client.web_client.web_apps.begin_create_or_update
+        (await function_create()).result.assert_awaited_once()
         # deploy code
-        self.client.rest_client.post.assert_called_once()
+        self.client.rest_client.post.assert_awaited_once()
 
     async def test_create_log_forwarder_no_keys(self):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
@@ -46,7 +54,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIn("No keys found for storage account", str(ctx.exception))
 
     async def test_create_log_forwarder_deploying_failure(self):
-        (await self.client.rest_client.post()).raise_for_status = Mock(side_effect=Exception("400: Deploying failed"))
+        self.raise_for_status.side_effect = Exception("400: Deploying failed")
         with self.assertRaises(Exception) as ctx:
             async with self.client:
                 await self.client.create_log_forwarder(EAST_US)
@@ -70,7 +78,6 @@ class TestScalingTask(TaskTestCase):
         self.client = await client.__aenter__()
 
         self.log = self.patch("log")
-        self.patch_path("tasks.scaling_task.uuid4", return_value=NEW_UUID)
 
     async def run_scaling_task(
         self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str
