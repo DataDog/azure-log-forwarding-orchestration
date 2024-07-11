@@ -44,11 +44,16 @@ func main() {
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	client, err := storage.NewClient(storageAccountConnectionString, &azblob.ClientOptions{})
 	if err != nil {
-		log.Println(err)
+		log.Fatalf("%v", err)
 		return
 	}
 
-	Run(client, log.Writer())
+	err = Run(client, log.Writer())
+
 	log.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	log.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
 }
