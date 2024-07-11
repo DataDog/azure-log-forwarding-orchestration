@@ -4,7 +4,7 @@ source /venv/bin/activate
 
 set -euxo pipefail
 
-tasks=($(cd control_plane; python3 -m tasks.__init__))
+tasks=($(cd control_plane; python3 -m tasks))
 
 for task in $tasks; do
     echo "Building $task"
