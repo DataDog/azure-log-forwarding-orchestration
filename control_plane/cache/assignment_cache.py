@@ -43,10 +43,20 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
 }
 
 
+def _validate_valid_config_ids(cache: AssignmentCache) -> None:
+    for region_configs in cache.values():
+        for region_config in region_configs.values():
+            configs = region_config["configurations"]
+            for config_id in region_config["resources"].values():
+                if config_id not in configs:
+                    raise ValidationError(f"Config ID {config_id} not found in region configurations")
+
+
 def deserialize_assignment_cache(cache_str: str) -> tuple[bool, AssignmentCache]:
     try:
-        cache = loads(cache_str)
+        cache: AssignmentCache = loads(cache_str)
         validate(instance=cache, schema=ASSIGNMENT_CACHE_SCHEMA)
+        _validate_valid_config_ids(cache)
         return True, cache
     except (JSONDecodeError, ValidationError):
         return False, {}
