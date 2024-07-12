@@ -43,4 +43,8 @@ docstring-code-format = true
 
 [tool.mypy]
 check_untyped_defs = true
+enable_incomplete_feature = ["NewGenericSyntax"]
+
+[[tool.mypy.overrides]]
+module = "azure.*"
 ignore_missing_imports = true
