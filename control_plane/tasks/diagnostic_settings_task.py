@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime
 from json import dumps
 from logging import ERROR, INFO, getLogger
-from typing import AsyncIterable, TypeVar
+from typing import AsyncIterable
 from uuid import uuid4
 
 # 3p
@@ -42,14 +42,11 @@ log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 log.setLevel(INFO)
 
 
-DiagnosticSettingType = TypeVar("DiagnosticSettingType", bound=Resource)
-
-
-async def get_existing_diagnostic_setting(
+async def get_existing_diagnostic_setting[DiagnosticSetting: Resource](
     resource_id: str,
-    settings: AsyncIterable[DiagnosticSettingType],
+    settings: AsyncIterable[DiagnosticSetting],
     existing_diagnostic_setting_name: str | None = None,
-) -> DiagnosticSettingType | None:
+) -> DiagnosticSetting | None:
     try:
         async for s in settings:
             if (existing_diagnostic_setting_name is not None and s.name == existing_diagnostic_setting_name) or (
