@@ -3,17 +3,20 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"time"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
-	"os"
-	"time"
 )
 
-func Run(client *storage.Client, logger *log.Entry) error {
+func Run(spanContext ddtrace.SpanContext, client *storage.Client, logger *log.Entry) error {
+	runSpan := tracer.StartSpan("forwarder.Run", tracer.ChildOf(spanContext))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	eg, ctx := errgroup.WithContext(ctx)
@@ -41,6 +44,7 @@ func Run(client *storage.Client, logger *log.Entry) error {
 	})
 
 	err := eg.Wait()
+	runSpan.Finish(tracer.WithError(err))
 	if err != nil {
 		return fmt.Errorf("error waiting for errgroup: %v", err)
 	}
@@ -51,6 +55,10 @@ func Run(client *storage.Client, logger *log.Entry) error {
 func main() {
 	tracer.Start()
 	defer tracer.Stop()
+
+	// Start a root span.
+	span := tracer.StartSpan("forwarder.main")
+	defer span.Finish()
 
 	start := time.Now()
 	// use JSONFormatter
@@ -79,7 +87,7 @@ func main() {
 		return
 	}
 
-	err = Run(client, logger)
+	err = Run(span.Context(), client, logger)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
