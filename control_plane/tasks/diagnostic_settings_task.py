@@ -1,11 +1,11 @@
 # stdlib
 from asyncio import gather
 import asyncio
+from collections.abc import AsyncIterable
 from copy import deepcopy
 from datetime import datetime
 from json import dumps
 from logging import ERROR, INFO, getLogger
-from typing import AsyncIterable
 from uuid import uuid4
 
 # 3p
