@@ -12,7 +12,6 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"golang.org/x/sync/errgroup"
 	"testing"
 )
 
@@ -48,7 +47,7 @@ func newContainerItem(name string) *service.ContainerItem {
 	}
 }
 
-func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*string, error) {
+func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*service.ContainerItem, error) {
 	ctrl := gomock.NewController(t)
 	handler := newPagingHandler(responses, fetcherError)
 
@@ -57,28 +56,17 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
 
-	client := storage.NewClientWithAzBlobClient(mockClient)
-	eg, egCtx := errgroup.WithContext(ctx)
-	resultChan := make(chan []*string, 10)
-	defer close(resultChan)
+	client := storage.NewClient(mockClient)
 
-	err := client.GetContainersMatchingPrefix(egCtx, eg, prefix, resultChan)
-	if err != nil {
-		return nil, err
-	}
+	it := client.GetContainersMatchingPrefix(prefix)
 
-	err = eg.Wait()
-	if err != nil {
-		return nil, err
-	}
-	results := []*string{}
-	fetchResults := true
-	for fetchResults {
-		select {
-		case result := <-resultChan:
-			results = append(results, result...)
-		default:
-			fetchResults = false
+	var results []*service.ContainerItem
+	for v, ok, err := it.Next(ctx); ok || err != nil; v, ok, err = it.Next(ctx) {
+		if err != nil {
+			return nil, fmt.Errorf("error getting next container: %v", err)
+		}
+		for _, container := range v {
+			results = append(results, container)
 		}
 	}
 	return results, nil
@@ -101,8 +89,8 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0])
-		assert.Equal(t, testString, *results[1])
+		assert.Equal(t, testString, *results[0].Name)
+		assert.Equal(t, testString, *results[1].Name)
 	})
 
 	t.Run("returns empty array", func(t *testing.T) {
@@ -152,7 +140,7 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0])
-		assert.Equal(t, testString, *results[1])
+		assert.Equal(t, testString, *results[0].Name)
+		assert.Equal(t, testString, *results[1].Name)
 	})
 }

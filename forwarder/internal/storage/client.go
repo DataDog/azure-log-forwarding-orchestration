@@ -9,19 +9,8 @@ type Client struct {
 	azBlobClient AzureBlobClient
 }
 
-func NewClient(storageAccountConnectionString string, options *azblob.ClientOptions) (*Client, error) {
-	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, options)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Client{
-		azBlobClient: azBlobClient,
-	}, nil
-}
-
-func NewClientWithAzBlobClient(azBlobClient AzureBlobClient) *Client {
-	return &Client{
+func NewClient(azBlobClient AzureBlobClient) Client {
+	return Client{
 		azBlobClient: azBlobClient,
 	}
 }

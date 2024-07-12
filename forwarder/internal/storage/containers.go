@@ -2,24 +2,33 @@ package storage
 
 import (
 	"context"
-	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"golang.org/x/sync/errgroup"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 )
 
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, group *errgroup.Group, prefix string, outputChan chan []*string) error {
-	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
-	for containerPager.More() {
-		resp, err := containerPager.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("error getting next page of containers: %v", err)
-		}
-		var containerNames []*string
-		for _, container := range resp.ContainerItems {
-			containerNames = append(containerNames, container.Name)
-		}
-		outputChan <- containerNames
+type ContainersIterator struct {
+	pager *runtime.Pager[azblob.ListContainersResponse]
+}
 
+func (ci *ContainersIterator) Next(ctx context.Context) ([]*service.ContainerItem, bool, error) {
+	if !ci.pager.More() {
+		return nil, false, nil
 	}
-	return nil
+
+	resp, err := ci.pager.NextPage(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return resp.ContainerItems, true, nil
+}
+
+func NewContainersIterator(pager *runtime.Pager[azblob.ListContainersResponse]) *ContainersIterator {
+	return &ContainersIterator{pager: pager}
+}
+
+func (c *Client) GetContainersMatchingPrefix(prefix string) *ContainersIterator {
+	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
+	return NewContainersIterator(containerPager)
 }
