@@ -24,7 +24,7 @@ from cache.diagnostic_settings_cache import (
     DiagnosticSettingConfiguration,
     deserialize_diagnostic_settings_cache,
 )
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from tasks.task import Task, now
 
 
@@ -72,14 +72,14 @@ def diagnostic_setting_name(config: DiagnosticSettingConfiguration) -> str:
 
 
 class DiagnosticSettingsTask(Task):
-    def __init__(self, resource_cache_state: str, diagnostic_settings_cache_state: str) -> None:
+    def __init__(self, assignment_cache_state: str, diagnostic_settings_cache_state: str) -> None:
         super().__init__()
 
         # read caches
-        success, resource_cache = deserialize_resource_cache(resource_cache_state)
+        success, assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if not success:
-            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
-        self.resource_cache = resource_cache
+            raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
+        self.assignment_cache = assignment_cache
 
         success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
         if not success:
@@ -89,20 +89,23 @@ class DiagnosticSettingsTask(Task):
         self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
 
     async def run(self) -> None:
-        log.info("Crawling %s subscriptions", len(self.resource_cache))
-        await gather(
-            *[self.process_subscription(sub_id, resources) for sub_id, resources in self.resource_cache.items()]
-        )
+        subs = set(self.assignment_cache) | set(self.diagnostic_settings_cache)
+        log.info("Processing %s subscriptions", len(subs))
 
-    async def process_subscription(self, sub_id: str, resources_per_region: dict[str, set[str]]) -> None:
-        log.info("Crawling %s regions for subscription %s", len(resources_per_region), sub_id)
+        await gather(*map(self.process_subscription, subs))
+
+    async def process_subscription(self, sub_id: str) -> None:
+        log.info("Processing subscription %s", sub_id)
+        # we assume no resources need to be "cleaned up"
+        # because if they aren't in the assignment cache then they have been deleted
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # client.management_group_diagnostic_settings.list("management_group_id") TODO: do we want to do anything with this?
             await gather(
                 *(
                     [
-                        self.process_region(client, sub_id, region, resource_ids)
-                        for region, resource_ids in resources_per_region.items()
+                        self.process_resource(client, sub_id, resource, config["configurations"][config_id])
+                        for config in self.assignment_cache[sub_id].values()
+                        for resource, config_id in config["resources"].items()
                     ]
                     + [self.update_subscription_settings(sub_id, client)]
                 )
@@ -117,21 +120,12 @@ class DiagnosticSettingsTask(Task):
             # We have already added the setting for this subscription
             ...
 
-    async def process_region(
-        self,
-        client: MonitorManagementClient,
-        sub_id: str,
-        region: str,
-        resource_ids: set[str],
-    ) -> None:
-        await gather(*[self.process_resource(client, sub_id, region, resource_id) for resource_id in resource_ids])
-
     async def process_resource(
         self,
         client: MonitorManagementClient,
         sub_id: str,
-        region: str,
         resource_id: str,
+        assigned_configuration: DiagnosticSettingConfiguration,
     ) -> None:
         if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
             try:
@@ -243,10 +237,10 @@ class DiagnosticSettingsTask(Task):
 async def main():
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    resources, diagnostic_settings = await gather(
-        read_cache(RESOURCE_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
+    assignment_cache, diagnostic_settings = await gather(
+        read_cache(ASSIGNMENT_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
     )
-    async with DiagnosticSettingsTask(resources, diagnostic_settings) as task:
+    async with DiagnosticSettingsTask(assignment_cache, diagnostic_settings) as task:
         await task.run()
     log.info("Task finished at %s", now())
 
