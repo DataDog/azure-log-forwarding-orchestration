@@ -18,20 +18,6 @@ func Run(client storage.Client, output io.Writer) error {
 	containerListChan := make(chan string, 1000)
 	defer close(containerListChan)
 
-	// Get containers with logs from storage account
-	eg.Go(func() error {
-		it := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
-
-		for v, ok, err := it.Next(ctx); ok || err != nil; v, ok, err = it.Next(ctx) {
-			if err != nil {
-				return fmt.Errorf("error getting next container: %v", err)
-			}
-			for _, container := range v {
-				containerListChan <- *container.Name
-			}
-		}
-		return nil
-	})
 	eg.Go(func() error {
 		select {
 		case container := <-containerListChan:
@@ -39,6 +25,18 @@ func Run(client storage.Client, output io.Writer) error {
 		}
 		return nil
 	})
+
+	// Get containers with logs from storage account
+	it := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
+
+	for v, ok, err := it.Next(ctx); ok || err != nil; v, ok, err = it.Next(ctx) {
+		if err != nil {
+			return fmt.Errorf("error getting next container: %v", err)
+		}
+		for _, container := range v {
+			containerListChan <- *container.Name
+		}
+	}
 
 	err := eg.Wait()
 	if err != nil {
