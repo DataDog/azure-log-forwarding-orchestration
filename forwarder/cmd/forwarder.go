@@ -33,7 +33,13 @@ func Run(client storage.Client, output io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("error getting next container: %v", err)
 		}
+		if v == nil {
+			continue
+		}
 		for _, container := range v {
+			if container == nil {
+				continue
+			}
 			containerListChan <- *container.Name
 		}
 	}
