@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 	"path"
@@ -25,9 +26,11 @@ func TestRun(t *testing.T) {
 
 	var output []byte
 	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
 
 	// WHEN
-	Run(client, buffer)
+	Run(client, log.NewEntry(logger))
 
 	// THEN
 	got := string(buffer.Bytes())
