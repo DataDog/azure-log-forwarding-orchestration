@@ -16,12 +16,10 @@ func Run(client storage.Client, output io.Writer) error {
 	eg, ctx := errgroup.WithContext(context.Background())
 
 	containerListChan := make(chan string, 1000)
-	defer close(containerListChan)
 
 	eg.Go(func() error {
-		select {
-		case container := <-containerListChan:
-			output.Write([]byte(fmt.Sprintf("Container: %s", container)))
+		for container := range containerListChan {
+			output.Write([]byte(fmt.Sprintf("Container: %s\n", container)))
 		}
 		return nil
 	})
@@ -43,6 +41,7 @@ func Run(client storage.Client, output io.Writer) error {
 			containerListChan <- *container.Name
 		}
 	}
+	close(containerListChan)
 
 	err := eg.Wait()
 	if err != nil {
