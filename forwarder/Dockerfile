@@ -1,5 +1,4 @@
-# Build
-FROM golang:1.22.2 AS buildStage
+FROM golang:1.22.2
 
 WORKDIR /app
 
@@ -8,15 +7,7 @@ COPY go.sum .
 RUN go mod download
 
 COPY . .
-RUN go build -o /app/forwarder ./cmd/forwarder
+RUN go build -o /app/forwarder ./cmd/forwarder.go
 
-# Deploy
-FROM alpine:latest
 
-WORKDIR /
-
-COPY --from=buildStage /app/forwarder /forwarder
-
-USER nonroot:nonroot
-
-ENTRYPOINT ["/forwarder"]
+ENTRYPOINT ["/app/forwarder"]
