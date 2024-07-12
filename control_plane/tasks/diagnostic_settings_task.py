@@ -1,10 +1,10 @@
 # stdlib
 from asyncio import gather
 import asyncio
+from collections.abc import AsyncIterable
 from copy import deepcopy
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import AsyncIterable, TypeVar
 from uuid import uuid4
 
 # 3p
@@ -40,14 +40,11 @@ DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 
 
-DiagnosticSettingType = TypeVar("DiagnosticSettingType", bound=Resource)
-
-
-async def get_existing_diagnostic_setting(
+async def get_existing_diagnostic_setting[DiagnosticSetting: Resource](
     resource_id: str,
-    settings: AsyncIterable[DiagnosticSettingType],
+    settings: AsyncIterable[DiagnosticSetting],
     existing_diagnostic_setting_name: str | None = None,
-) -> DiagnosticSettingType | None:
+) -> DiagnosticSetting | None:
     try:
         async for s in settings:
             if (existing_diagnostic_setting_name is not None and s.name == existing_diagnostic_setting_name) or (

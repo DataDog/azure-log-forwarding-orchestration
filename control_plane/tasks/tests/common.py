@@ -1,5 +1,5 @@
-from typing import Any, TypeVar
 from collections.abc import AsyncIterable
+from typing import Any
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, patch
 
@@ -27,9 +27,6 @@ class TaskTestCase(AsyncTestCase):
         return self.write_cache.call_args_list[-1][0][1]
 
 
-T = TypeVar("T")
-
-
-async def async_generator(*items: T) -> AsyncIterable[T]:
+async def async_generator[T](*items: T) -> AsyncIterable[T]:
     for x in items:
         yield x

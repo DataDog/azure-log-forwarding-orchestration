@@ -20,7 +20,9 @@ dev = [
     "pytest==8.0.2",
     "coverage==7.4.4",
     "pyinstaller==6.6.0",
-    "mypy==1.9.0",
+    # Install mypy from source since the current release doesnt support 3.12 generics
+    # TODO: Use pypi once mypy 1.11 is released
+    "mypy@https://github.com/python/mypy/zipball/master",
     "types-jsonschema==4.22.0.20240610",
     "types-requests==2.32.0.20240602",
 ]
@@ -44,6 +46,7 @@ docstring-code-format = true
 
 [tool.mypy]
 check_untyped_defs = true
+enable_incomplete_feature = ["NewGenericSyntax"]
 
 [[tool.mypy.overrides]]
 module = "azure.*"
