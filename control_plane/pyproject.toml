@@ -17,6 +17,7 @@ dev = [
     "pre-commit==3.6.2",
     "pytest==8.0.2",
     "coverage==7.4.4",
+    "pycobertura==3.3.2",
     "pyinstaller==6.6.0",
     "mypy==1.9.0",
     "types-jsonschema==4.22.0.20240610",
