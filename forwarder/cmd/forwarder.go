@@ -27,7 +27,7 @@ func Run(spanContext ddtrace.SpanContext, client *storage.Client, logger *log.En
 	// Get containers with logs from storage account
 	eg.Go(func() error {
 
-		err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
+		err := client.GetContainersMatchingPrefix(ctx, runSpan.Context(), storage.LogContainerPrefix, containerListChan)
 		if err != nil {
 			return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
 		}
@@ -73,6 +73,7 @@ func main() {
 			profiler.MutexProfile,
 			profiler.GoroutineProfile,
 		),
+		profiler.WithAPIKey(os.Getenv("DD_API_KEY")),
 	)
 	if err != nil {
 		logger.Fatal(err)
