@@ -7,4 +7,4 @@ set -euxo pipefail
 cd control_plane
 
 : run mypy
-python -m mypy ./control_plane
+python -m mypy .
