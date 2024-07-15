@@ -73,7 +73,7 @@ func main() {
 			profiler.MutexProfile,
 			profiler.GoroutineProfile,
 		),
-		profiler.WithAPIKey(os.Getenv("DD_API_KEY")),
+		profiler.WithAPIKey(""),
 	)
 	if err != nil {
 		logger.Fatal(err)
