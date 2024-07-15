@@ -11,17 +11,17 @@ type ContainersIterator struct {
 	pager *runtime.Pager[azblob.ListContainersResponse]
 }
 
-func (ci *ContainersIterator) Next(ctx context.Context) ([]*service.ContainerItem, bool, error) {
+func (ci *ContainersIterator) Next(ctx context.Context) ([]*service.ContainerItem, error) {
 	if !ci.pager.More() {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	resp, err := ci.pager.NextPage(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	return resp.ContainerItems, true, nil
+	return resp.ContainerItems, nil
 }
 
 func NewContainersIterator(pager *runtime.Pager[azblob.ListContainersResponse]) *ContainersIterator {

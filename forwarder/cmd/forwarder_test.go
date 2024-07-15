@@ -21,7 +21,7 @@ func TestRun(t *testing.T) {
 	clientOptions.Transport = rec.GetDefaultClient()
 	azBlobClient, err := azblob.NewClientWithNoCredential("https://mattlogger.blob.core.windows.net/", clientOptions)
 	assert.NoError(t, err)
-	client := storage.NewClientWithAzBlobClient(azBlobClient)
+	client := storage.NewClient(azBlobClient)
 
 	var output []byte
 	buffer := bytes.NewBuffer(output)

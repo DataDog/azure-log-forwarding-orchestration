@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
@@ -27,13 +28,16 @@ func Run(client storage.Client, output io.Writer) error {
 	// Get containers with logs from storage account
 	it := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
 
-	for v, ok, err := it.Next(ctx); ok || err != nil; v, ok, err = it.Next(ctx) {
+	var v, err = it.Next(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting first container: %v", err)
+	}
+
+	for ; v != nil; v, err = it.Next(ctx) {
 		if err != nil {
-			return fmt.Errorf("error getting next container: %v", err)
+			break
 		}
-		if v == nil {
-			continue
-		}
+
 		for _, container := range v {
 			if container == nil {
 				continue
@@ -43,7 +47,7 @@ func Run(client storage.Client, output io.Writer) error {
 	}
 	close(containerListChan)
 
-	err := eg.Wait()
+	err = errors.Join(err, eg.Wait())
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}

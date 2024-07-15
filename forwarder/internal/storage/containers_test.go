@@ -61,7 +61,11 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 	it := client.GetContainersMatchingPrefix(prefix)
 
 	var results []*service.ContainerItem
-	for v, ok, err := it.Next(ctx); ok || err != nil; v, ok, err = it.Next(ctx) {
+	var v, err = it.Next(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting next container: %v", err)
+	}
+	for ; v != nil; v, err = it.Next(ctx) {
 		if err != nil {
 			return nil, fmt.Errorf("error getting next container: %v", err)
 		}
