@@ -15,7 +15,6 @@ brew install pyenv-virtualenv
 pyenv virtualenv 3.12.3 lfo
 pyenv local lfo
 pip install -e '.[dev]'
-find config/ -name 'requirements.txt' -exec pip install -r {} \;
 pre-commit install
 ```
 
