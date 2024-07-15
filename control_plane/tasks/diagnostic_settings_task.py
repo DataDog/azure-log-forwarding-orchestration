@@ -144,18 +144,18 @@ class DiagnosticSettingsTask(Task):
         resource_id: str,
         assigned_configuration: DiagnosticSettingConfiguration,
     ) -> None:
-        if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
+        if current_configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
             try:
                 existing_setting = await get_existing_diagnostic_setting(
                     resource_id,
                     client.diagnostic_settings.list(resource_id),
-                    existing_diagnostic_setting_name=diagnostic_setting_name(configuration),
+                    existing_diagnostic_setting_name=diagnostic_setting_name(current_configuration),
                 )
             except Exception:
                 # TODO(AZINTS-2577) Error handling
                 return
 
-            if existing_setting and configuration == assigned_configuration:
+            if existing_setting and current_configuration == assigned_configuration:
                 # The setting is already set and no changes are needed. All other cases should update the setting
 
                 # do we ever want to update categories or anything?
