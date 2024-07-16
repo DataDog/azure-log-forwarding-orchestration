@@ -1,7 +1,6 @@
 # stdlib
 from abc import ABC, abstractmethod
 from datetime import datetime
-from os import environ
 from typing import AsyncContextManager, Self
 from logging import ERROR, getLogger
 
@@ -11,18 +10,6 @@ from azure.identity.aio import DefaultAzureCredential
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
-
-
-class MissingConfigOptionError(Exception):
-    def __init__(self, option: str) -> None:
-        super().__init__(f"Missing required configuration option: {option}")
-
-
-def get_config_option(name: str) -> str:
-    """Get a configuration option from the environment or raise a helpful error"""
-    if option := environ.get(name):
-        return option
-    raise MissingConfigOptionError(name)
 
 
 def now() -> str:

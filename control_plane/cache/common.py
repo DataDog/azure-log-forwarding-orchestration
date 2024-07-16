@@ -5,10 +5,21 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient
 
 
+class MissingConfigOptionError(Exception):
+    def __init__(self, option: str) -> None:
+        super().__init__(f"Missing required configuration option: {option}")
+
+
+def get_config_option(name: str) -> str:
+    """Get a configuration option from the environment or raise a helpful error"""
+    if option := environ.get(name):
+        return option
+    raise MissingConfigOptionError(name)
+
+
 BLOB_STORAGE_CACHE = "resources-cache"
 
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
-CONNECTION_STRING = environ[STORAGE_CONNECTION_SETTING]
 
 
 EVENT_HUB_DIAGNOSTIC_SETTING_TYPE = "eventhub"
@@ -75,7 +86,8 @@ class InvalidCacheError(Exception):
 
 
 async def read_cache(blob_name: str) -> str:
-    async with BlobClient.from_connection_string(CONNECTION_STRING, BLOB_STORAGE_CACHE, blob_name) as blob_client:
+    connection_string = get_config_option(STORAGE_CONNECTION_SETTING)
+    async with BlobClient.from_connection_string(connection_string, BLOB_STORAGE_CACHE, blob_name) as blob_client:
         try:
             blob = await blob_client.download_blob()
         except ResourceNotFoundError:
@@ -84,5 +96,6 @@ async def read_cache(blob_name: str) -> str:
 
 
 async def write_cache(blob_name: str, content: str) -> None:
-    async with BlobClient.from_connection_string(CONNECTION_STRING, BLOB_STORAGE_CACHE, blob_name) as blob_client:
+    connection_string = get_config_option(STORAGE_CONNECTION_SETTING)
+    async with BlobClient.from_connection_string(connection_string, BLOB_STORAGE_CACHE, blob_name) as blob_client:
         await blob_client.upload_blob(content, overwrite=True)

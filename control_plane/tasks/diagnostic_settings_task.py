@@ -17,14 +17,14 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from cache.common import InvalidCacheError, read_cache, write_cache
+from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingConfiguration,
     deserialize_diagnostic_settings_cache,
 )
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
-from tasks.task import Task, get_config_option, now
+from tasks.task import Task, now
 
 
 # silence azure logging except for errors
