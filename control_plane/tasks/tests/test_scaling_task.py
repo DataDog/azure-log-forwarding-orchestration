@@ -2,7 +2,7 @@ from json import dumps
 from os import environ
 from unittest.mock import AsyncMock, Mock
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
-from cache.common import DiagnosticSettingConfiguration, InvalidCacheError
+from cache.common import DiagnosticSettingConfiguration
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import SCALING_TASK_NAME, LogForwarderClient, ScalingTask
 from tasks.tests.common import AsyncTestCase, TaskTestCase
@@ -115,8 +115,7 @@ class TestScalingTask(TaskTestCase):
             await task.run()
 
         success, cache = deserialize_assignment_cache(self.cache_value(ASSIGNMENT_CACHE_BLOB))
-        if not success:
-            raise InvalidCacheError("Assignment Cache is in an invalid format after the task")
+        self.assertTrue(success)
         return cache
 
     async def test_new_regions_are_added(self):
