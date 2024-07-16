@@ -1,8 +1,9 @@
 from json import dumps
 from os import environ
+from typing import Any
 from unittest.mock import AsyncMock, Mock
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
-from cache.common import DiagnosticSettingConfiguration
+from cache.common import DiagnosticSettingConfiguration, InvalidCacheError
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import SCALING_TASK_NAME, LogForwarderClient, ScalingTask
 from tasks.tests.common import AsyncTestCase, TaskTestCase
@@ -106,17 +107,33 @@ class TestScalingTask(TaskTestCase):
 
         self.log = self.patch("log")
 
+    @property
+    def cache(self):
+        success, cache = deserialize_assignment_cache(self.cache_value(ASSIGNMENT_CACHE_BLOB))
+        self.assertTrue(success)
+        return cache
+
     async def run_scaling_task(
         self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str
-    ) -> AssignmentCache:
+    ):
         async with ScalingTask(
             dumps(resource_cache_state, default=list), dumps(assignment_cache_state), resource_group
         ) as task:
             await task.run()
 
-        success, cache = deserialize_assignment_cache(self.cache_value(ASSIGNMENT_CACHE_BLOB))
-        self.assertTrue(success)
-        return cache
+    async def test_scaling_task_fails_without_valid_resource_cache(self):
+        with self.assertRaises(InvalidCacheError):
+            ScalingTask("invalid json", "{}", "lfo")
+
+    async def test_reset_invalid_scaling_cache(self):
+        invalid_cache: Any = "not valid"
+        await self.run_scaling_task(
+            {},
+            invalid_cache,
+            "lfo",
+        )
+        self.write_cache.assert_not_awaited()
+        self.log.warning.assert_called_once_with("Assignment Cache is in an invalid format, task will reset the cache")
 
     async def test_new_regions_are_added(self):
         configuration: DiagnosticSettingConfiguration = {
@@ -126,7 +143,7 @@ class TestScalingTask(TaskTestCase):
         }
         self.client.create_log_forwarder.return_value = configuration
 
-        cache = await self.run_scaling_task(
+        await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={},
             resource_group="test_lfo",
@@ -141,10 +158,10 @@ class TestScalingTask(TaskTestCase):
                 }
             }
         }
-        self.assertEqual(cache, expected_cache)
+        self.assertEqual(self.cache, expected_cache)
 
     async def test_gone_regions_are_deleted(self):
-        cache = await self.run_scaling_task(
+        await self.run_scaling_task(
             resource_cache_state={},
             assignment_cache_state={
                 sub_id1: {
@@ -165,7 +182,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.delete_log_forwarder.assert_awaited_once_with(EAST_US, OLD_LOG_FORWARDER_ID)
 
-        self.assertEqual(cache, {sub_id1: {}})
+        self.assertEqual(self.cache, {sub_id1: {}})
 
     async def test_regions_added_and_deleted(self):
         configuration: DiagnosticSettingConfiguration = {
@@ -175,7 +192,7 @@ class TestScalingTask(TaskTestCase):
         }
         self.client.create_log_forwarder.return_value = configuration
 
-        cache = await self.run_scaling_task(
+        await self.run_scaling_task(
             resource_cache_state={sub_id1: {WEST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
                 sub_id1: {
@@ -205,4 +222,4 @@ class TestScalingTask(TaskTestCase):
                 }
             }
         }
-        self.assertEqual(cache, expected_cache)
+        self.assertEqual(self.cache, expected_cache)
