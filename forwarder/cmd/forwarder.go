@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/iterator"
 	"io"
 	"log"
 	"os"
@@ -28,21 +29,27 @@ func Run(client storage.Client, output io.Writer) error {
 	// Get containers with logs from storage account
 	it := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
 
-	var v, err = it.Next(ctx)
-	if err != nil {
-		return fmt.Errorf("error getting first container: %v", err)
-	}
+	var err error
 
-	for ; v != nil; v, err = it.Next(ctx) {
+	for {
+		containerList, err := it.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
+			err = nil
+			break
+		}
+
 		if err != nil {
 			break
 		}
 
-		for _, container := range v {
-			if container == nil {
-				continue
+		if containerList != nil {
+			for _, container := range containerList {
+				if container == nil {
+					continue
+				}
+				containerListChan <- *container.Name
 			}
-			containerListChan <- *container.Name
 		}
 	}
 	close(containerListChan)
