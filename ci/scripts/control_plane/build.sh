@@ -3,11 +3,9 @@
 source /venv/bin/activate
 
 set -euxo pipefail
-cd ./control_plane
-tasks="$(python3 -m tasks)"
-echo Building the following tasks: $tasks
-cd ..
-for task in $tasks; do
+
+
+for task in resources_task diagnostic_settings_task; do
     echo "Building $task"
     mkdir -p ./dist/$task/$task
     pyinstaller \
@@ -22,13 +20,13 @@ for task in $tasks; do
         ./control_plane/tasks/$task.py
     cp ./dist/$task/bin/$task ./dist/$task/main
     rm -rf ./dist/$task/bin
-    cp ./control_plane/config/$task/function.json ./dist/$task/$task/function.json
-    cp ./control_plane/config/host.json ./dist/$task/host.json
+    cp ./config/$task/function.json ./dist/$task/$task/function.json
+    cp ./config/host.json ./dist/$task/host.json
     # if AzureWebJobsStorage is set, then update it in the local settings file
     if [ -n "${AzureWebJobsStorage:-}" ]; then
-        jq ".Values.AzureWebJobsStorage = \"$AzureWebJobsStorage\"" ./control_plane/config/local.settings.example.json > ./dist/$task/local.settings.json
+        jq ".Values.AzureWebJobsStorage = \"$AzureWebJobsStorage\"" ./config/local.settings.example.json > ./dist/$task/local.settings.json
     else
-        cp ./control_plane/config/local.settings.example.json ./dist/$task/local.settings.json
+        cp ./config/local.settings.example.json ./dist/$task/local.settings.json
     fi
     zip ./dist/$task.zip ./dist/$task/*
     echo "Built $task"

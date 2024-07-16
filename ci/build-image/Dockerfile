@@ -7,8 +7,8 @@ RUN apt-get install -y binutils zip jq
 # Install deps for control plane
 RUN python3.12 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
-COPY ./control_plane /control_plane_deps
-RUN pip install './control_plane_deps[dev]'
+COPY ./control_plane /control_plane
+RUN pip install './control_plane[dev]'
 
 # Install deps for forwarder
 RUN go install github.com/boumenot/gocover-cobertura@latest
