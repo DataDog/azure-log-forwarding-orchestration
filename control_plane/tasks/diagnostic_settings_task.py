@@ -177,8 +177,8 @@ class DiagnosticSettingsTask(Task):
         configuration: DiagnosticSettingConfiguration,
     ) -> None:
         try:
-            categories: list[str] = [  # type: ignore
-                category.name
+            categories: list[str] = [
+                category.name  # type: ignore
                 async for category in client.diagnostic_settings_category.list(resource_id)
                 if category.category_type == CategoryType.LOGS
             ]
