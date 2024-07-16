@@ -19,6 +19,7 @@ dev = [
     "pre-commit==3.6.2",
     "pytest==8.0.2",
     "coverage==7.4.4",
+    "pycobertura==3.3.2",
     "pyinstaller==6.6.0",
     # Install mypy from source since the current release doesnt support 3.12 generics
     # TODO: Use pypi once mypy 1.11 is released

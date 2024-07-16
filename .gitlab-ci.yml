@@ -8,7 +8,7 @@ stages:
   - test
   - after-test
 
-
+# ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
   stage: ci-image
@@ -19,34 +19,49 @@ ci-build-image:
   script:
     - docker buildx build --platform linux/amd64 --tag "$BUILD_IMAGE" -f "ci/build-image/Dockerfile" . --push
 
-run-tests:
+# ------------- CONTROL PLANE -------------
+control-plane-tests:
   image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/test.sh
+    - ci/scripts/control_plane/test.sh
   artifacts:
     paths:
-      - ci/coverage.txt
+      - ci/control_plane_coverage.md
+
 type-check:
   image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/type-check.sh
-
-coverage-comment:
-  image: $PR_COMMENTER_IMAGE
-  stage: after-test
-  tags: ["arch:amd64"]
-  dependencies:
-    - run-tests
-  script:
-    - ci/tasks/coverage-comment.sh
-
+    - ci/scripts/control_plane/type-check.sh
 build:
   image: $BUILD_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
   script:
-    - ci/tasks/build.sh
+    - ci/scripts/control_plane/build.sh
+
+# ------------- FORWARDER -------------
+forwarder-tests:
+  image: $BUILD_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/forwarder/test.sh
+  artifacts:
+    paths:
+      - ci/forwarder_coverage.md
+
+
+# ------------- CODE COV -------------
+forwarder-coverage-comment:
+  image: $PR_COMMENTER_IMAGE
+  stage: after-test
+  tags: ["arch:amd64"]
+  dependencies:
+    - forwarder-tests
+    - control-plane-tests
+  script:
+    - ci/scripts/coverage-comment.sh
