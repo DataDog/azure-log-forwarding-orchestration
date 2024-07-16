@@ -17,22 +17,22 @@ import (
 func Run(client storage.Client, output io.Writer) error {
 	eg, ctx := errgroup.WithContext(context.Background())
 
-	containerListChan := make(chan string, 1000)
+	containerNameCh := make(chan string, 1000)
 
 	eg.Go(func() error {
-		for container := range containerListChan {
+		for container := range containerNameCh {
 			output.Write([]byte(fmt.Sprintf("Container: %s\n", container)))
 		}
 		return nil
 	})
 
 	// Get containers with logs from storage account
-	it := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
+	iter := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
 
 	var err error
 
 	for {
-		containerList, err := it.Next(ctx)
+		containerList, err := iter.Next(ctx)
 
 		if errors.Is(err, iterator.Done) {
 			err = nil
@@ -48,11 +48,11 @@ func Run(client storage.Client, output io.Writer) error {
 				if container == nil {
 					continue
 				}
-				containerListChan <- *container.Name
+				containerNameCh <- *container.Name
 			}
 		}
 	}
-	close(containerListChan)
+	close(containerNameCh)
 
 	err = errors.Join(err, eg.Wait())
 	if err != nil {
