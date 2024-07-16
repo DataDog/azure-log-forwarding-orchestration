@@ -2,45 +2,61 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/iterator"
 	"io"
 	"log"
 	"os"
 	"time"
 )
 
-func Run(client *storage.Client, output io.Writer) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	eg, ctx := errgroup.WithContext(ctx)
+func Run(client storage.Client, output io.Writer) error {
+	eg, ctx := errgroup.WithContext(context.Background())
 
-	containerListChan := make(chan []*string, 1000)
-	defer close(containerListChan)
+	containerNameCh := make(chan string, 1000)
+
+	eg.Go(func() error {
+		for container := range containerNameCh {
+			output.Write([]byte(fmt.Sprintf("Container: %s\n", container)))
+		}
+		return nil
+	})
 
 	// Get containers with logs from storage account
-	eg.Go(func() error {
-		err := client.GetContainersMatchingPrefix(ctx, eg, storage.LogContainerPrefix, containerListChan)
-		if err != nil {
-			return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
+	iter := client.GetContainersMatchingPrefix(storage.LogContainerPrefix)
+
+	var err error
+
+	for {
+		containerList, err := iter.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
+			err = nil
+			break
 		}
-		return nil
-	})
-	eg.Go(func() error {
-		select {
-		case result := <-containerListChan:
-			for _, container := range result {
-				output.Write([]byte(fmt.Sprintf("Container: %s", *container)))
+
+		if err != nil {
+			break
+		}
+
+		if containerList != nil {
+			for _, container := range containerList {
+				if container == nil {
+					continue
+				}
+				containerNameCh <- *container.Name
 			}
 		}
-		return nil
-	})
+	}
+	close(containerNameCh)
 
-	err := eg.Wait()
+	err = errors.Join(err, eg.Wait())
 	if err != nil {
-		return fmt.Errorf("error waiting for errgroup: %v", err)
+		return fmt.Errorf("run: %v", err)
 	}
 
 	return nil
@@ -50,18 +66,18 @@ func main() {
 	start := time.Now()
 	log.Println(fmt.Sprintf("Start time: %v", start.String()))
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
-	client, err := storage.NewClient(storageAccountConnectionString, &azblob.ClientOptions{})
+	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
 		log.Fatalf("%v", err)
-		return
 	}
+
+	client := storage.NewClient(azBlobClient)
 
 	err = Run(client, log.Writer())
 
 	log.Println(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	log.Println(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 	if err != nil {
-		log.Fatalf("%v", err)
-		return
+		log.Fatalf("Could not generate new storage client: %v", err)
 	}
 }
