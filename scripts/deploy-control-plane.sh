@@ -57,6 +57,9 @@ for task in $tasks; do
         continue
     fi
     cd ./dist/$task
+    echo Deploying $function_app_name...
     func azure functionapp publish $function_app_name --custom
     cd ../..
 done
+
+echo All Done!
