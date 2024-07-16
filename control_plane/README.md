@@ -11,9 +11,10 @@ brew install azure-functions-core-tools@4
 Set up Local Dev Environment:
 ```bash
 pyenv install 3.12.3
+brew install pyenv-virtualenv
 pyenv virtualenv 3.12.3 lfo
+pyenv local lfo
 pip install -e '.[dev]'
-find config/ -name 'requirements.txt' -exec pip install -r {} \;
 pre-commit install
 ```
 
@@ -48,11 +49,21 @@ pytest .
 coverage run -m pytest . > /dev/null ; coverage report -m
 ```
 
-## Building Function Apps Locally
+## Building and Deploying Function Apps Locally
 
-
-simply utter the holy incantation:
+### Building
 ```bash
 cd ~/dd/azure-log-forwarding-orchestration
-docker run -v "$(pwd):/src" registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest bash -c "cd /src/; ./ci/tasks/build.sh"
+docker run -v "$(pwd):/src" registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest bash -c "cd /src/; AzureWebJobsStorage='DefaultEndpointsProtocol=https;...<the rest of your connection string>...' ./ci/scripts/control_plane/build.sh"
 ```
+
+### Deploying
+Currently the main known happy path is to use the azure functions cli (`brew install azure-functions-core-tools@4`):
+
+```bash
+cd ~/dd/azure-log-forwarding-orchestration/dist/
+cd '<the function app you want to deploy, eg: resources_task>'
+func azure functionapp publish your-function-name --custom
+```
+
+Note: There are other methods to deploy but you may end up banging your head against a wall so be warned.
