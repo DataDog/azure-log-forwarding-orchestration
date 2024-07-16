@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/api/iterator"
 	"testing"
 )
 
@@ -66,6 +67,9 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 		return nil, fmt.Errorf("error getting next container: %v", err)
 	}
 	for ; v != nil; v, err = it.Next(ctx) {
+		if err != nil && err.Error() == iterator.Done.Error() {
+			break
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error getting next container: %v", err)
 		}
