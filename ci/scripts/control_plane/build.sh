@@ -3,9 +3,10 @@
 source /venv/bin/activate
 
 set -euxo pipefail
-
-tasks=($(cd control_plane; python3 -m tasks))
-
+cd ./control_plane
+tasks="$(python3 -m tasks)"
+echo Building the following tasks: $tasks
+cd ..
 for task in $tasks; do
     echo "Building $task"
     mkdir -p ./dist/$task/$task
