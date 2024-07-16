@@ -2,14 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/iterator"
+
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
@@ -17,36 +20,48 @@ import (
 
 func Run(spanContext ddtrace.SpanContext, client *storage.Client, logger *log.Entry) error {
 	runSpan := tracer.StartSpan("forwarder.Run", tracer.ChildOf(spanContext))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, ctx := errgroup.WithContext(context.Background())
 
-	containerListChan := make(chan []*string, 1000)
-	defer close(containerListChan)
+	containerNameCh := make(chan string, 1000)
 
-	// Get containers with logs from storage account
 	eg.Go(func() error {
-
-		err := client.GetContainersMatchingPrefix(ctx, runSpan.Context(), storage.LogContainerPrefix, containerListChan)
-		if err != nil {
-			return fmt.Errorf("error getting contains with prefix %s: %v", storage.LogContainerPrefix, err)
+		for container := range containerNameCh {
+			output.Write([]byte(fmt.Sprintf("Container: %s\n", container)))
 		}
 		return nil
 	})
-	eg.Go(func() error {
-		select {
-		case result := <-containerListChan:
-			for _, container := range result {
-				logger.Info(fmt.Sprintf("Container: %s", *container))
+
+	iter := client.GetContainersMatchingPrefix(storage.LogContainerPrefix, runSpan.Context())
+
+	var err error
+
+	for {
+		containerList, err := iter.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
+			err = nil
+			break
+		}
+
+		if err != nil {
+			break
+		}
+
+		if containerList != nil {
+			for _, container := range containerList {
+				if container == nil {
+					continue
+				}
+				containerNameCh <- *container.Name
 			}
 		}
-		return nil
-	})
+	}
+	close(containerNameCh)
 
-	err := eg.Wait()
+	err = errors.Join(err, eg.Wait())
 	runSpan.Finish(tracer.WithError(err))
 	if err != nil {
-		return fmt.Errorf("error waiting for errgroup: %v", err)
+		return fmt.Errorf("run: %v", err)
 	}
 
 	return nil
@@ -82,11 +97,13 @@ func main() {
 
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
-	client, err := storage.NewClient(storageAccountConnectionString, &azblob.ClientOptions{})
+	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf("error creating client: %v", err)
+		logger.Fatalf("error creating azure client: %v", err)
 		return
 	}
+
+	client := storage.NewClient(azBlobClient)
 
 	err = Run(span.Context(), client, logger)
 
@@ -94,6 +111,5 @@ func main() {
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
-		return
 	}
 }
