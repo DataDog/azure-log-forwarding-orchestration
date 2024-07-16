@@ -1,11 +1,32 @@
 #!/bin/bash
 
+set -eo pipefail
+
+# install deps
+command -v jq >/dev/null 2>&1 || {
+    echo installing jq...
+    brew install jq
+}
+
+command -v az >/dev/null 2>&1 || {
+    echo installing azure-cli and logging in...
+    brew install azure-cli
+    az login
+}
+
+command -v func >/dev/null 2>&1 || {
+    echo installing azure-functions-core-tools...
+    brew tap azure/functions
+    brew install brew install azure-functions-core-tools@4
+}
+
 if [ -z "$1" ]; then
     echo "Usage: $0 <resource_group>"
     exit 1
 fi
-set -euo pipefail
 resource_group=$1
+
+set -u
 
 cd ./control_plane
 tasks="$(python -m tasks)"
