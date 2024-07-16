@@ -18,7 +18,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-func Run(spanContext ddtrace.SpanContext, client *storage.Client, logger *log.Entry) error {
+func Run(spanContext ddtrace.SpanContext, client storage.Client, logger *log.Entry) error {
 	runSpan := tracer.StartSpan("forwarder.Run", tracer.ChildOf(spanContext))
 	eg, ctx := errgroup.WithContext(context.Background())
 
@@ -26,7 +26,7 @@ func Run(spanContext ddtrace.SpanContext, client *storage.Client, logger *log.En
 
 	eg.Go(func() error {
 		for container := range containerNameCh {
-			output.Write([]byte(fmt.Sprintf("Container: %s\n", container)))
+			logger.Info(fmt.Sprintf("Container: %s", container))
 		}
 		return nil
 	})

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
@@ -13,7 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/api/iterator"
-	"testing"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 func newPagingHandler(items [][]*service.ContainerItem, fetcherError error) runtime.PagingHandler[azblob.ListContainersResponse] {
@@ -59,7 +61,9 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 
 	client := storage.NewClient(mockClient)
 
-	it := client.GetContainersMatchingPrefix(prefix)
+	span := tracer.StartSpan("containers.test")
+
+	it := client.GetContainersMatchingPrefix(prefix, span.Context())
 
 	var results []*service.ContainerItem
 	var v, err = it.Next(ctx)

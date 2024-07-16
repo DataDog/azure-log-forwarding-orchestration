@@ -5,6 +5,8 @@ import (
 	"path"
 	"testing"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	log "github.com/sirupsen/logrus"
@@ -29,9 +31,10 @@ func TestRun(t *testing.T) {
 	buffer := bytes.NewBuffer(output)
 	logger := log.New()
 	logger.SetOutput(buffer)
+	span := tracer.StartSpan("forwarder.test")
 
 	// WHEN
-	Run(client, log.NewEntry(logger))
+	Run(span.Context(), client, log.NewEntry(logger))
 
 	// THEN
 	got := string(buffer.Bytes())
