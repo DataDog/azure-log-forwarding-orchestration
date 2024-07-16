@@ -30,9 +30,8 @@ from azure.storage.blob.aio import ContainerClient
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
-from cache.common import DiagnosticSettingConfiguration, InvalidCacheError, read_cache, write_cache
+from cache.common import DiagnosticSettingConfiguration, InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from control_plane.cache.common import get_config_option
 from tasks.task import Task, now
 
 
