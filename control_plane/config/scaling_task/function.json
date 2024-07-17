@@ -1,7 +1,7 @@
 {
     "bindings": [
         {
-            "name": "scaling_task",
+            "name": "scaling-task",
             "type": "timerTrigger",
             "direction": "in",
             "schedule": "0 */5 * * * *"
