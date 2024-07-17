@@ -10,10 +10,6 @@ BLOB_STORAGE_CACHE = "resources-cache"
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 
 
-EVENT_HUB_DIAGNOSTIC_SETTING_TYPE = "eventhub"
-STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE = "storageaccount"
-
-
 class MissingConfigOptionError(Exception):
     def __init__(self, option: str) -> None:
         super().__init__(f"Missing required configuration option: {option}")
@@ -24,6 +20,10 @@ def get_config_option(name: str) -> str:
     if option := environ.get(name):
         return option
     raise MissingConfigOptionError(name)
+
+
+EVENT_HUB_DIAGNOSTIC_SETTING_TYPE = "eventhub"
+STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE = "storageaccount"
 
 
 class EventHubDiagnosticSettingConfiguration(TypedDict, total=True):
@@ -38,7 +38,6 @@ EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA: dict[str, Any] = {
     "properties": {
         "id": {"type": "string"},
         "type": {
-            "type": "string",
             "const": EVENT_HUB_DIAGNOSTIC_SETTING_TYPE,
         },
         "event_hub_name": {"type": "string"},
