@@ -8,6 +8,7 @@ from cache.common import DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA, DiagnosticSett
 
 DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"
 
+
 DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, DiagnosticSettingConfiguration]]
 "Mapping of subscription_id to resource_id to DiagnosticSettingConfiguration"
 
