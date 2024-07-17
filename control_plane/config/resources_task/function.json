@@ -1,7 +1,7 @@
 {
     "bindings": [
         {
-            "name": "resources-task",
+            "name": "resourcesTask",
             "type": "timerTrigger",
             "direction": "in",
             "schedule": "0 */5 * * * *"

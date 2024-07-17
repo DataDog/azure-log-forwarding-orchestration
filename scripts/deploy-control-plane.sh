@@ -39,9 +39,18 @@ echo Done.
 echo -n "Checking for a storage account..."
 storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | cut -d$'\n' -f1)"
 if [[ -z "$storage_account" ]]; then
-    echo -n "Storage account does not exist, creating one..."
+    echo "Storage account does not exist, creating one..."
     az storage account create --name lfo1234 --resource-group $resource_group --location eastus --sku Standard_LRS
     storage_account="lfo1234"
+fi
+echo Done.
+
+echo -n "Checking for an app service plan..."
+app_service_plan="$(az functionapp plan list -g $resource_group | jq -r '.[].name' | cut -d$'\n' -f1)"
+if [[ -z "$app_service_plan" ]]; then
+    echo "app service plan does not exist, creating one..."
+    az functionapp plan create --name ASPlfo1234 --resource-group $resource_group --location eastus --sku EP1 --is-linux
+    app_service_plan="ASPlfo1234"
 fi
 echo Done.
 
@@ -49,7 +58,7 @@ for task in $tasks; do
     function_app_name="${task//_/-}"
     if [[ "$existing_functions" != *"$function_app_name"* ]]; then
         echo -n "Function app $function_app_name does not exist, creating one..."
-        az functionapp create --resource-group $resource_group --consumption-plan-location eastus --name $function_app_name --storage-account $storage_account --runtime custom --functions-version 4 --os-type Linux
+        az functionapp create --resource-group $resource_group --plan $app_service_plan --name $function_app_name --storage-account $storage_account --runtime custom --functions-version 4 --os-type Linux
         echo Done.
     fi
     if [[ ! -d "./dist/$task" ]]; then
@@ -58,7 +67,12 @@ for task in $tasks; do
     fi
     cd ./dist/$task
     echo Deploying $function_app_name...
-    func azure functionapp publish $function_app_name --custom
+    while true; do
+        func azure functionapp publish $function_app_name --custom && break
+        echo "Failed to deploy $function_app_name, retrying in 5 seconds..."
+        echo "Press Ctrl+C to cancel."
+        sleep 5
+    done
     cd ../..
 done
 

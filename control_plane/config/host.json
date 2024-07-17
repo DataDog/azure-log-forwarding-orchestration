@@ -17,5 +17,6 @@
             "defaultExecutablePath": "main",
             "arguments": []
         }
-    }
+    },
+    "functionTimeout": "00:30:00"
 }

@@ -3,6 +3,9 @@
 source /venv/bin/activate
 
 set -euxo pipefail
+
+[ -d "./dist" ] && rm -rf ./dist
+
 cd ./control_plane
 tasks="$(python3 -m tasks)"
 echo Building the following tasks: $tasks
@@ -14,7 +17,6 @@ for task in $tasks; do
         --onefile \
         --noconfirm \
         --nowindow \
-        --clean \
         --distpath ./dist/$task/bin \
         --specpath ./specs \
         --log-level INFO \

@@ -1,7 +1,7 @@
 {
     "bindings": [
         {
-            "name": "diagnostic-settings-task",
+            "name": "diagnosticSettingsTask",
             "type": "timerTrigger",
             "direction": "in",
             "schedule": "0 */5 * * * *"
