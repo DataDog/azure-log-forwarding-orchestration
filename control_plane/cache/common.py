@@ -38,7 +38,6 @@ EVENT_HUB_DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA: dict[str, Any] = {
     "properties": {
         "id": {"type": "string"},
         "type": {
-            "type": "string",
             "const": EVENT_HUB_DIAGNOSTIC_SETTING_TYPE,
         },
         "event_hub_name": {"type": "string"},
