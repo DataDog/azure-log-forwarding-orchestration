@@ -82,9 +82,7 @@ class MonitorTask(Task):
             count = 0
             for resource_name, resource_id in v["resources"].items():
                 count = count + 1
-                log.info(resource_name)
-                log.info(resource_id)
-                log.info(count)
+                log.info(f"{resource_name=} {resource_id=} {count=}")
                 try:
                     response = await client.query_resource(
                         resource_id,
