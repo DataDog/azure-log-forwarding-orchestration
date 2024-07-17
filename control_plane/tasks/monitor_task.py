@@ -61,7 +61,7 @@ class MonitorTask(Task):
         self.assignment_settings_cache = {
                 "sub_id1": {
                     "EAST_US": {
-                        "resources": {"diagnostic-settings-task": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
+                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/mattlogger/providers/Microsoft.Web/sites/goblobforwarder", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
                         "configurations": {
                             "OLD_LOG_FORWARDER_ID": {
                                 "type": "storageaccount",
@@ -78,9 +78,9 @@ class MonitorTask(Task):
         )
 
     async def process_subscription(self, sub_id: str, resources_per_region: dict[str, Any], client: MetricsQueryClient):
-        for k,v in resources_per_region.items():
+        for subcription,region in resources_per_region.items():
             count = 0
-            for resource_name, resource_id in v["resources"].items():
+            for resource_name, resource_id in region["resources"].items():
                 count += 1
                 log.info(f"{resource_name=} {resource_id=} {count=}")
                 try:
@@ -89,7 +89,7 @@ class MonitorTask(Task):
                         metric_names=["HttpResponseTime"],
                         timespan=timedelta(hours=2),
                         granularity=timedelta(minutes=15),
-                        aggregations=[MetricAggregationType.AVERAGE]
+                        aggregations=[MetricAggregationType.AVERAGE, MetricAggregationType.MAXIMUM]
                     )
 
                     for metric in response.metrics:
@@ -98,7 +98,8 @@ class MonitorTask(Task):
                         for time_series_element in metric.timeseries:
                             for metric_value in time_series_element.data:
                                 log.info(metric_value.timestamp)
-                                log.info(metric_value.average)
+                                log.info("average: " + str(metric_value.average))
+                                log.info("max: " + str(metric_value.maximum))
                 except HttpResponseError as err:
                     log.error(err)
         return
