@@ -81,7 +81,7 @@ class MonitorTask(Task):
         for k,v in resources_per_region.items():
             count = 0
             for resource_name, resource_id in v["resources"].items():
-                count = count + 1
+                count += 1
                 log.info(f"{resource_name=} {resource_id=} {count=}")
                 try:
                     response = await client.query_resource(
