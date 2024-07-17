@@ -19,7 +19,7 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from cache.cache import read_cache, write_cache
+from cache.common import read_cache, write_cache
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingConfiguration,
