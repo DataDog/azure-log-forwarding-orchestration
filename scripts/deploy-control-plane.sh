@@ -51,7 +51,7 @@ fi
 echo Done.
 
 echo -n "Checking for storage containers..."
-az storage container list --account-name $storage_account --auth-mode login | jq -r '.[].name' | grep $cache_name || {
+az storage container list --account-name $storage_account --auth-mode login | jq -r '.[].name' | grep $cache_name > /dev/null || {
     echo -n "Missing Cache Container, creating..."
     az storage container create --name $cache_name --account-name $storage_account
 }
@@ -91,5 +91,42 @@ for task in $tasks; do
     done
     cd ../..
 done
+
+# ================ set up permissions ================
+
+# ================ resource task permissions ================
+cd ./control_plane
+subscription_id=$(az account show --query id --output tsv)
+# Get the principal ID of the Function App's managed identity
+echo -n Checking permissions for resource task...
+principal_id=$(az functionapp identity show --name resources-task --resource-group $resource_group --query principalId --output tsv)
+[ -z "$principal_id" ] && {
+    echo -n Enabling managed identity for resources-task...
+    principal_id=$(az functionapp identity assign --name resources-task --resource-group $resource_group | jq -r .principalId)
+}
+# Check if the "Monitoring Reader" role is already assigned
+role_assignments=$(az role assignment list --assignee $principal_id --query "[].roleDefinitionName" --output tsv)
+if [[ $role_assignments != *"Monitoring Reader"* ]]; then
+    echo -n "Monitoring Reader role not found for resources-task. Assigning role..."
+    az role assignment create --assignee $principal_id --role "Monitoring Reader" --scope "/subscriptions/$subscription_id"
+fi
+
+
+# ================ diagnostic settings task permissions ================
+
+echo -n Checking permissions for diagnostic settings task...
+principal_id=$(az functionapp identity show --name diagnostic-settings-task --resource-group $resource_group --query principalId --output tsv)
+[ -z "$principal_id" ] && {
+    echo -n Enabling managed identity for diagnostic-settings-task...
+    principal_id=$(az functionapp identity assign --name diagnostic-settings-task --resource-group $resource_group | jq -r .principalId)
+}
+role_assignments=$(az role assignment list --assignee $principal_id --query "[].roleDefinitionName" --output tsv)
+if [[ $role_assignments != *"Monitoring Contributor"* ]]; then
+    echo -n "Monitoring Reader role not found for diagnostic-settings-task. Assigning role..."
+    az role assignment create --assignee $principal_id --role "Monitoring Contributor" --scope "/subscriptions/$subscription_id"
+fi
+
+echo Done.
+
 
 echo All Done!
