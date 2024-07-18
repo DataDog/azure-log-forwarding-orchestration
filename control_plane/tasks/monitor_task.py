@@ -86,10 +86,9 @@ class MonitorTask(Task):
                 try:
                     response = await client.query_resource(
                         resource_id,
-                        metric_names=["HttpResponseTime"],
+                        metric_names=["FunctionExecutionUnits"],
                         timespan=timedelta(hours=2),
-                        granularity=timedelta(minutes=15),
-                        aggregations=[MetricAggregationType.AVERAGE, MetricAggregationType.MAXIMUM]
+                        granularity=timedelta(minutes=15)
                     )
 
                     for metric in response.metrics:
@@ -100,6 +99,7 @@ class MonitorTask(Task):
                                 log.info(metric_value.timestamp)
                                 log.info("average: " + str(metric_value.average))
                                 log.info("max: " + str(metric_value.maximum))
+                                log.info("total: " + str(metric_value.total))
                 except HttpResponseError as err:
                     log.error(err)
         return
