@@ -38,4 +38,4 @@ for task in $tasks; do
     echo "Built $task"
 done
 
-ls -la dist/*
+ls -la dist/*/*
