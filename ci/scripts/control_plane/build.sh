@@ -7,7 +7,7 @@ set -euxo pipefail
 [ -d "./dist" ] && rm -rf ./dist
 
 cd ./control_plane
-tasks="$(python3 -m tasks)"
+tasks="$(python -m tasks)"
 echo Building the following tasks: $tasks
 cd ..
 for task in $tasks; do
