@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from json import dumps, loads
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import Any, Self
+from typing import Any, Self, TypeAlias
 from uuid import uuid4
 
 # 3p
@@ -35,6 +35,8 @@ from tasks.task import Task
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
+ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
+
 
 DIAGNOSTIC_SETTINGS_TASK_NAME = "monitor_task"
 EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
@@ -56,7 +58,12 @@ class MonitorTask(Task):
             assignment_settings_cache = {}
 
         self.assignment_settings_cache = loads(assignment_cache_state)
+        self.resource_metric_cache = {}
         self.client = MetricsQueryClient(self.credential)
+
+        # define metrics
+
+        self.metric_defs = {"FunctionExecutionCount": "total"}
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -65,6 +72,7 @@ class MonitorTask(Task):
 
     async def __aexit__(self, *_) -> None:
         await self.client.__aexit__()
+        log.info("\n\n" + str(self.resource_metric_cache))
         await super().__aexit__()
 
     async def run(self, client: MetricsQueryClient) -> None:
@@ -74,15 +82,16 @@ class MonitorTask(Task):
         )
 
     async def process_subscription(self, sub_id: str, resources_per_region: dict[str, Any], client: MetricsQueryClient):
-        for subcription,region in resources_per_region.items():
+        for region_name,region_data in resources_per_region.items():
             count = 0
-            for resource_name, resource_id in region["resources"].items():
+            for resource_name, resource_id in region_data["resources"].items():
                 count += 1
                 log.info(f"{resource_name=} {resource_id=} {count=}")
+                metric_dict = {}
                 try:
                     response = await client.query_resource(
                         resource_id,
-                        metric_names=["FunctionExecutionCount", "HttpResponseTime"],
+                        metric_names=list(self.metric_defs.keys()),
                         timespan=timedelta(hours=2),
                         granularity=timedelta(minutes=15)
                     )
@@ -90,13 +99,18 @@ class MonitorTask(Task):
                     for metric in response.metrics:
                         log.info(metric.name)
                         log.info(metric.unit)
+                        metric_vals = []
                         for time_series_element in metric.timeseries:
                             for metric_value in time_series_element.data:
                                 log.info(metric_value.timestamp)
-                                log.info("total: " + str(metric_value.__dict__))
+                                log.info(f"{metric.name}: {self.metric_defs[metric.name]} = {metric_value.__dict__[self.metric_defs[metric.name]]}")
+                                metric_vals.append(metric_value.__dict__[self.metric_defs[metric.name]])
+                        metric_dict[metric.name] = max(metric_vals[-1], metric_vals[-2])
+                    self.resource_metric_cache[resource_id] = metric_dict
+
+
                 except HttpResponseError as err:
                     log.error(err)
-        return
 
     async def write_caches(self) -> None:
        pass
@@ -112,7 +126,7 @@ async def main():
     resources = dumps({
                 "sub_id1": {
                     "EAST_US": {
-                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
+                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task"},
                         "configurations": {
                             "OLD_LOG_FORWARDER_ID": {
                                 "type": "storageaccount",
