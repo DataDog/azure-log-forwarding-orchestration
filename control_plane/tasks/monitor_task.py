@@ -58,7 +58,7 @@ class MonitorTask(Task):
             assignment_settings_cache = {}
 
         self.assignment_settings_cache: ResourceMetricCache = loads(assignment_cache_state)
-        self.resource_metric_cache = {}
+        self.resource_metric_cache: ResourceMetricCache = {}
         self.client = MetricsQueryClient(self.credential)
 
         # define metrics
