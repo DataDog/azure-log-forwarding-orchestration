@@ -63,7 +63,7 @@ Currently the main known happy path is to use the azure functions cli (`brew ins
 ```bash
 cd ~/dd/azure-log-forwarding-orchestration/dist/
 cd '<the function app you want to deploy, eg: resources_task>'
-func azure functionapp publish your-function-name --custom
+func azure functionapp publish your-function-name
 ```
 
 Note: There are other methods to deploy but you may end up banging your head against a wall so be warned.

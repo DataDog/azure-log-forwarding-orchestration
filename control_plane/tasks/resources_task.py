@@ -1,6 +1,5 @@
 # stdlib
-from asyncio import gather
-import asyncio
+from asyncio import gather, run
 from datetime import datetime
 from json import dumps
 from logging import DEBUG, getLogger
@@ -78,4 +77,4 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run(main())
