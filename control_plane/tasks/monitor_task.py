@@ -8,6 +8,7 @@ from json import dumps, loads
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Any, Self, TypeAlias
 from uuid import uuid4
+from tasks.task import now
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -113,9 +114,6 @@ class MonitorTask(Task):
 
     async def write_caches(self) -> None:
        log.info("Output_dict: " + str(self.resource_metric_cache))
-
-def now() -> str:
-    return datetime.now().isoformat()
 
 
 async def main():
