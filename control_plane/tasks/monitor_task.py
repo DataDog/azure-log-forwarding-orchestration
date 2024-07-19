@@ -57,7 +57,7 @@ class MonitorTask(Task):
             log.warning("Assignments Cache is in an invalid format, resetting the cache")
             assignment_settings_cache = {}
 
-        self.assignment_settings_cache = loads(assignment_cache_state)
+        self.assignment_settings_cache: ResourceMetricCache = loads(assignment_cache_state)
         self.resource_metric_cache = {}
         self.client = MetricsQueryClient(self.credential)
 
@@ -72,7 +72,6 @@ class MonitorTask(Task):
 
     async def __aexit__(self, *_) -> None:
         await self.client.__aexit__()
-        log.info("\n\n" + str(self.resource_metric_cache))
         await super().__aexit__()
 
     async def run(self) -> None:
@@ -86,7 +85,7 @@ class MonitorTask(Task):
             count = 0
             for resource_name, resource_id in region_data["resources"].items():
                 count += 1
-                log.info(f"{resource_name=} {resource_id=} {count=}")
+                log.debug(f"{resource_name=} {resource_id=} {count=}")
                 metric_dict = {}
                 try:
                     response = await client.query_resource(
@@ -97,13 +96,13 @@ class MonitorTask(Task):
                     )
 
                     for metric in response.metrics:
-                        log.info(metric.name)
-                        log.info(metric.unit)
+                        log.debug(metric.name)
+                        log.debug(metric.unit)
                         metric_vals = []
                         for time_series_element in metric.timeseries:
                             for metric_value in time_series_element.data:
-                                log.info(metric_value.timestamp)
-                                log.info(f"{metric.name}: {self.metric_defs[metric.name]} = {metric_value.__dict__[self.metric_defs[metric.name]]}")
+                                log.debug(metric_value.timestamp)
+                                log.debug(f"{metric.name}: {self.metric_defs[metric.name]} = {metric_value.__dict__[self.metric_defs[metric.name]]}")
                                 metric_vals.append(metric_value.__dict__[self.metric_defs[metric.name]])
                         metric_dict[metric.name] = max(metric_vals[-1], metric_vals[-2])
                     self.resource_metric_cache[resource_id] = metric_dict
@@ -113,7 +112,7 @@ class MonitorTask(Task):
                     log.error(err)
 
     async def write_caches(self) -> None:
-       pass
+       log.info("Output_dict: " + str(self.resource_metric_cache))
 
 def now() -> str:
     return datetime.now().isoformat()
