@@ -1,10 +1,10 @@
 # stdlib
-from asyncio import gather
-import asyncio
+from asyncio import gather, run
 from collections.abc import AsyncIterable
 from copy import deepcopy
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
+from typing import TypeVar
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -57,7 +57,10 @@ def get_diagnostic_setting(
         )
 
 
-async def get_existing_diagnostic_setting[DiagnosticSetting: Resource](
+DiagnosticSetting = TypeVar("DiagnosticSetting", bound=Resource)
+
+
+async def get_existing_diagnostic_setting(
     resource_id: str,
     settings: AsyncIterable[DiagnosticSetting],
     existing_diagnostic_setting_name: str | None = None,
@@ -235,4 +238,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run(main())

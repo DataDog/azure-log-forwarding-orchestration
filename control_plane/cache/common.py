@@ -5,7 +5,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient
 
 
-BLOB_STORAGE_CACHE = "resources-cache"
+BLOB_STORAGE_CACHE = "control-plane-cache"
 
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 
