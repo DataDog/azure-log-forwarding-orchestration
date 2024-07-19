@@ -69,8 +69,8 @@ echo Done.
 # ================ creating control plane function apps ================
 
 declare -A task_roles
-# task_roles[resources_task]="Monitoring Reader"
-# task_roles[diagnostic_settings_task]="Monitoring Contributor"
+task_roles[resources_task]="Monitoring Reader"
+task_roles[diagnostic_settings_task]="Monitoring Contributor"
 task_roles[scaling_task]="Contributor"
 
 get-scope() {
