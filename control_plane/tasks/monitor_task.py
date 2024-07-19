@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import AsyncIterable
 from copy import deepcopy
 from datetime import datetime, timedelta
-from json import dumps
+from json import dumps, loads
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Any, Self
 from uuid import uuid4
@@ -55,7 +55,7 @@ class MonitorTask(Task):
             log.warning("Assignments Cache is in an invalid format, resetting the cache")
             assignment_settings_cache = {}
 
-        self.assignment_settings_cache = assignment_settings_cache
+        self.assignment_settings_cache = loads(assignment_cache_state)
         self.client = MetricsQueryClient(self.credential)
 
     async def __aenter__(self) -> Self:
@@ -68,20 +68,6 @@ class MonitorTask(Task):
         await super().__aexit__()
 
     async def run(self, client: MetricsQueryClient) -> None:
-        self.assignment_settings_cache = {
-                "sub_id1": {
-                    "EAST_US": {
-                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
-                        "configurations": {
-                            "OLD_LOG_FORWARDER_ID": {
-                                "type": "storageaccount",
-                                "id": "OLD_LOG_FORWARDER_ID",
-                                "storage_account_id": "some/storage/account",
-                            },
-                        },
-                    }
-                },
-            }
         log.info("Crawling %s subscriptions", len(self.assignment_settings_cache))
         await gather(
             *[self.process_subscription(sub_id, resources, client) for sub_id, resources in self.assignment_settings_cache.items()]
@@ -125,7 +111,20 @@ async def main():
     basicConfig()
     log.info("Started task at %s", now())
     # This is holder code until assignment cache becomes availaible
-    resources = ""
+    resources = dumps({
+                "sub_id1": {
+                    "EAST_US": {
+                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
+                        "configurations": {
+                            "OLD_LOG_FORWARDER_ID": {
+                                "type": "storageaccount",
+                                "id": "OLD_LOG_FORWARDER_ID",
+                                "storage_account_id": "some/storage/account",
+                            },
+                        },
+                    }
+                },
+            })
     async with MonitorTask(resources) as task:
             await task.run(task.client)
     log.info("Task finished at %s", now())
