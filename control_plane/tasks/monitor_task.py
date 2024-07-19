@@ -6,7 +6,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 # 3p
@@ -56,12 +56,22 @@ class MonitorTask(Task):
             assignment_settings_cache = {}
 
         self.assignment_settings_cache = assignment_settings_cache
+        self.client = MetricsQueryClient(self.credential)
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()
+        await self.client.__aenter__()
+        return self
+
+    async def __aexit__(self, *_) -> None:
+        await self.client.__aexit__()
+        await super().__aexit__()
 
     async def run(self, client: MetricsQueryClient) -> None:
         self.assignment_settings_cache = {
                 "sub_id1": {
                     "EAST_US": {
-                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/mattlogger/providers/Microsoft.Web/sites/goblobforwarder", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
+                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task", "diagnostic-settings-task2": "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/diagnostic-settings-task"},
                         "configurations": {
                             "OLD_LOG_FORWARDER_ID": {
                                 "type": "storageaccount",
@@ -86,7 +96,7 @@ class MonitorTask(Task):
                 try:
                     response = await client.query_resource(
                         resource_id,
-                        metric_names=["FunctionExecutionUnits"],
+                        metric_names=["FunctionExecutionCount"],
                         timespan=timedelta(hours=2),
                         granularity=timedelta(minutes=15)
                     )
@@ -116,8 +126,8 @@ async def main():
     log.info("Started task at %s", now())
     # This is holder code until assignment cache becomes availaible
     resources = ""
-    async with DefaultAzureCredential() as credential, MonitorTask(resources) as task, MetricsQueryClient(credential) as client:
-            await task.run(client)
+    async with MonitorTask(resources) as task:
+            await task.run(task.client)
     log.info("Task finished at %s", now())
 
 
