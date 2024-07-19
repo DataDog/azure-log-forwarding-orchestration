@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env python
 # script to remove all log forwarders
 
 # stdlib
@@ -94,5 +94,5 @@ if __name__ == "__main__":
     basicConfig(level=INFO)
     DRY_RUN = "--dry-run" in argv
     if DRY_RUN:
-        print("Dry run, no changes will be made")
+        log.info("Dry run, no changes will be made")
     run(main())

@@ -53,7 +53,7 @@ echo Done.
 echo -n "Checking for storage containers..."
 az storage container list --account-name $storage_account --auth-mode login | jq -r '.[].name' | grep $cache_name >/dev/null || {
     echo -n "Missing Cache Container, creating..."
-    az storage container create --name $cache_name --account-name $storage_account
+    az storage container create --name $cache_name --account-name $storage_account --auth-mode login
 }
 echo Done.
 
