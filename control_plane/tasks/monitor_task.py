@@ -75,10 +75,10 @@ class MonitorTask(Task):
         log.info("\n\n" + str(self.resource_metric_cache))
         await super().__aexit__()
 
-    async def run(self, client: MetricsQueryClient) -> None:
+    async def run(self) -> None:
         log.info("Crawling %s subscriptions", len(self.assignment_settings_cache))
         await gather(
-            *[self.process_subscription(sub_id, resources, client) for sub_id, resources in self.assignment_settings_cache.items()]
+            *[self.process_subscription(sub_id, resources, self.client) for sub_id, resources in self.assignment_settings_cache.items()]
         )
 
     async def process_subscription(self, sub_id: str, resources_per_region: dict[str, Any], client: MetricsQueryClient):
@@ -138,7 +138,7 @@ async def main():
                 },
             })
     async with MonitorTask(resources) as task:
-            await task.run(task.client)
+            await task.run()
     log.info("Task finished at %s", now())
 
 
