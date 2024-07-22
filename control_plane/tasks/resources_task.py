@@ -47,6 +47,8 @@ class ResourcesTask(Task):
             resource_count = 0
             async for r in client.resources.list():
                 region = cast(str, r.location)
+                if region == "global":
+                    continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id))
                 resource_count += 1
             log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
