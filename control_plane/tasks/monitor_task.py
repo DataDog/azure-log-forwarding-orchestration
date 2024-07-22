@@ -43,6 +43,7 @@ MONITOR_TASK_NAME = "monitor_task"
 EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
 EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
+COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
 
 log = getLogger(MONITOR_TASK_NAME)
 log.setLevel(INFO)
@@ -64,7 +65,7 @@ class MonitorTask(Task):
 
         # define metrics
 
-        self.metric_defs = {"FunctionExecutionCount": "total"}
+        self.metric_defs = COLLECTED_METRIC_DEFINITIONS
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -78,19 +79,18 @@ class MonitorTask(Task):
     async def run(self) -> None:
         log.info("Crawling %s subscriptions", len(self.assignment_settings_cache))
         await gather(
-            *[self.process_subscription(sub_id, self.client) for sub_id in self.assignment_settings_cache.keys()]
+            *[self.process_subscription(sub_id) for sub_id in self.assignment_settings_cache.keys()]
         )
 
-    async def process_subscription(self, sub_id: str, client: MetricsQueryClient):
+    async def process_subscription(self, sub_id: str):
         resources_per_region = self.assignment_settings_cache[sub_id]
-        for region_name,region_data in resources_per_region.items():
-            await gather(*[self.process_resource(resource_id, client) for resource_name, resource_id in region_data["resources"].items()])
+        await gather(*[self.process_resource(resource_id) for region_name,region_data in resources_per_region.items() for resource_name, resource_id in region_data["resources"].items()])
 
 
-    async def process_resource(self, resource_id: str, client: MetricsQueryClient) -> None:
+    async def process_resource(self, resource_id: str) -> None:
         metric_dict = dict()
         try:
-            response = await client.query_resource(
+            response = await self.client.query_resource(
                 resource_id,
                 metric_names=list(self.metric_defs.keys()),
                 timespan=timedelta(hours=2),
