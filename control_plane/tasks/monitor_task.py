@@ -6,10 +6,12 @@ from json import dumps, loads
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self, TypeAlias
 from tasks.task import now
+from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
 # 3p
-from azure.core.exceptions import HttpResponseError
+from azure.core.exceptions import HttpResponseError, ServiceResponseTimeoutError
 from azure.monitor.query.aio import MetricsQueryClient
+from azure.monitor.query import MetricsQueryResult
 
 # project
 from cache.diagnostic_settings_cache import (
@@ -33,6 +35,10 @@ COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
 METRIC_COLLECTION_PERIOD = 120  # How long we are mointoring in minutes
 METRIC_COLLECTION_SAMPLES = 8  # Number of samples we are collecting
 METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD // METRIC_COLLECTION_SAMPLES
+
+CLIENT_MAX_TIME_PER_METRIC = 5
+CLIENT_MAX_TIME = CLIENT_MAX_TIME_PER_METRIC * len(COLLECTED_METRIC_DEFINITIONS.keys())
+MAX_ATTEMPS = 5
 
 log = getLogger(MONITOR_TASK_NAME)
 log.setLevel(INFO)
@@ -58,6 +64,7 @@ class MonitorTask(Task):
         # define metrics
 
         self.metric_defs = COLLECTED_METRIC_DEFINITIONS
+        self.max_query_time = CLIENT_MAX_TIME
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -85,12 +92,7 @@ class MonitorTask(Task):
     async def process_resource(self, resource_id: str) -> None:
         metric_dict = dict()
         try:
-            response = await self.client.query_resource(
-                resource_id,
-                metric_names=list(self.metric_defs.keys()),
-                timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD),
-                granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
-            )
+            response = await self.get_resource_metrics(resource_id)
 
             for metric in response.metrics:
                 log.debug(metric.name)
@@ -112,6 +114,19 @@ class MonitorTask(Task):
             self.resource_metric_cache[resource_id] = metric_dict
         except HttpResponseError as err:
             log.error(err)
+        except RetryError:
+            log.error("Max retries attempted")
+
+    @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
+    async def get_resource_metrics(self, resource_id: str) -> MetricsQueryResult:
+        response = await self.client.query_resource(
+            resource_id,
+            metric_names=list(self.metric_defs.keys()),
+            timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD),
+            granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
+            timeout=self.max_query_time,
+        )
+        return response
 
     async def write_caches(self) -> None:
         log.info("Output_dict: " + str(self.resource_metric_cache))
