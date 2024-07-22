@@ -30,6 +30,7 @@ node_modules
 dist
 build
 specs
+vendor
 
 # Local python packages
 .python_packages/

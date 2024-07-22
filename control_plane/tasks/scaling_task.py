@@ -32,7 +32,7 @@ from azure.storage.blob.aio import ContainerClient
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import DiagnosticSettingConfiguration, InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.task import Task, now
+from tasks.task import Task, now, wait_for_resource
 
 
 SCALING_TASK_NAME = "scaling_task"
@@ -72,8 +72,7 @@ class LogForwarderClient(AsyncContextManager):
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder(self, region: str) -> DiagnosticSettingConfiguration:
-        log_forwarder_id = str(uuid4())[-12:]  # take the last section since we are length limited
+    async def create_log_forwarder(self, region: str, log_forwarder_id: str) -> DiagnosticSettingConfiguration:
         storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
         app_service_plan_name = ASP_PREFIX + log_forwarder_id
         log.info(
@@ -87,7 +86,7 @@ class LogForwarderClient(AsyncContextManager):
             account_name=storage_account_name,
             parameters=StorageAccountCreateParameters(
                 sku=Sku(
-                    # TODO: figure out which SKU we should be using here
+                    # TODO (AZINTS-2646): figure out which SKU we should be using here
                     name="Standard_LRS"
                 ),
                 kind="StorageV2",
@@ -112,7 +111,16 @@ class LogForwarderClient(AsyncContextManager):
         )
         try:
             storage_account, app_service_plan = await gather(
-                storage_account_future.result(), app_service_plan_future.result()
+                wait_for_resource(
+                    storage_account_future,
+                    lambda: self.storage_client.storage_accounts.get_properties(
+                        self.resource_group, storage_account_name
+                    ),
+                ),
+                wait_for_resource(
+                    app_service_plan_future,
+                    lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name),
+                ),
             )
             log.info(
                 "Created log forwarder storage account (%s) and app service plan (%s)",
@@ -126,7 +134,7 @@ class LogForwarderClient(AsyncContextManager):
         function_app_name = FUNCTION_APP_PREFIX + log_forwarder_id
         log.info("Creating log forwarder app: %s", function_app_name)
         connection_string = await self.get_connection_string(storage_account_name)
-        function_app_future = await self.web_client.web_apps.begin_create_or_update(
+        function_app_poller = await self.web_client.web_apps.begin_create_or_update(
             self.resource_group,
             function_app_name,
             Site(
@@ -146,7 +154,10 @@ class LogForwarderClient(AsyncContextManager):
         )
         try:
             function_app, blob_forwarder_data = await gather(
-                function_app_future.result(), self.get_blob_forwarder_data()
+                wait_for_resource(
+                    function_app_poller, lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
+                ),
+                self.get_blob_forwarder_data(),
             )
         except Exception:
             log.exception("Failed to create function app and/or get blob forwarder data")
@@ -193,7 +204,7 @@ class LogForwarderClient(AsyncContextManager):
             return self._blob_forwarder_data
 
     async def delete_log_forwarder(self, region: str, forwarder_id: str) -> str:
-        return NotImplemented
+        return NotImplemented  # TODO (AZINTS-2616)
 
 
 class ScalingTask(Task):
@@ -244,9 +255,15 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
-        configuration = await client.create_log_forwarder(region)
+        log_forwarder_id = str(uuid4())[-12:]  # take the last section since we are length limited
+        try:
+            configuration = await client.create_log_forwarder(region, log_forwarder_id)
+        except Exception:
+            log.exception("Failed to create log forwarder %s, cleaning up", log_forwarder_id)
+            await client.delete_log_forwarder(region, log_forwarder_id)
+            return
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
-            "configurations": {configuration["id"]: configuration},
+            "configurations": {log_forwarder_id: configuration},
             "resources": {},
         }
 

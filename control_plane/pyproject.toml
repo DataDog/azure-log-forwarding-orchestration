@@ -6,12 +6,13 @@ readme = "README.md"
 dependencies = [
     "aiohttp==3.9.5",
     "azure-identity==1.15.0",
-    "jsonschema==4.21.1",
     "azure-mgmt-monitor==6.0.2",
     "azure-mgmt-resource==23.0.1",
     "azure-mgmt-storage==21.2.1",
     "azure-mgmt-web==7.3.0",
     "azure-storage-blob==12.20.0",
+    "jsonschema==4.21.1",
+    "tenacity==8.5.0",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,7 @@ dev = [
     "stickytape==0.2.1",
     "toml==0.10.2",
     "mypy==1.10",
+    "ruff==0.5.4",
     "types-jsonschema==4.22.0.20240610",
     "types-requests==2.32.0.20240602",
 ]
