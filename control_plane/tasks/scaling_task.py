@@ -205,7 +205,7 @@ class LogForwarderClient(AsyncContextManager):
             return self._blob_forwarder_data
 
     async def delete_log_forwarder(self, region: str, forwarder_id: str) -> str:
-        return NotImplemented
+        return NotImplemented  # TODO (AZINTS-2616)
 
 
 class ScalingTask(Task):
