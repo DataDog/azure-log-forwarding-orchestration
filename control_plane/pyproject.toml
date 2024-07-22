@@ -10,6 +10,7 @@ dependencies = [
     "azure-mgmt-monitor==6.0.2",
     "azure-mgmt-resource==23.0.1",
     "azure-storage-blob==12.20.0",
+    "tenacity==8.5.0",
 ]
 
 [project.optional-dependencies]
