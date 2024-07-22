@@ -1,10 +1,11 @@
 # stdlib
 from asyncio import Lock, gather, run
 from copy import deepcopy
+from collections.abc import Coroutine
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Any, Coroutine, AsyncContextManager, Self, cast
+from typing import Any, AsyncContextManager, Self, cast
 from uuid import uuid4
 
 # 3p
@@ -32,7 +33,7 @@ from azure.storage.blob.aio import ContainerClient
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import DiagnosticSettingConfiguration, InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.task import Task, now
+from tasks.task import Task, now, wait_for_resource
 
 
 SCALING_TASK_NAME = "scaling_task"
@@ -86,7 +87,7 @@ class LogForwarderClient(AsyncContextManager):
             account_name=storage_account_name,
             parameters=StorageAccountCreateParameters(
                 sku=Sku(
-                    # TODO: figure out which SKU we should be using here
+                    # TODO (AZINTS-2646): figure out which SKU we should be using here
                     name="Standard_LRS"
                 ),
                 kind="StorageV2",
@@ -111,7 +112,16 @@ class LogForwarderClient(AsyncContextManager):
         )
         try:
             storage_account, app_service_plan = await gather(
-                storage_account_future.result(), app_service_plan_future.result()
+                wait_for_resource(
+                    storage_account_future,
+                    lambda: self.storage_client.storage_accounts.get_properties(
+                        self.resource_group, storage_account_name
+                    ),
+                ),
+                wait_for_resource(
+                    app_service_plan_future,
+                    lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name),
+                ),
             )
             log.info(
                 "Created log forwarder storage account (%s) and app service plan (%s)",
@@ -125,7 +135,7 @@ class LogForwarderClient(AsyncContextManager):
         function_app_name = FUNCTION_APP_PREFIX + log_forwarder_id
         log.info("Creating log forwarder app: %s", function_app_name)
         connection_string = await self.get_connection_string(storage_account_name)
-        function_app_future = await self.web_client.web_apps.begin_create_or_update(
+        function_app_poller = await self.web_client.web_apps.begin_create_or_update(
             self.resource_group,
             function_app_name,
             Site(
@@ -145,7 +155,10 @@ class LogForwarderClient(AsyncContextManager):
         )
         try:
             function_app, blob_forwarder_data = await gather(
-                function_app_future.result(), self.get_blob_forwarder_data()
+                wait_for_resource(
+                    function_app_poller, lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
+                ),
+                self.get_blob_forwarder_data(),
             )
         except Exception:
             log.exception("Failed to create function app and/or get blob forwarder data")
