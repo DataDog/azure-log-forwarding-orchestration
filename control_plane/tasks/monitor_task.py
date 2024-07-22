@@ -30,6 +30,10 @@ EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
 
+METRIC_COLLECTION_PERIOD = 120  # How long we are mointoring in minutes
+METRIC_COLLECTION_SAMPLES = 8  # Number of samples we are collecting
+METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD // METRIC_COLLECTION_SAMPLES
+
 log = getLogger(MONITOR_TASK_NAME)
 log.setLevel(INFO)
 
@@ -84,22 +88,27 @@ class MonitorTask(Task):
             response = await self.client.query_resource(
                 resource_id,
                 metric_names=list(self.metric_defs.keys()),
-                timespan=timedelta(hours=2),
-                granularity=timedelta(minutes=15),
+                timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD),
+                granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
             )
 
             for metric in response.metrics:
                 log.debug(metric.name)
                 log.debug(metric.unit)
-                metric_vals = []
+                metric_vals = [None, None]  # (Min,Max)
                 for time_series_element in metric.timeseries:
                     for metric_value in time_series_element.data:
                         log.debug(metric_value.timestamp)
                         log.debug(
                             f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs[metric.name])}"
                         )
-                        metric_vals.append(getattr(metric_value, self.metric_defs[metric.name]))
-                metric_dict[metric.name] = max(metric_vals[-1], metric_vals[-2])
+                        metric_val = getattr(metric_value, self.metric_defs[metric.name])
+                        if metric_vals[0] and metric_val:
+                            metric_vals[0] = min(metric_vals[0], metric_val)
+                            metric_vals[1] = max(metric_vals[1], metric_val)
+                        elif metric_val:
+                            metric_vals = [metric_val, metric_val]
+                metric_dict[metric.name] = metric_vals[1]
             self.resource_metric_cache[resource_id] = metric_dict
         except HttpResponseError as err:
             log.error(err)
