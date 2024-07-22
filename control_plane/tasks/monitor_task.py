@@ -125,14 +125,13 @@ class MonitorTask(Task):
 
     @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
     async def get_resource_metrics(self, resource_id: str) -> MetricsQueryResult:
-        response = await self.client.query_resource(
+        return await self.client.query_resource(
             resource_id,
             metric_names=list(self.metric_defs.keys()),
             timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD),
             granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
             timeout=self.max_query_time,
         )
-        return response
 
     async def write_caches(self) -> None:
         log.info("Output_dict: " + str(self.resource_metric_cache))
