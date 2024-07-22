@@ -9,7 +9,7 @@ from logging import ERROR, getLogger
 from azure.identity.aio import DefaultAzureCredential
 from azure.core.exceptions import ResourceNotFoundError
 from azure.core.polling import AsyncLROPoller
-from tenacity import retry, stop_after_delay
+from tenacity import retry, retry_if_exception_type, stop_after_delay
 
 log = getLogger(__name__)
 
@@ -31,17 +31,11 @@ async def wait_for_resource(
     """Wait for the poller to complete and confirm the resource exists, if the resource does not exist, `confirm` should throw a ResourceNotFoundError"""
     res = await poller.result()
 
-    @retry(stop=stop_after_delay(wait_seconds))
-    async def confirm_exists() -> None:
-        try:
-            await confirm()
-        except ResourceNotFoundError:
-            raise
-        except Exception:
-            log.exception("Unexpected error while confirming resource exists")
-            return
+    await retry(
+        retry=retry_if_exception_type(ResourceNotFoundError),
+        stop=stop_after_delay(wait_seconds),
+    )(confirm)()
 
-    await confirm_exists()
     return res
 
 
