@@ -11,6 +11,7 @@ from azure.identity.aio import DefaultAzureCredential
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
+
 def now() -> str:
     return datetime.now().isoformat()
 
