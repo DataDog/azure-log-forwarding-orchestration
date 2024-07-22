@@ -4,8 +4,6 @@ from typing import Any, TypeAlias
 from jsonschema import ValidationError, validate
 
 
-
-
 ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
 "Mapping of resource_id to metric_name to value"
 
@@ -13,15 +11,9 @@ ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
 RESOURCE_METRIC_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "patternProperties": {
-        "^S_": {
-            "type": "object",
-            "patternProperties": {
-                "^S_": {"type": "number"}
-            },
-            "additionalProperties": False
-        }
+        "^S_": {"type": "object", "patternProperties": {"^S_": {"type": "number"}}, "additionalProperties": False}
     },
-    "additionalProperties": False
+    "additionalProperties": False,
 }
 
 
