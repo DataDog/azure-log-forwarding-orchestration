@@ -35,14 +35,14 @@ control-plane-formatting:
   stage: test
   tags: ["arch:amd64"]
   script:
-    - cd control_plane && ruff format --check
+    - ci/scripts/control_plane/format.sh
 
 control-plane-lint:
   image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
-    - cd control_plane && ruff check
+    - ci/scripts/control_plane/lint.sh
 
 type-check:
   image: $BUILD_IMAGE
