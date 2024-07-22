@@ -111,11 +111,13 @@ class MonitorTask(Task):
                         elif metric_val:
                             metric_vals = [metric_val, metric_val]
                 metric_dict[metric.name] = metric_vals[1]
-            self.resource_metric_cache[resource_id] = metric_dict
+            self.resource_metric_cache[resource_id] = metric_dict if metric_dict else dict()
         except HttpResponseError as err:
             log.error(err)
+            self.resource_metric_cache[resource_id] = dict()
         except RetryError:
             log.error("Max retries attempted")
+            self.resource_metric_cache[resource_id] = dict()
 
     @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
     async def get_resource_metrics(self, resource_id: str) -> MetricsQueryResult:
