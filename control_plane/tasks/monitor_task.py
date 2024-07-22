@@ -105,10 +105,14 @@ class MonitorTask(Task):
                             f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs[metric.name])}"
                         )
                         metric_val = getattr(metric_value, self.metric_defs[metric.name])
-                        if metric_vals[0] and metric_val:
+                        if not metric_val:
+                            log.warn(f"{metric.name} is None for resource: {resource_id}. Skipping resource...")
+                            self.resource_metric_cache[resource_id] = dict()
+                            return
+                        if metric_vals[0]:
                             metric_vals[0] = min(metric_vals[0], metric_val)
                             metric_vals[1] = max(metric_vals[1], metric_val)
-                        elif metric_val:
+                        else:
                             metric_vals = [metric_val, metric_val]
                 metric_dict[metric.name] = metric_vals[1]
             self.resource_metric_cache[resource_id] = metric_dict if metric_dict else dict()
