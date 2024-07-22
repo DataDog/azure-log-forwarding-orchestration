@@ -92,7 +92,7 @@ class MonitorTask(Task):
     # Updates the resource_metric_cache entry for a resource
     # If there is an error the entry is set to an empty dict
     async def process_resource(self, resource_id: str) -> None:
-        metric_dict = dict()
+        metric_dict: dict[str, int | float] = dict()
         try:
             response = await self.get_resource_metrics(resource_id)
 
@@ -116,7 +116,8 @@ class MonitorTask(Task):
                             metric_vals[1] = max(metric_vals[1], metric_val)
                         else:
                             metric_vals = [metric_val, metric_val]
-                metric_dict[metric.name] = metric_vals[1]
+                if metric_vals[1]:
+                    metric_dict[metric.name] = metric_vals[1]
             self.resource_metric_cache[resource_id] = metric_dict if metric_dict else dict()
         except HttpResponseError as err:
             log.error(err)
