@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta
 from json import dumps, loads
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import Self, TypeAlias
+from typing import Self
 from tasks.task import now
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
@@ -17,13 +17,12 @@ from azure.monitor.query import MetricsQueryResult
 from cache.diagnostic_settings_cache import (
     deserialize_diagnostic_settings_cache,
 )
+from cache.resource_metric_cache import ResourceMetricCache
 from tasks.task import Task
 
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
-
-ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
 
 
 MONITOR_TASK_NAME = "monitor_task"
@@ -33,12 +32,11 @@ METRIC_COLLECTION_PERIOD = 120  # How long we are mointoring in minutes
 METRIC_COLLECTION_SAMPLES = 8  # Number of samples we are collecting
 METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD // METRIC_COLLECTION_SAMPLES
 
-CLIENT_MAX_TIME_PER_METRIC = 5
-CLIENT_MAX_TIME = CLIENT_MAX_TIME_PER_METRIC * len(COLLECTED_METRIC_DEFINITIONS.keys())
+CLIENT_MAX_SECONDS_PER_METRIC = 5
+CLIENT_MAX_SECONDS = CLIENT_MAX_SECONDS_PER_METRIC * len(COLLECTED_METRIC_DEFINITIONS)
 MAX_ATTEMPS = 5
 
 log = getLogger(MONITOR_TASK_NAME)
-log.setLevel(INFO)
 
 
 class MonitorTask(Task):
@@ -61,7 +59,7 @@ class MonitorTask(Task):
         # define metrics
 
         self.metric_defs = COLLECTED_METRIC_DEFINITIONS
-        self.max_query_time = CLIENT_MAX_TIME
+        self.max_query_time = CLIENT_MAX_SECONDS
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -86,8 +84,9 @@ class MonitorTask(Task):
             ]
         )
 
-    # Updates the resource_metric_cache entry for a resource
-    # If there is an error the entry is set to an empty dict
+    """ Updates the resource_metric_cache entry for a resource
+     If there is an error the entry is set to an empty dict"""
+
     async def process_resource(self, resource_id: str) -> None:
         metric_dict: dict[str, int | float] = dict()
         try:
@@ -139,7 +138,7 @@ class MonitorTask(Task):
 
 
 async def main():
-    basicConfig()
+    basicConfig(level=INFO)
     log.info("Started task at %s", now())
     # This is holder code until assignment cache becomes availaible
     resources = dumps(
