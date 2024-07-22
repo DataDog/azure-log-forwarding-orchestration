@@ -10,10 +10,7 @@ ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
 
 RESOURCE_METRIC_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "patternProperties": {
-        "^S_": {"type": "object", "patternProperties": {"^S_": {"type": "number"}}, "additionalProperties": False}
-    },
-    "additionalProperties": False,
+    "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}},
 }
 
 
