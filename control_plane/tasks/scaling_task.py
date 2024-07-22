@@ -72,8 +72,7 @@ class LogForwarderClient(AsyncContextManager):
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder(self, region: str) -> DiagnosticSettingConfiguration:
-        log_forwarder_id = str(uuid4())[-12:]  # take the last section since we are length limited
+    async def create_log_forwarder(self, region: str, log_forwarder_id: str) -> DiagnosticSettingConfiguration:
         storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
         app_service_plan_name = ASP_PREFIX + log_forwarder_id
         log.info(
@@ -244,9 +243,15 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
-        configuration = await client.create_log_forwarder(region)
+        log_forwarder_id = str(uuid4())[-12:]  # take the last section since we are length limited
+        try:
+            configuration = await client.create_log_forwarder(region, log_forwarder_id)
+        except Exception:
+            log.exception("Failed to create log forwarder %s, cleaning up", log_forwarder_id)
+            await client.delete_log_forwarder(region, log_forwarder_id)
+            return
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
-            "configurations": {configuration["id"]: configuration},
+            "configurations": {log_forwarder_id: configuration},
             "resources": {},
         }
 
