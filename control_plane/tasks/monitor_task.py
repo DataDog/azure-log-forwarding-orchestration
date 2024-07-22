@@ -89,6 +89,8 @@ class MonitorTask(Task):
             ]
         )
 
+    # Updates the resource_metric_cache entry for a resource
+    # If there is an error the entry is set to an empty dict
     async def process_resource(self, resource_id: str) -> None:
         metric_dict = dict()
         try:
