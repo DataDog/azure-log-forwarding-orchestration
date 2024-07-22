@@ -39,12 +39,12 @@ getLogger("azure").setLevel(ERROR)
 ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
 
 
-DIAGNOSTIC_SETTINGS_TASK_NAME = "monitor_task"
+MONITOR_TASK_NAME = "monitor_task"
 EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
 EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
-log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
+log = getLogger(MONITOR_TASK_NAME)
 log.setLevel(INFO)
 
 class MonitorTask(Task):
