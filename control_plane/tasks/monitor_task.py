@@ -27,9 +27,6 @@ ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
 
 
 MONITOR_TASK_NAME = "monitor_task"
-EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
-EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
-DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
 
 METRIC_COLLECTION_PERIOD = 120  # How long we are mointoring in minutes
