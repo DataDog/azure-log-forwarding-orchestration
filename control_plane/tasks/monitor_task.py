@@ -95,7 +95,8 @@ class MonitorTask(Task):
             for metric in response.metrics:
                 log.debug(metric.name)
                 log.debug(metric.unit)
-                metric_vals = [None, None]  # (Min,Max)
+                min_metric_val = None
+                max_metric_val = None
                 for time_series_element in metric.timeseries:
                     for metric_value in time_series_element.data:
                         log.debug(metric_value.timestamp)
@@ -107,13 +108,13 @@ class MonitorTask(Task):
                             log.warn(f"{metric.name} is None for resource: {resource_id}. Skipping resource...")
                             self.resource_metric_cache[resource_id] = dict()
                             return
-                        if metric_vals[0]:
-                            metric_vals[0] = min(metric_vals[0], metric_val)
-                            metric_vals[1] = max(metric_vals[1], metric_val)
+                        if min_metric_val:
+                            min_metric_val = min(min_metric_val, metric_val)
+                            max_metric_val = max(max_metric_val, metric_val)
                         else:
-                            metric_vals = [metric_val, metric_val]
-                if metric_vals[1]:
-                    metric_dict[metric.name] = metric_vals[1]
+                            min_metric_val, max_metric_val = metric_val, metric_val
+                if max_metric_val:
+                    metric_dict[metric.name] = max_metric_val
             self.resource_metric_cache[resource_id] = metric_dict if metric_dict else dict()
         except HttpResponseError as err:
             log.error(err)
