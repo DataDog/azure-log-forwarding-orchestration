@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source /venv/bin/activate
+[ -f "/venv/bin/activate" ] && source /venv/bin/activate
 
 set -euxo pipefail
 
