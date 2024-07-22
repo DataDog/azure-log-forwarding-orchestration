@@ -1,35 +1,20 @@
 # stdlib
 from asyncio import gather
 import asyncio
-from collections.abc import AsyncIterable
-from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import timedelta
 from json import dumps, loads
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import Any, Self, TypeAlias
-from uuid import uuid4
+from typing import Self, TypeAlias
 from tasks.task import now
 
 # 3p
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError
 from azure.monitor.query.aio import MetricsQueryClient
-from azure.monitor.query import MetricAggregationType
-from azure.identity.aio import DefaultAzureCredential
-from azure.mgmt.monitor.v2021_05_01_preview.models import (
-    DiagnosticSettingsResource,
-    LogSettings,
-    CategoryType,
-    Resource,
-)
 
 # project
-from cache.common import read_cache, write_cache
 from cache.diagnostic_settings_cache import (
-    DIAGNOSTIC_SETTINGS_CACHE_BLOB,
-    DiagnosticSettingConfiguration,
     deserialize_diagnostic_settings_cache,
 )
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.task import Task
 
 
@@ -48,6 +33,7 @@ COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
 log = getLogger(MONITOR_TASK_NAME)
 log.setLevel(INFO)
 
+
 class MonitorTask(Task):
     def __init__(self, assignment_cache_state: str) -> None:
         super().__init__()
@@ -59,6 +45,8 @@ class MonitorTask(Task):
             log.warning("Assignments Cache is in an invalid format, resetting the cache")
             assignment_settings_cache = {}
 
+        self.assignment_settings_cache = assignment_settings_cache
+        # TODO(<Dan-Nedelescu>): Fix once #20 gets merged
         self.assignment_settings_cache = loads(assignment_cache_state)
         self.resource_metric_cache: ResourceMetricCache = {}
         self.client = MetricsQueryClient(self.credential)
@@ -78,14 +66,17 @@ class MonitorTask(Task):
 
     async def run(self) -> None:
         log.info("Crawling %s subscriptions", len(self.assignment_settings_cache))
-        await gather(
-            *[self.process_subscription(sub_id) for sub_id in self.assignment_settings_cache.keys()]
-        )
+        await gather(*[self.process_subscription(sub_id) for sub_id in self.assignment_settings_cache.keys()])
 
     async def process_subscription(self, sub_id: str):
         resources_per_region = self.assignment_settings_cache[sub_id]
-        await gather(*[self.process_resource(resource_id) for region_name,region_data in resources_per_region.items() for resource_name, resource_id in region_data["resources"].items()])
-
+        await gather(
+            *[
+                self.process_resource(resource_id)
+                for region_name, region_data in resources_per_region.items()
+                for resource_name, resource_id in region_data["resources"].items()  # type: ignore
+            ]
+        )
 
     async def process_resource(self, resource_id: str) -> None:
         metric_dict = dict()
@@ -94,7 +85,7 @@ class MonitorTask(Task):
                 resource_id,
                 metric_names=list(self.metric_defs.keys()),
                 timespan=timedelta(hours=2),
-                granularity=timedelta(minutes=15)
+                granularity=timedelta(minutes=15),
             )
 
             for metric in response.metrics:
@@ -104,7 +95,9 @@ class MonitorTask(Task):
                 for time_series_element in metric.timeseries:
                     for metric_value in time_series_element.data:
                         log.debug(metric_value.timestamp)
-                        log.debug(f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs[metric.name])}")
+                        log.debug(
+                            f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs[metric.name])}"
+                        )
                         metric_vals.append(getattr(metric_value, self.metric_defs[metric.name]))
                 metric_dict[metric.name] = max(metric_vals[-1], metric_vals[-2])
             self.resource_metric_cache[resource_id] = metric_dict
@@ -112,29 +105,33 @@ class MonitorTask(Task):
             log.error(err)
 
     async def write_caches(self) -> None:
-       log.info("Output_dict: " + str(self.resource_metric_cache))
+        log.info("Output_dict: " + str(self.resource_metric_cache))
 
 
 async def main():
     basicConfig()
     log.info("Started task at %s", now())
     # This is holder code until assignment cache becomes availaible
-    resources = dumps({
-                "sub_id1": {
-                    "EAST_US": {
-                        "resources": {"diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task"},
-                        "configurations": {
-                            "OLD_LOG_FORWARDER_ID": {
-                                "type": "storageaccount",
-                                "id": "OLD_LOG_FORWARDER_ID",
-                                "storage_account_id": "some/storage/account",
-                            },
+    resources = dumps(
+        {
+            "sub_id1": {
+                "EAST_US": {
+                    "resources": {
+                        "diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task"
+                    },
+                    "configurations": {
+                        "OLD_LOG_FORWARDER_ID": {
+                            "type": "storageaccount",
+                            "id": "OLD_LOG_FORWARDER_ID",
+                            "storage_account_id": "some/storage/account",
                         },
-                    }
-                },
-            })
+                    },
+                }
+            },
+        }
+    )
     async with MonitorTask(resources) as task:
-            await task.run()
+        await task.run()
     log.info("Task finished at %s", now())
 
 
