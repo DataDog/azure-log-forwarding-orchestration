@@ -103,8 +103,8 @@ class MonitorTask(Task):
                         for time_series_element in metric.timeseries:
                             for metric_value in time_series_element.data:
                                 log.debug(metric_value.timestamp)
-                                log.debug(f"{metric.name}: {self.metric_defs[metric.name]} = {metric_value.__dict__[self.metric_defs[metric.name]]}")
-                                metric_vals.append(metric_value.__dict__[self.metric_defs[metric.name]])
+                                log.debug(f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs[metric.name])}")
+                                metric_vals.append(getattr(metric_value, self.metric_defs[metric.name]))
                         metric_dict[metric.name] = max(metric_vals[-1], metric_vals[-2])
                     self.resource_metric_cache[resource_id] = metric_dict
 
