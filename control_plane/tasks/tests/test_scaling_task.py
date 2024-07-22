@@ -2,6 +2,7 @@ from json import dumps
 from os import environ
 from typing import Any
 from unittest.mock import AsyncMock, Mock
+from uuid import UUID
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
 from cache.common import DiagnosticSettingConfiguration, InvalidCacheError
 from cache.resources_cache import ResourceCache
@@ -11,6 +12,7 @@ from tasks.tests.common import AsyncTestCase, TaskTestCase
 
 EAST_US = "eastus"
 WEST_US = "westus"
+LOG_FORWARDER_ID = "d6fc2c757f9c"
 
 
 class TestLogForwarderClient(AsyncTestCase):
@@ -32,7 +34,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
     async def test_create_log_forwarder(self):
         async with self.client:
-            await self.client.create_log_forwarder(EAST_US)
+            await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
 
         # app service plan
         asp_create: AsyncMock = self.client.web_client.app_service_plans.begin_create_or_update
@@ -51,7 +53,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
         with self.assertRaises(ValueError) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US)
+                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
         self.assertIn("No keys found for storage account", str(ctx.exception))
 
     async def test_create_log_forwarder_app_service_plan_failure(self):
@@ -60,7 +62,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US)
+                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
         self.assertIn("400: ASP creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_storage_account_failure(self):
@@ -69,7 +71,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US)
+                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
         self.assertIn("400: Storage Account creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_function_app_failure(self):
@@ -78,14 +80,14 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US)
+                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
         self.assertIn("400: Function App creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_deploying_failure(self):
         self.raise_for_status.side_effect = Exception("400: Deploying failed")
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US)
+                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
         self.assertIn("400: Deploying failed", str(ctx.exception))
 
 
@@ -106,6 +108,8 @@ class TestScalingTask(TaskTestCase):
         self.client = await client.__aenter__()
 
         self.log = self.patch("log")
+        self.uuid = self.patch("uuid4")
+        self.uuid.return_value = UUID(NEW_UUID)
 
     @property
     def cache(self):
@@ -149,7 +153,7 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(EAST_US)
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
         expected_cache: AssignmentCache = {
             sub_id1: {
                 EAST_US: {
@@ -211,7 +215,7 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(WEST_US)
+        self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID)
         self.client.delete_log_forwarder.assert_called_once_with(EAST_US, "5a095f74c60a")
 
         expected_cache: AssignmentCache = {
