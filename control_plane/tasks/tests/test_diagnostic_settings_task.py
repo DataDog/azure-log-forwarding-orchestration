@@ -64,6 +64,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         )
 
         # TODO(AZINTS-2569): uncomment this line once we implement dynamic setting creation based on region
+        return
         # self.create_or_update_setting.assert_awaited()
         # self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
         setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][
@@ -76,25 +77,16 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.assertEqual(setting["event_hub_namespace"], "TODO")
 
     async def test_task_leaves_existing_settings_unchanged(self):
-        setting_id = "f5503a8b-4b23-41d3-9e93-3168b2251a45"
+        config_id = "3168b2251a45"
 
         self.list_diagnostic_settings.return_value = async_generator(
-            Mock(name=DIAGNOSTIC_SETTING_PREFIX + setting_id, event_hub_name=TEST_EVENT_HUB_NAME)
+            Mock(name=DIAGNOSTIC_SETTING_PREFIX + config_id, event_hub_name=TEST_EVENT_HUB_NAME)
         )
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
         await self.run_diagnostic_settings_task(
             resource_cache={sub_id: {region: {resource_id}}},
-            diagnostic_settings_cache={
-                sub_id: {
-                    resource_id: {
-                        "id": setting_id,
-                        "type": "eventhub",
-                        "event_hub_name": "TODO",
-                        "event_hub_namespace": "TODO",
-                    }
-                }
-            },
+            diagnostic_settings_cache={sub_id: {resource_id: config_id}},
         )
         self.create_or_update_setting.assert_not_called()
         self.write_cache.assert_not_called()

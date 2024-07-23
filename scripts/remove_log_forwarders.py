@@ -29,11 +29,11 @@ def parse_resource_group(resource_id: str) -> str:
 
 
 def should_delete(resource: Resource, resource_group: str | None) -> bool:
-    if parse_resource_group(resource.id) != resource_group:
+    if parse_resource_group(resource.id) != resource_group:  # type: ignore
         return False
 
-    name: str = resource.name
-    match resource.type.lower():
+    name: str = resource.name  # type: ignore
+    match resource.type.lower():  # type: ignore
         case "microsoft.web/sites":
             return name.startswith(FUNCTION_APP_PREFIX)
         case "microsoft.web/serverfarms":
@@ -50,7 +50,7 @@ def partition_resources(
     function_apps: list[Resource] = []
     everything_else: list[Resource] = []
     for resource in resources:
-        if resource.type.lower() == "microsoft.web/sites":
+        if resource.type.lower() == "microsoft.web/sites":  # type: ignore
             function_apps.append(resource)
         else:
             everything_else.append(resource)
@@ -64,7 +64,8 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
         return
     log.info(f"Deleting... {resource.id}")
     future = await client.resources.begin_delete_by_id(
-        resource.id, api_version="2022-09-01"
+        resource.id,
+        api_version="2022-09-01",  # type: ignore
     )
     await future.result()
     log.info(f"Deleted {resource.id} ✅")

@@ -1,17 +1,19 @@
+# stdlib
 from json import JSONDecodeError, loads
 from typing import Any, TypeAlias, TypedDict
 
+# 3p
 from jsonschema import ValidationError, validate
 
-from cache.common import DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA, DiagnosticSettingConfiguration
-
+# project
+from cache.common import DIAGNOSTIC_SETTING_TYPE_SCHEMA, DiagnosticSettingType
 
 ASSIGNMENT_CACHE_BLOB = "assignments.json"
 
 
 class RegionAssignmentConfiguration(TypedDict, total=True):
-    configurations: dict[str, DiagnosticSettingConfiguration]
-    "Mapping of config_id to DiagnosticSettingConfiguration"
+    configurations: dict[str, DiagnosticSettingType]
+    "Mapping of config_id to DiagnosticSettingType"
     resources: dict[str, str]
     "Mapping of resource_id to config_id"
 
@@ -29,7 +31,7 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
             "properties": {  # region config
                 "configurations": {
                     "type": "object",  # config_id
-                    "additionalProperties": DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+                    "additionalProperties": DIAGNOSTIC_SETTING_TYPE_SCHEMA,
                 },
                 "resources": {
                     "type": "object",  # resource_id
