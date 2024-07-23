@@ -3,6 +3,7 @@ from unittest import TestCase
 
 from cache.assignment_cache import AssignmentCache, deserialize_assignment_cache
 
+from cache.common import EVENT_HUB_TYPE, STORAGE_ACCOUNT_TYPE
 from cache.tests import sub_id1
 
 
@@ -13,17 +14,8 @@ class TestDeserializeResourceCache(TestCase):
                 "region2": {
                     "resources": {"resource1": "sjaksdhsj", "resource2": "iasudkajs", "resource3": "iasudkajs"},
                     "configurations": {
-                        "iasudkajs": {
-                            "type": "storageaccount",
-                            "id": "iasudkajs",
-                            "storage_account_id": "some/storage/account",
-                        },
-                        "sjaksdhsj": {
-                            "type": "eventhub",
-                            "id": "sjaksdhsj",
-                            "event_hub_name": "eventhub",
-                            "event_hub_namespace": "namespace",
-                        },
+                        "iasudkajs": STORAGE_ACCOUNT_TYPE,
+                        "sjaksdhsj": EVENT_HUB_TYPE,
                     },
                 }
             },
@@ -87,8 +79,16 @@ class TestDeserializeResourceCache(TestCase):
             dumps(
                 {
                     sub_id1: {
-                        "region1": {"resources": {"resource1": "config1"}},  # missing configurations
+                        "region1": {"resources": {"resource1": "config1"}},  # missing configurations field
                     }
                 }
             )
         )
+
+    def test_missing_config_key(self):
+        cache: AssignmentCache = {
+            sub_id1: {
+                "region1": {"resources": {"resource1": "config1"}, "configurations": {"config2": EVENT_HUB_TYPE}}
+            },
+        }
+        self.assert_deserialize_failure(dumps(cache))
