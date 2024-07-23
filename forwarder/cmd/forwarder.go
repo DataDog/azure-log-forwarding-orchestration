@@ -17,8 +17,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-func Run(ctx context.Context, client storage.Client, logger *log.Entry) error {
+func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
+	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(context.Background())
 
 	containerNameCh := make(chan string, 1000)
@@ -31,8 +32,6 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) error {
 	})
 
 	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-
-	var err error
 
 	for {
 		containerList, err := iter.Next(ctx)
@@ -58,7 +57,6 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) error {
 	close(containerNameCh)
 
 	err = errors.Join(err, eg.Wait())
-	span.Finish(tracer.WithError(err))
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
@@ -69,17 +67,17 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) error {
 func main() {
 	tracer.Start()
 	defer tracer.Stop()
-
 	// Start a root span.
+	var err error
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
-	defer span.Finish()
+	defer span.Finish(tracer.WithError(err))
 
 	start := time.Now()
 	// use JSONFormatter
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.WithFields(log.Fields{"service": "forwarder"})
 
-	err := profiler.Start(
+	err = profiler.Start(
 		profiler.WithProfileTypes(
 			profiler.CPUProfile,
 			profiler.HeapProfile,
