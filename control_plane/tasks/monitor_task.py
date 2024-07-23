@@ -2,7 +2,7 @@
 from asyncio import gather
 import asyncio
 from datetime import timedelta
-from json import dumps, loads
+from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self
 from tasks.task import now
@@ -14,8 +14,8 @@ from azure.monitor.query.aio import MetricsQueryClient
 from azure.monitor.query import MetricsQueryResult
 
 # project
-from cache.diagnostic_settings_cache import (
-    deserialize_diagnostic_settings_cache,
+from cache.assignment_cache import (
+    deserialize_assignment_cache,
 )
 from cache.resource_metric_cache import ResourceMetricCache
 from tasks.task import Task
@@ -45,14 +45,12 @@ class MonitorTask(Task):
 
         # read caches
 
-        success, assignment_settings_cache = deserialize_diagnostic_settings_cache(assignment_cache_state)
+        success, assignment_settings_cache = deserialize_assignment_cache(assignment_cache_state)
         if not success:
             log.warning("Assignments Cache is in an invalid format, resetting the cache")
             assignment_settings_cache = {}
 
         self.assignment_settings_cache = assignment_settings_cache
-        # TODO(<Dan-Nedelescu>): Fix once #20 gets merged
-        self.assignment_settings_cache = loads(assignment_cache_state)
         self.resource_metric_cache: ResourceMetricCache = {}
         self.client = MetricsQueryClient(self.credential)
 
@@ -149,9 +147,9 @@ async def main():
                         "diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task"
                     },
                     "configurations": {
-                        "OLD_LOG_FORWARDER_ID": {
+                        "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task": {
                             "type": "storageaccount",
-                            "id": "OLD_LOG_FORWARDER_ID",
+                            "id": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task",
                             "storage_account_id": "some/storage/account",
                         },
                     },
