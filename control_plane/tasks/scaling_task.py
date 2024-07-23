@@ -261,15 +261,15 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
-        log_forwarder_id = str(uuid4())[-12:]  # take the last section since we are length limited
+        config_id = str(uuid4())[-12:]  # take the last section since we are length limited
         try:
-            configuration_type = await client.create_log_forwarder(region, log_forwarder_id)
+            config_type = await client.create_log_forwarder(region, config_id)
         except Exception:
-            log.exception("Failed to create log forwarder %s, cleaning up", log_forwarder_id)
-            await client.delete_log_forwarder(region, log_forwarder_id)
+            log.exception("Failed to create log forwarder %s, cleaning up", config_id)
+            await client.delete_log_forwarder(region, config_id)
             return
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
-            "configurations": {log_forwarder_id: configuration_type},
+            "configurations": {config_id: config_type},
             "resources": {},
         }
 
