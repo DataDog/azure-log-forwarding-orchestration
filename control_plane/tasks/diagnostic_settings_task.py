@@ -2,9 +2,8 @@
 from asyncio import gather, run
 from collections.abc import AsyncIterable
 from copy import deepcopy
-from datetime import datetime
 from json import dumps
-from logging import ERROR, INFO, getLogger
+from logging import ERROR, INFO, basicConfig, getLogger
 from typing import TypeVar
 from uuid import uuid4
 
@@ -19,14 +18,14 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from cache.common import read_cache, write_cache
+from cache.common import InvalidCacheError, read_cache, write_cache
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingConfiguration,
     deserialize_diagnostic_settings_cache,
 )
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.task import Task
+from tasks.task import Task, now
 
 
 # silence azure logging except for errors
@@ -39,7 +38,6 @@ EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
-log.setLevel(INFO)
 
 DiagnosticSetting = TypeVar("DiagnosticSetting", bound=Resource)
 
@@ -79,7 +77,7 @@ class DiagnosticSettingsTask(Task):
         # read caches
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
         if not success:
-            raise ValueError("Resource Cache is in an invalid format, failing this task until it is valid")
+            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
 
         success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
@@ -241,11 +239,8 @@ class DiagnosticSettingsTask(Task):
         log.info("Updated setting, %s resources stored in the settings cache", num_resources)
 
 
-def now() -> str:
-    return datetime.now().isoformat()
-
-
 async def main():
+    basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resources, diagnostic_settings = await gather(
         read_cache(RESOURCE_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)

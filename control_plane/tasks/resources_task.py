@@ -1,8 +1,7 @@
 # stdlib
 from asyncio import gather, run
-from datetime import datetime
 from json import dumps
-from logging import DEBUG, getLogger
+from logging import DEBUG, basicConfig, getLogger
 from typing import cast
 
 
@@ -12,13 +11,12 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 
 from cache.common import read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
-from tasks.task import Task
+from tasks.task import Task, now
 
 
 RESOURCES_TASK_NAME = "resources_task"
 
 log = getLogger(RESOURCES_TASK_NAME)
-log.setLevel(DEBUG)
 
 
 class ResourcesTask(Task):
@@ -49,6 +47,8 @@ class ResourcesTask(Task):
             resource_count = 0
             async for r in client.resources.list():
                 region = cast(str, r.location)
+                if region == "global":
+                    continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id))
                 resource_count += 1
             log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
@@ -64,11 +64,8 @@ class ResourcesTask(Task):
         log.info(f"Updated Resources, {resources_count} resources stored in the cache")
 
 
-def now() -> str:
-    return datetime.now().isoformat()
-
-
 async def main() -> None:
+    basicConfig(level=DEBUG)
     log.info("Started task at %s", now())
     resources_cache_state = await read_cache(RESOURCE_CACHE_BLOB)
     async with ResourcesTask(resources_cache_state) as task:

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -eo pipefail
 
@@ -25,12 +25,12 @@ if [ -z "$1" ]; then
     exit 1
 fi
 resource_group=$1
-
 set -u
 
+subscription_id=$(az account show --query id --output tsv)
+
 cd ./control_plane
-tasks="$(python -m tasks)"
-cache_name=`python -c "from cache.common import BLOB_STORAGE_CACHE; print(BLOB_STORAGE_CACHE, end='')"`
+cache_name=$(python -c "from cache.common import BLOB_STORAGE_CACHE; print(BLOB_STORAGE_CACHE, end='')")
 cd ..
 
 random_id=$((RANDOM % 9000 + 1000))
@@ -51,7 +51,7 @@ fi
 echo Done.
 
 echo -n "Checking for storage containers..."
-az storage container list --account-name $storage_account --auth-mode login | jq -r '.[].name' | grep $cache_name > /dev/null || {
+az storage container list --account-name $storage_account --auth-mode login | jq -r '.[].name' | grep $cache_name >/dev/null || {
     echo -n "Missing Cache Container, creating..."
     az storage container create --name $cache_name --account-name $storage_account
 }
@@ -66,67 +66,84 @@ if [[ -z "$app_service_plan" ]]; then
 fi
 echo Done.
 
-
 # ================ creating control plane function apps ================
 
-for task in $tasks; do
-    function_app_name="${task//_/-}"
-    if [[ "$existing_functions" != *"$function_app_name"* ]]; then
-        echo -n "Function app $function_app_name does not exist, creating one..."
-        az functionapp create --resource-group $resource_group --plan $app_service_plan --name $function_app_name --storage-account $storage_account \
-            --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux
-        echo Done.
+declare -A task_roles
+task_roles[resources_task]="Monitoring Reader"
+task_roles[diagnostic_settings_task]="Monitoring Contributor"
+task_roles[scaling_task]="Contributor"
+
+get-scope() {
+    if [[ $1 == "Contributor" ]]; then
+        echo "/subscriptions/$subscription_id/resourceGroups/$resource_group"
+    else
+        echo "/subscriptions/$subscription_id"
     fi
+}
+
+for task in "${!task_roles[@]}"; do
     if [[ ! -d "./dist/$task" ]]; then
         echo "Task $task has not been built, skipping."
         continue
     fi
+    function_app_name="${task//_/-}"
+    role="${task_roles[$task]}"
+
+    # Create the function app if it doesn't exist
+    [[ "$existing_functions" != *"$function_app_name"* ]] && {
+        echo -n "Function app $function_app_name does not exist, creating one..."
+        az functionapp create --resource-group $resource_group --plan $app_service_plan --name $function_app_name --storage-account $storage_account \
+            --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux
+        echo Done.
+    }
+
+    # Deploying function app code
     cd ./dist/$task
     echo Deploying $function_app_name...
     while true; do
         func azure functionapp publish $function_app_name --python && break
+        # needed because sometimes it takes a few seconds for the function app to exist
         echo "Failed to deploy $function_app_name, retrying in 5 seconds..."
         echo "Press Ctrl+C to cancel."
         sleep 5
     done
     cd ../..
+
+    echo -n Checking permissions for $function_app_name...
+    principal_id=$(az functionapp identity show --name $function_app_name --resource-group $resource_group --query principalId --output tsv)
+    [ -z "$principal_id" ] && {
+        echo -n Enabling managed identity for $function_app_name...
+        principal_id=$(az functionapp identity assign --name $function_app_name --resource-group $resource_group | jq -r .principalId)
+    }
+    echo Done.
+
+
+    echo -n Checking role assignment for $function_app_name...
+    set +e
+    while true; do
+        role_assignments="$(az role assignment list --assignee $principal_id --query "[].roleDefinitionName" --output tsv)"
+        [ $? -eq 0 ] && break
+        # needed because sometimes it takes a few seconds for the principal id to exist
+        echo "Failed to list role assignments for $function_app_name, retrying in 5 seconds..."
+        echo "Press Ctrl+C to cancel."
+        sleep 5
+    done
+    set -e
+    [[ $role_assignments != *"$role"* ]] && {
+        echo -n "$role role not found for $task. Assigning role..."
+        scope=$(get-scope "$role")
+        az role assignment create --assignee $principal_id --role "$role" --scope $scope
+    }
+    echo Done.
+
+    echo -n Checking RESOURCE_GROUP setting for $function_app_name...
+
+    rg_setting="$(az functionapp config appsettings list --name $function_app_name --resource-group lfo --query "[?name=='RESOURCE_GROUP']" | jq -r '.[].value')"
+    [[ "$rg_setting" != "$resource_group" ]] && {
+        echo -n "Setting RESOURCE_GROUP for $function_app_name..."
+        az functionapp config appsettings set --name $function_app_name --resource-group $resource_group --settings RESOURCE_GROUP=$resource_group 2> /dev/null > /dev/null
+    }
+    echo Done.
 done
-
-# ================ set up permissions ================
-
-# ================ resource task permissions ================
-cd ./control_plane
-subscription_id=$(az account show --query id --output tsv)
-# Get the principal ID of the Function App's managed identity
-echo -n Checking permissions for resource task...
-principal_id=$(az functionapp identity show --name resources-task --resource-group $resource_group --query principalId --output tsv)
-[ -z "$principal_id" ] && {
-    echo -n Enabling managed identity for resources-task...
-    principal_id=$(az functionapp identity assign --name resources-task --resource-group $resource_group | jq -r .principalId)
-}
-# Check if the "Monitoring Reader" role is already assigned
-role_assignments=$(az role assignment list --assignee $principal_id --query "[].roleDefinitionName" --output tsv)
-if [[ $role_assignments != *"Monitoring Reader"* ]]; then
-    echo -n "Monitoring Reader role not found for resources-task. Assigning role..."
-    az role assignment create --assignee $principal_id --role "Monitoring Reader" --scope "/subscriptions/$subscription_id"
-fi
-
-
-# ================ diagnostic settings task permissions ================
-
-echo -n Checking permissions for diagnostic settings task...
-principal_id=$(az functionapp identity show --name diagnostic-settings-task --resource-group $resource_group --query principalId --output tsv)
-[ -z "$principal_id" ] && {
-    echo -n Enabling managed identity for diagnostic-settings-task...
-    principal_id=$(az functionapp identity assign --name diagnostic-settings-task --resource-group $resource_group | jq -r .principalId)
-}
-role_assignments=$(az role assignment list --assignee $principal_id --query "[].roleDefinitionName" --output tsv)
-if [[ $role_assignments != *"Monitoring Contributor"* ]]; then
-    echo -n "Monitoring Reader role not found for diagnostic-settings-task. Assigning role..."
-    az role assignment create --assignee $principal_id --role "Monitoring Contributor" --scope "/subscriptions/$subscription_id"
-fi
-
-echo Done.
-
 
 echo All Done!

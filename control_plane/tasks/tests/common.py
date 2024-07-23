@@ -1,16 +1,18 @@
 from collections.abc import AsyncIterable
-from typing import TypeVar
+from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, patch
 
 
-class TaskTestCase(IsolatedAsyncioTestCase):
-    TASK_NAME: str = NotImplemented
-
-    def patch_path(self, path: str):
-        p = patch(path)
+class AsyncTestCase(IsolatedAsyncioTestCase):
+    def patch_path(self, path: str, **kwargs: Any):
+        p = patch(path, **kwargs)
         self.addCleanup(p.stop)
         return p.start()
+
+
+class TaskTestCase(AsyncTestCase):
+    TASK_NAME: str = NotImplemented
 
     def patch(self, obj: str):
         return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}")
