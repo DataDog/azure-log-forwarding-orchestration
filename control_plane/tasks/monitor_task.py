@@ -73,8 +73,8 @@ class MonitorTask(Task):
         await gather(
             *[
                 self.process_resource(resource_id)
-                for region_name, region_data in self.assignment_settings_cache[sub_id].items()
-                for resource_name, resource_id in region_data["resources"].items()
+                for region_data in self.assignment_settings_cache[sub_id].values()
+                for resource_id in region_data["resources"].values()
             ]
         )
 
