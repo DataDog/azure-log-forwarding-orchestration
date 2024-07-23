@@ -42,7 +42,7 @@ existing_functions="$(az functionapp list -g $resource_group | jq -r '.[].name')
 echo Done.
 
 echo -n "Checking for a storage account..."
-storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | cut -d$'\n' -f1)"
+storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | grep lfo)"
 if [[ -z "$storage_account" ]]; then
     echo "Storage account does not exist, creating one..."
     storage_account="lfo$random_id"
@@ -50,7 +50,7 @@ if [[ -z "$storage_account" ]]; then
 fi
 echo Done.
 
-echo -n "Checking for storage containers..."
+echo -n "Checking for storage containers on $storage_account..."
 az storage container list --account-name $storage_account --auth-mode login | jq -r '.[].name' | grep $cache_name >/dev/null || {
     echo -n "Missing Cache Container, creating..."
     az storage container create --name $cache_name --account-name $storage_account --auth-mode login
@@ -130,7 +130,7 @@ for task in "${!task_roles[@]}"; do
     done
     set -e
     [[ $role_assignments != *"$role"* ]] && {
-        echo -n "$role role not found for $task. Assigning role..."
+        echo -n "$role role not found for $task (current roles: {$role_assignments}). Assigning role..."
         scope=$(get-scope "$role")
         az role assignment create --assignee $principal_id --role "$role" --scope $scope
     }

@@ -1,15 +1,15 @@
+# stdlib
 from json import JSONDecodeError, loads
 from typing import Any, TypeAlias
 
+# 3p
 from jsonschema import ValidationError, validate
-
-from cache.common import DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA, DiagnosticSettingConfiguration
 
 
 DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"
 
 
-DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, DiagnosticSettingConfiguration]]
+DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, str]]
 "Mapping of subscription_id to resource_id to DiagnosticSettingConfiguration"
 
 
@@ -18,7 +18,9 @@ DIAGNOSTIC_SETTINGS_CACHE_SCHEMA: dict[str, Any] = {
     "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
         "type": "object",  # resource_id
-        "additionalProperties": DIAGNOSTIC_SETTING_CONFIGURATION_SCHEMA,
+        "additionalProperties": {
+            "type": "string",  # config id
+        },
     },
 }
 

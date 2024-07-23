@@ -9,7 +9,7 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import DiagnosticSettingsReso
 
 # project
 from cache.assignment_cache import AssignmentCache
-from cache.common import DiagnosticSettingConfiguration, InvalidCacheError
+from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_NAME,
@@ -30,11 +30,6 @@ region1: Final = "region1"
 config_id1: Final = "bc666ef914ec"
 resource_id1: Final = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
 storage_account1: Final = "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1"
-config1: Final[DiagnosticSettingConfiguration] = {
-    "id": config_id1,
-    "type": "storageaccount",
-    "storage_account_id": storage_account1,
-}
 
 
 def mock(**kwargs: Any) -> Mock:
@@ -83,7 +78,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
             assignment_cache={
                 sub_id1: {
                     region1: {
-                        "configurations": {config_id1: config1},
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
                         "resources": {resource_id1: config_id1},
                     }
                 }
@@ -107,14 +102,14 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         )
 
         # check the cache was updated
-        expected_cache: DiagnosticSettingsCache = {sub_id1: {resource_id1: config1}}
+        expected_cache: DiagnosticSettingsCache = {sub_id1: {resource_id1: config_id1}}
         self.assertEqual(self.cache, expected_cache)
 
     async def test_task_leaves_existing_settings_unchanged(self):
-        setting_id = "f5503a8b-4b23-41d3-9e93-3168b2251a45"
+        config_id = "3168b2251a45"
 
         self.list_diagnostic_settings.return_value = async_generator(
-            Mock(name=DIAGNOSTIC_SETTING_PREFIX + setting_id, event_hub_name=TEST_EVENT_HUB_NAME)
+            Mock(name=DIAGNOSTIC_SETTING_PREFIX + config_id, event_hub_name=TEST_EVENT_HUB_NAME)
         )
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
@@ -122,12 +117,12 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
             assignment_cache={
                 sub_id1: {
                     region1: {
-                        "configurations": {config_id1: config1},
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
                         "resources": {resource_id1: config_id1},
                     }
                 }
             },
-            diagnostic_settings_cache={sub_id1: {resource_id1: config1}},
+            diagnostic_settings_cache={sub_id1: {resource_id1: config_id1}},
         )
         self.create_or_update_setting.assert_not_awaited()
         self.write_cache.assert_not_awaited()
