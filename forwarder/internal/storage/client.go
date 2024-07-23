@@ -33,9 +33,9 @@ type Iterator[ReturnType any, PagerType any] struct {
 	nilValue ReturnType
 }
 
-func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (ReturnType, error) {
+func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnType, err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Iterator.Next")
-	defer span.Finish()
+	defer span.Finish(tracer.WithError(err))
 	if !i.pager.More() {
 		return i.nilValue, iterator.Done
 	}
@@ -45,8 +45,8 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (ReturnType,
 		return i.nilValue, err
 	}
 
-	response := i.getter(resp)
-	return response, nil
+	r = i.getter(resp)
+	return r, nil
 }
 
 func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
