@@ -1,10 +1,11 @@
 # stdlib
 from asyncio import Lock, gather, run
 from copy import deepcopy
+from collections.abc import Coroutine
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Any, Coroutine, AsyncContextManager, Self
+from typing import Any, AsyncContextManager, Self
 from uuid import uuid4
 
 # 3p
