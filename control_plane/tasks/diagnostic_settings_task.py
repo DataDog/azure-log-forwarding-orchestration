@@ -1,11 +1,10 @@
 # stdlib
-from asyncio import gather
-import asyncio
+from asyncio import gather, run
 from collections.abc import AsyncIterable
 from copy import deepcopy
-from datetime import datetime
 from json import dumps
-from logging import ERROR, INFO, getLogger
+from logging import ERROR, INFO, basicConfig, getLogger
+from typing import Any, TypeVar
 from uuid import uuid4
 
 # 3p
@@ -19,30 +18,33 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # project
-from cache.cache import read_cache, write_cache
+from cache.common import InvalidCacheError, read_cache, write_cache
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
-    DiagnosticSettingConfiguration,
     deserialize_diagnostic_settings_cache,
 )
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.task import Task
+from tasks.task import Task, now
 
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
-EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
-EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
+log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
+
+
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
-log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
-log.setLevel(INFO)
+
+def diagnostic_setting_name(config_id: str) -> str:
+    return DIAGNOSTIC_SETTING_PREFIX + config_id
 
 
-async def get_existing_diagnostic_setting[DiagnosticSetting: Resource](
+DiagnosticSetting = TypeVar("DiagnosticSetting", bound=Resource)
+
+
+async def get_existing_diagnostic_setting(
     resource_id: str,
     settings: AsyncIterable[DiagnosticSetting],
     existing_diagnostic_setting_name: str | None = None,
@@ -66,10 +68,6 @@ async def get_existing_diagnostic_setting[DiagnosticSetting: Resource](
         raise
 
 
-def diagnostic_setting_name(config: DiagnosticSettingConfiguration) -> str:
-    return DIAGNOSTIC_SETTING_PREFIX + config["id"]
-
-
 class DiagnosticSettingsTask(Task):
     def __init__(self, resource_cache_state: str, diagnostic_settings_cache_state: str) -> None:
         super().__init__()
@@ -77,7 +75,7 @@ class DiagnosticSettingsTask(Task):
         # read caches
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
         if not success:
-            raise ValueError("Resource Cache is in an invalid format, failing this task until it is valid")
+            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
 
         success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
@@ -165,19 +163,14 @@ class DiagnosticSettingsTask(Task):
             # await self.add_diagnostic_setting(
             #     client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
             # )
-            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = {
-                "id": diagnostic_setting_id,
-                "type": "eventhub",
-                "event_hub_name": "TODO",
-                "event_hub_namespace": "TODO",
-            }
+            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = diagnostic_setting_id
 
     async def add_diagnostic_setting(
         self,
         client: MonitorManagementClient,
         sub_id: str,
         resource_id: str,
-        configuration: DiagnosticSettingConfiguration,
+        configuration: Any,  # TODO (AZINTS-2569) fix this
     ) -> None:
         try:
             categories = [
@@ -239,11 +232,8 @@ class DiagnosticSettingsTask(Task):
         log.info("Updated setting, %s resources stored in the settings cache", num_resources)
 
 
-def now() -> str:
-    return datetime.now().isoformat()
-
-
 async def main():
+    basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resources, diagnostic_settings = await gather(
         read_cache(RESOURCE_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
@@ -254,4 +244,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    run(main())

@@ -30,12 +30,27 @@ control-plane-tests:
     paths:
       - ci/control_plane_coverage.md
 
+control-plane-formatting:
+  image: $BUILD_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/control_plane/format.sh
+
+control-plane-lint:
+  image: $BUILD_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/control_plane/lint.sh
+
 type-check:
   image: $BUILD_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/type-check.sh
+
 build:
   image: $BUILD_IMAGE
   stage: after-test

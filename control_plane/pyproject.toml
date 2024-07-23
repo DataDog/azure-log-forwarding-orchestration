@@ -1,15 +1,18 @@
 [project]
 version = "0.0.1"
 name = "azure-log-forwarding-offering"
-requires-python = ">= 3.12"
+requires-python = ">= 3.11"
 readme = "README.md"
 dependencies = [
     "aiohttp==3.9.5",
     "azure-identity==1.15.0",
-    "jsonschema==4.21.1",
     "azure-mgmt-monitor==6.0.2",
     "azure-mgmt-resource==23.0.1",
+    "azure-mgmt-storage==21.2.1",
+    "azure-mgmt-web==7.3.0",
     "azure-storage-blob==12.20.0",
+    "jsonschema==4.21.1",
+    "tenacity==8.5.0",
 ]
 
 [project.optional-dependencies]
@@ -18,10 +21,10 @@ dev = [
     "pytest==8.0.2",
     "coverage==7.4.4",
     "pycobertura==3.3.2",
-    "pyinstaller==6.6.0",
-    # Install mypy from source since the current release doesnt support 3.12 generics
-    # TODO: Use pypi once mypy 1.11 is released
-    "mypy@https://github.com/python/mypy/zipball/master",
+    "stickytape==0.2.1",
+    "toml==0.10.2",
+    "mypy==1.10",
+    "ruff==0.5.4",
     "types-jsonschema==4.22.0.20240610",
     "types-requests==2.32.0.20240602",
 ]
@@ -45,7 +48,6 @@ docstring-code-format = true
 
 [tool.mypy]
 check_untyped_defs = true
-enable_incomplete_feature = ["NewGenericSyntax"]
 
 [[tool.mypy.overrides]]
 module = "azure.*"
