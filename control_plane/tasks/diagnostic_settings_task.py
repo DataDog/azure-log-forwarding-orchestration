@@ -60,6 +60,8 @@ def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) 
 
 
 class DiagnosticSettingConfiguration(NamedTuple):
+    "Convenience Tuple for holding the configuration of a diagnostic setting"
+
     id: str
     type: DiagnosticSettingType
 
