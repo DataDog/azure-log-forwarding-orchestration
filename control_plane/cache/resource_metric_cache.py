@@ -4,9 +4,12 @@ from typing import Any, TypeAlias
 from jsonschema import ValidationError, validate
 
 
-# Mapping of resource_id to metric_name to max value of a metric.
-# Value is metric specific but could represent units such as seconds, or counld represnt counts.
-ResourceMetricCache: TypeAlias = dict[str, dict[str, int | float]]
+ResourceMetricCache: TypeAlias = dict[str, dict[str, float]]
+"""
+Mapping of resource id to metric name to metric max value
+
+Metric units depend on the metric.
+"""
 
 
 RESOURCE_METRIC_CACHE_SCHEMA: dict[str, Any] = {
