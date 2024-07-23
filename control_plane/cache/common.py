@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
@@ -24,12 +24,12 @@ def get_config_option(name: str) -> str:
     raise MissingConfigOptionError(name)
 
 
-EVENT_HUB_TYPE = "eventhub"
-STORAGE_ACCOUNT_TYPE = "storageaccount"
+EVENT_HUB_TYPE: Final = "eventhub"
+STORAGE_ACCOUNT_TYPE: Final = "storageaccount"
 
-FUNCTION_APP_PREFIX = "dd-blob-log-forwarder-"
-ASP_PREFIX = "dd-log-forwarder-plan-"
-STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
+FUNCTION_APP_PREFIX: Final = "dd-blob-log-forwarder-"
+ASP_PREFIX: Final = "dd-log-forwarder-plan-"
+STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 
 
 def get_function_app_name(config_id: str) -> str:
