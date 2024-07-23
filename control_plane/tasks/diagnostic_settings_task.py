@@ -4,7 +4,7 @@ from collections.abc import AsyncIterable
 from copy import deepcopy
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import TypeVar
+from typing import Any, TypeVar
 from uuid import uuid4
 
 # 3p
@@ -21,7 +21,6 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 from cache.common import InvalidCacheError, read_cache, write_cache
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
-    DiagnosticSettingConfiguration,
     deserialize_diagnostic_settings_cache,
 )
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
@@ -31,13 +30,16 @@ from tasks.task import Task, now
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
-EVENT_HUB_NAME_SETTING = "EVENT_HUB_NAME"
-EVENT_HUB_NAMESPACE_SETTING = "EVENT_HUB_NAMESPACE"
+log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
+
+
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
-log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
+
+def diagnostic_setting_name(config_id: str) -> str:
+    return DIAGNOSTIC_SETTING_PREFIX + config_id
+
 
 DiagnosticSetting = TypeVar("DiagnosticSetting", bound=Resource)
 
@@ -64,10 +66,6 @@ async def get_existing_diagnostic_setting(
             raise
         log.error("Failed to get diagnostic settings for %s", resource_id, exc_info=True)
         raise
-
-
-def diagnostic_setting_name(config: DiagnosticSettingConfiguration) -> str:
-    return DIAGNOSTIC_SETTING_PREFIX + config["id"]
 
 
 class DiagnosticSettingsTask(Task):
@@ -165,19 +163,14 @@ class DiagnosticSettingsTask(Task):
             # await self.add_diagnostic_setting(
             #     client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
             # )
-            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = {
-                "id": diagnostic_setting_id,
-                "type": "eventhub",
-                "event_hub_name": "TODO",
-                "event_hub_namespace": "TODO",
-            }
+            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = diagnostic_setting_id
 
     async def add_diagnostic_setting(
         self,
         client: MonitorManagementClient,
         sub_id: str,
         resource_id: str,
-        configuration: DiagnosticSettingConfiguration,
+        configuration: Any,  # TODO (AZINTS-2569) fix this
     ) -> None:
         try:
             categories = [
