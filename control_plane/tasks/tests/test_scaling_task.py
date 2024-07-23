@@ -4,7 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
-from cache.common import DiagnosticSettingConfiguration, InvalidCacheError
+from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import SCALING_TASK_NAME, LogForwarderClient, ScalingTask
 from tasks.tests.common import AsyncTestCase, TaskTestCase
@@ -106,6 +106,7 @@ class TestScalingTask(TaskTestCase):
         client = AsyncMock()
         self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = client
         self.client = await client.__aenter__()
+        self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
 
         self.log = self.patch("log")
         self.uuid = self.patch("uuid4")
@@ -140,13 +141,6 @@ class TestScalingTask(TaskTestCase):
         self.log.warning.assert_called_once_with("Assignment Cache is in an invalid format, task will reset the cache")
 
     async def test_new_regions_are_added(self):
-        configuration: DiagnosticSettingConfiguration = {
-            "type": "storageaccount",
-            "id": NEW_LOG_FORWARDER_ID,
-            "storage_account_id": "some/storage/account",
-        }
-        self.client.create_log_forwarder.return_value = configuration
-
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={},
@@ -158,7 +152,7 @@ class TestScalingTask(TaskTestCase):
             sub_id1: {
                 EAST_US: {
                     "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
-                    "configurations": {NEW_LOG_FORWARDER_ID: configuration},
+                    "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                 }
             }
         }
@@ -172,11 +166,7 @@ class TestScalingTask(TaskTestCase):
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
-                            OLD_LOG_FORWARDER_ID: {
-                                "type": "storageaccount",
-                                "id": OLD_LOG_FORWARDER_ID,
-                                "storage_account_id": "some/storage/account",
-                            },
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
                     }
                 },
@@ -189,13 +179,6 @@ class TestScalingTask(TaskTestCase):
         self.assertEqual(self.cache, {sub_id1: {}})
 
     async def test_regions_added_and_deleted(self):
-        configuration: DiagnosticSettingConfiguration = {
-            "type": "storageaccount",
-            "id": NEW_LOG_FORWARDER_ID,
-            "storage_account_id": "some/other/storage/account",
-        }
-        self.client.create_log_forwarder.return_value = configuration
-
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {WEST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -203,11 +186,7 @@ class TestScalingTask(TaskTestCase):
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
-                            OLD_LOG_FORWARDER_ID: {
-                                "type": "storageaccount",
-                                "id": OLD_LOG_FORWARDER_ID,
-                                "storage_account_id": "some/storage/account",
-                            },
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
                     }
                 },
@@ -222,7 +201,7 @@ class TestScalingTask(TaskTestCase):
             sub_id1: {
                 WEST_US: {
                     "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
-                    "configurations": {NEW_LOG_FORWARDER_ID: configuration},
+                    "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                 }
             }
         }

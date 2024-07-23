@@ -24,8 +24,8 @@ def get_config_option(name: str) -> str:
     raise MissingConfigOptionError(name)
 
 
-EVENT_HUB_DIAGNOSTIC_SETTING_TYPE = "eventhub"
-STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE = "storageaccount"
+EVENT_HUB_TYPE = "eventhub"
+STORAGE_ACCOUNT_TYPE = "storageaccount"
 
 FUNCTION_APP_PREFIX = "dd-blob-log-forwarder-"
 ASP_PREFIX = "dd-log-forwarder-plan-"
@@ -80,8 +80,8 @@ DiagnosticSettingType = Literal["eventhub", "storageaccount"]
 
 DIAGNOSTIC_SETTING_TYPE_SCHEMA: dict[str, Any] = {
     "oneOf": [
-        {"const": STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE},
-        {"const": EVENT_HUB_DIAGNOSTIC_SETTING_TYPE},
+        {"const": STORAGE_ACCOUNT_TYPE},
+        {"const": EVENT_HUB_TYPE},
     ],
 }
 

@@ -32,7 +32,7 @@ from azure.storage.blob.aio import ContainerClient
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
-    STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE,
+    STORAGE_ACCOUNT_TYPE,
     DiagnosticSettingType,
     InvalidCacheError,
     get_app_service_plan_name,
@@ -189,7 +189,7 @@ class LogForwarderClient(AsyncContextManager):
         )
 
         # for now this is the only type we support
-        return STORAGE_ACCOUNT_DIAGNOSTIC_SETTING_TYPE
+        return STORAGE_ACCOUNT_TYPE
 
     async def get_connection_string(self, storage_account_name: str) -> str:
         keys_result = await self.storage_client.storage_accounts.list_keys(self.resource_group, storage_account_name)

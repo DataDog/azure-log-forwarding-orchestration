@@ -12,21 +12,10 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
     def test_valid_cache(self):
         diagnostic_settings_cache: DiagnosticSettingsCache = {
             sub_id1: {
-                "resource1": {"id": "hi", "type": "eventhub", "event_hub_name": "eh", "event_hub_namespace": "ehn"},
-                "resource2": {
-                    "id": "1234",
-                    "type": "storageaccount",
-                    "storage_account_id": "some_resource_id",
-                },
+                "resource1": "hi",
+                "resource2": "1234",
             },
-            sub_id2: {
-                "resource3": {
-                    "id": "5678",
-                    "type": "eventhub",
-                    "event_hub_name": "eh3",
-                    "event_hub_namespace": "ehn",
-                }
-            },
+            sub_id2: {"resource3": "5678"},
         }
         cache_str = dumps(diagnostic_settings_cache)
         success, cache = deserialize_diagnostic_settings_cache(cache_str)
@@ -49,34 +38,12 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
     def test_non_dict_resources_config_is_invalid(self):
         self.assert_deserialize_failure(dumps({sub_id1: "not_a_dict"}))
 
-    def test_some_non_dict_resource_configs(self):
+    def test_some_non_str_config_id(self):
         self.assert_deserialize_failure(
             dumps(
                 {
-                    sub_id1: {
-                        "resource1": {
-                            "id": "1234",
-                            "type": "storageaccount",
-                            "storage_account_id": "some_resource_id",
-                        }
-                    },
-                    sub_id2: {"resource2": ["not_a_dict"]},
+                    sub_id1: {"resource1": "1234"},
+                    sub_id2: {"resource2": ["invalid_config_id"]},
                 }
             )
-        )
-
-    def test_non_dict_configs(self):
-        self.assert_deserialize_failure(
-            dumps({sub_id1: {"resource1": "setting1", "resource2": "setting2"}, sub_id2: {"resource3": "setting3"}})
-        )
-
-    def test_missing_config_keys(self):
-        self.assert_deserialize_failure(dumps({sub_id1: {"region2": {"resource1": {}}}}))
-
-    def test_partial_missing_config_keys(self):
-        self.assert_deserialize_failure(dumps({sub_id1: {"resource1": {"id": "hi", "event_hub_name": "eh"}}}))
-
-    def test_mismatch_config_forwarding_type(self):
-        self.assert_deserialize_failure(
-            dumps({sub_id1: {"resource1": {"id": "hi", "type": "eventhub", "storage_account_id": "storage123"}}})
         )
