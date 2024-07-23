@@ -13,13 +13,12 @@ import (
 	"google.golang.org/api/iterator"
 
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-func Run(spanContext ddtrace.SpanContext, client storage.Client, logger *log.Entry) error {
-	runSpan := tracer.StartSpan("forwarder.Run", tracer.ChildOf(spanContext))
+func Run(ctx context.Context, client storage.Client, logger *log.Entry) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	eg, ctx := errgroup.WithContext(context.Background())
 
 	containerNameCh := make(chan string, 1000)
@@ -31,7 +30,7 @@ func Run(spanContext ddtrace.SpanContext, client storage.Client, logger *log.Ent
 		return nil
 	})
 
-	iter := client.GetContainersMatchingPrefix(storage.LogContainerPrefix, runSpan.Context())
+	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 
 	var err error
 
@@ -59,7 +58,7 @@ func Run(spanContext ddtrace.SpanContext, client storage.Client, logger *log.Ent
 	close(containerNameCh)
 
 	err = errors.Join(err, eg.Wait())
-	runSpan.Finish(tracer.WithError(err))
+	span.Finish(tracer.WithError(err))
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
@@ -72,7 +71,7 @@ func main() {
 	defer tracer.Stop()
 
 	// Start a root span.
-	span := tracer.StartSpan("forwarder.main")
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
 	defer span.Finish()
 
 	start := time.Now()
@@ -105,7 +104,7 @@ func main() {
 
 	client := storage.NewClient(azBlobClient)
 
-	err = Run(span.Context(), client, logger)
+	err = Run(ctx, client, logger)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

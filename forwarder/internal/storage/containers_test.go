@@ -61,9 +61,10 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 
 	client := storage.NewClient(mockClient)
 
-	span := tracer.StartSpan("containers.test")
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
+	defer span.Finish()
 
-	it := client.GetContainersMatchingPrefix(prefix, span.Context())
+	it := client.GetContainersMatchingPrefix(ctx, prefix)
 
 	var results []*service.ContainerItem
 	var v, err = it.Next(ctx)

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path"
 	"testing"
 
@@ -31,10 +32,11 @@ func TestRun(t *testing.T) {
 	buffer := bytes.NewBuffer(output)
 	logger := log.New()
 	logger.SetOutput(buffer)
-	span := tracer.StartSpan("forwarder.test")
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.test")
+	defer span.Finish()
 
 	// WHEN
-	Run(span.Context(), client, log.NewEntry(logger))
+	Run(ctx, client, log.NewEntry(logger))
 
 	// THEN
 	got := string(buffer.Bytes())
