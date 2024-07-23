@@ -14,9 +14,7 @@ from azure.monitor.query.aio import MetricsQueryClient
 from azure.monitor.query import MetricsQueryResult
 
 # project
-from cache.assignment_cache import (
-    deserialize_assignment_cache,
-)
+from cache.assignment_cache import deserialize_assignment_cache, AssignmentCache
 from cache.resource_metric_cache import ResourceMetricCache
 from tasks.task import Task
 
@@ -47,10 +45,9 @@ class MonitorTask(Task):
 
         success, assignment_settings_cache = deserialize_assignment_cache(assignment_cache_state)
         if not success:
-            log.warning("Assignments Cache is in an invalid format, resetting the cache")
-            assignment_settings_cache = {}
+            log.warning("Assignments Cache is in an invalid format.")
 
-        self.assignment_settings_cache = assignment_settings_cache
+        self.assignment_settings_cache: AssignmentCache = assignment_settings_cache
         self.resource_metric_cache: ResourceMetricCache = {}
         self.client = MetricsQueryClient(self.credential)
 
@@ -73,20 +70,18 @@ class MonitorTask(Task):
         await gather(*[self.process_subscription(sub_id) for sub_id in self.assignment_settings_cache.keys()])
 
     async def process_subscription(self, sub_id: str):
-        resources_per_region = self.assignment_settings_cache[sub_id]
         await gather(
             *[
                 self.process_resource(resource_id)
-                for region_name, region_data in resources_per_region.items()
-                for resource_name, resource_id in region_data["resources"].items()  # type: ignore
+                for region_name, region_data in self.assignment_settings_cache[sub_id].items()
+                for resource_name, resource_id in region_data["resources"].items()
             ]
         )
 
-    """ Updates the resource_metric_cache entry for a resource
-     If there is an error the entry is set to an empty dict"""
-
     async def process_resource(self, resource_id: str) -> None:
-        metric_dict: dict[str, int | float] = dict()
+        """Updates the resource_metric_cache entry for a resource
+        If there is an error the entry is set to an empty dict"""
+        metric_dict = self.resource_metric_cache.setdefault(resource_id, {})
         try:
             response = await self.get_resource_metrics(resource_id)
 
@@ -103,8 +98,7 @@ class MonitorTask(Task):
                         )
                         metric_val = getattr(metric_value, self.metric_defs[metric.name])
                         if not metric_val:
-                            log.warn(f"{metric.name} is None for resource: {resource_id}. Skipping resource...")
-                            self.resource_metric_cache[resource_id] = dict()
+                            log.warning(f"{metric.name} is None for resource: {resource_id}. Skipping resource...")
                             return
                         if min_metric_val:
                             min_metric_val = min(min_metric_val, metric_val)
@@ -116,10 +110,8 @@ class MonitorTask(Task):
             self.resource_metric_cache[resource_id] = metric_dict if metric_dict else dict()
         except HttpResponseError as err:
             log.error(err)
-            self.resource_metric_cache[resource_id] = dict()
         except RetryError:
             log.error("Max retries attempted")
-            self.resource_metric_cache[resource_id] = dict()
 
     @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
     async def get_resource_metrics(self, resource_id: str) -> MetricsQueryResult:
