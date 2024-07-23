@@ -97,7 +97,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
             diagnostic_setting.as_dict(),
             {
                 "logs": [{"category": "cool_logs", "enabled": True}],
-                "storage_account_id": "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1",
+                "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
             },
         )
 

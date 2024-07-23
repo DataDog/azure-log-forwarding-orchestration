@@ -22,6 +22,8 @@ from cache.common import (
     InvalidCacheError,
     get_config_option,
     get_event_hub_name,
+    get_event_hub_namespace,
+    get_resource_group_id,
     get_storage_account_id,
     read_cache,
     write_cache,
@@ -44,8 +46,17 @@ log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 
-def diagnostic_setting_name(config_id: str) -> str:
+def get_diagnostic_setting_name(config_id: str) -> str:
     return DIAGNOSTIC_SETTING_PREFIX + config_id
+
+
+def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:
+    return (
+        get_resource_group_id(sub_id, resource_group)
+        + "/providers/Microsoft.EventHub/namespaces/"
+        + get_event_hub_namespace(config_id)
+        + "/authorizationrules/RootManageSharedAccessKey"
+    )
 
 
 class DiagnosticSettingConfiguration(NamedTuple):
@@ -58,9 +69,8 @@ def get_diagnostic_setting(
 ) -> DiagnosticSettingsResource:
     log_settings = [LogSettings(category=category, enabled=True) for category in categories]
     if config.type == "eventhub":
-        authorization_rule_id = f"/subscriptions/{sub_id}/resourcegroups/{resource_group}/providers/Microsoft.EventHub/namespaces/{config['event_hub_namespace']}/authorizationrules/RootManageSharedAccessKey"
         return DiagnosticSettingsResource(
-            event_hub_authorization_rule_id=authorization_rule_id,
+            event_hub_authorization_rule_id=get_authorization_rule_id(sub_id, resource_group, config.id),
             event_hub_name=get_event_hub_name(config.id),
             logs=log_settings,
         )
@@ -167,7 +177,7 @@ class DiagnosticSettingsTask(Task):
                 existing_setting = await get_existing_diagnostic_setting(
                     resource_id,
                     client.diagnostic_settings.list(resource_id),
-                    existing_diagnostic_setting_name=diagnostic_setting_name(current_config_id),
+                    existing_diagnostic_setting_name=get_diagnostic_setting_name(current_config_id),
                 )
             except Exception:
                 # TODO(AZINTS-2577) Error handling
@@ -206,7 +216,7 @@ class DiagnosticSettingsTask(Task):
 
             await client.diagnostic_settings.create_or_update(
                 resource_id,
-                diagnostic_setting_name(config),
+                get_diagnostic_setting_name(config.id),
                 get_diagnostic_setting(sub_id, self.resource_group, config, categories),
             )
             log.info("Added diagnostic setting for resource %s", resource_id)

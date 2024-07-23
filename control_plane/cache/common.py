@@ -81,6 +81,10 @@ def get_event_hub_name(config_id: str) -> str:
     return EVENT_HUB_NAME_PREFIX + config_id
 
 
+def get_event_hub_namespace(config_id: str) -> str:
+    return EVENT_HUB_NAMESPACE_PREFIX + config_id
+
+
 DiagnosticSettingType = Literal["eventhub", "storageaccount"]
 
 DIAGNOSTIC_SETTING_TYPE_SCHEMA: dict[str, Any] = {
