@@ -94,9 +94,9 @@ class MonitorTask(Task):
                     for metric_value in time_series_element.data:
                         log.debug(metric_value.timestamp)
                         log.debug(
-                            f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs[metric.name])}"
+                            f"{metric.name}: {self.metric_defs[metric.name]} = {getattr(metric_value, self.metric_defs.get(metric.name, ""), None)}"
                         )
-                        metric_val = getattr(metric_value, self.metric_defs[metric.name])
+                        metric_val = getattr(metric_value, self.metric_defs.get(metric.name, ""), None)
                         if not metric_val:
                             log.warning(f"{metric.name} is None for resource: {resource_id}. Skipping resource...")
                             return
