@@ -5,7 +5,7 @@ from datetime import timedelta
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self
-from control_plane.cache.common import get_function_app_id
+from control_plane.cache.common import InvalidCacheError, get_function_app_id
 from tasks.task import now
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
@@ -47,6 +47,7 @@ class MonitorTask(Task):
         success, assignment_settings_cache = deserialize_assignment_cache(assignment_cache_state)
         if not success:
             log.warning("Assignments Cache is in an invalid format.")
+            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
 
         self.assignment_settings_cache: AssignmentCache = assignment_settings_cache
         self.resource_metric_cache: ResourceMetricCache = {}
@@ -135,15 +136,18 @@ async def main():
     resources = dumps(
         {
             "0b62a232-b8db-4380-9da6-640f7272ed6d": {
-                "EAST_US": {
+                "east_us": {
                     "resources": {"diagnostic-settings-task": "32722ff9c26e"},
                     "configurations": {"32722ff9c26e": "storageaccount"},
                 }
             },
         }
     )
-    async with MonitorTask(resources) as task:
-        await task.run()
+    try:
+        async with MonitorTask(resources) as task:
+            await task.run()
+    except InvalidCacheError:
+        log.warning("Task skipped")
     log.info("Task finished at %s", now())
 
 
