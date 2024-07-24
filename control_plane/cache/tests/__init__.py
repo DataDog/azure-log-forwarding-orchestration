@@ -1,5 +1,5 @@
+# stdlib
 from os import environ
-
 
 TEST_CONNECTION_STRING = "TEST_CONNECTION_STRING"
 TEST_EVENT_HUB_NAME = "TEST_EVENT_HUB"

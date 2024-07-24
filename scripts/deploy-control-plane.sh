@@ -42,7 +42,7 @@ existing_functions="$(az functionapp list -g $resource_group | jq -r '.[].name')
 echo Done.
 
 echo -n "Checking for a storage account..."
-storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | grep lfo | cut -d$'\n' -f1)"
+storage_account=`az storage account list -g $resource_group | jq -r '.[].name' | ( grep lfo || true ) | cut -d$'\n' -f1`
 if [[ -z "$storage_account" ]]; then
     echo "Storage account does not exist, creating one..."
     storage_account="lfo$random_id"
@@ -58,7 +58,7 @@ az storage container list --account-name $storage_account --auth-mode login | jq
 echo Done.
 
 echo -n "Checking for an app service plan..."
-app_service_plan="$(az functionapp plan list -g $resource_group | jq -r '.[].name' | grep ASPlfo | cut -d$'\n' -f1)"
+app_service_plan=`az functionapp plan list -g $resource_group | jq -r '.[].name' | ( grep ASPlfo || true ) | cut -d$'\n' -f1`
 if [[ -z "$app_service_plan" ]]; then
     echo "app service plan does not exist, creating one..."
     app_service_plan="ASPlfo$random_id"
