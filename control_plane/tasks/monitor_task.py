@@ -63,7 +63,7 @@ class MonitorTask(Task):
         await super().__aexit__()
 
     async def run(self) -> None:
-        log.info("Crawling %s subscriptions", len(self.assignment_settings_cache))
+        log.info("Pulling metrics from %s subscriptions", len(self.assignment_settings_cache))
         await gather(*[self.process_subscription(sub_id) for sub_id in self.assignment_settings_cache.keys()])
 
     async def process_subscription(self, sub_id: str):
