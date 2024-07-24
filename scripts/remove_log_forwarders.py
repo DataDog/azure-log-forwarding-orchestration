@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env python
 # script to remove all log forwarders
 
 # stdlib
@@ -64,7 +64,7 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
         return
     log.info(f"Deleting... {resource.id}")
     future = await client.resources.begin_delete_by_id(
-        resource.id,
+        resource.id,  # type: ignore
         api_version="2022-09-01",  # type: ignore
     )
     await future.result()
@@ -95,5 +95,5 @@ if __name__ == "__main__":
     basicConfig(level=INFO)
     DRY_RUN = "--dry-run" in argv
     if DRY_RUN:
-        print("Dry run, no changes will be made")
+        log.info("Dry run, no changes will be made")
     run(main())
