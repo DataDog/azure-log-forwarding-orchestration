@@ -10,12 +10,12 @@ from typing import Self
 from azure.core.exceptions import HttpResponseError, ServiceResponseTimeoutError
 from azure.monitor.query import MetricsQueryResult
 from azure.monitor.query.aio import MetricsQueryClient
-from control_plane.cache.log_forwarder_metric_cache import LogForwarderMetricCache
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
 # project
 from cache.assignment_cache import AssignmentCache, deserialize_assignment_cache
 from cache.common import InvalidCacheError, get_config_option, get_function_app_id
+from cache.log_forwarder_metric_cache import LogForwarderMetricCache
 from tasks.task import Task, now
 
 # silence azure logging except for errors
