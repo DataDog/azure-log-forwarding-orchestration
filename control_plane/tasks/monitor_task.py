@@ -5,7 +5,6 @@ from datetime import timedelta
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self
-from control_plane.cache.common import InvalidCacheError, get_function_app_id
 from tasks.task import now
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
@@ -16,6 +15,7 @@ from azure.monitor.query import MetricsQueryResult
 
 # project
 from cache.assignment_cache import deserialize_assignment_cache, AssignmentCache
+from cache.common import InvalidCacheError, get_function_app_id
 from cache.resource_metric_cache import ResourceMetricCache
 from tasks.task import Task
 
