@@ -53,7 +53,6 @@ class MonitorTask(Task):
         self.resource_metric_cache: ResourceMetricCache = {}
         self.client = MetricsQueryClient(self.credential)
 
-        # define metrics
         self.max_query_time = CLIENT_MAX_SECONDS
 
     async def __aenter__(self) -> Self:
