@@ -91,7 +91,7 @@ class MonitorTask(Task):
                     for metric_value in time_series_element.data:
                         log.debug(metric_value.timestamp)
                         log.debug(
-                            f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, "")} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)}"
+                            f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, '')} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ''), None)}"
                         )
                         metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
                         if not metric_val:
