@@ -1,8 +1,9 @@
+# stdlib
 from json import dumps
 from unittest import TestCase
 
+# project
 from cache.assignment_cache import AssignmentCache, deserialize_assignment_cache
-
 from cache.common import EVENT_HUB_TYPE, STORAGE_ACCOUNT_TYPE
 from cache.tests import sub_id1
 

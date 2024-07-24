@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import Lock, gather, run
-from copy import deepcopy
 from collections.abc import Coroutine
+from copy import deepcopy
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
@@ -11,21 +11,21 @@ from uuid import uuid4
 # 3p
 from aiohttp import ClientSession
 from azure.identity.aio import DefaultAzureCredential
+from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
+from azure.mgmt.storage.v2023_05_01.models import (
+    PublicNetworkAccess,
+    Sku,
+    StorageAccountCreateParameters,
+    StorageAccountKey,
+)
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
 from azure.mgmt.web.v2023_12_01.models import (
     AppServicePlan,
-    SkuDescription,
+    ManagedServiceIdentity,
+    NameValuePair,
     Site,
     SiteConfig,
-    NameValuePair,
-    ManagedServiceIdentity,
-)
-from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
-from azure.mgmt.storage.v2023_05_01.models import (
-    StorageAccountCreateParameters,
-    Sku,
-    StorageAccountKey,
-    PublicNetworkAccess,
+    SkuDescription,
 )
 from azure.storage.blob.aio import ContainerClient
 
@@ -44,7 +44,6 @@ from cache.common import (
 )
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.task import Task, now, wait_for_resource
-
 
 SCALING_TASK_NAME = "scaling_task"
 
