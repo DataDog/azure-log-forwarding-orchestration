@@ -53,8 +53,6 @@ class MonitorTask(Task):
         self.resource_metric_cache: ResourceMetricCache = {}
         self.client = MetricsQueryClient(self.credential)
 
-        self.max_query_time = CLIENT_MAX_SECONDS
-
     async def __aenter__(self) -> Self:
         await super().__aenter__()
         await self.client.__aenter__()
@@ -119,7 +117,7 @@ class MonitorTask(Task):
             metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
             timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD),
             granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
-            timeout=self.max_query_time,
+            timeout=CLIENT_MAX_SECONDS,
         )
 
     async def write_caches(self) -> None:
