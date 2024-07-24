@@ -71,7 +71,7 @@ class MonitorTask(Task):
             *[
                 self.process_resource(resource_id, sub_id)
                 for region_data in self.assignment_settings_cache[sub_id].values()
-                for resource_id in region_data["resources"].values()
+                for resource_id in region_data["configurations"].keys()
             ]
         )
 
