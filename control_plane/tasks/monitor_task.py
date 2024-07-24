@@ -5,6 +5,7 @@ from datetime import timedelta
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self
+from control_plane.cache.common import get_function_app_id
 from tasks.task import now
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
@@ -72,18 +73,18 @@ class MonitorTask(Task):
     async def process_subscription(self, sub_id: str):
         await gather(
             *[
-                self.process_resource(resource_id)
+                self.process_resource(resource_id, sub_id)
                 for region_data in self.assignment_settings_cache[sub_id].values()
                 for resource_id in region_data["resources"].values()
             ]
         )
 
-    async def process_resource(self, resource_id: str) -> None:
+    async def process_resource(self, resource_id: str, sub_id: str) -> None:
         """Updates the resource_metric_cache entry for a resource
         If there is an error the entry is set to an empty dict"""
         metric_dict = self.resource_metric_cache.setdefault(resource_id, {})
         try:
-            response = await self.get_resource_metrics(resource_id)
+            response = await self.get_resource_metrics(get_function_app_id(sub_id, "lfo", resource_id))
 
             for metric in response.metrics:
                 log.debug(metric.name)
@@ -133,18 +134,10 @@ async def main():
     # This is holder code until assignment cache becomes availaible
     resources = dumps(
         {
-            "sub_id1": {
+            "0b62a232-b8db-4380-9da6-640f7272ed6d": {
                 "EAST_US": {
-                    "resources": {
-                        "diagnostic-settings-task": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task"
-                    },
-                    "configurations": {
-                        "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task": {
-                            "type": "storageaccount",
-                            "id": "subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo/providers/Microsoft.Web/sites/resources-task",
-                            "storage_account_id": "some/storage/account",
-                        },
-                    },
+                    "resources": {"diagnostic-settings-task": "32722ff9c26e"},
+                    "configurations": {"32722ff9c26e": "storageaccount"},
                 }
             },
         }
