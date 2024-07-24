@@ -10,20 +10,18 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import DiagnosticSettingsReso
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
-from tasks.diagnostic_settings_task import (
-    DIAGNOSTIC_SETTING_PREFIX,
-    DIAGNOSTIC_SETTINGS_TASK_NAME,
-    DiagnosticSettingsTask,
-)
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingsCache,
     deserialize_diagnostic_settings_cache,
 )
-
-from tasks.tests.common import TaskTestCase, async_generator
 from cache.tests import TEST_EVENT_HUB_NAME
-
+from tasks.diagnostic_settings_task import (
+    DIAGNOSTIC_SETTING_PREFIX,
+    DIAGNOSTIC_SETTINGS_TASK_NAME,
+    DiagnosticSettingsTask,
+)
+from tasks.tests.common import TaskTestCase, async_generator
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"

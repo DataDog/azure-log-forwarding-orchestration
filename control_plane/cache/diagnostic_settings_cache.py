@@ -5,7 +5,6 @@ from typing import Any, TypeAlias
 # 3p
 from jsonschema import ValidationError, validate
 
-
 DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"
 
 

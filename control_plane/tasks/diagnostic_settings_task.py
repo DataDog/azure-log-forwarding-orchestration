@@ -10,11 +10,13 @@ from typing import NamedTuple, TypeVar
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
+    CategoryType,
     DiagnosticSettingsResource,
     LogSettings,
-    CategoryType,
     Resource,
 )
+
+from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 
 # project
 from cache.common import (
@@ -32,9 +34,7 @@ from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     deserialize_diagnostic_settings_cache,
 )
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from tasks.task import Task, now
-
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)

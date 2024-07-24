@@ -1,14 +1,16 @@
+# stdlib
 from json import dumps
 from os import environ
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
+
+# project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import SCALING_TASK_NAME, LogForwarderClient, ScalingTask
 from tasks.tests.common import AsyncTestCase, TaskTestCase
-
 
 EAST_US = "eastus"
 WEST_US = "westus"
