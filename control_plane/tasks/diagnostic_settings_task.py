@@ -11,9 +11,9 @@ from uuid import uuid4
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
+    CategoryType,
     DiagnosticSettingsResource,
     LogSettings,
-    CategoryType,
     Resource,
 )
 
@@ -25,7 +25,6 @@ from cache.diagnostic_settings_cache import (
 )
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.task import Task, now
-
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
