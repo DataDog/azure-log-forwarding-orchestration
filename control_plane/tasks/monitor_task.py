@@ -1,24 +1,22 @@
 # stdlib
-from asyncio import gather
 import asyncio
+from asyncio import gather
 from datetime import timedelta
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self
-from tasks.task import now
-from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ServiceResponseTimeoutError
-from azure.monitor.query.aio import MetricsQueryClient
 from azure.monitor.query import MetricsQueryResult
+from azure.monitor.query.aio import MetricsQueryClient
+from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
 # project
-from cache.assignment_cache import deserialize_assignment_cache, AssignmentCache
-from cache.common import InvalidCacheError, get_function_app_id
+from cache.assignment_cache import AssignmentCache, deserialize_assignment_cache
+from cache.common import InvalidCacheError, get_config_option, get_function_app_id
 from cache.resource_metric_cache import ResourceMetricCache
-from tasks.task import Task
-
+from tasks.task import Task, now
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
@@ -69,9 +67,9 @@ class MonitorTask(Task):
     async def process_subscription(self, sub_id: str):
         await gather(
             *[
-                self.process_resource(resource_id, sub_id)
+                self.process_resource(config_id, sub_id)
                 for region_data in self.assignment_settings_cache[sub_id].values()
-                for resource_id in region_data["configurations"].keys()
+                for config_id in region_data["configurations"].keys()
             ]
         )
 
@@ -80,7 +78,9 @@ class MonitorTask(Task):
         If there is an error the entry is set to an empty dict"""
         metric_dict = self.resource_metric_cache.setdefault(resource_id, {})
         try:
-            response = await self.get_resource_metrics(get_function_app_id(sub_id, "lfo", resource_id))
+            response = await self.get_resource_metrics(
+                get_function_app_id(sub_id, get_config_option("RESOURCE_GROUP"), resource_id)
+            )
 
             for metric in response.metrics:
                 log.debug(metric.name)
