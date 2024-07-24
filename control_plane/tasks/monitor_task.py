@@ -54,8 +54,6 @@ class MonitorTask(Task):
         self.client = MetricsQueryClient(self.credential)
 
         # define metrics
-
-        self.metric_defs = COLLECTED_METRIC_DEFINITIONS
         self.max_query_time = CLIENT_MAX_SECONDS
 
     async def __aenter__(self) -> Self:
@@ -96,9 +94,9 @@ class MonitorTask(Task):
                     for metric_value in time_series_element.data:
                         log.debug(metric_value.timestamp)
                         log.debug(
-                            f"{metric.name}: {self.metric_defs.get(metric.name, "")} = {getattr(metric_value, self.metric_defs.get(metric.name, ""), None)}"
+                            f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, "")} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)}"
                         )
-                        metric_val = getattr(metric_value, self.metric_defs.get(metric.name, ""), None)
+                        metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
                         if not metric_val:
                             log.warning(f"{metric.name} is None for resource: {resource_id}. Skipping resource...")
                             return
@@ -119,7 +117,7 @@ class MonitorTask(Task):
     async def get_resource_metrics(self, resource_id: str) -> MetricsQueryResult:
         return await self.client.query_resource(
             resource_id,
-            metric_names=list(self.metric_defs.keys()),
+            metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
             timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD),
             granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
             timeout=self.max_query_time,
