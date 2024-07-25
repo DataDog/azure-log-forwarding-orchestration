@@ -106,7 +106,6 @@ class MonitorTask(Task):
                             min_metric_val, max_metric_val = metric_val, metric_val
                 if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
-            self.log_forwarder_metric_cache[log_forwarder_id] = metric_dict if metric_dict else dict()
         except HttpResponseError as err:
             log.error(err)
         except MissingConfigOptionError:
@@ -131,10 +130,7 @@ class MonitorTask(Task):
 async def main():
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    # This is holder code until assignment cache becomes availaible
-    (assignment_cache_state,) = await gather(
-        read_cache(ASSIGNMENT_CACHE_BLOB),
-    )
+    assignment_cache_state = await read_cache(ASSIGNMENT_CACHE_BLOB)
     try:
         async with MonitorTask(assignment_cache_state) as task:
             await task.run()
