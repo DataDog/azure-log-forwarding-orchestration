@@ -110,7 +110,7 @@ class MonitorTask(Task):
         except HttpResponseError as err:
             log.error(err)
         except MissingConfigOptionError:
-            log.error("Resource group must be specified")
+            log.error("Resource group must be specified as an environment variable.")
         except RetryError:
             log.error("Max retries attempted")
 
