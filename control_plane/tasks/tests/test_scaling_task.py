@@ -37,9 +37,6 @@ class FakeHttpError(HttpResponseError):
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
 
-    def __str__(self) -> str:
-        return f"{self.status_code} Error"
-
     def __eq__(self, value: object) -> bool:
         return isinstance(value, FakeHttpError) and value.status_code == self.status_code
 
