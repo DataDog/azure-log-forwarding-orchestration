@@ -1,15 +1,16 @@
 # stdlib
 from asyncio import Lock, gather, run
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Any, AsyncContextManager, Self
+from typing import Any, AsyncContextManager, Self, TypeVar
 from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
@@ -28,6 +29,7 @@ from azure.mgmt.web.v2023_12_01.models import (
     SkuDescription,
 )
 from azure.storage.blob.aio import ContainerClient
+from tenacity import RetryCallState, retry, stop_after_attempt
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
@@ -52,6 +54,23 @@ BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "dat
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
+
+
+async def is_exception_retryable(state: RetryCallState) -> bool:
+    if (future := state.outcome) and (e := future.exception()):
+        if isinstance(e, HttpResponseError):
+            return e.status_code is not None and (e.status_code == 429 or e.status_code >= 500)
+    return False
+
+
+T = TypeVar("T")
+
+
+async def ignore_exception_type(exc: type[BaseException], a: Awaitable[T]) -> T | None:
+    try:
+        return await a
+    except exc:
+        return None
 
 
 class LogForwarderClient(AsyncContextManager):
@@ -208,8 +227,35 @@ class LogForwarderClient(AsyncContextManager):
                     self._blob_forwarder_data = await stream.content_as_bytes(max_concurrency=4)
             return self._blob_forwarder_data
 
-    async def delete_log_forwarder(self, region: str, forwarder_id: str) -> str:
-        return NotImplemented  # TODO (AZINTS-2616)
+    async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
+        """Deletes the Log forwarder, returns True if successful, False otherwise"""
+
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
+        async def _delete_forwarder():
+            log.info("Attempting to delete log forwarder %s", forwarder_id)
+            await gather(
+                ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.web_client.web_apps.delete(
+                        self.resource_group, get_function_app_name(forwarder_id), delete_empty_server_farm=True
+                    ),
+                ),
+                ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.storage_client.storage_accounts.delete(
+                        self.resource_group, get_storage_account_name(forwarder_id)
+                    ),
+                ),
+            )
+            log.info("Deleted log forwarder %s", forwarder_id)
+
+        try:
+            await _delete_forwarder()
+            return True
+        except Exception:
+            if raise_error:
+                raise
+            return False
 
 
 class ScalingTask(Task):
@@ -265,7 +311,9 @@ class ScalingTask(Task):
             config_type = await client.create_log_forwarder(region, config_id)
         except Exception:
             log.exception("Failed to create log forwarder %s, cleaning up", config_id)
-            await client.delete_log_forwarder(region, config_id)
+            success = await client.delete_log_forwarder(config_id, raise_error=False)
+            if not success:
+                log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
             return
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
             "configurations": {config_id: config_type},
@@ -281,7 +329,7 @@ class ScalingTask(Task):
         log.info("Deleting log forwarder for subscription %s in region %s", subscription_id, region)
         await gather(
             *(
-                client.delete_log_forwarder(region, forwarder_id)
+                client.delete_log_forwarder(forwarder_id)
                 for forwarder_id in self.assignment_cache[subscription_id][region]["configurations"]
             )
         )

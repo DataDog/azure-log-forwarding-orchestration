@@ -3,16 +3,15 @@
 
 # stdlib
 from asyncio import gather, run
-from logging import INFO, basicConfig, getLogger, WARNING
+from logging import INFO, WARNING, basicConfig, getLogger
 from sys import argv
 
 # 3p
-
 # requires `pip install azure-mgmt-resource`
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.resource.resources.v2022_09_01.aio import ResourceManagementClient
 from azure.mgmt.resource.resources.v2022_09_01.models import Resource
-
+from tenacity import retry, stop_after_attempt
 
 getLogger("azure").setLevel(WARNING)
 log = getLogger("extension_cleanup")
@@ -22,6 +21,8 @@ FUNCTION_APP_PREFIX = "dd-blob-log-forwarder-"
 ASP_PREFIX = "dd-log-forwarder-plan-"
 STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
 DRY_RUN = False
+
+BATCH_SIZE = 5
 
 
 def parse_resource_group(resource_id: str) -> str:
@@ -57,6 +58,7 @@ def partition_resources(
     return function_apps, everything_else
 
 
+@retry(stop=stop_after_attempt(5))
 async def delete_resource(client: ResourceManagementClient, resource: Resource):
     global DRY_RUN
     if DRY_RUN:
@@ -87,8 +89,18 @@ async def main():
         )
 
         # delete any function apps before we delete the rest to avoid conflicts
-        await gather(*[delete_resource(client, r) for r in function_apps])
-        await gather(*[delete_resource(client, r) for r in everything_else])
+        for i in range(0, len(function_apps), BATCH_SIZE):
+            await gather(
+                *[delete_resource(client, r) for r in function_apps[i : i + BATCH_SIZE]]
+            )
+
+        for i in range(0, len(everything_else), BATCH_SIZE):
+            await gather(
+                *[
+                    delete_resource(client, r)
+                    for r in everything_else[i : i + BATCH_SIZE]
+                ]
+            )
 
 
 if __name__ == "__main__":
