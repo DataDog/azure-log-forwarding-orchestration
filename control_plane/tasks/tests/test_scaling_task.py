@@ -1,27 +1,54 @@
 # stdlib
 from json import dumps
 from os import environ
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
+# 3p
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from tenacity import RetryError
+
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
-from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
+from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX, STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import SCALING_TASK_NAME, LogForwarderClient, ScalingTask
 from tasks.tests.common import AsyncTestCase, TaskTestCase
 
+sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
-LOG_FORWARDER_ID = "d6fc2c757f9c"
+log_forwarder_id = "d6fc2c757f9c"
+log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
+storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
+rg1 = "test_lfo"
+
+
+class MockedLogForwarderClient(LogForwarderClient):
+    """Used for typing since we know the underlying clients will be mocks"""
+
+    rest_client: AsyncMock
+    web_client: AsyncMock
+    storage_client: AsyncMock
+
+
+class FakeHttpError(HttpResponseError):
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+    def __str__(self) -> str:
+        return f"{self.status_code} Error"
+
+    def __eq__(self, value: object) -> bool:
+        return isinstance(value, FakeHttpError) and value.status_code == self.status_code
 
 
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
         environ["AzureWebJobsStorage"] = "..."
-        self.client: AsyncMock = LogForwarderClient(  # type: ignore
-            credential=AsyncMock(), subscription_id="sub_id", resource_group="test_lfo"
+        self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
+            credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
         )
         await self.client.__aexit__(None, None, None)
         self.client.rest_client = AsyncMock()
@@ -36,7 +63,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
     async def test_create_log_forwarder(self):
         async with self.client:
-            await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
+            await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
 
         # app service plan
         asp_create: AsyncMock = self.client.web_client.app_service_plans.begin_create_or_update
@@ -55,7 +82,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
         with self.assertRaises(ValueError) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
+                await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
         self.assertIn("No keys found for storage account", str(ctx.exception))
 
     async def test_create_log_forwarder_app_service_plan_failure(self):
@@ -64,7 +91,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
+                await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
         self.assertIn("400: ASP creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_storage_account_failure(self):
@@ -73,7 +100,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
+                await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
         self.assertIn("400: Storage Account creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_function_app_failure(self):
@@ -82,18 +109,91 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
+                await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
         self.assertIn("400: Function App creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_deploying_failure(self):
         self.raise_for_status.side_effect = Exception("400: Deploying failed")
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, LOG_FORWARDER_ID)
+                await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
         self.assertIn("400: Deploying failed", str(ctx.exception))
 
+    async def test_delete_log_forwarder(self):
+        async with self.client as client:
+            success = await client.delete_log_forwarder(log_forwarder_id)
+        self.assertTrue(success)
+        self.client.web_client.web_apps.delete.assert_awaited_once_with(
+            rg1, log_forwarder_name, delete_empty_server_farm=True
+        )
+        self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(rg1, storage_account_name)
 
-sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
+    async def test_delete_log_forwarder_ignore_resource_not_found(self):
+        self.client.web_client.web_apps.delete.side_effect = ResourceNotFoundError()
+        self.client.storage_client.storage_accounts.delete.side_effect = ResourceNotFoundError()
+        async with self.client as client:
+            success = await client.delete_log_forwarder(log_forwarder_id)
+        self.assertTrue(success)
+        self.client.web_client.web_apps.delete.assert_awaited_once_with(
+            rg1, log_forwarder_name, delete_empty_server_farm=True
+        )
+        self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(rg1, storage_account_name)
+
+    async def test_delete_log_forwarder_not_raise_error(self):
+        self.client.web_client.web_apps.delete.side_effect = FakeHttpError(400)
+        async with self.client as client:
+            success = await client.delete_log_forwarder(log_forwarder_id, raise_error=False)
+        self.assertFalse(success)
+        self.client.web_client.web_apps.delete.assert_awaited_once_with(
+            rg1, log_forwarder_name, delete_empty_server_farm=True
+        )
+        self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(rg1, storage_account_name)
+
+    async def test_delete_log_forwarder_makes_3_retryable_attempts_default(self):
+        self.client.web_client.web_apps.delete.side_effect = FakeHttpError(429)
+        with self.assertRaises(RetryError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder(log_forwarder_id)
+        self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(429))
+        self.assertCalledTimesWith(
+            self.client.web_client.web_apps.delete, 3, rg1, log_forwarder_name, delete_empty_server_farm=True
+        )
+        self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 3, rg1, storage_account_name)
+
+    async def test_delete_log_forwarder_makes_5_retryable_attempts(self):
+        self.client.web_client.web_apps.delete.side_effect = FakeHttpError(529)
+        self.client.storage_client.storage_accounts.delete.side_effect = ResourceNotFoundError()
+        with self.assertRaises(RetryError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder(log_forwarder_id, max_attempts=5)
+        self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(529))
+        self.assertCalledTimesWith(
+            self.client.web_client.web_apps.delete, 5, rg1, log_forwarder_name, delete_empty_server_farm=True
+        )
+        self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 5, rg1, storage_account_name)
+
+    async def test_delete_log_forwarder_doesnt_retry_after_second_unretryable(self):
+        web_call_count = 0
+
+        def web_side_effect(*args, **kwargs):
+            nonlocal web_call_count
+            web_call_count += 1
+            if web_call_count < 2:
+                raise FakeHttpError(429)
+            raise FakeHttpError(400)
+
+        self.client.web_client.web_apps.delete.side_effect = web_side_effect
+        self.client.storage_client.storage_accounts.delete.side_effect = ResourceNotFoundError()
+
+        with self.assertRaises(FakeHttpError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder(log_forwarder_id)
+        self.assertEqual(ctx.exception, FakeHttpError(400))
+        self.assertCalledTimesWith(
+            self.client.web_client.web_apps.delete, 2, rg1, log_forwarder_name, delete_empty_server_farm=True
+        )
+        self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 2, rg1, storage_account_name)
+
 
 NEW_UUID = "04cb0e0b-f268-4349-aa32-93a5885365f5"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"

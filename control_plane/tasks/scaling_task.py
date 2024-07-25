@@ -1,16 +1,16 @@
 # stdlib
 from asyncio import Lock, gather, run
-from collections.abc import Coroutine
+from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Any, AsyncContextManager, Self
+from typing import Any, AsyncContextManager, Self, TypeVar
 from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
-from azure.core.exceptions import HttpResponseError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
@@ -61,6 +61,16 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
         if isinstance(e, HttpResponseError):
             return e.status_code is not None and (e.status_code == 429 or e.status_code >= 500)
     return False
+
+
+T = TypeVar("T")
+
+
+async def ignore_exception_type(exc: type[BaseException], a: Awaitable[T]) -> T | None:
+    try:
+        return await a
+    except exc:
+        pass
 
 
 class LogForwarderClient(AsyncContextManager):
@@ -217,18 +227,24 @@ class LogForwarderClient(AsyncContextManager):
                     self._blob_forwarder_data = await stream.content_as_bytes(max_concurrency=4)
             return self._blob_forwarder_data
 
-    async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, attempts: int = 3) -> bool:
+    async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
         """Deletes the Log forwarder, returns True if successful, False otherwise"""
 
-        @retry(stop=stop_after_attempt(attempts), retry=is_exception_retryable)
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder():
             log.info("Attempting to delete log forwarder %s", forwarder_id)
             await gather(
-                self.web_client.web_apps.delete(
-                    self.resource_group, get_function_app_name(forwarder_id), delete_empty_server_farm=True
+                ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.web_client.web_apps.delete(
+                        self.resource_group, get_function_app_name(forwarder_id), delete_empty_server_farm=True
+                    ),
                 ),
-                self.storage_client.storage_accounts.delete(
-                    self.resource_group, get_storage_account_name(forwarder_id)
+                ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.storage_client.storage_accounts.delete(
+                        self.resource_group, get_storage_account_name(forwarder_id)
+                    ),
                 ),
             )
             log.info("Deleted log forwarder %s", forwarder_id)
