@@ -1,19 +1,20 @@
 # stdlib
-from json import dumps, loads
-from typing import cast
-from unittest.mock import AsyncMock, Mock
-from uuid import UUID
+from json import dumps
+from typing import Any, Final
+from unittest.mock import ANY, AsyncMock, Mock
 
 # 3p
 from azure.mgmt.monitor.models import CategoryType
+from azure.mgmt.monitor.v2021_05_01_preview.models import DiagnosticSettingsResource
 
 # project
-from cache.common import InvalidCacheError
+from cache.assignment_cache import AssignmentCache
+from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingsCache,
+    deserialize_diagnostic_settings_cache,
 )
-from cache.resources_cache import ResourceCache
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -22,9 +23,18 @@ from tasks.diagnostic_settings_task import (
 )
 from tasks.tests.common import TaskTestCase, async_generator
 
-sub_id = "sub1"
-region = "region1"
-resource_id = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+sub_id1: Final = "sub1"
+region1: Final = "region1"
+config_id1: Final = "bc666ef914ec"
+resource_id1: Final = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+storage_account1: Final = "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1"
+
+
+def mock(**kwargs: Any) -> Mock:
+    m = Mock()
+    for k, v in kwargs.items():
+        setattr(m, k, v)
+    return m
 
 
 class TestAzureDiagnosticSettingsTask(TaskTestCase):
@@ -39,44 +49,59 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories: Mock = client.diagnostic_settings_category.list
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
         client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
+        self.resource_group = "lfo"
 
     async def run_diagnostic_settings_task(
-        self, resource_cache: ResourceCache, diagnostic_settings_cache: DiagnosticSettingsCache
+        self, assignment_cache: AssignmentCache, diagnostic_settings_cache: DiagnosticSettingsCache
     ):
         async with DiagnosticSettingsTask(
-            dumps(resource_cache, default=list), dumps(diagnostic_settings_cache)
+            dumps(assignment_cache), dumps(diagnostic_settings_cache), self.resource_group
         ) as task:
             await task.run()
+
+    @property
+    def cache(self) -> DiagnosticSettingsCache:
+        success, cache = deserialize_diagnostic_settings_cache(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB))
+        if not success:
+            raise InvalidCacheError("Diagnostic Settings Cache is in an invalid format after the task")
+        return cache
 
     async def test_task_adds_missing_settings(self):
         self.list_diagnostic_settings.return_value = async_generator()
         self.list_diagnostic_settings_categories.return_value = async_generator(
-            Mock(name="cool_logs", category_type=CategoryType.LOGS)
+            mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
         await self.run_diagnostic_settings_task(
-            resource_cache={
-                sub_id: {
-                    region: {
-                        resource_id,
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
                     }
                 }
             },
             diagnostic_settings_cache={},
         )
 
-        # TODO(AZINTS-2569): uncomment this line once we implement dynamic setting creation based on region
-        return
-        # self.create_or_update_setting.assert_awaited()
-        # self.create_or_update_setting.assert_called_once_with(resource_id, ANY, ANY)
-        setting = cast(DiagnosticSettingsCache, loads(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB)))[sub_id][
-            resource_id
-        ]
-        self.assertEqual(str(UUID(setting["id"])), setting["id"])
-        self.assertEqual(setting["type"], "eventhub")
-        assert setting["type"] == "eventhub"  # for mypy typing
-        self.assertEqual(setting["event_hub_name"], "TODO")
-        self.assertEqual(setting["event_hub_namespace"], "TODO")
+        # check the diagnostic setting was created
+        self.create_or_update_setting.assert_awaited_once_with(
+            resource_id1,
+            "datadog_log_forwarding_bc666ef914ec",
+            ANY,  # the azure sdk doesnt implement __eq__ so we have to check it separarely after
+        )
+        diagnostic_setting: DiagnosticSettingsResource = self.create_or_update_setting.call_args[0][2]
+        self.assertEqual(
+            diagnostic_setting.as_dict(),
+            {
+                "logs": [{"category": "cool_logs", "enabled": True}],
+                "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+            },
+        )
+
+        # check the cache was updated
+        expected_cache: DiagnosticSettingsCache = {sub_id1: {resource_id1: config_id1}}
+        self.assertEqual(self.cache, expected_cache)
 
     async def test_task_leaves_existing_settings_unchanged(self):
         config_id = "3168b2251a45"
@@ -87,15 +112,22 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
         await self.run_diagnostic_settings_task(
-            resource_cache={sub_id: {region: {resource_id}}},
-            diagnostic_settings_cache={sub_id: {resource_id: config_id}},
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            diagnostic_settings_cache={sub_id1: {resource_id1: config_id1}},
         )
-        self.create_or_update_setting.assert_not_called()
-        self.write_cache.assert_not_called()
+        self.create_or_update_setting.assert_not_awaited()
+        self.write_cache.assert_not_awaited()
 
     def test_malformed_resources_cache_errors_in_constructor(self):
         with self.assertRaises(InvalidCacheError) as e:
-            DiagnosticSettingsTask("malformed", "{}")
+            DiagnosticSettingsTask("malformed", "{}", "rg")
         self.assertEqual(
-            str(e.exception), "Resource Cache is in an invalid format, failing this task until it is valid"
+            str(e.exception), "Assignment Cache is in an invalid format, failing this task until it is valid"
         )
