@@ -70,7 +70,7 @@ async def ignore_exception_type(exc: type[BaseException], a: Awaitable[T]) -> T 
     try:
         return await a
     except exc:
-        pass
+        return None
 
 
 class LogForwarderClient(AsyncContextManager):
