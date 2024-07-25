@@ -69,7 +69,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
     async def test_task_adds_missing_settings(self):
         self.list_diagnostic_settings.return_value = async_generator()
         self.list_diagnostic_settings_categories.return_value = async_generator(
-            mock(name=Mock(value="cool_logs"), category_type=CategoryType.LOGS)
+            mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
         await self.run_diagnostic_settings_task(
