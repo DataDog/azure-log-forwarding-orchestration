@@ -13,8 +13,8 @@ from azure.monitor.query.aio import MetricsQueryClient
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
 # project
-from cache.assignment_cache import AssignmentCache, deserialize_assignment_cache
-from cache.common import InvalidCacheError, get_config_option, get_function_app_id
+from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
+from cache.common import InvalidCacheError, MissingConfigOptionError, get_config_option, get_function_app_id, read_cache
 from cache.log_forwarder_metric_cache import LogForwarderMetricCache
 from tasks.task import Task, now
 
@@ -94,21 +94,22 @@ class MonitorTask(Task):
                             f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, '')} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ''), None)}"
                         )
                         metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
-                        if not metric_val:
+                        if metric_val is None:
                             log.warning(
                                 f"{metric.name} is None for log forwarder: {log_forwarder_id}. Skipping resource..."
                             )
                             return
-                        if min_metric_val:
+                        if min_metric_val is not None:
                             min_metric_val = min(min_metric_val, metric_val)
                             max_metric_val = max(max_metric_val, metric_val)
                         else:
                             min_metric_val, max_metric_val = metric_val, metric_val
-                if max_metric_val:
+                if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
-            self.log_forwarder_metric_cache[log_forwarder_id] = metric_dict if metric_dict else dict()
         except HttpResponseError as err:
             log.error(err)
+        except MissingConfigOptionError:
+            log.error("Resource group must be specified as an environment variable.")
         except RetryError:
             log.error("Max retries attempted")
 
@@ -129,19 +130,9 @@ class MonitorTask(Task):
 async def main():
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    # This is holder code until assignment cache becomes availaible
-    cache = dumps(
-        {
-            "0b62a232-b8db-4380-9da6-640f7272ed6d": {
-                "east_us": {
-                    "resources": {"diagnostic-settings-task": "32722ff9c26e"},
-                    "configurations": {"32722ff9c26e": "storageaccount"},
-                }
-            },
-        }
-    )
+    assignment_cache_state = await read_cache(ASSIGNMENT_CACHE_BLOB)
     try:
-        async with MonitorTask(cache) as task:
+        async with MonitorTask(assignment_cache_state) as task:
             await task.run()
     except InvalidCacheError:
         log.warning("Task skipped")
