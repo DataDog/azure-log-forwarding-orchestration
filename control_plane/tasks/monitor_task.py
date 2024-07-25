@@ -13,7 +13,7 @@ from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
 from azure.monitor.query.aio import MetricsQueryClient
 
 # dd
-from datadog_api_client import ApiClient, Configuration
+from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
 from datadog_api_client.v2.model.metric_payload import MetricPayload
@@ -117,6 +117,9 @@ class MonitorTask(Task):
                             min_metric_val, max_metric_val = metric_val, metric_val
                 if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
+            if os.environ.get("SHOULD_SUBMIT_METRICS", False):
+                log.info("hello")
+                await self.submit_log_forwarder_metrics(log_forwarder_id, response.metrics, sub_id)
             self.log_forwarder_metric_cache[log_forwarder_id] = metric_dict
         except HttpResponseError as err:
             log.error(err)
@@ -133,29 +136,26 @@ class MonitorTask(Task):
             timeout=CLIENT_MAX_SECONDS,
         )
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPS))
-    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric]) -> None:
+    # @retry(stop=stop_after_attempt(MAX_ATTEMPS))
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
         if "DD_API_KEY" in os.environ:
+            metric_series = await gather(*[self.create_metric_series(metric, log_forwarder_id) for metric in metrics])
+            if not all(metric_series):
+                log.warn(
+                    f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
+                )
+                return
             body = MetricPayload(
-                series=[
-                    MetricSeries(
-                        metric="system.load.1",
-                        type=MetricIntakeType.UNSPECIFIED,
-                        points=[
-                            MetricPoint(
-                                timestamp=int(2),
-                                value=0.7,
-                            ),
-                        ],
-                        resources=[
-                            MetricResource(
-                                name="dummyhost",
-                                type="host",
-                            ),
-                        ],
-                    ),
-                ],
+                series=metric_series,
             )
+            configuration = Configuration()
+            configuration.request_timeout = CLIENT_MAX_SECONDS
+            async with AsyncApiClient(configuration) as api_client:
+                api_instance = MetricsApi(api_client)
+                response = await api_instance.submit_metrics(body=body)
+                if len(response.get("errors", [])) > 0:
+                    for err in response.get("errors", []):
+                        log.error(err)
         else:
             log.warning("Metric API key is not set. Skipping submit metrics")
             return
