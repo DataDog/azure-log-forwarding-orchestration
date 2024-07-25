@@ -6,7 +6,6 @@ from typing import Any, Final, Literal
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient
 
-
 BLOB_STORAGE_CACHE = "control-plane-cache"
 
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"

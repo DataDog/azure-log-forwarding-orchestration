@@ -1,24 +1,26 @@
+# stdlib
 from json import dumps, loads
 from typing import cast
 from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
+# 3p
+from azure.mgmt.monitor.models import CategoryType
+
+# project
 from cache.common import InvalidCacheError
-from tasks.diagnostic_settings_task import (
-    DIAGNOSTIC_SETTING_PREFIX,
-    DIAGNOSTIC_SETTINGS_TASK_NAME,
-    DiagnosticSettingsTask,
-)
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     DiagnosticSettingsCache,
 )
 from cache.resources_cache import ResourceCache
-from azure.mgmt.monitor.models import CategoryType
-
-from tasks.tests.common import TaskTestCase, async_generator
 from cache.tests import TEST_EVENT_HUB_NAME
-
+from tasks.diagnostic_settings_task import (
+    DIAGNOSTIC_SETTING_PREFIX,
+    DIAGNOSTIC_SETTINGS_TASK_NAME,
+    DiagnosticSettingsTask,
+)
+from tasks.tests.common import TaskTestCase, async_generator
 
 sub_id = "sub1"
 region = "region1"
