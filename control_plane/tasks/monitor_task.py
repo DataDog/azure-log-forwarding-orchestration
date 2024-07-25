@@ -1,20 +1,30 @@
 # stdlib
 import asyncio
+import os
 from asyncio import gather
-from datetime import timedelta
+from datetime import datetime, timedelta
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from typing import Self
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ServiceResponseTimeoutError
-from azure.monitor.query import MetricsQueryResult
+from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
 from azure.monitor.query.aio import MetricsQueryClient
+
+# dd
+from datadog_api_client import ApiClient, Configuration
+from datadog_api_client.v2.api.metrics_api import MetricsApi
+from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
+from datadog_api_client.v2.model.metric_payload import MetricPayload
+from datadog_api_client.v2.model.metric_point import MetricPoint
+from datadog_api_client.v2.model.metric_resource import MetricResource
+from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt
 
 # project
 from cache.assignment_cache import AssignmentCache, deserialize_assignment_cache
-from cache.common import InvalidCacheError, get_config_option, get_function_app_id
+from cache.common import InvalidCacheError, get_config_option, get_function_app_id, get_function_app_name
 from cache.log_forwarder_metric_cache import LogForwarderMetricCache
 from tasks.task import Task, now
 
@@ -25,8 +35,8 @@ getLogger("azure").setLevel(ERROR)
 MONITOR_TASK_NAME = "monitor_task"
 COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
 
-METRIC_COLLECTION_PERIOD = 120  # How long we are mointoring in minutes
-METRIC_COLLECTION_SAMPLES = 8  # Number of samples we are collecting
+METRIC_COLLECTION_PERIOD = 30  # How long we are mointoring in minutes
+METRIC_COLLECTION_SAMPLES = 6  # Number of samples we are collecting
 METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD // METRIC_COLLECTION_SAMPLES
 
 CLIENT_MAX_SECONDS_PER_METRIC = 5
@@ -94,7 +104,8 @@ class MonitorTask(Task):
                             f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, '')} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ''), None)}"
                         )
                         metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
-                        if not metric_val:
+                        if metric_val is None:
+                            log.info(metric_value.__dict__)
                             log.warning(
                                 f"{metric.name} is None for log forwarder: {log_forwarder_id}. Skipping resource..."
                             )
@@ -104,9 +115,9 @@ class MonitorTask(Task):
                             max_metric_val = max(max_metric_val, metric_val)
                         else:
                             min_metric_val, max_metric_val = metric_val, metric_val
-                if max_metric_val:
+                if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
-            self.log_forwarder_metric_cache[log_forwarder_id] = metric_dict if metric_dict else dict()
+            self.log_forwarder_metric_cache[log_forwarder_id] = metric_dict
         except HttpResponseError as err:
             log.error(err)
         except RetryError:
@@ -122,6 +133,64 @@ class MonitorTask(Task):
             timeout=CLIENT_MAX_SECONDS,
         )
 
+    @retry(stop=stop_after_attempt(MAX_ATTEMPS))
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric]) -> None:
+        if "DD_API_KEY" in os.environ:
+            body = MetricPayload(
+                series=[
+                    MetricSeries(
+                        metric="system.load.1",
+                        type=MetricIntakeType.UNSPECIFIED,
+                        points=[
+                            MetricPoint(
+                                timestamp=int(2),
+                                value=0.7,
+                            ),
+                        ],
+                        resources=[
+                            MetricResource(
+                                name="dummyhost",
+                                type="host",
+                            ),
+                        ],
+                    ),
+                ],
+            )
+        else:
+            log.warning("Metric API key is not set. Skipping submit metrics")
+            return
+
+    async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
+        metric_points = await gather(
+            *[
+                self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
+                for time_series_element in metric.timeseries
+                for metric_value in time_series_element.data
+            ]
+        )
+        if not all(metric_points):
+            return None
+        return MetricSeries(
+            metric=metric.name,
+            type=MetricIntakeType.UNSPECIFIED,
+            points=metric_points,
+            resources=[
+                MetricResource(
+                    name=get_function_app_name(log_forwarder_id),
+                    type="logforwarder",
+                ),
+            ],
+        )
+
+    async def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
+        metric_timestamp = metric_value.timestamp.timestamp()
+        if (datetime.now().timestamp() - metric_timestamp) > 3540:
+            return None
+        return MetricPoint(
+            timestamp=int(metric_timestamp),
+            value=getattr(metric_value, metric_attr, 0),
+        )
+
     async def write_caches(self) -> None:
         log.info("Output_dict: " + str(self.log_forwarder_metric_cache))
 
@@ -134,8 +203,8 @@ async def main():
         {
             "0b62a232-b8db-4380-9da6-640f7272ed6d": {
                 "east_us": {
-                    "resources": {"diagnostic-settings-task": "32722ff9c26e"},
-                    "configurations": {"32722ff9c26e": "storageaccount"},
+                    "resources": {"diagnostic-settings-task": "d76404b14764"},
+                    "configurations": {"d76404b14764": "storageaccount"},
                 }
             },
         }
