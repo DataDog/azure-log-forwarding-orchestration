@@ -118,7 +118,6 @@ class MonitorTask(Task):
                 if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
             if os.environ.get("SHOULD_SUBMIT_METRICS", False):
-                log.info("hello")
                 await self.submit_log_forwarder_metrics(log_forwarder_id, response.metrics, sub_id)
             self.log_forwarder_metric_cache[log_forwarder_id] = metric_dict
         except HttpResponseError as err:
