@@ -355,7 +355,7 @@ class ScalingTask(Task):
 
         # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
 
-    async def collect_forwarder_metrics(self, config_id: str, config_type: DiagnosticSettingType) -> ...:
+    async def collect_forwarder_metrics(self, config_id: str, config_type: DiagnosticSettingType) -> None:
         return NotImplemented
 
     def update_assignments(self, sub_id: str) -> None:
