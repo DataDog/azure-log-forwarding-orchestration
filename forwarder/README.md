@@ -36,6 +36,7 @@ scp forwarder azureuser@<VM IP ADDRESS>:/home/azureuser/forwarder
 export AzureWebJobsStorage="<VALID CONNECTION STRING>"
 /home/azureuser/forwarder
 
+Traces should now appear in the Datadog organization that was used to configure the agent.
 
 
 ### Publishing and Running

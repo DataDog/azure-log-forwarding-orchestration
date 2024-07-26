@@ -2,9 +2,11 @@ package storage
 
 import (
 	"context"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"google.golang.org/api/iterator"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // AzureBlobClient wraps around the azblob.Client struct, to allow for mocking.
@@ -31,7 +33,9 @@ type Iterator[ReturnType any, PagerType any] struct {
 	nilValue ReturnType
 }
 
-func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (ReturnType, error) {
+func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnType, err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Iterator.Next")
+	defer span.Finish(tracer.WithError(err))
 	if !i.pager.More() {
 		return i.nilValue, iterator.Done
 	}

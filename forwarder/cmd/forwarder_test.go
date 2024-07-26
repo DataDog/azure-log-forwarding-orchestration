@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	"github.com/stretchr/testify/assert"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
+	"context"
 	"path"
 	"testing"
+
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
 
 func TestRun(t *testing.T) {
@@ -25,9 +30,13 @@ func TestRun(t *testing.T) {
 
 	var output []byte
 	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.test")
+	defer span.Finish()
 
 	// WHEN
-	Run(client, buffer)
+	Run(ctx, client, log.NewEntry(logger))
 
 	// THEN
 	got := string(buffer.Bytes())
