@@ -45,8 +45,7 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 		return i.nilValue, err
 	}
 
-	r = i.getter(resp)
-	return r, nil
+	return i.getter(resp), nil
 }
 
 func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
