@@ -287,14 +287,17 @@ class ScalingTask(Task):
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
         regions_to_add = current_regions - previous_region_assignments
         regions_to_remove = previous_region_assignments - current_regions
+        regions_to_check_scaling = current_regions & previous_region_assignments
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             tasks: list[Coroutine[Any, Any, None]] = []
-            if regions_to_add:
-                tasks.extend(self.create_log_forwarder(client, subscription_id, region) for region in regions_to_add)
-            if regions_to_remove:
-                tasks.extend(
-                    self.delete_region_log_forwarders(client, subscription_id, region) for region in regions_to_remove
-                )
+            tasks.extend(self.create_log_forwarder(client, subscription_id, region) for region in regions_to_add)
+            tasks.extend(
+                self.delete_region_log_forwarders(client, subscription_id, region) for region in regions_to_remove
+            )
+            tasks.extend(
+                self.check_region_scaling(client, subscription_id, region) for region in regions_to_check_scaling
+            )
+
             await gather(*tasks)
 
         self.update_assignments(subscription_id)
@@ -334,6 +337,26 @@ class ScalingTask(Task):
             )
         )
         del self.assignment_cache[subscription_id][region]
+
+    async def check_region_scaling(
+        self,
+        client: LogForwarderClient,
+        subscription_id: str,
+        region: str,
+    ) -> None:
+        log.info("Checking scaling for log forwarders in region %s", region)
+
+        forwarder_metrics = await gather(
+            *(
+                self.collect_forwarder_metrics(config_id, config_type)
+                for config_id, config_type in self.assignment_cache[subscription_id][region]["configurations"].items()
+            )
+        )
+
+        # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
+
+    async def collect_forwarder_metrics(self, config_id: str, config_type: DiagnosticSettingType) -> None:
+        return NotImplemented
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
