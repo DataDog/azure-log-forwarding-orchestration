@@ -439,7 +439,9 @@ class ScalingTask(Task):
     # @retry(stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
         if "DD_API_KEY" in os.environ:
-            metric_series = await gather(*[self.create_metric_series(metric, log_forwarder_id) for metric in metrics])
+            metric_series: list[MetricSeries] = await gather(
+                *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
+            )  # type: ignore
             if not all(metric_series):
                 log.warn(
                     f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
@@ -452,7 +454,7 @@ class ScalingTask(Task):
             configuration.request_timeout = CLIENT_MAX_SECONDS
             async with AsyncApiClient(configuration) as api_client:
                 api_instance = MetricsApi(api_client)
-                response = await api_instance.submit_metrics(body=body)
+                response = await api_instance.submit_metrics(body=body)  # type: ignore
                 if len(response.get("errors", [])) > 0:
                     for err in response.get("errors", []):
                         log.error(err)
