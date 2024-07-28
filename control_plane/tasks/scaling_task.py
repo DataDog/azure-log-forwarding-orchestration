@@ -442,7 +442,7 @@ class ScalingTask(Task):
             metric_series: list[MetricSeries] = await gather(
                 *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
             )  # type: ignore
-            if not all(metric_series):
+            if not all(metric_series) or metric_series is None:
                 log.warn(
                     f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
                 )
