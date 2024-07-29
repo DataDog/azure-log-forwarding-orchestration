@@ -12,6 +12,7 @@ from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
+from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
@@ -294,7 +295,7 @@ class LogForwarderClient(AsyncContextManager):
             timeout=CLIENT_MAX_SECONDS,
         )
 
-    # @retry(stop=stop_after_attempt(MAX_ATTEMPS))
+    @retry(retry=retry_if_exception_type(RequestTimeout), stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
         if "DD_API_KEY" in os.environ:
             metric_series: list[MetricSeries] = await gather(

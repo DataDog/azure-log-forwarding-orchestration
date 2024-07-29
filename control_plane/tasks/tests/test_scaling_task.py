@@ -1,4 +1,5 @@
 # stdlib
+from datetime import timedelta
 from json import dumps
 from os import environ
 from typing import Any, cast
@@ -11,9 +12,23 @@ from tenacity import RetryError
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
-from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX, STORAGE_ACCOUNT_TYPE, InvalidCacheError
+from cache.common import (
+    FUNCTION_APP_PREFIX,
+    STORAGE_ACCOUNT_PREFIX,
+    STORAGE_ACCOUNT_TYPE,
+    InvalidCacheError,
+    get_function_app_id,
+)
 from cache.resources_cache import ResourceCache
-from tasks.scaling_task import SCALING_TASK_NAME, LogForwarderClient, ScalingTask
+from tasks.scaling_task import (
+    CLIENT_MAX_SECONDS,
+    COLLECTED_METRIC_DEFINITIONS,
+    METRIC_COLLECTION_GRANULARITY,
+    METRIC_COLLECTION_PERIOD_MINUTES,
+    SCALING_TASK_NAME,
+    LogForwarderClient,
+    ScalingTask,
+)
 from tasks.tests.common import AsyncTestCase, TaskTestCase
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
@@ -51,6 +66,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.rest_client = AsyncMock()
         self.client.web_client = AsyncMock()
         self.client.storage_client = AsyncMock()
+        self.client.monitor_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client = self.patch_path("tasks.scaling_task.ContainerClient")
 
@@ -305,3 +321,22 @@ class TestScalingTask(TaskTestCase):
             }
         }
         self.assertEqual(self.cache, expected_cache)
+
+    async def test_log_forwarder_metrics_collected(self):
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+            resource_group="test_lfo",
+        )
+
+        log_forwarder_id = get_function_app_id(sub_id1, "test_lfo", OLD_LOG_FORWARDER_ID)
+        self.client.get_log_forwarder_metrics.assert_called_once_with(log_forwarder_id)
