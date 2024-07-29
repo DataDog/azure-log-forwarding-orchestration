@@ -18,32 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-//func newPagingHandler(items [][]*service.ContainerItem, fetcherError error) runtime.PagingHandler[azblob.ListContainersResponse] {
-//	counter := 0
-//	return runtime.PagingHandler[azblob.ListContainersResponse]{
-//		Fetcher: func(ctx context.Context, response *azblob.ListContainersResponse) (azblob.ListContainersResponse, error) {
-//			var containersResponse azblob.ListContainersResponse
-//			if fetcherError != nil {
-//				return azblob.ListContainersResponse{}, fetcherError
-//			}
-//			if len(items) == 0 {
-//				counter++
-//				return azblob.ListContainersResponse{}, nil
-//			}
-//			containersResponse = azblob.ListContainersResponse{
-//				ListContainersSegmentResponse: service.ListContainersSegmentResponse{
-//					ContainerItems: items[counter],
-//				},
-//			}
-//			counter++
-//			return containersResponse, nil
-//		},
-//		More: func(response azblob.ListContainersResponse) bool {
-//			return counter < len(items)
-//		},
-//	}
-//}
-
 func newContainerItem(name string) *service.ContainerItem {
 	return &service.ContainerItem{
 		Name: to.StringPtr(name),

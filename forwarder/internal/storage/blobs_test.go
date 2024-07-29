@@ -18,34 +18,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-//func newPagingHandler(items [][]*container.BlobItem, fetcherError error) runtime.PagingHandler[azblob.ListBlobsFlatResponse] {
-//	counter := 0
-//	return runtime.PagingHandler[azblob.ListBlobsFlatResponse]{
-//		Fetcher: func(ctx context.Context, response *azblob.ListBlobsFlatResponse) (azblob.ListBlobsFlatResponse, error) {
-//			var containersResponse azblob.ListBlobsFlatResponse
-//			if fetcherError != nil {
-//				return azblob.ListBlobsFlatResponse{}, fetcherError
-//			}
-//			if len(items) == 0 {
-//				counter++
-//				return azblob.ListBlobsFlatResponse{}, nil
-//			}
-//			containersResponse = azblob.ListBlobsFlatResponse{
-//				ListBlobsFlatSegmentResponse: azblob.ListBlobsFlatSegmentResponse{
-//					Segment: &container.BlobFlatListSegment{
-//						BlobItems: items[counter],
-//					},
-//				},
-//			}
-//			counter++
-//			return containersResponse, nil
-//		},
-//		More: func(response azblob.ListBlobsFlatResponse) bool {
-//			return counter < len(items)
-//		},
-//	}
-//}
-
 func newBlobItem(name string) *container.BlobItem {
 	return &container.BlobItem{
 		Name: to.StringPtr(name),
