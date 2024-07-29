@@ -1,13 +1,11 @@
 variables:
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
-  BUILD_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest
-
+  CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
 stages:
   - ci-image
   - test
   - after-test
-
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
@@ -17,11 +15,10 @@ ci-build-image:
       allow_failure: true
   tags: ["arch:amd64"]
   script:
-    - docker buildx build --platform linux/amd64 --tag "$BUILD_IMAGE" -f "ci/build-image/Dockerfile" . --push
-
+    - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
-  image: $BUILD_IMAGE
+  image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
@@ -29,38 +26,33 @@ control-plane-tests:
   artifacts:
     paths:
       - ci/control_plane_coverage.md
-
 control-plane-formatting:
-  image: $BUILD_IMAGE
+  image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/format.sh
-
 control-plane-lint:
-  image: $BUILD_IMAGE
+  image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/lint.sh
-
 type-check:
-  image: $BUILD_IMAGE
+  image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/type-check.sh
-
 build:
-  image: $BUILD_IMAGE
+  image: $CI_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/build.sh
-
 # ------------- FORWARDER -------------
 forwarder-tests:
-  image: $BUILD_IMAGE
+  image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
@@ -68,8 +60,6 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-
-
 # ------------- CODE COV -------------
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE

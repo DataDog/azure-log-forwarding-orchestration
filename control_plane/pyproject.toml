@@ -1,6 +1,6 @@
 [project]
 version = "0.0.1"
-name = "azure-log-forwarding-offering"
+name = "azure-log-forwarding-orchestration"
 requires-python = ">= 3.11"
 readme = "README.md"
 dependencies = [

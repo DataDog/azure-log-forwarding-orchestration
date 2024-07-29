@@ -10,5 +10,5 @@ curl -f -v 'https://pr-commenter.us1.ddbuild.io/internal/cit/pr-comment'\
     "message": "Control Plane Coverage:\n'"$(awk -v ORS='\\n' '1' "ci/control_plane_coverage.md")"'\nForwarder Coverage:\n'"$(awk -v ORS='\\n' '1' "ci/forwarder_coverage.md")"'",
     "header": "Coverage Report",
     "org": "Datadog",
-    "repo": "azure-log-forwarding-offering"
+    "repo": "azure-log-forwarding-orchestration"
 }'
