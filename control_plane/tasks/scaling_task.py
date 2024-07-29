@@ -284,6 +284,73 @@ class LogForwarderClient(AsyncContextManager):
                 raise
             return False
 
+    @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
+    async def get_log_forwarder_metrics(self, log_forwarder_id: str) -> MetricsQueryResult:
+        return await self.monitor_client.query_resource(
+            log_forwarder_id,
+            metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
+            timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES),
+            granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
+            timeout=CLIENT_MAX_SECONDS,
+        )
+
+    # @retry(stop=stop_after_attempt(MAX_ATTEMPS))
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
+        if "DD_API_KEY" in os.environ:
+            metric_series: list[MetricSeries] = await gather(
+                *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
+            )  # type: ignore
+            if not all(metric_series) or metric_series is None:
+                log.warn(
+                    f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
+                )
+                return
+            body = MetricPayload(
+                series=metric_series,
+            )
+            configuration = Configuration()
+            configuration.request_timeout = CLIENT_MAX_SECONDS
+            async with AsyncApiClient(configuration) as api_client:
+                api_instance = MetricsApi(api_client)
+                response = await api_instance.submit_metrics(body=body)  # type: ignore
+                if len(response.get("errors", [])) > 0:
+                    for err in response.get("errors", []):
+                        log.error(err)
+        else:
+            log.warning("Metric API key is not set. Skipping submit metrics")
+            return
+
+    async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
+        metric_points: list[MetricPoint] = await gather(
+            *[
+                self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
+                for time_series_element in metric.timeseries
+                for metric_value in time_series_element.data
+            ]
+        )  # type: ignore
+        if not all(metric_points) or metric_points is None:
+            return None
+        return MetricSeries(
+            metric=metric.name,
+            type=MetricIntakeType.UNSPECIFIED,
+            points=metric_points,
+            resources=[
+                MetricResource(
+                    name=get_function_app_name(log_forwarder_id),
+                    type="logforwarder",
+                ),
+            ],
+        )
+
+    async def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
+        metric_timestamp = metric_value.timestamp.timestamp()
+        if (datetime.now().timestamp() - metric_timestamp) > 3540:
+            return None
+        return MetricPoint(
+            timestamp=int(metric_timestamp),
+            value=getattr(metric_value, metric_attr, 0),
+        )
+
 
 class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str, resource_group: str) -> None:
@@ -389,8 +456,8 @@ class ScalingTask(Task):
         If there is an error the entry is set to an empty dict"""
         metric_dict = {}
         try:
-            response = await self.get_log_forwarder_metrics(
-                get_function_app_id(sub_id, get_config_option("RESOURCE_GROUP"), config_id), client
+            response = await client.get_log_forwarder_metrics(
+                get_function_app_id(sub_id, self.resource_group, config_id)
             )
 
             for metric in response.metrics:
@@ -417,7 +484,7 @@ class ScalingTask(Task):
                 if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
             if os.environ.get("SHOULD_SUBMIT_METRICS", False):
-                await self.submit_log_forwarder_metrics(config_id, response.metrics, sub_id)
+                await client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id)
             return metric_dict
         except HttpResponseError as err:
             log.error(err)
@@ -425,73 +492,6 @@ class ScalingTask(Task):
         except RetryError:
             log.error("Max retries attempted")
             return {}
-
-    @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
-    async def get_log_forwarder_metrics(self, log_forwarder_id: str, client: LogForwarderClient) -> MetricsQueryResult:
-        return await client.monitor_client.query_resource(
-            log_forwarder_id,
-            metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
-            timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES),
-            granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
-            timeout=CLIENT_MAX_SECONDS,
-        )
-
-    # @retry(stop=stop_after_attempt(MAX_ATTEMPS))
-    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
-        if "DD_API_KEY" in os.environ:
-            metric_series: list[MetricSeries] = await gather(
-                *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
-            )  # type: ignore
-            if not all(metric_series) or metric_series is None:
-                log.warn(
-                    f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
-                )
-                return
-            body = MetricPayload(
-                series=metric_series,
-            )
-            configuration = Configuration()
-            configuration.request_timeout = CLIENT_MAX_SECONDS
-            async with AsyncApiClient(configuration) as api_client:
-                api_instance = MetricsApi(api_client)
-                response = await api_instance.submit_metrics(body=body)  # type: ignore
-                if len(response.get("errors", [])) > 0:
-                    for err in response.get("errors", []):
-                        log.error(err)
-        else:
-            log.warning("Metric API key is not set. Skipping submit metrics")
-            return
-
-    async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint] = await gather(
-            *[
-                self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
-                for time_series_element in metric.timeseries
-                for metric_value in time_series_element.data
-            ]
-        )  # type: ignore
-        if not all(metric_points) or metric_points is None:
-            return None
-        return MetricSeries(
-            metric=metric.name,
-            type=MetricIntakeType.UNSPECIFIED,
-            points=metric_points,
-            resources=[
-                MetricResource(
-                    name=get_function_app_name(log_forwarder_id),
-                    type="logforwarder",
-                ),
-            ],
-        )
-
-    async def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
-        metric_timestamp = metric_value.timestamp.timestamp()
-        if (datetime.now().timestamp() - metric_timestamp) > 3540:
-            return None
-        return MetricPoint(
-            timestamp=int(metric_timestamp),
-            value=getattr(metric_value, metric_attr, 0),
-        )
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
