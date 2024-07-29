@@ -308,7 +308,7 @@ class LogForwarderClient(AsyncContextManager):
         metric_series: list[MetricSeries] = await gather(
             *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
         )  # type: ignore
-        if not all(metric_series) or metric_series is None:
+        if metric_series is None or not all(metric_series):
             log.warn(
                 f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
             )
@@ -333,7 +333,7 @@ class LogForwarderClient(AsyncContextManager):
                 for metric_value in time_series_element.data
             ]
         )  # type: ignore
-        if not all(metric_points) or metric_points is None:
+        if metric_points is None or not all(metric_points):
             return None
         return MetricSeries(
             metric=metric.name,
