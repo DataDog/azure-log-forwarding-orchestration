@@ -15,9 +15,7 @@ ci-build-image:
       allow_failure: true
   tags: ["arch:amd64"]
   script:
-    - >
-      docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
-
+    - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
