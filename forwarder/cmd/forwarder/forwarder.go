@@ -60,7 +60,7 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 		}
 
 		if blobList != nil {
-			for _, blob := range blobList.BlobItems {
+			for _, blob := range blobList {
 				if blob == nil {
 					continue
 				}
