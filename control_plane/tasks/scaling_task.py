@@ -303,28 +303,27 @@ class LogForwarderClient(AsyncContextManager):
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
-        if "DD_API_KEY" in os.environ:
-            metric_series: list[MetricSeries] = await gather(
-                *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
-            )  # type: ignore
-            if not all(metric_series) or metric_series is None:
-                log.warn(
-                    f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
-                )
-                return
-            body = MetricPayload(
-                series=metric_series,
-            )
-            configuration = Configuration()
-            configuration.request_timeout = CLIENT_MAX_SECONDS
-            async with AsyncApiClient(configuration) as api_client:
-                api_instance = MetricsApi(api_client)
-                response = await api_instance.submit_metrics(body=body)  # type: ignore
-                if len(response.get("errors", [])) > 0:
-                    for err in response.get("errors", []):
-                        log.error(err)
-        else:
+        if "DD_API_KEY" not in os.environ:
             return
+        metric_series: list[MetricSeries] = await gather(
+            *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
+        )  # type: ignore
+        if not all(metric_series) or metric_series is None:
+            log.warn(
+                f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
+            )
+            return
+        body = MetricPayload(
+            series=metric_series,
+        )
+        configuration = Configuration()
+        configuration.request_timeout = CLIENT_MAX_SECONDS
+        async with AsyncApiClient(configuration) as api_client:
+            api_instance = MetricsApi(api_client)
+            response = await api_instance.submit_metrics(body=body)  # type: ignore
+            if len(response.get("errors", [])) > 0:
+                for err in response.get("errors", []):
+                    log.error(err)
 
     async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
         metric_points: list[MetricPoint] = await gather(
