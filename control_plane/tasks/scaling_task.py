@@ -324,7 +324,6 @@ class LogForwarderClient(AsyncContextManager):
                     for err in response.get("errors", []):
                         log.error(err)
         else:
-            log.warning("Metric API key is not set. Skipping submit metrics")
             return
 
     async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
