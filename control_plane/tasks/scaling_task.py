@@ -119,7 +119,12 @@ class LogForwarderClient(AsyncContextManager):
         self._blob_forwarder_data: bytes | None = None
 
     async def __aenter__(self) -> Self:
-        await gather(self.web_client.__aenter__(), self.storage_client.__aenter__(), self.rest_client.__aenter__())
+        await gather(
+            self.web_client.__aenter__(),
+            self.storage_client.__aenter__(),
+            self.rest_client.__aenter__(),
+            self.monitor_client.__aenter__(),
+        )
         token = await self._credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
@@ -131,6 +136,7 @@ class LogForwarderClient(AsyncContextManager):
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     async def create_log_forwarder(self, region: str, config_id: str) -> DiagnosticSettingType:
@@ -310,7 +316,7 @@ class LogForwarderClient(AsyncContextManager):
         )  # type: ignore
         if metric_series is None or not all(metric_series):
             log.warn(
-                f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
+                f"Invalid timestamps for resource: {get_function_app_id(sub_id, self.resource_group, log_forwarder_id)}\nSkipping..."
             )
             return
         body = MetricPayload(
