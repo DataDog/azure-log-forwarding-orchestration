@@ -463,13 +463,13 @@ class ScalingTask(Task):
             return
 
     async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points = await gather(
+        metric_points: list[MetricPoint] = await gather(
             *[
                 self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
                 for time_series_element in metric.timeseries
                 for metric_value in time_series_element.data
             ]
-        )
+        )  # type: ignore
         if not all(metric_points) or metric_points is None:
             return None
         return MetricSeries(
