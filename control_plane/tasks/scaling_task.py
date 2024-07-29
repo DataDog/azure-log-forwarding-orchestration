@@ -81,6 +81,10 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
+"""
+Type alias that represents the result of collecting the log forwarder metrics.
+It is a dict of string (log forwarder id) to a dict of string (metric name) to float (the max metric value over the timseries.)
+"""
 
 
 async def is_exception_retryable(state: RetryCallState) -> bool:
