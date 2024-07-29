@@ -80,7 +80,7 @@ MAX_ATTEMPS = 5
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
-LogForwarderMetricCache: TypeAlias = dict[str, dict[str, float]]
+LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
 
 
 async def is_exception_retryable(state: RetryCallState) -> bool:
@@ -452,7 +452,7 @@ class ScalingTask(Task):
 
     async def collect_forwarder_metrics(
         self, config_id: str, sub_id: str, client: LogForwarderClient
-    ) -> LogForwarderMetricCache:
+    ) -> LogForwarderMetrics:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
         metric_dict = {}
