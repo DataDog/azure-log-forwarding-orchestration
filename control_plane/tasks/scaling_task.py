@@ -1,4 +1,5 @@
 # stdlib
+import json
 import os
 from asyncio import Lock, gather, run
 from collections.abc import Awaitable, Coroutine
@@ -117,6 +118,7 @@ class LogForwarderClient(AsyncContextManager):
         self.rest_client = ClientSession()
         self.monitor_client = MetricsQueryClient(credential)
         self.datadog_api_client = AsyncApiClient(self.configuration)
+        self.api_instance = MetricsApi(self.datadog_api_client)
         self.resource_group = resource_group
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
@@ -127,6 +129,7 @@ class LogForwarderClient(AsyncContextManager):
             self.storage_client.__aenter__(),
             self.rest_client.__aenter__(),
             self.datadog_api_client.__aenter__(),
+            self.monitor_client.__aenter__(),
         )
         token = await self._credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
@@ -140,6 +143,7 @@ class LogForwarderClient(AsyncContextManager):
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
             self.datadog_api_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     async def create_log_forwarder(self, region: str, config_id: str) -> DiagnosticSettingType:
@@ -325,8 +329,7 @@ class LogForwarderClient(AsyncContextManager):
         body = MetricPayload(
             series=metric_series,
         )
-        api_instance = MetricsApi(self.datadog_api_client)
-        response = await api_instance.submit_metrics(body=body)  # type: ignore
+        response = await self.api_instance.submit_metrics(body=body)  # type: ignore
         if len(response.get("errors", [])) > 0:
             for err in response.get("errors", []):
                 log.error(err)
