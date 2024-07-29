@@ -1,5 +1,4 @@
 # stdlib
-import json
 import os
 from asyncio import Lock, gather, run
 from collections.abc import Awaitable, Coroutine
@@ -92,8 +91,6 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
     if (future := state.outcome) and (e := future.exception()):
         if isinstance(e, HttpResponseError):
             return e.status_code is not None and (e.status_code == 429 or e.status_code >= 500)
-        elif isinstance(e, ServiceResponseTimeoutError) or isinstance(e, RequestTimeout):
-            return True
     return False
 
 
@@ -111,26 +108,16 @@ class LogForwarderClient(AsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.control_plane_storage_connection_string = get_config_option("AzureWebJobsStorage")
         self._credential = credential
-        self.configuration = Configuration()
-        self.configuration.request_timeout = CLIENT_MAX_SECONDS
         self.web_client = WebSiteManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.rest_client = ClientSession()
         self.monitor_client = MetricsQueryClient(credential)
-        self.datadog_api_client = AsyncApiClient(self.configuration)
-        self.api_instance = MetricsApi(self.datadog_api_client)
         self.resource_group = resource_group
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
 
     async def __aenter__(self) -> Self:
-        await gather(
-            self.web_client.__aenter__(),
-            self.storage_client.__aenter__(),
-            self.rest_client.__aenter__(),
-            self.datadog_api_client.__aenter__(),
-            self.monitor_client.__aenter__(),
-        )
+        await gather(self.web_client.__aenter__(), self.storage_client.__aenter__(), self.rest_client.__aenter__())
         token = await self._credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
@@ -142,8 +129,6 @@ class LogForwarderClient(AsyncContextManager):
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.datadog_api_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     async def create_log_forwarder(self, region: str, config_id: str) -> DiagnosticSettingType:
@@ -304,7 +289,7 @@ class LogForwarderClient(AsyncContextManager):
                 raise
             return False
 
-    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
+    @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
     async def get_log_forwarder_metrics(self, log_forwarder_id: str) -> MetricsQueryResult:
         return await self.monitor_client.query_resource(
             log_forwarder_id,
@@ -314,35 +299,41 @@ class LogForwarderClient(AsyncContextManager):
             timeout=CLIENT_MAX_SECONDS,
         )
 
-    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
+    @retry(retry=retry_if_exception_type(RequestTimeout), stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
-        if "DD_API_KEY" not in os.environ:
-            return
-        metric_series: list[MetricSeries] = await gather(
-            *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
-        )  # type: ignore
-        if metric_series is None or not all(metric_series):
-            log.warn(
-                f"Invalid timestamps for resource: {get_function_app_id(sub_id, self.resource_group, log_forwarder_id)}\nSkipping..."
+        if "DD_API_KEY" in os.environ:
+            metric_series: list[MetricSeries] = await gather(
+                *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
+            )  # type: ignore
+            if not all(metric_series) or metric_series is None:
+                log.warn(
+                    f"Invalid timestamps for resource: {get_function_app_id(sub_id, get_config_option('RESOURCE_GROUP'), log_forwarder_id)}\nSkipping..."
+                )
+                return
+            body = MetricPayload(
+                series=metric_series,
             )
+            configuration = Configuration()
+            configuration.request_timeout = CLIENT_MAX_SECONDS
+            async with AsyncApiClient(configuration) as api_client:
+                api_instance = MetricsApi(api_client)
+                response = await api_instance.submit_metrics(body=body)  # type: ignore
+                if len(response.get("errors", [])) > 0:
+                    for err in response.get("errors", []):
+                        log.error(err)
+        else:
+            log.warning("Metric API key is not set. Skipping submit metrics")
             return
-        body = MetricPayload(
-            series=metric_series,
-        )
-        response = await self.api_instance.submit_metrics(body=body)  # type: ignore
-        if len(response.get("errors", [])) > 0:
-            for err in response.get("errors", []):
-                log.error(err)
 
     async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint | None] = await gather(
+        metric_points: list[MetricPoint] = await gather(
             *[
                 self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
                 for time_series_element in metric.timeseries
                 for metric_value in time_series_element.data
             ]
-        )
-        if metric_points is None or not all(metric_points):
+        )  # type: ignore
+        if not all(metric_points) or metric_points is None:
             return None
         return MetricSeries(
             metric=metric.name,
