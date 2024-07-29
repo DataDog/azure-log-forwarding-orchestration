@@ -4,28 +4,37 @@ from collections.abc import AsyncIterable
 from copy import deepcopy
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import Any, TypeVar
-from uuid import uuid4
+from typing import NamedTuple, TypeVar
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
+    CategoryType,
     DiagnosticSettingsResource,
     LogSettings,
-    CategoryType,
     Resource,
 )
 
+from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
+
 # project
-from cache.common import InvalidCacheError, read_cache, write_cache
+from cache.common import (
+    DiagnosticSettingType,
+    InvalidCacheError,
+    get_config_option,
+    get_event_hub_name,
+    get_event_hub_namespace,
+    get_resource_group_id,
+    get_storage_account_id,
+    read_cache,
+    write_cache,
+)
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     deserialize_diagnostic_settings_cache,
 )
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.task import Task, now
-
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
@@ -37,8 +46,41 @@ log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 
-def diagnostic_setting_name(config_id: str) -> str:
+def get_diagnostic_setting_name(config_id: str) -> str:
     return DIAGNOSTIC_SETTING_PREFIX + config_id
+
+
+def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:
+    return (
+        get_resource_group_id(sub_id, resource_group)
+        + "/providers/Microsoft.EventHub/namespaces/"
+        + get_event_hub_namespace(config_id)
+        + "/authorizationrules/RootManageSharedAccessKey"
+    )
+
+
+class DiagnosticSettingConfiguration(NamedTuple):
+    "Convenience Tuple for holding the configuration of a diagnostic setting"
+
+    id: str
+    type: DiagnosticSettingType
+
+
+def get_diagnostic_setting(
+    sub_id: str, resource_group: str, config: DiagnosticSettingConfiguration, categories: list[str]
+) -> DiagnosticSettingsResource:
+    log_settings = [LogSettings(category=category, enabled=True) for category in categories]
+    if config.type == "eventhub":
+        return DiagnosticSettingsResource(
+            event_hub_authorization_rule_id=get_authorization_rule_id(sub_id, resource_group, config.id),
+            event_hub_name=get_event_hub_name(config.id),
+            logs=log_settings,
+        )
+    else:
+        return DiagnosticSettingsResource(
+            storage_account_id=get_storage_account_id(sub_id, resource_group, config.id),
+            logs=log_settings,
+        )
 
 
 DiagnosticSetting = TypeVar("DiagnosticSetting", bound=Resource)
@@ -69,14 +111,14 @@ async def get_existing_diagnostic_setting(
 
 
 class DiagnosticSettingsTask(Task):
-    def __init__(self, resource_cache_state: str, diagnostic_settings_cache_state: str) -> None:
+    def __init__(self, assignment_cache_state: str, diagnostic_settings_cache_state: str, resource_group: str) -> None:
         super().__init__()
 
         # read caches
-        success, resource_cache = deserialize_resource_cache(resource_cache_state)
+        success, assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if not success:
-            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
-        self.resource_cache = resource_cache
+            raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
+        self.assignment_cache = assignment_cache
 
         success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
         if not success:
@@ -85,27 +127,38 @@ class DiagnosticSettingsTask(Task):
         self._diagnostic_settings_cache_initial = diagnostic_settings_cache
         self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
 
-    async def run(self) -> None:
-        log.info("Crawling %s subscriptions", len(self.resource_cache))
-        await gather(
-            *[self.process_subscription(sub_id, resources) for sub_id, resources in self.resource_cache.items()]
-        )
+        self.resource_group = resource_group
 
-    async def process_subscription(self, sub_id: str, resources_per_region: dict[str, set[str]]) -> None:
-        log.info("Crawling %s regions for subscription %s", len(resources_per_region), sub_id)
+    async def run(self) -> None:
+        subs = set(self.assignment_cache) | set(self.diagnostic_settings_cache)
+        log.info("Processing %s subscriptions", len(subs))
+
+        await gather(*map(self.process_subscription, subs))
+
+    async def process_subscription(self, sub_id: str) -> None:
+        log.info("Processing subscription %s", sub_id)
+        # we assume no resources need to be "cleaned up"
+        # because if they aren't in the assignment cache then they have been deleted
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # client.management_group_diagnostic_settings.list("management_group_id") TODO: do we want to do anything with this?
             await gather(
                 *(
                     [
-                        self.process_region(client, sub_id, region, resource_ids)
-                        for region, resource_ids in resources_per_region.items()
+                        self.process_resource(
+                            client,
+                            sub_id,
+                            resource,
+                            DiagnosticSettingConfiguration(config_id, config["configurations"][config_id]),
+                        )
+                        for config in self.assignment_cache[sub_id].values()
+                        for resource, config_id in config["resources"].items()
                     ]
                     + [self.update_subscription_settings(sub_id, client)]
                 )
             )
 
     async def update_subscription_settings(self, subscription_id: str, client: MonitorManagementClient) -> None:
+        return
         if (
             setting := await get_existing_diagnostic_setting(
                 subscription_id, client.subscription_diagnostic_settings.list()
@@ -114,67 +167,48 @@ class DiagnosticSettingsTask(Task):
             # We have already added the setting for this subscription
             ...
 
-    async def process_region(
-        self,
-        client: MonitorManagementClient,
-        sub_id: str,
-        region: str,
-        resource_ids: set[str],
-    ) -> None:
-        await gather(*[self.process_resource(client, sub_id, region, resource_id) for resource_id in resource_ids])
-
     async def process_resource(
         self,
         client: MonitorManagementClient,
         sub_id: str,
-        region: str,
         resource_id: str,
+        assigned_config: DiagnosticSettingConfiguration,
     ) -> None:
-        if configuration := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
+        if current_config_id := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
             try:
                 existing_setting = await get_existing_diagnostic_setting(
                     resource_id,
                     client.diagnostic_settings.list(resource_id),
-                    existing_diagnostic_setting_name=diagnostic_setting_name(configuration),
+                    existing_diagnostic_setting_name=get_diagnostic_setting_name(current_config_id),
                 )
             except Exception:
                 # TODO(AZINTS-2577) Error handling
                 return
 
-            if existing_setting:
-                # We have already added the setting for this resource
+            if existing_setting and current_config_id == assigned_config.id:
+                # The setting is already set and no changes are needed. All other cases should update the setting
+
                 # do we ever want to update categories or anything?
                 # or trust that the customer knows what they are doing if they modify the setting?
-                # can use this to find categories: client.diagnostic_settings_category.list(resource["id"])
-                pass
-            else:
-                # The setting has been removed, we should put it back
-                log.debug("Re-adding diagnostic setting for resource %s", resource_id)
-                await self.add_diagnostic_setting(
-                    client,
-                    sub_id,
-                    resource_id,
-                    configuration,
-                )
-        else:
-            # We don't have a configuration for this resource, we should add it
-            diagnostic_setting_id = str(uuid4())
-            # TODO(AZINTS-2569) determine the appropriate configuration for this resource based on region
-            # await self.add_diagnostic_setting(
-            #     client, sub_id, resource_id, str(uuid4()), EVENT_HUB_NAME, EVENT_HUB_NAMESPACE
-            # )
-            self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = diagnostic_setting_id
+                return
 
-    async def add_diagnostic_setting(
+        # covers 3 cases:
+        # 1. no existing setting on this resource (and nothing in the DS cache)
+        # 2. existing setting with different configuration
+        # 3. settings was removed, we're re-adding it (with the new assignment)
+        await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config)
+        self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = assigned_config.id
+
+    async def set_diagnostic_setting(
         self,
         client: MonitorManagementClient,
         sub_id: str,
         resource_id: str,
-        configuration: Any,  # TODO (AZINTS-2569) fix this
+        config: DiagnosticSettingConfiguration,
     ) -> None:
         try:
-            categories = [
-                category
+            categories: list[str] = [
+                category.name  # type: ignore
                 async for category in client.diagnostic_settings_category.list(resource_id)
                 if category.category_type == CategoryType.LOGS
             ]
@@ -182,24 +216,10 @@ class DiagnosticSettingsTask(Task):
                 log.debug("No log categories found for resource %s", resource_id)
                 return
 
-            log_config = [LogSettings(category=category.name, enabled=True) for category in categories]
-            if configuration["type"] == "eventhub":
-                resource_group = "lfo"  # TODO(AZINTS-2569): programatically get resource group of the eventhub
-                authorization_rule_id = f"/subscriptions/{sub_id}/resourcegroups/{resource_group}/providers/Microsoft.EventHub/namespaces/{configuration['event_hub_namespace']}/authorizationrules/RootManageSharedAccessKey"
-                diagnostic_setting = DiagnosticSettingsResource(
-                    event_hub_authorization_rule_id=authorization_rule_id,
-                    event_hub_name=configuration["event_hub_name"],
-                    logs=log_config,
-                )
-            else:
-                diagnostic_setting = DiagnosticSettingsResource(
-                    storage_account_id=configuration["storage_account_id"],
-                    logs=log_config,
-                )
             await client.diagnostic_settings.create_or_update(
                 resource_id,
-                diagnostic_setting_name(configuration),
-                diagnostic_setting,
+                get_diagnostic_setting_name(config.id),
+                get_diagnostic_setting(sub_id, self.resource_group, config, categories),
             )
             log.info("Added diagnostic setting for resource %s", resource_id)
         except HttpResponseError as e:
@@ -213,7 +233,7 @@ class DiagnosticSettingsTask(Task):
                 log.error(
                     "Resource %s already has a diagnostic setting with the same configuration: %s",
                     resource_id,
-                    configuration,
+                    config,
                 )
                 return
 
@@ -235,10 +255,11 @@ class DiagnosticSettingsTask(Task):
 async def main():
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    resources, diagnostic_settings = await gather(
-        read_cache(RESOURCE_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
+    resource_group = get_config_option("RESOURCE_GROUP")
+    assignment_cache, diagnostic_settings = await gather(
+        read_cache(ASSIGNMENT_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
     )
-    async with DiagnosticSettingsTask(resources, diagnostic_settings) as task:
+    async with DiagnosticSettingsTask(assignment_cache, diagnostic_settings, resource_group) as task:
         await task.run()
     log.info("Task finished at %s", now())
 

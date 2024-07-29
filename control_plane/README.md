@@ -54,7 +54,7 @@ coverage run -m pytest . > /dev/null ; coverage report -m
 ### Building
 ```bash
 cd ~/dd/azure-log-forwarding-orchestration
-docker run -v "$(pwd):/src" registry.ddbuild.io/ci/azure-log-forwarding-offering-build:latest bash -c "cd /src/; AzureWebJobsStorage='DefaultEndpointsProtocol=https;...<the rest of your connection string>...' ./ci/scripts/control_plane/build.sh"
+docker run -v "$(pwd):/src" registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest bash -c "cd /src/; ./ci/scripts/control_plane/build.sh"
 ```
 
 ### Deploying

@@ -6,7 +6,6 @@ from typing import Any, Final, Literal
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient
 
-
 BLOB_STORAGE_CACHE = "control-plane-cache"
 
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
@@ -73,8 +72,17 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
 
 
 # TODO We will need to add prefixes for these when we implement event hub support
-# EVENT_HUB_NAME_PREFIX = ...
-# EVENT_HUB_NAMESPACE_PREFIX = ...
+EVENT_HUB_NAME_PREFIX = NotImplemented
+EVENT_HUB_NAMESPACE_PREFIX = NotImplemented
+
+
+def get_event_hub_name(config_id: str) -> str:
+    return EVENT_HUB_NAME_PREFIX + config_id
+
+
+def get_event_hub_namespace(config_id: str) -> str:
+    return EVENT_HUB_NAMESPACE_PREFIX + config_id
+
 
 DiagnosticSettingType = Literal["eventhub", "storageaccount"]
 

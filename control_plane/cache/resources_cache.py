@@ -1,8 +1,9 @@
+# stdlib
 from json import JSONDecodeError, loads
 from typing import Any, TypeAlias
 
+# 3p
 from jsonschema import ValidationError, validate
-
 
 RESOURCE_CACHE_BLOB = "resources.json"
 

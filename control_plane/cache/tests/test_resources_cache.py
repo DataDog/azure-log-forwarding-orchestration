@@ -1,8 +1,9 @@
+# stdlib
 from json import dumps
 from unittest import TestCase
 
+# project
 from cache.resources_cache import deserialize_resource_cache
-
 from cache.tests import sub_id1, sub_id2
 
 

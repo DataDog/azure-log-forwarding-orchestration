@@ -1,7 +1,7 @@
 from collections.abc import AsyncIterable
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, call, patch
 
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
@@ -9,6 +9,10 @@ class AsyncTestCase(IsolatedAsyncioTestCase):
         p = patch(path, **kwargs)
         self.addCleanup(p.stop)
         return p.start()
+
+    def assertCalledTimesWith(self, mock: AsyncMock, times: int, /, *args: Any, **kwargs: Any):
+        self.assertEqual(mock.await_count, times)
+        self.assertEqual([call(*args, **kwargs)] * times, mock.await_args_list)
 
 
 class TaskTestCase(AsyncTestCase):

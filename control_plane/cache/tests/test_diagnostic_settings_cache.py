@@ -1,10 +1,12 @@
-from unittest import TestCase
+# stdlib
 from json import dumps
+from unittest import TestCase
+
+# project
 from cache.diagnostic_settings_cache import (
     DiagnosticSettingsCache,
     deserialize_diagnostic_settings_cache,
 )
-
 from cache.tests import sub_id1, sub_id2
 
 

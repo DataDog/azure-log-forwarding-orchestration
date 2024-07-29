@@ -4,7 +4,7 @@
 # stdlib
 from asyncio import gather, run, create_task
 from itertools import chain
-from logging import getLogger, WARNING
+from logging import INFO, basicConfig, getLogger, WARNING
 from sys import argv
 from typing import Any, AsyncIterable, Callable, Coroutine, Iterable, TypeVar
 
@@ -40,25 +40,29 @@ def flatten(items: Iterable[Any]) -> Iterable[Any]:
 async def run_parallel(
     async_func: Callable[[T], Coroutine[Any, Any, R]], async_iter: AsyncIterable[T]
 ) -> list[R | BaseException]:
-    return await gather(*[create_task(async_func(item)) async for item in async_iter], return_exceptions=True)
+    return await gather(
+        *[create_task(async_func(item)) async for item in async_iter],
+        return_exceptions=True,
+    )
 
 
-async def delete_setting(client: MonitorManagementClient, resource_id: str, setting: str):
+async def delete_setting(
+    client: MonitorManagementClient, resource_id: str, setting: str
+):
     if setting and setting.startswith(DIAGNOSTIC_SETTING_PREFIX):
-        # print(f"Deleting diagnostic setting {setting}")
         try:
             if not DRY_RUN:
                 await client.diagnostic_settings.delete(resource_id, setting)
-            print(f"Deleted setting {setting} for resource {resource_id}")
+            log.info(f"Deleted setting {setting} for resource {resource_id} ✅")
         except Exception:
-            log.exception(f"Failed to delete setting {setting} for resource {resource_id}")
+            log.exception(
+                f"Failed to delete setting {setting} for resource {resource_id}"
+            )
 
 
-async def process_resource(monitor_client: MonitorManagementClient, resource_id: str) -> list[BaseException]:
-    # global resource_idx
-    # print(f"Processing resource {resource_idx}/500ish")
-    # resource_idx += 1
-    # get all diagnostic settings
+async def process_resource(
+    monitor_client: MonitorManagementClient, resource_id: str
+) -> list[BaseException]:
     res = await run_parallel(
         lambda setting: delete_setting(monitor_client, resource_id, setting.name),  # type: ignore
         monitor_client.diagnostic_settings.list(resource_id),
@@ -66,12 +70,14 @@ async def process_resource(monitor_client: MonitorManagementClient, resource_id:
     return list(filter(None, res))
 
 
-async def process_subscription(cred: AsyncTokenCredential, sub_id: str) -> list[BaseException]:
+async def process_subscription(
+    cred: AsyncTokenCredential, sub_id: str
+) -> list[BaseException]:
     async with (
         ResourceManagementClient(cred, sub_id) as resource_client,
         MonitorManagementClient(cred, sub_id) as monitor_client,
     ):
-        print(f"Processing subscription {sub_id}")
+        log.info(f"Processing subscription {sub_id}")
         res = await run_parallel(
             lambda resource: process_resource(monitor_client, resource.id),  # type: ignore
             resource_client.resources.list(),
@@ -80,9 +86,6 @@ async def process_subscription(cred: AsyncTokenCredential, sub_id: str) -> list[
 
 
 async def main():
-    # cred = DefaultAzureCredential()
-    # sub_client = SubscriptionClient(cred)
-    # subs: list[str] = [sub.subscription_id for sub in sub_client.subscriptions.list()]  # type: ignore
     subs = ["0b62a232-b8db-4380-9da6-640f7272ed6d"]
     if subs != ["0b62a232-b8db-4380-9da6-640f7272ed6d"]:
         log.error("wrong subs, something broke: %s", subs)
@@ -91,11 +94,14 @@ async def main():
         res = await gather(*[process_subscription(cred, sub) for sub in subs])
     for err in chain(*res):
         if "ResourceTypeNotSupported" not in str(err):
-            log.exception("Unexpected exception in deleting diagnostic settings", exc_info=err)
+            log.exception(
+                "Unexpected exception in deleting diagnostic settings", exc_info=err
+            )
 
 
 if __name__ == "__main__":
+    basicConfig(level=INFO)
     DRY_RUN = "--dry-run" in argv
     if DRY_RUN:
-        print("Dry run, no changes will be made")
+        log.info("Dry run, no changes will be made")
     run(main())
