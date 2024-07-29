@@ -12,7 +12,7 @@ from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
-from aiosonic.exceptions import RequestTimeout
+from aiosonic.exceptions import RequestTimeout  # type: ignore
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
