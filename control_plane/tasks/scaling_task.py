@@ -91,6 +91,8 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
     if (future := state.outcome) and (e := future.exception()):
         if isinstance(e, HttpResponseError):
             return e.status_code is not None and (e.status_code == 429 or e.status_code >= 500)
+        if isinstance(e, RequestTimeout) or isinstance(e, ServiceResponseTimeoutError):
+            return True
     return False
 
 
@@ -289,7 +291,7 @@ class LogForwarderClient(AsyncContextManager):
                 raise
             return False
 
-    @retry(retry=retry_if_exception_type(ServiceResponseTimeoutError), stop=stop_after_attempt(MAX_ATTEMPS))
+    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def get_log_forwarder_metrics(self, log_forwarder_id: str) -> MetricsQueryResult:
         return await self.monitor_client.query_resource(
             log_forwarder_id,
@@ -299,7 +301,7 @@ class LogForwarderClient(AsyncContextManager):
             timeout=CLIENT_MAX_SECONDS,
         )
 
-    @retry(retry=retry_if_exception_type(RequestTimeout), stop=stop_after_attempt(MAX_ATTEMPS))
+    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
         if "DD_API_KEY" in os.environ:
             metric_series: list[MetricSeries] = await gather(
