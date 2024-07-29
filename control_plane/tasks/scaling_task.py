@@ -83,7 +83,7 @@ log.setLevel(DEBUG)
 LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
 """
 Type alias that represents the result of collecting the log forwarder metrics.
-It is a dict of string (log forwarder id) to a dict of string (metric name) to float (the max metric value over the timseries.)
+It is a mapping of log forwarder/config ids to metric names to the max metric value over the timeseries.
 """
 
 
