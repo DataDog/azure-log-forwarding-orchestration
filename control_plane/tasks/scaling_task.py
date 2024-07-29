@@ -470,7 +470,7 @@ class ScalingTask(Task):
                 for metric_value in time_series_element.data
             ]
         )
-        if not all(metric_points):
+        if not all(metric_points) or metric_points is None:
             return None
         return MetricSeries(
             metric=metric.name,
