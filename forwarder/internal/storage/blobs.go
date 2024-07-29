@@ -13,14 +13,19 @@ type Blob struct {
 	Container string
 }
 
-func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[*container.BlobFlatListSegment, azblob.ListBlobsFlatResponse] {
+func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
+	if resp.Segment == nil {
+		return nil
+	}
+	return resp.Segment.BlobItems
+}
+
+func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[]*container.BlobItem, azblob.ListBlobsFlatResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetContainersMatchingPrefix")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
-	iter := NewIterator(blobPager, func(resp azblob.ListBlobsFlatResponse) *container.BlobFlatListSegment {
-		return resp.Segment
-	}, nil)
+	iter := NewIterator(blobPager, getBlobItems, nil)
 	return iter
 }
