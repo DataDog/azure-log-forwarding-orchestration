@@ -335,13 +335,13 @@ class LogForwarderClient(AsyncContextManager):
                 log.error(err)
 
     async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint | None] = await gather(
+        metric_points: list[MetricPoint] = await gather(
             *[
-                self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
+                self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name))  # type: ignore
                 for time_series_element in metric.timeseries
                 for metric_value in time_series_element.data
             ]
-        )
+        )  # type: ignore
         if metric_points is None or not all(metric_points):
             return None
         return MetricSeries(
@@ -360,9 +360,11 @@ class LogForwarderClient(AsyncContextManager):
         metric_timestamp = metric_value.timestamp.timestamp()
         if (datetime.now().timestamp() - metric_timestamp) > 3540:
             return None
+        if getattr(metric_value, metric_attr, None) is None:
+            return None
         return MetricPoint(
             timestamp=int(metric_timestamp),
-            value=getattr(metric_value, metric_attr, 0),
+            value=getattr(metric_value, metric_attr),
         )
 
 
