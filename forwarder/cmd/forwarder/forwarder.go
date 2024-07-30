@@ -17,7 +17,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-func getContainers(ctx context.Context, client storage.Client, containerNameCh chan string) error {
+func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
 	// Get the containers from the storage account
 	defer close(containerNameCh)
 	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
@@ -44,7 +44,7 @@ func getContainers(ctx context.Context, client storage.Client, containerNameCh c
 	}
 }
 
-func getBlobs(ctx context.Context, client storage.Client, containerName string, blobChannel chan storage.Blob) error {
+func getBlobs(ctx context.Context, client storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
 	// Get the blobs from the container
 	iter := client.ListBlobs(ctx, containerName)
 
@@ -88,6 +88,7 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 	containerNameCh := make(chan string, 1000)
 
 	eg.Go(func() error {
+		defer close(blobChannel)
 		var err error
 		for container := range containerNameCh {
 			curErr := getBlobs(ctx, client, container, blobChannel)
@@ -95,7 +96,7 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 				err = errors.Join(err, curErr)
 			}
 		}
-		close(blobChannel)
+
 		return err
 	})
 

@@ -89,20 +89,17 @@ func main() {
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, clientOptions)
 	if err != nil {
 		logger.Fatalf("error creating azure client: %v", err)
-		return
 	}
 	client := storage.NewClient(azBlobClient)
 	containers, err := getContainers(ctx, client)
 	if err != nil {
 		logger.Fatalf("error getting containers: %v", err)
-		return
 	}
 
 	for _, container := range containers {
 		blobs, err := getBlobs(ctx, client, container)
 		if err != nil {
 			logger.Fatalf("error getting blobs: %v", err)
-			return
 		}
 		for _, blob := range blobs {
 			logger.Infof("Blob: %s Container: %s", blob, container)
