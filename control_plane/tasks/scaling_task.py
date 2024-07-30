@@ -1,5 +1,4 @@
 # stdlib
-import json
 import os
 from asyncio import Lock, create_task, gather, run
 from collections.abc import Awaitable, Coroutine
@@ -547,22 +546,9 @@ async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resource_group = get_config_option("RESOURCE_GROUP")
-    # resources_cache_state, assignment_cache_state = await gather(
-    #     read_cache(RESOURCE_CACHE_BLOB),
-    #     read_cache(ASSIGNMENT_CACHE_BLOB),
-    # )
-    resources_cache_state = json.dumps({"0b62a232-b8db-4380-9da6-640f7272ed6d": {"eastus": ["resource1"]}})
-    assignment_cache_state = json.dumps(
-        {
-            "0b62a232-b8db-4380-9da6-640f7272ed6d": {
-                "eastus": {
-                    "resources": {"resource1": "d76404b14764"},
-                    "configurations": {
-                        "d76404b14764": STORAGE_ACCOUNT_TYPE,
-                    },
-                }
-            },
-        }
+    resources_cache_state, assignment_cache_state = await gather(
+        read_cache(RESOURCE_CACHE_BLOB),
+        read_cache(ASSIGNMENT_CACHE_BLOB),
     )
     async with ScalingTask(resources_cache_state, assignment_cache_state, resource_group) as task:
         await task.run()
