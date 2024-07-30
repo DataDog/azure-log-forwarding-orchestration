@@ -16,7 +16,7 @@ import (
 
 func getContainers(ctx context.Context, client storage.Client) ([]string, error) {
 	containerIter := client.GetContainersMatchingPrefix(ctx, "insights-logs-")
-	containers := make([]string, 0)
+	var containers []string
 	for {
 		containerList, err := containerIter.Next(ctx)
 
