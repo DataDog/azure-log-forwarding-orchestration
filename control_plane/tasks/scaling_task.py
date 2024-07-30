@@ -43,7 +43,7 @@ from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
 from datadog_api_client.v2.model.metric_resource import MetricResource
 from datadog_api_client.v2.model.metric_series import MetricSeries
-from tenacity import RetryCallState, RetryError, retry, retry_if_exception_type, stop_after_attempt
+from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
@@ -114,6 +114,10 @@ class LogForwarderClient(AsyncContextManager):
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.rest_client = ClientSession()
         self.monitor_client = MetricsQueryClient(credential)
+        self.configuration = Configuration()
+        self.configuration.request_timeout = CLIENT_MAX_SECONDS
+        self.api_client = AsyncApiClient(self.configuration)
+        self.api_instance = MetricsApi(self.api_client)
         self.resource_group = resource_group
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
@@ -124,6 +128,7 @@ class LogForwarderClient(AsyncContextManager):
             self.storage_client.__aenter__(),
             self.rest_client.__aenter__(),
             self.monitor_client.__aenter__(),
+            self.api_client.__aenter__(),
         )
         token = await self._credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
@@ -137,6 +142,7 @@ class LogForwarderClient(AsyncContextManager):
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
             self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     async def create_log_forwarder(self, region: str, config_id: str) -> DiagnosticSettingType:
@@ -322,23 +328,20 @@ class LogForwarderClient(AsyncContextManager):
         body = MetricPayload(
             series=metric_series,
         )
-        configuration = Configuration()
-        configuration.request_timeout = CLIENT_MAX_SECONDS
-        async with AsyncApiClient(configuration) as api_client:
-            api_instance = MetricsApi(api_client)
-            response = await api_instance.submit_metrics(body=body)  # type: ignore
-            if len(response.get("errors", [])) > 0:
-                for err in response.get("errors", []):
-                    log.error(err)
+
+        response = await self.api_instance.submit_metrics(body=body)  # type: ignore
+        if len(response.get("errors", [])) > 0:
+            for err in response.get("errors", []):
+                log.error(err)
 
     async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint] = await gather(
+        metric_points: list[MetricPoint | None] = await gather(
             *[
                 self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""))
                 for time_series_element in metric.timeseries
                 for metric_value in time_series_element.data
             ]
-        )  # type: ignore
+        )
         if metric_points is None or not all(metric_points):
             return None
         return MetricSeries(
