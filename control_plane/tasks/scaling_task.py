@@ -376,7 +376,7 @@ class ScalingTask(Task):
         super().__init__()
         self.resource_group = resource_group
 
-        self.background_tasks = set()
+        self.background_tasks = set()  # type: ignore
 
         # Resource Cache
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
