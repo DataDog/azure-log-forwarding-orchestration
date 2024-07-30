@@ -15,6 +15,7 @@ import (
 //go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
 type AzureBlobClient interface {
 	NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse]
+	UploadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)
 }
 
 type Client struct {
@@ -25,6 +26,14 @@ func NewClient(azBlobClient AzureBlobClient) Client {
 	return Client{
 		azBlobClient: azBlobClient,
 	}
+}
+
+func (c *Client) UploadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
+	defer span.Finish()
+
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
+	return err
 }
 
 type Iterator[ReturnType any, PagerType any] struct {

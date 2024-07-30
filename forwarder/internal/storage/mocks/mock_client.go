@@ -10,6 +10,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 
 	runtime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -52,4 +53,19 @@ func (m *MockAzureBlobClient) NewListContainersPager(o *azblob.ListContainersOpt
 func (mr *MockAzureBlobClientMockRecorder) NewListContainersPager(o any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewListContainersPager", reflect.TypeOf((*MockAzureBlobClient)(nil).NewListContainersPager), o)
+}
+
+// UploadBuffer mocks base method.
+func (m *MockAzureBlobClient) UploadBuffer(ctx context.Context, containerName, blobName string, buffer []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadBuffer", ctx, containerName, blobName, buffer, o)
+	ret0, _ := ret[0].(azblob.UploadBufferResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UploadBuffer indicates an expected call of UploadBuffer.
+func (mr *MockAzureBlobClientMockRecorder) UploadBuffer(ctx, containerName, blobName, buffer, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadBuffer", reflect.TypeOf((*MockAzureBlobClient)(nil).UploadBuffer), ctx, containerName, blobName, buffer, o)
 }

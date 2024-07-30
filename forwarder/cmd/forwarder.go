@@ -26,8 +26,15 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 
 	eg.Go(func() error {
 		for container := range containerNameCh {
+
+			storageErr := client.UploadBuffer(ctx, container, "blob", []byte("data"))
+			if storageErr != nil {
+				logger.Error(fmt.Sprintf("error uploading buffer: %v", storageErr))
+			}
+
 			logger.Info(fmt.Sprintf("Container: %s", container))
 		}
+
 		return nil
 	})
 
@@ -103,6 +110,10 @@ func main() {
 	client := storage.NewClient(azBlobClient)
 
 	err = Run(ctx, client, logger)
+
+	// storageErr := client.UploadBuffer(ctx, "loggies", "blob", []byte("data"))
+
+	// err = errors.Join(err, storageErr)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
