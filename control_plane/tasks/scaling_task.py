@@ -1,6 +1,7 @@
 # stdlib
+import json
 import os
-from asyncio import Lock, gather, run
+from asyncio import Lock, create_task, gather, run
 from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -376,6 +377,8 @@ class ScalingTask(Task):
         super().__init__()
         self.resource_group = resource_group
 
+        self.background_tasks = set()
+
         # Resource Cache
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
         if not success:
@@ -466,6 +469,8 @@ class ScalingTask(Task):
             )
         )
 
+        await gather(*(self.background_tasks))
+
         # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
 
     async def collect_forwarder_metrics(
@@ -503,7 +508,9 @@ class ScalingTask(Task):
                 if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
             if SHOULD_SUBMIT_METRICS:
-                await client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id)
+                task = create_task(client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id))
+                self.background_tasks.add(task)
+                task.add_done_callback(self.background_tasks.discard)
             return metric_dict
         except HttpResponseError as err:
             log.error(err)
@@ -540,9 +547,22 @@ async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resource_group = get_config_option("RESOURCE_GROUP")
-    resources_cache_state, assignment_cache_state = await gather(
-        read_cache(RESOURCE_CACHE_BLOB),
-        read_cache(ASSIGNMENT_CACHE_BLOB),
+    # resources_cache_state, assignment_cache_state = await gather(
+    #     read_cache(RESOURCE_CACHE_BLOB),
+    #     read_cache(ASSIGNMENT_CACHE_BLOB),
+    # )
+    resources_cache_state = json.dumps({"0b62a232-b8db-4380-9da6-640f7272ed6d": {"eastus": ["resource1"]}})
+    assignment_cache_state = json.dumps(
+        {
+            "0b62a232-b8db-4380-9da6-640f7272ed6d": {
+                "eastus": {
+                    "resources": {"resource1": "d76404b14764"},
+                    "configurations": {
+                        "d76404b14764": STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            },
+        }
     )
     async with ScalingTask(resources_cache_state, assignment_cache_state, resource_group) as task:
         await task.run()
