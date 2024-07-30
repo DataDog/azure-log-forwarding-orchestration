@@ -76,6 +76,8 @@ CLIENT_MAX_SECONDS_PER_METRIC = 5
 CLIENT_MAX_SECONDS = CLIENT_MAX_SECONDS_PER_METRIC * len(COLLECTED_METRIC_DEFINITIONS)
 MAX_ATTEMPS = 5
 
+SHOULD_SUBMIT_METRICS = os.environ.get("SHOULD_SUBMIT_METRICS", False)
+
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
@@ -500,7 +502,7 @@ class ScalingTask(Task):
                             min_metric_val, max_metric_val = metric_val, metric_val
                 if max_metric_val is not None:
                     metric_dict[metric.name] = max_metric_val
-            if os.environ.get("SHOULD_SUBMIT_METRICS", False):
+            if SHOULD_SUBMIT_METRICS:
                 await client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id)
             return metric_dict
         except HttpResponseError as err:
