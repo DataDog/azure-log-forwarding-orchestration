@@ -1,5 +1,6 @@
 # use vscode settings here
 !.vscode
+.vscode/launch.json
 
 bin
 obj
