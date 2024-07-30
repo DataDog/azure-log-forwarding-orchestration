@@ -46,6 +46,8 @@ class MockedLogForwarderClient(LogForwarderClient):
     rest_client: AsyncMock
     web_client: AsyncMock
     storage_client: AsyncMock
+    monitor_client: AsyncMock
+    api_client: AsyncMock
 
 
 class FakeHttpError(HttpResponseError):
