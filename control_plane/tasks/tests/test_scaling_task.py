@@ -67,6 +67,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.web_client = AsyncMock()
         self.client.storage_client = AsyncMock()
         self.client.monitor_client = AsyncMock()
+        self.client.api_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client = self.patch_path("tasks.scaling_task.ContainerClient")
 
