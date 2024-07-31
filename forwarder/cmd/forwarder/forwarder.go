@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
+
+type MetricEntry struct {
+	Name  string
+	Value int64
+	Time  int64
+}
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan string) error {
 	// Get the containers from the storage account
@@ -69,6 +76,10 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 		}
 	}
 
+}
+
+func GetDateString() (date string) {
+	return time.Now().Format("2006-01-02")
 }
 
 func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
@@ -148,6 +159,23 @@ func main() {
 	client := storage.NewClient(azBlobClient)
 
 	err = Run(ctx, client, logger)
+
+	if err != nil {
+		logger.Fatalf("error while running: %v", err)
+	}
+
+	metric := MetricEntry{"Timespan", int64(time.Since(start).Milliseconds()), (time.Now()).Unix()}
+	metric_buffer, err := json.Marshal(metric)
+
+	if err != nil {
+		logger.Fatalf("error while running: %v", err)
+	}
+
+	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", GetDateString(), metric_buffer)
+
+	if err != nil {
+		logger.Fatalf("error while running: %v", err)
+	}
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
