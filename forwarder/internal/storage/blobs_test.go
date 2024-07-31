@@ -72,6 +72,20 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	return results, nil
 }
 
+func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedResponse azblob.UploadBufferResponse, expectedErr error) error {
+	ctrl := gomock.NewController(t)
+
+	mockClient := mocks.NewMockAzureBlobClient(ctrl)
+	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, buffer, gomock.Any()).Return(expectedResponse, expectedErr)
+
+	client := storage.NewClient(mockClient)
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
+	defer span.Finish()
+
+	return client.UploadBlob(ctx, containerName, blobName, buffer)
+}
+
 func TestListBlobs(t *testing.T) {
 	t.Parallel()
 
@@ -143,5 +157,24 @@ func TestListBlobs(t *testing.T) {
 		assert.Len(t, results, 2)
 		assert.Equal(t, testString, *results[0].Name)
 		assert.Equal(t, testString, *results[1].Name)
+	})
+}
+
+func TestUploadBlob(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uploads a buffer", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		containerName := "container"
+		blobName := "blob"
+		buffer := []byte("data")
+		expectedResponse := azblob.UploadBufferResponse{}
+
+		// WHEN
+		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedResponse, nil)
+
+		// THEN
+		assert.Nil(t, err)
 	})
 }

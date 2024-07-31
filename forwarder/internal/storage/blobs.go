@@ -29,3 +29,11 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[
 	iter := NewIterator(blobPager, getBlobItems, nil)
 	return iter
 }
+
+func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, buffer []byte) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
+	defer span.Finish()
+
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
+	return err
+}

@@ -29,14 +29,6 @@ func NewClient(azBlobClient AzureBlobClient) Client {
 	}
 }
 
-func (c *Client) UploadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
-	defer span.Finish()
-
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
-	return err
-}
-
 type Iterator[ReturnType any, PagerType any] struct {
 	pager    *runtime.Pager[PagerType]
 	getter   func(PagerType) ReturnType
