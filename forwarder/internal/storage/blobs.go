@@ -2,7 +2,10 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"io"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -34,6 +37,34 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
 	defer span.Finish()
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
+	//see if there is an existing blob
+	//if yes get it read append
+	//if not just write
+	var respErr *azcore.ResponseError
+
+	downloadResponse, errDown := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+
+	if errors.As(errDown, &respErr) {
+		// Handle Error
+		if respErr.ErrorCode == "BlobNotFound" {
+			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
+			return err
+		} else {
+			return errDown
+		}
+	}
+	if errDown != nil {
+		return errDown
+	}
+
+	orig_buf, read_err := io.ReadAll(downloadResponse.Body)
+	if read_err != nil {
+		return errDown
+	}
+
+	orig_buf = append(orig_buf, "\n"...)
+	orig_buf = append(orig_buf, buffer...)
+
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, orig_buf, nil)
 	return err
 }

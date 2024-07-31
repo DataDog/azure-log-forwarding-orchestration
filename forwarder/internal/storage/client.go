@@ -2,10 +2,7 @@ package storage
 
 import (
 	"context"
-	"errors"
-	"io"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"google.golang.org/api/iterator"
@@ -31,42 +28,6 @@ func NewClient(azBlobClient AzureBlobClient) Client {
 	return Client{
 		azBlobClient: azBlobClient,
 	}
-}
-
-func (c *Client) UploadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
-	defer span.Finish()
-
-	//see if there is an existing blob
-	//if yes get it read append
-	//if not just write
-	var respErr *azcore.ResponseError
-
-	downloadResponse, err_down := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
-
-	if errors.As(err_down, &respErr) {
-		// Handle Error
-		if respErr.ErrorCode == "BlobNotFound" {
-			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
-			return err
-		} else {
-			return err_down
-		}
-	}
-	if err_down != nil {
-		return err_down
-	}
-
-	orig_buf, read_err := io.ReadAll(downloadResponse.Body)
-	if read_err != nil {
-		return err_down
-	}
-
-	orig_buf = append(orig_buf, "\n"...)
-	orig_buf = append(orig_buf, buffer...)
-
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, orig_buf, nil)
-	return err
 }
 
 type Iterator[ReturnType any, PagerType any] struct {

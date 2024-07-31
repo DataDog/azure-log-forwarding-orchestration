@@ -41,6 +41,21 @@ func (m *MockAzureBlobClient) EXPECT() *MockAzureBlobClientMockRecorder {
 	return m.recorder
 }
 
+// DownloadStream mocks base method.
+func (m *MockAzureBlobClient) DownloadStream(ctx context.Context, containerName, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DownloadStream", ctx, containerName, blobName, o)
+	ret0, _ := ret[0].(azblob.DownloadStreamResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DownloadStream indicates an expected call of DownloadStream.
+func (mr *MockAzureBlobClientMockRecorder) DownloadStream(ctx, containerName, blobName, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DownloadStream", reflect.TypeOf((*MockAzureBlobClient)(nil).DownloadStream), ctx, containerName, blobName, o)
+}
+
 // NewListBlobsFlatPager mocks base method.
 func (m *MockAzureBlobClient) NewListBlobsFlatPager(containerName string, o *azblob.ListBlobsFlatOptions) *runtime.Pager[azblob.ListBlobsFlatResponse] {
 	m.ctrl.T.Helper()
