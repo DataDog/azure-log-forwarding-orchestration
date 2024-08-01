@@ -1,16 +1,20 @@
 # stdlib
-from asyncio import Lock, gather, run
+import os
+from asyncio import Lock, create_task, gather, run, wait
+from asyncio import Task as AsyncTask
 from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
+from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Any, AsyncContextManager, Self, TypeVar
+from typing import Any, AsyncContextManager, Self, TypeAlias, TypeVar
 from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from aiosonic.exceptions import RequestTimeout  # type: ignore
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
@@ -28,8 +32,17 @@ from azure.mgmt.web.v2023_12_01.models import (
     SiteConfig,
     SkuDescription,
 )
+from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
+from azure.monitor.query.aio import MetricsQueryClient
 from azure.storage.blob.aio import ContainerClient
-from tenacity import RetryCallState, retry, stop_after_attempt
+from datadog_api_client import AsyncApiClient, Configuration
+from datadog_api_client.v2.api.metrics_api import MetricsApi
+from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
+from datadog_api_client.v2.model.metric_payload import MetricPayload
+from datadog_api_client.v2.model.metric_point import MetricPoint
+from datadog_api_client.v2.model.metric_resource import MetricResource
+from datadog_api_client.v2.model.metric_series import MetricSeries
+from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
@@ -39,6 +52,7 @@ from cache.common import (
     InvalidCacheError,
     get_app_service_plan_name,
     get_config_option,
+    get_function_app_id,
     get_function_app_name,
     get_storage_account_name,
     read_cache,
@@ -51,15 +65,35 @@ SCALING_TASK_NAME = "scaling_task"
 
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
+COLLECTED_METRIC_DEFINITIONS = {"FunctionExecutionCount": "total"}
+
+METRIC_COLLECTION_PERIOD_MINUTES = 30  # How long we are mointoring in minutes
+METRIC_COLLECTION_SAMPLES = 6  # Number of samples we are collecting
+METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD_MINUTES // METRIC_COLLECTION_SAMPLES
+
+CLIENT_MAX_SECONDS_PER_METRIC = 5
+CLIENT_MAX_SECONDS = CLIENT_MAX_SECONDS_PER_METRIC * len(COLLECTED_METRIC_DEFINITIONS)
+MAX_ATTEMPS = 5
+
+SHOULD_SUBMIT_METRICS = os.environ.get("SHOULD_SUBMIT_METRICS", False)
+
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
+
+LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
+"""
+Type alias that represents the result of collecting the log forwarder metrics.
+It is a mapping of log forwarder/config ids to metric names to the max metric value over the timeseries.
+"""
 
 
 async def is_exception_retryable(state: RetryCallState) -> bool:
     if (future := state.outcome) and (e := future.exception()):
         if isinstance(e, HttpResponseError):
             return e.status_code is not None and (e.status_code == 429 or e.status_code >= 500)
+        if isinstance(e, RequestTimeout) or isinstance(e, ServiceResponseTimeoutError):
+            return True
     return False
 
 
@@ -80,12 +114,23 @@ class LogForwarderClient(AsyncContextManager):
         self.web_client = WebSiteManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.rest_client = ClientSession()
+        self.monitor_client = MetricsQueryClient(credential)
+        self.configuration = Configuration()
+        self.configuration.request_timeout = CLIENT_MAX_SECONDS
+        self.api_client = AsyncApiClient(self.configuration)
+        self.api_instance = MetricsApi(self.api_client)
         self.resource_group = resource_group
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
 
     async def __aenter__(self) -> Self:
-        await gather(self.web_client.__aenter__(), self.storage_client.__aenter__(), self.rest_client.__aenter__())
+        await gather(
+            self.web_client.__aenter__(),
+            self.storage_client.__aenter__(),
+            self.rest_client.__aenter__(),
+            self.monitor_client.__aenter__(),
+            self.api_client.__aenter__(),
+        )
         token = await self._credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
@@ -97,6 +142,8 @@ class LogForwarderClient(AsyncContextManager):
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     async def create_log_forwarder(self, region: str, config_id: str) -> DiagnosticSettingType:
@@ -257,11 +304,74 @@ class LogForwarderClient(AsyncContextManager):
                 raise
             return False
 
+    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
+    async def get_log_forwarder_metrics(self, log_forwarder_id: str) -> MetricsQueryResult:
+        return await self.monitor_client.query_resource(
+            log_forwarder_id,
+            metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
+            timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES),
+            granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
+            timeout=CLIENT_MAX_SECONDS,
+        )
+
+    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
+        if "DD_API_KEY" not in os.environ:
+            return
+        metric_series: list[MetricSeries] = [self.create_metric_series(metric, log_forwarder_id) for metric in metrics]  # type: ignore
+        if metric_series is None or not all(metric_series):
+            log.warn(
+                f"Invalid timestamps for resource: {get_function_app_id(sub_id, self.resource_group, log_forwarder_id)}\nSkipping..."
+            )
+            return
+        body = MetricPayload(
+            series=metric_series,
+        )
+
+        response = await self.api_instance.submit_metrics(body=body)  # type: ignore
+        if len(response.get("errors", [])) > 0:
+            for err in response.get("errors", []):
+                log.error(err)
+
+    def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
+        metric_points: list[MetricPoint | None] = [
+            self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name))  # type: ignore
+            for time_series_element in metric.timeseries
+            for metric_value in time_series_element.data
+        ]
+        filtered_metric_points = [metric_point for metric_point in metric_points if metric_point is not None]
+        if len(metric_points) == 0:
+            return None
+        return MetricSeries(
+            metric=metric.name,
+            type=MetricIntakeType.UNSPECIFIED,
+            points=filtered_metric_points,
+            resources=[
+                MetricResource(
+                    name=get_function_app_name(log_forwarder_id),
+                    type="logforwarder",
+                ),
+            ],
+        )
+
+    def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
+        metric_timestamp = metric_value.timestamp.timestamp()
+        if (datetime.now().timestamp() - metric_timestamp) > 3540:
+            return None
+        if getattr(metric_value, metric_attr, None) is None:
+            return None
+        return MetricPoint(
+            timestamp=int(metric_timestamp),
+            value=getattr(metric_value, metric_attr),
+        )
+
 
 class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str, resource_group: str) -> None:
         super().__init__()
         self.resource_group = resource_group
+
+        self.background_tasks: set[AsyncTask[Any]] = set()
 
         # Resource Cache
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
@@ -299,6 +409,8 @@ class ScalingTask(Task):
             )
 
             await gather(*tasks)
+            if len(self.background_tasks) != 0:
+                await wait(self.background_tasks)
 
         self.update_assignments(subscription_id)
 
@@ -348,15 +460,60 @@ class ScalingTask(Task):
 
         forwarder_metrics = await gather(
             *(
-                self.collect_forwarder_metrics(config_id, config_type)
+                self.collect_forwarder_metrics(config_id, subscription_id, client)
                 for config_id, config_type in self.assignment_cache[subscription_id][region]["configurations"].items()
             )
         )
 
+        await gather(*(self.background_tasks))
+
         # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
 
-    async def collect_forwarder_metrics(self, config_id: str, config_type: DiagnosticSettingType) -> None:
-        return NotImplemented
+    async def collect_forwarder_metrics(
+        self, config_id: str, sub_id: str, client: LogForwarderClient
+    ) -> LogForwarderMetrics:
+        """Updates the log_forwarder_metric_cache entry for a log forwarder
+        If there is an error the entry is set to an empty dict"""
+        metric_dict = {}
+        try:
+            response = await client.get_log_forwarder_metrics(
+                get_function_app_id(sub_id, self.resource_group, config_id)
+            )
+
+            for metric in response.metrics:
+                log.debug(metric.name)
+                log.debug(metric.unit)
+                min_metric_val = None
+                max_metric_val = None
+                for time_series_element in metric.timeseries:
+                    for metric_value in time_series_element.data:
+                        log.debug(metric_value.timestamp)
+                        log.debug(
+                            f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, '')} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ''), None)}"
+                        )
+                        metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
+                        if metric_val is None:
+                            log.info(metric_value.__dict__)
+                            log.warning(f"{metric.name} is None for log forwarder: {config_id}. Skipping resource...")
+                            return {}
+                        if min_metric_val:
+                            min_metric_val = min(min_metric_val, metric_val)
+                            max_metric_val = max(max_metric_val, metric_val)
+                        else:
+                            min_metric_val, max_metric_val = metric_val, metric_val
+                if max_metric_val is not None:
+                    metric_dict[metric.name] = max_metric_val
+            if SHOULD_SUBMIT_METRICS:
+                task = create_task(client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id))
+                self.background_tasks.add(task)
+                task.add_done_callback(self.background_tasks.discard)
+            return metric_dict
+        except HttpResponseError as err:
+            log.error(err)
+            return {}
+        except RetryError:
+            log.error("Max retries attempted")
+            return {}
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
