@@ -1,6 +1,6 @@
 # stdlib
 import os
-from asyncio import Lock, create_task, gather, run
+from asyncio import Lock, create_task, gather, run, wait
 from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -34,8 +34,6 @@ from azure.mgmt.web.v2023_12_01.models import (
 from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
 from azure.monitor.query.aio import MetricsQueryClient
 from azure.storage.blob.aio import ContainerClient
-
-# dd
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
@@ -319,9 +317,7 @@ class LogForwarderClient(AsyncContextManager):
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
         if "DD_API_KEY" not in os.environ:
             return
-        metric_series: list[MetricSeries] = await gather(
-            *[self.create_metric_series(metric, log_forwarder_id) for metric in metrics]
-        )  # type: ignore
+        metric_series: list[MetricSeries] = [self.create_metric_series(metric, log_forwarder_id) for metric in metrics]  # type: ignore
         if metric_series is None or not all(metric_series):
             log.warn(
                 f"Invalid timestamps for resource: {get_function_app_id(sub_id, self.resource_group, log_forwarder_id)}\nSkipping..."
@@ -336,14 +332,12 @@ class LogForwarderClient(AsyncContextManager):
             for err in response.get("errors", []):
                 log.error(err)
 
-    async def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint | None] = await gather(
-            *[
-                self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name))  # type: ignore
-                for time_series_element in metric.timeseries
-                for metric_value in time_series_element.data
-            ]
-        )
+    def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
+        metric_points: list[MetricPoint | None] = [
+            self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name))  # type: ignore
+            for time_series_element in metric.timeseries
+            for metric_value in time_series_element.data
+        ]
         filtered_metric_points = [metric_point for metric_point in metric_points if metric_point is not None]
         if len(metric_points) == 0:
             return None
@@ -359,7 +353,7 @@ class LogForwarderClient(AsyncContextManager):
             ],
         )
 
-    async def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
+    def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
         metric_timestamp = metric_value.timestamp.timestamp()
         if (datetime.now().timestamp() - metric_timestamp) > 3540:
             return None
@@ -414,6 +408,8 @@ class ScalingTask(Task):
             )
 
             await gather(*tasks)
+            if len(self.background_tasks) != 0:
+                await wait(self.background_tasks)
 
         self.update_assignments(subscription_id)
 
