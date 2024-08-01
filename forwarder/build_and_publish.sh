@@ -2,5 +2,4 @@
 
 set -euxo pipefail
 
-docker buildx build . --platform=linux/amd64 --tag  mattlogger.azurecr.io/forwarder:latest
-docker push mattlogger.azurecr.io/forwarder:latest
+docker buildx build . --platform=linux/amd64 --tag  mattlogger.azurecr.io/forwarder:latest --push
