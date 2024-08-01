@@ -1,6 +1,7 @@
 # stdlib
 import os
 from asyncio import Lock, create_task, gather, run, wait
+from asyncio import Task as AsyncTask
 from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -370,7 +371,7 @@ class ScalingTask(Task):
         super().__init__()
         self.resource_group = resource_group
 
-        self.background_tasks = set()  # type: ignore
+        self.background_tasks: set[AsyncTask[Any]] = set()
 
         # Resource Cache
         success, resource_cache = deserialize_resource_cache(resource_cache_state)
