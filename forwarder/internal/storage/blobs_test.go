@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strings"
 	"testing"
 
@@ -77,8 +77,22 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedUpResponse azblob.UploadBufferResponse, expectedUpErr error, expectedDownResponse azblob.DownloadStreamResponse, expectedDownErr error) error {
 	ctrl := gomock.NewController(t)
 
+	original_buf, err := io.ReadAll(expectedDownResponse.Body)
+	if err != nil {
+		return err
+	}
+
+	//the body is empty after reading, thus we need to repopulate
+	bodyString := string(original_buf[:])
+	stringReader := strings.NewReader(bodyString)
+	stringReadCloser := io.NopCloser(stringReader)
+	expectedDownResponse.Body = stringReadCloser
+
+	original_buf = append(original_buf, "\n"...)
+	new_buf := append(original_buf, buffer...)
+
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, buffer, gomock.Any()).Return(expectedUpResponse, expectedUpErr)
+	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, new_buf, gomock.Any()).Return(expectedUpResponse, expectedUpErr)
 	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr)
 
 	client := storage.NewClient(mockClient)
@@ -174,7 +188,7 @@ func TestUploadBlob(t *testing.T) {
 		buffer := []byte("data")
 		expectedUpResponse := azblob.UploadBufferResponse{}
 		stringReader := strings.NewReader("shiny!")
-		stringReadCloser := ioutil.NopCloser(stringReader)
+		stringReadCloser := io.NopCloser(stringReader)
 		downResp := azblob.DownloadStreamResponse{}
 		downResp.Body = stringReadCloser
 
