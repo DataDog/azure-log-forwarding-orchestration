@@ -82,19 +82,19 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	var newBuf []byte
 
 	if expectedDownErr == nil {
-		original_buf, err := io.ReadAll(expectedDownResponse.Body)
+		originalBuf, err := io.ReadAll(expectedDownResponse.Body)
 		if err != nil {
 			return err
 		}
 
 		//the body is empty after reading, thus we need to repopulate
-		bodyString := string(original_buf[:])
+		bodyString := string(originalBuf[:])
 		stringReader := strings.NewReader(bodyString)
 		stringReadCloser := io.NopCloser(stringReader)
 		expectedDownResponse.Body = stringReadCloser
 
-		original_buf = append(original_buf, "\n"...)
-		newBuf = append(original_buf, buffer...)
+		originalBuf = append(originalBuf, "\n"...)
+		newBuf = append(originalBuf, buffer...)
 	} else {
 		newBuf = buffer
 	}
@@ -117,19 +117,19 @@ func uploadBlobError(t *testing.T, ctx context.Context, containerName string, bl
 	var newBuf []byte
 
 	if expectedDownErr == nil {
-		original_buf, err := io.ReadAll(expectedDownResponse.Body)
+		originalBuf, err := io.ReadAll(expectedDownResponse.Body)
 		if err != nil {
 			return err
 		}
 
 		//the body is empty after reading, thus we need to repopulate
-		bodyString := string(original_buf[:])
+		bodyString := string(originalBuf[:])
 		stringReader := strings.NewReader(bodyString)
 		stringReadCloser := io.NopCloser(stringReader)
 		expectedDownResponse.Body = stringReadCloser
 
-		original_buf = append(original_buf, "\n"...)
-		newBuf = append(original_buf, buffer...)
+		originalBuf = append(originalBuf, "\n"...)
+		newBuf = append(originalBuf, buffer...)
 	} else {
 		newBuf = buffer
 	}
@@ -273,7 +273,7 @@ func TestUploadBlobNoPrevious(t *testing.T) {
 func TestUploadBlobAzureDownloadError(t *testing.T) {
 	t.Parallel()
 
-	t.Run("uploads a buffer when there is an error", func(t *testing.T) {
+	t.Run("uploads a buffer when there is an non BlobNotFound error", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		containerName := "container"

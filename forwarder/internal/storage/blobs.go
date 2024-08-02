@@ -42,29 +42,29 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	//if not just write
 	var respErr *azcore.ResponseError
 
-	downloadResponse, errDown := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+	downloadResponse, downErr := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
 
-	if errors.As(errDown, &respErr) {
+	if errors.As(downErr, &respErr) {
 		// Handle Error
 		if respErr.ErrorCode == "BlobNotFound" {
 			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
 			return err
 		} else {
-			return errDown
+			return downErr
 		}
 	}
-	if errDown != nil {
-		return errDown
+	if downErr != nil {
+		return downErr
 	}
 
-	orig_buf, read_err := io.ReadAll(downloadResponse.Body)
-	if read_err != nil {
-		return errDown
+	origBuf, readErr := io.ReadAll(downloadResponse.Body)
+	if readErr != nil {
+		return downErr
 	}
 
-	orig_buf = append(orig_buf, "\n"...)
-	orig_buf = append(orig_buf, buffer...)
+	origBuf = append(origBuf, "\n"...)
+	origBuf = append(origBuf, buffer...)
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, orig_buf, nil)
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, origBuf, nil)
 	return err
 }

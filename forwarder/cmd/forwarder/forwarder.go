@@ -24,6 +24,10 @@ type MetricEntry struct {
 	Time  int64
 }
 
+type MetricValues struct {
+	Values []MetricEntry
+}
+
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan string) error {
 	// Get the containers from the storage account
 	defer close(containerNameCh)
@@ -78,8 +82,8 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 }
 
-func GetDateString() (date string) {
-	return time.Now().Format("2006-01-02")
+func GetDateTimeString() (date string) {
+	return time.Now().UTC().Format("2006-01-02-15")
 }
 
 func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
@@ -164,14 +168,23 @@ func main() {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	metric := MetricEntry{"Timespan", int64(time.Since(start).Milliseconds()), (time.Now()).Unix()}
-	metric_buffer, err := json.Marshal(metric)
+	timeMetric := MetricEntry{"Timespan", int64(time.Since(start).Milliseconds()), (time.Now()).Unix()}
+	metrics := MetricValues{[]MetricEntry{timeMetric}}
+	metricBuffer, err := json.Marshal(metrics)
 
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", GetDateString(), metric_buffer)
+	logForwarderId := os.Getenv("ForwarderId")
+	if logForwarderId == "" {
+		logger.Fatalf("error while running: log forwarder id must be set")
+	}
+
+	dateString := GetDateTimeString()
+	blobName := dateString + "." + logForwarderId
+
+	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", blobName, metricBuffer)
 
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
