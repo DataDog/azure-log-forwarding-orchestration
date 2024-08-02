@@ -168,7 +168,7 @@ func main() {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	timeMetric := MetricEntry{"Timespan", int64(time.Since(start).Milliseconds()), (time.Now()).Unix()}
+	timeMetric := MetricEntry{"Timespan", int64(time.Since(start).Milliseconds()), (time.Now().UTC()).Unix()}
 	metrics := MetricValues{[]MetricEntry{timeMetric}}
 	metricBuffer, err := json.Marshal(metrics)
 
