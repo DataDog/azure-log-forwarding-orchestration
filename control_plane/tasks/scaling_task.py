@@ -537,7 +537,7 @@ class ScalingTask(Task):
             metric_dicts = await client.get_blob_metrics(
                 get_config_option("TEST_CONNECTION_STR"), "insights-logs-functionapplogs"
             )
-            oldest_time: datetime = datetime.now() - timedelta(minutes=30)
+            oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
                 metric_list
                 for metric_list in [
