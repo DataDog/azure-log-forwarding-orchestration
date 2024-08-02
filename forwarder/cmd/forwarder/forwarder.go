@@ -182,9 +182,9 @@ func main() {
 	}
 
 	dateString := GetDateTimeString()
-	blobName := dateString + "." + logForwarderId
+	//blobName := dateString + "." + logForwarderId
 
-	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", blobName, metricBuffer)
+	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", dateString, metricBuffer)
 
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
