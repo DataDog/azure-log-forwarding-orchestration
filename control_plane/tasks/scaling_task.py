@@ -59,6 +59,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
+from cache.metric_blob_cache import LogForwarderBlobMetrics, validate_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.task import Task, now, wait_for_resource
 
@@ -78,25 +79,6 @@ MAX_ATTEMPS = 5
 
 SHOULD_SUBMIT_METRICS = os.environ.get("SHOULD_SUBMIT_METRICS", False)
 
-METRIC_BLOB_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "Values": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "Name": {"type": "string"},
-                    "Value": {"type": "number"},
-                    "Time": {"type": "number"},
-                },
-                "additionalProperties": False,
-            },
-        }
-    },
-    "additionalProperties": False,
-}
-
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
@@ -106,8 +88,6 @@ LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
 Type alias that represents the result of collecting the log forwarder metrics.
 It is a mapping of log forwarder/config ids to metric names to the max metric value over the timeseries.
 """
-
-LogForwarderBlobMetrics: TypeAlias = dict[str, list[dict[str, float | str]]]
 
 
 async def is_exception_retryable(state: RetryCallState) -> bool:
@@ -540,9 +520,7 @@ class ScalingTask(Task):
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
                 metric_list
-                for metric_list in [
-                    self.validate_blob_metric_dict(mlist, oldest_time.timestamp()) for mlist in metric_dicts
-                ]
+                for metric_list in [validate_blob_metric_dict(mlist, oldest_time.timestamp()) for mlist in metric_dicts]
                 if metric_list is not None
             ]
             for met in forwarder_metrics:
@@ -554,19 +532,6 @@ class ScalingTask(Task):
         except RetryError:
             log.error("Max retries attempted")
             return {}
-
-    def validate_blob_metric_dict(self, blob_dict_str: str, oldest_legal_time: float) -> LogForwarderBlobMetrics | None:
-        try:
-            blob_dict: LogForwarderBlobMetrics = loads(blob_dict_str)
-            validate(instance=blob_dict, schema=METRIC_BLOB_SCHEMA)
-            if len(blob_dict["Values"]) == 0:
-                return None
-            # This is validated previously via the schema so this will always be legal
-            if blob_dict["Values"][0]["Time"] < oldest_legal_time:  # type: ignore
-                return None
-            return blob_dict
-        except (JSONDecodeError, ValidationError):
-            return None
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
