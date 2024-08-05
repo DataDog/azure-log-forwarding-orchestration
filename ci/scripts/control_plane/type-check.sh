@@ -10,4 +10,4 @@ cd control_plane
 pip install -e '.[dev]'
 
 : run mypy
-python -m mypy .
+python -m mypy --config-file pyproject.toml .
