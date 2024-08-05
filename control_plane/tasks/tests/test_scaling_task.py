@@ -6,8 +6,6 @@ from unittest.mock import AsyncMock
 from uuid import UUID
 
 # 3p
-from azure.core.exceptions import HttpResponseError
-
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
 from cache.common import (
@@ -18,7 +16,6 @@ from cache.common import (
     get_function_app_id,
 )
 from cache.resources_cache import ResourceCache
-from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.scaling_task import (
     SCALING_TASK_NAME,
     ScalingTask,
@@ -32,24 +29,6 @@ log_forwarder_id = "d6fc2c757f9c"
 log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
-
-
-class MockedLogForwarderClient(LogForwarderClient):
-    """Used for typing since we know the underlying clients will be mocks"""
-
-    rest_client: AsyncMock
-    web_client: AsyncMock
-    storage_client: AsyncMock
-    monitor_client: AsyncMock
-    api_client: AsyncMock
-
-
-class FakeHttpError(HttpResponseError):
-    def __init__(self, status_code: int) -> None:
-        self.status_code = status_code
-
-    def __eq__(self, value: object) -> bool:
-        return isinstance(value, FakeHttpError) and value.status_code == self.status_code
 
 
 NEW_UUID = "04cb0e0b-f268-4349-aa32-93a5885365f5"

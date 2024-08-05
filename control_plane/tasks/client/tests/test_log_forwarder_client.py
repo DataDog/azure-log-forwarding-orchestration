@@ -1,21 +1,41 @@
+# stdlib
 from os import environ
 from unittest.mock import AsyncMock, Mock
 
-from azure.core.exceptions import ResourceNotFoundError
+# 3p
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from tenacity import RetryError
 
+# project
+from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.tests.common import AsyncTestCase
-from tasks.tests.test_scaling_task import (
-    EAST_US,
-    FakeHttpError,
-    MockedLogForwarderClient,
-    log_forwarder_id,
-    log_forwarder_name,
-    rg1,
-    storage_account_name,
-    sub_id1,
-)
+
+sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
+EAST_US = "eastus"
+WEST_US = "westus"
+log_forwarder_id = "d6fc2c757f9c"
+log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
+storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
+rg1 = "test_lfo"
+
+
+class FakeHttpError(HttpResponseError):
+    def __init__(self, status_code: int) -> None:
+        self.status_code = status_code
+
+    def __eq__(self, value: object) -> bool:
+        return isinstance(value, FakeHttpError) and value.status_code == self.status_code
+
+
+class MockedLogForwarderClient(LogForwarderClient):
+    """Used for typing since we know the underlying clients will be mocks"""
+
+    rest_client: AsyncMock
+    web_client: AsyncMock
+    storage_client: AsyncMock
+    monitor_client: AsyncMock
+    api_client: AsyncMock
 
 
 class TestLogForwarderClient(AsyncTestCase):
