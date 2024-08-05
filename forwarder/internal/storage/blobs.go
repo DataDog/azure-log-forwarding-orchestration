@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -43,11 +44,19 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	var respErr *azcore.ResponseError
 
 	downloadResponse, downErr := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+	//max-age = 2 hours or 7200 seconds
+	cacheControlString := "max-age=7200"
+
+	uploadOptions := azblob.UploadBufferOptions{
+		HTTPHeaders: &blob.HTTPHeaders{
+			BlobCacheControl: &cacheControlString,
+		},
+	}
 
 	if errors.As(downErr, &respErr) {
 		// Handle Error
 		if respErr.ErrorCode == "BlobNotFound" {
-			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, nil)
+			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
 			return err
 		} else {
 			return downErr
@@ -65,6 +74,6 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	origBuf = append(origBuf, "\n"...)
 	origBuf = append(origBuf, buffer...)
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, origBuf, nil)
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, origBuf, &uploadOptions)
 	return err
 }

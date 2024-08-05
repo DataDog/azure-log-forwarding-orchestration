@@ -1,6 +1,6 @@
 # stdlib
 import os
-from asyncio import Lock, gather, run, wait
+from asyncio import Lock, create_task, gather, run, wait
 from asyncio import Task as AsyncTask
 from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
@@ -58,7 +58,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
-from cache.metric_blob_cache import LogForwarderBlobMetrics, validate_blob_metric_dict
+from cache.metric_blob_cache import LogForwarderBlobMetrics, MetricBlobEntry, validate_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.task import Task, now, wait_for_resource
 
@@ -72,8 +72,7 @@ METRIC_COLLECTION_PERIOD_MINUTES = 30  # How long we are mointoring in minutes
 METRIC_COLLECTION_SAMPLES = 6  # Number of samples we are collecting
 METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD_MINUTES // METRIC_COLLECTION_SAMPLES
 
-CLIENT_MAX_SECONDS_PER_METRIC = 5
-CLIENT_MAX_SECONDS = CLIENT_MAX_SECONDS_PER_METRIC * len(COLLECTED_METRIC_DEFINITIONS)
+CLIENT_MAX_SECONDS = 30
 MAX_ATTEMPS = 5
 
 SHOULD_SUBMIT_METRICS = os.environ.get("SHOULD_SUBMIT_METRICS", False)
@@ -305,16 +304,6 @@ class LogForwarderClient(AsyncContextManager):
                 raise
             return False
 
-    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def get_log_forwarder_metrics(self, log_forwarder_id: str) -> MetricsQueryResult:
-        return await self.monitor_client.query_resource(
-            log_forwarder_id,
-            metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
-            timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES),
-            granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
-            timeout=CLIENT_MAX_SECONDS,
-        )
-
     async def get_blob_metrics(self, connection_str: str, container_name: str) -> list[str]:
         """
         Returns a list of json decodable strings that represent metrics
@@ -340,7 +329,7 @@ class LogForwarderClient(AsyncContextManager):
     async def read_blob(self, container_client: ContainerClient, blob_name: str) -> list[str]:
         try:
             async with container_client.get_blob_client(blob_name) as blob_client:
-                raw_data = await blob_client.download_blob()
+                raw_data = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
                 dict_str = await raw_data.readall()
                 return dict_str.decode("utf-8").split("\n")
         except ResourceNotFoundError:
@@ -353,10 +342,10 @@ class LogForwarderClient(AsyncContextManager):
 
         # because we are controling the order of how metrics are added to LogForwarderBlobMetrics
         # we can utilize this fact to group metrics by metric name
-        combined_metric_list = zip(*metrics)
+        combined_metric_list = zip(*[metric["Values"] for metric in metrics])
         metric_series: list[MetricSeries] = [
-            self.create_metric_series(metric, log_forwarder_id) for metric in combined_metric_list
-        ]  # type: ignore
+            self.create_metric_series(metric_entries, log_forwarder_id) for metric_entries in combined_metric_list
+        ]
         body = MetricPayload(
             series=metric_series,
         )
@@ -369,8 +358,25 @@ class LogForwarderClient(AsyncContextManager):
     def get_datetime_str(self, time: datetime) -> str:
         return f"{time:%Y-%m-%d-%H}"
 
-    def create_metric_series(self):
-        return None
+    def create_metric_series(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricSeries:
+        metric_points: list[MetricPoint] = [self.create_metric_point(metric) for metric in metric_entries]
+        return MetricSeries(
+            metric=metric_entries[0]["Name"],
+            type=MetricIntakeType.UNSPECIFIED,
+            points=metric_points,
+            resources=[
+                MetricResource(
+                    name=get_function_app_name(log_forwarder_id),
+                    type="logforwarder",
+                ),
+            ],
+        )
+
+    def create_metric_point(self, metric: MetricBlobEntry) -> MetricPoint:
+        return MetricPoint(
+            timestamp=metric["Time"],
+            value=metric["Value"],
+        )
 
 
 class ScalingTask(Task):
@@ -472,6 +478,9 @@ class ScalingTask(Task):
             )
         )
 
+        for fmetric in forwarder_metrics:
+            log.info(fmetric)
+
         await gather(*(self.background_tasks))
 
         # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
@@ -481,7 +490,6 @@ class ScalingTask(Task):
     ) -> LogForwarderMetrics:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
-        metric_dict = {}
         # TODO Figure out how to get actual connection string + container name
         try:
             metric_dicts = await client.get_blob_metrics(
@@ -493,9 +501,19 @@ class ScalingTask(Task):
                 for metric_list in [validate_blob_metric_dict(mlist, oldest_time.timestamp()) for mlist in metric_dicts]
                 if metric_list is not None
             ]
+            if len(forwarder_metrics) == 0:
+                log.info("No metrics found")
+                return {}
+            max_values: dict[str, float] = {}
             for met in forwarder_metrics:
-                log.info(met)
-            return metric_dict
+                for metric_entry in met["Values"]:
+                    max_values[metric_entry["Name"]] = max(
+                        max_values.get(metric_entry["Name"], 0), metric_entry["Value"]
+                    )
+            if os.environ.get("SHOULD_SUBMIT_METRICS", False):
+                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+                self.background_tasks.add(task)
+            return {config_id: max_values}
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
             return {}
