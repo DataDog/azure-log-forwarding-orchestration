@@ -2,20 +2,19 @@
 # script to remove diagnostic settings from all resources
 
 # stdlib
-from asyncio import gather, run, create_task
+from asyncio import create_task, gather, run
 from itertools import chain
-from logging import INFO, basicConfig, getLogger, WARNING
+from logging import INFO, WARNING, basicConfig, getLogger
 from sys import argv
 from typing import Any, AsyncIterable, Callable, Coroutine, Iterable, TypeVar
 
-# 3p
+from azure.core.credentials_async import AsyncTokenCredential
 
+# 3p
 # requires `pip install azure-mgmt-resource`
 from azure.identity.aio import DefaultAzureCredential
-from azure.core.credentials_async import AsyncTokenCredential
-from azure.mgmt.resource.resources.aio import ResourceManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
-
+from azure.mgmt.resource.resources.aio import ResourceManagementClient
 
 getLogger("azure").setLevel(WARNING)
 log = getLogger("extension_cleanup")
