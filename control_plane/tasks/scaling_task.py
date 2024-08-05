@@ -1,11 +1,11 @@
 # stdlib
 import os
-from asyncio import Lock, create_task, gather, run, wait
+from asyncio import Lock, gather, run, wait
 from asyncio import Task as AsyncTask
 from collections.abc import Awaitable, Coroutine
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from json import JSONDecodeError, dumps, loads
+from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
 from typing import Any, AsyncContextManager, Self, TypeAlias, TypeVar
@@ -42,7 +42,6 @@ from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
 from datadog_api_client.v2.model.metric_resource import MetricResource
 from datadog_api_client.v2.model.metric_series import MetricSeries
-from jsonschema import ValidationError, validate
 from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
