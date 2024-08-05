@@ -3,6 +3,7 @@ from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
+from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ
@@ -16,6 +17,7 @@ from tenacity import RetryError
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
+    STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
     get_config_option,
     get_function_app_id,
@@ -30,6 +32,7 @@ from tasks.task import Task, now
 SCALING_TASK_NAME = "scaling_task"
 
 SHOULD_SUBMIT_METRICS = environ.get("SHOULD_SUBMIT_METRICS", False)
+METRIC_COLLECTION_PERIOD_MINUTES = 30
 
 
 log = getLogger(SCALING_TASK_NAME)
@@ -173,7 +176,7 @@ class ScalingTask(Task):
                     max_values[metric_entry["Name"]] = max(
                         max_values.get(metric_entry["Name"], 0), metric_entry["Value"]
                     )
-            if os.environ.get("SHOULD_SUBMIT_METRICS", False):
+            if SHOULD_SUBMIT_METRICS:
                 task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
                 self.background_tasks.add(task)
             return {config_id: max_values}
