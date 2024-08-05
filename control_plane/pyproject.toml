@@ -51,6 +51,7 @@ docstring-code-format = true
 
 [tool.mypy]
 check_untyped_defs = true
+ignore_missing_imports = false
 
 [[tool.mypy.overrides]]
 module = "azure.*"
