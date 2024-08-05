@@ -347,15 +347,16 @@ class LogForwarderClient(AsyncContextManager):
             return []
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[LogForwarderBlobMetrics]) -> None:
         if "DD_API_KEY" not in os.environ:
             return
-        metric_series: list[MetricSeries] = [self.create_metric_series(metric, log_forwarder_id) for metric in metrics]  # type: ignore
-        if metric_series is None or not all(metric_series):
-            log.warn(
-                f"Invalid timestamps for resource: {get_function_app_id(sub_id, self.resource_group, log_forwarder_id)}\nSkipping..."
-            )
-            return
+
+        # because we are controling the order of how metrics are added to LogForwarderBlobMetrics
+        # we can utilize this fact to group metrics by metric name
+        combined_metric_list = zip(*metrics)
+        metric_series: list[MetricSeries] = [
+            self.create_metric_series(metric, log_forwarder_id) for metric in combined_metric_list
+        ]  # type: ignore
         body = MetricPayload(
             series=metric_series,
         )
@@ -366,40 +367,10 @@ class LogForwarderClient(AsyncContextManager):
                 log.error(err)
 
     def get_datetime_str(self, time: datetime) -> str:
-        log.info(f"{time:%Y-%m-%d-%H}")
         return f"{time:%Y-%m-%d-%H}"
 
-    def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint | None] = [
-            self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name))  # type: ignore
-            for time_series_element in metric.timeseries
-            for metric_value in time_series_element.data
-        ]
-        filtered_metric_points = [metric_point for metric_point in metric_points if metric_point is not None]
-        if len(metric_points) == 0:
-            return None
-        return MetricSeries(
-            metric=metric.name,
-            type=MetricIntakeType.UNSPECIFIED,
-            points=filtered_metric_points,
-            resources=[
-                MetricResource(
-                    name=get_function_app_name(log_forwarder_id),
-                    type="logforwarder",
-                ),
-            ],
-        )
-
-    def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
-        metric_timestamp = metric_value.timestamp.timestamp()
-        if (datetime.now().timestamp() - metric_timestamp) > 3540:
-            return None
-        if getattr(metric_value, metric_attr, None) is None:
-            return None
-        return MetricPoint(
-            timestamp=int(metric_timestamp),
-            value=getattr(metric_value, metric_attr),
-        )
+    def create_metric_series(self):
+        return None
 
 
 class ScalingTask(Task):
@@ -517,7 +488,7 @@ class ScalingTask(Task):
                 get_config_option("TEST_CONNECTION_STR"), "insights-logs-functionapplogs"
             )
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
-            forwarder_metrics = [
+            forwarder_metrics: list[LogForwarderBlobMetrics] = [
                 metric_list
                 for metric_list in [validate_blob_metric_dict(mlist, oldest_time.timestamp()) for mlist in metric_dicts]
                 if metric_list is not None
