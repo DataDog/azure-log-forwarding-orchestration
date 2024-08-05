@@ -8,10 +8,8 @@ from logging import INFO, WARNING, basicConfig, getLogger
 from sys import argv
 from typing import Any, AsyncIterable, Callable, Coroutine, Iterable, TypeVar
 
-from azure.core.credentials_async import AsyncTokenCredential
-
 # 3p
-# requires `pip install azure-mgmt-resource`
+from azure.core.credentials_async import AsyncTokenCredential
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.resource.resources.aio import ResourceManagementClient
