@@ -322,7 +322,7 @@ class LogForwarderClient(AsyncContextManager):
 
         # because we are controling the order of how metrics are added to LogForwarderBlobMetrics
         # we can utilize this fact to group metrics by metric name
-        combined_metric_list = zip(*[metric["Values"] for metric in metrics])
+        combined_metric_list: zip[list[MetricBlobEntry]] = zip(*[metric["Values"] for metric in metrics])  # type: ignore
         metric_series: list[MetricSeries] = [
             self.create_metric_series(metric_entries, log_forwarder_id) for metric_entries in combined_metric_list
         ]
