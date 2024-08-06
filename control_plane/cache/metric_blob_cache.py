@@ -19,6 +19,7 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
         "runtime": {"type": "number"},
         "resourceLogAmounts": {"type": "object", "additionalProperties": {"type": "number"}},
     },
+    "minProperties": 3,
     "additionalProperties": False,
 }
 
