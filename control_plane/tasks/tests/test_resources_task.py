@@ -1,6 +1,7 @@
 # stdlib
+from collections.abc import AsyncIterable, Callable
 from json import dumps
-from typing import Any, AsyncIterable, Callable, TypeAlias
+from typing import Any, TypeAlias
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 # project

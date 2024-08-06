@@ -1,9 +1,10 @@
 # stdlib
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from logging import ERROR, getLogger
-from typing import Any, AsyncContextManager, Self, TypeVar
+from typing import Any, Self, TypeVar
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
@@ -28,7 +29,8 @@ T = TypeVar("T")
 async def wait_for_resource(
     poller: AsyncLROPoller[T], confirm: Callable[[], Awaitable[Any]], wait_seconds: int = 30
 ) -> T:
-    """Wait for the poller to complete and confirm the resource exists, if the resource does not exist, `confirm` should throw a ResourceNotFoundError"""
+    """Wait for the poller to complete and confirm the resource exists,
+    if the resource does not exist, `confirm` should throw a ResourceNotFoundError"""
     res = await poller.result()
 
     await retry(
@@ -39,7 +41,7 @@ async def wait_for_resource(
     return res
 
 
-class Task(AsyncContextManager, ABC):
+class Task(AbstractAsyncContextManager):
     def __init__(self) -> None:
         self.credential = DefaultAzureCredential()
 
