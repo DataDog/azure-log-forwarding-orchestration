@@ -163,5 +163,4 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        log_forwarder_id = get_function_app_id(sub_id1, "test_lfo", OLD_LOG_FORWARDER_ID)
         self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")

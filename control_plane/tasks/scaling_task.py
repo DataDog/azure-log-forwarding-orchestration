@@ -164,7 +164,7 @@ class ScalingTask(Task):
             ]
             if len(forwarder_metrics) == 0:
                 log.info("No metrics found")
-                return
+                return longest_runtime_entry
             for met in forwarder_metrics:
                 if (longest_runtime_entry is not None and (met["runtime"] > longest_runtime_entry["runtime"])) or (
                     longest_runtime_entry is None
