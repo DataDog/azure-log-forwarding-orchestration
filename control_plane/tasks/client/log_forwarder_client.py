@@ -349,6 +349,6 @@ class LogForwarderClient(AsyncContextManager):
 
     def create_metric_point(self, metric: MetricBlobEntry) -> MetricPoint:
         return MetricPoint(  # type: ignore
-            timestamp=int(metric["Timeststamp"]),
-            value=metric["Runtime"],
+            timestamp=int(metric["timestamp"]),
+            value=metric["runtime"],
         )

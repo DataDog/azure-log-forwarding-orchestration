@@ -7,9 +7,9 @@ from jsonschema import ValidationError, validate
 
 
 class MetricBlobEntry(TypedDict, total=True):
-    Timeststamp: float
-    Runtime: float
-    ResourceLogAmounts: dict[str, int]
+    timestamp: float
+    runtime: float
+    resourceLogAmounts: dict[str, int]
 
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
@@ -28,7 +28,7 @@ def validate_blob_metric_dict(blob_dict_str: str, oldest_legal_time: float) -> M
         blob_dict: MetricBlobEntry = loads(blob_dict_str)
         validate(instance=blob_dict, schema=METRIC_BLOB_SCHEMA)
         # This is validated previously via the schema so this will always be legal
-        if blob_dict["Timeststamp"] < oldest_legal_time:
+        if blob_dict["timestamp"] < oldest_legal_time:
             return None
         return blob_dict
     except (JSONDecodeError, ValidationError):

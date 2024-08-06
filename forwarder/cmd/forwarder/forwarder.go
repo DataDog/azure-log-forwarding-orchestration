@@ -19,9 +19,9 @@ import (
 )
 
 type MetricEntry struct {
-	Timeststamp        int64
-	Runtime            int64
-	ResourceLogAmounts map[string]int32
+	timestamp          int64
+	runtime            int64
+	resourceLogAmounts map[string]int32
 }
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan string) error {
