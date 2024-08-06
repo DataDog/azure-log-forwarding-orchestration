@@ -1,6 +1,7 @@
 # stdlib
 from datetime import timedelta
 from json import dumps
+from os import environ
 from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import UUID
@@ -146,6 +147,7 @@ class TestScalingTask(TaskTestCase):
         self.assertEqual(self.cache, expected_cache)
 
     async def test_log_forwarder_metrics_collected(self):
+        environ["TEST_CONNECTION_STR"] = "test"
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -162,4 +164,4 @@ class TestScalingTask(TaskTestCase):
         )
 
         log_forwarder_id = get_function_app_id(sub_id1, "test_lfo", OLD_LOG_FORWARDER_ID)
-        self.client.get_log_forwarder_metrics.assert_called_once_with(log_forwarder_id)
+        self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")

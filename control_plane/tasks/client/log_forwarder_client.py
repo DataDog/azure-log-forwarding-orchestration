@@ -31,7 +31,6 @@ from azure.mgmt.web.v2023_12_01.models import (
 from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
 from azure.monitor.query.aio import MetricsQueryClient
 from azure.storage.blob.aio import ContainerClient
-from control_plane.cache.metric_blob_cache import LogForwarderBlobMetrics, MetricBlobEntry
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
@@ -51,6 +50,7 @@ from cache.common import (
     get_function_app_name,
     get_storage_account_name,
 )
+from cache.metric_blob_cache import LogForwarderBlobMetrics, MetricBlobEntry
 from tasks.task import wait_for_resource
 
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
