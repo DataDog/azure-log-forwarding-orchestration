@@ -42,7 +42,6 @@ packages = ["tasks", "cache"]
 
 [tool.ruff]
 line-length = 120
-
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle
@@ -52,6 +51,7 @@ select = [
     "SIM", # flake8-simplify
     "I",   # isort
 ]
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
