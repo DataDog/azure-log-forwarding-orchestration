@@ -42,6 +42,7 @@ packages = ["tasks", "cache"]
 
 [tool.ruff]
 line-length = 120
+
 [tool.ruff.lint]
 select = [
     "E",   # pycodestyle
