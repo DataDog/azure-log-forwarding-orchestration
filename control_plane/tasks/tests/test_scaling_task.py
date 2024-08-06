@@ -164,7 +164,7 @@ class TestScalingTask(TaskTestCase):
         self.client.get_log_forwarder_metrics.assert_called_once_with(log_forwarder_id)
 
     async def test_log_forwarders_scale_up_when_underscaled(self):
-        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 29.045})
+        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 29.045})  # type: ignore
 
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
@@ -196,7 +196,7 @@ class TestScalingTask(TaskTestCase):
         self.assertEqual(self.cache, expected_cache)
 
     async def test_log_forwarders_dont_scale_when_not_needed(self):
-        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 22.78})
+        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 22.78})  # type: ignore
 
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
