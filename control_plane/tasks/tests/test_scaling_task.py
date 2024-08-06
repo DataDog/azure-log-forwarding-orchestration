@@ -1,9 +1,9 @@
 # stdlib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from json import dumps
 from os import environ
 from typing import Any, cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, call, patch
 from uuid import UUID
 
 # 3p
@@ -18,6 +18,7 @@ from cache.common import (
 )
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import (
+    METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_TASK_NAME,
     ScalingTask,
 )
@@ -148,6 +149,23 @@ class TestScalingTask(TaskTestCase):
 
     async def test_log_forwarder_metrics_collected(self):
         environ["TEST_CONNECTION_STR"] = "test"
+        current_time = (datetime.now()).timestamp()
+        self.client.get_blob_metrics.return_value = [
+            dumps(
+                {
+                    "timestamp": current_time,
+                    "runtime": 211,
+                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                }
+            ),
+            dumps(
+                {
+                    "timestamp": current_time,
+                    "runtime": 199,
+                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                }
+            ),
+        ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -164,3 +182,67 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")
+        self.assertTrue(call("No metrics found") not in self.log.info.call_args_list)
+
+    async def test_old_log_forwarder_metrics_not_collected(self):
+        environ["TEST_CONNECTION_STR"] = "test"
+        old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
+        self.client.get_blob_metrics.return_value = [
+            dumps(
+                {"timestamp": old_time, "runtime": 211, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}}
+            ),
+            dumps(
+                {"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}}
+            ),
+        ]
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+            resource_group="test_lfo",
+        )
+
+        self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")
+        self.assertTrue(call("No metrics found") in self.log.info.call_args_list)
+
+    async def test_log_forwarder_collected_with_old_metrics(self):
+        environ["TEST_CONNECTION_STR"] = "test"
+        old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
+        current_time = (datetime.now()).timestamp()
+        self.client.get_blob_metrics.return_value = [
+            dumps(
+                {
+                    "timestamp": current_time,
+                    "runtime": 211,
+                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                }
+            ),
+            dumps(
+                {"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}}
+            ),
+        ]
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+            resource_group="test_lfo",
+        )
+
+        self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")
+        self.assertTrue(call("No metrics found") not in self.log.info.call_args_list)

@@ -159,7 +159,9 @@ class ScalingTask(Task):
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics: list[MetricBlobEntry] = [
                 metric_list
-                for metric_list in [validate_blob_metric_dict(mlist, oldest_time.timestamp()) for mlist in metric_dicts]
+                for metric_list in [
+                    validate_blob_metric_dict(metric_entry, oldest_time.timestamp()) for metric_entry in metric_dicts
+                ]
                 if metric_list is not None
             ]
             if len(forwarder_metrics) == 0:
