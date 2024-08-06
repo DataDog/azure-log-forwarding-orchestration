@@ -306,8 +306,10 @@ class LogForwarderClient(AbstractAsyncContextManager):
             return
         metric_series: list[MetricSeries] = [self.create_metric_series(metric, log_forwarder_id) for metric in metrics]  # type: ignore
         if metric_series is None or not all(metric_series):
-            function_app_id = get_function_app_id(sub_id, self.resource_group, log_forwarder_id)
-            log.warn(f"Invalid timestamps for resource: {function_app_id}, Skipping...")
+            log.warn(
+                f"Invalid timestamps for resource: %s, Skipping...",
+                get_function_app_id(sub_id, self.resource_group, log_forwarder_id),
+            )
             return
         body = MetricPayload(
             series=metric_series,
