@@ -28,8 +28,6 @@ from azure.mgmt.web.v2023_12_01.models import (
     SiteConfig,
     SkuDescription,
 )
-from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
-from azure.monitor.query.aio import MetricsQueryClient
 from azure.storage.blob.aio import ContainerClient
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
@@ -94,7 +92,6 @@ class LogForwarderClient(AsyncContextManager):
         self.web_client = WebSiteManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.rest_client = ClientSession()
-        self.monitor_client = MetricsQueryClient(credential)
         self.configuration = Configuration()
         self.configuration.request_timeout = CLIENT_MAX_SECONDS
         self.api_client = AsyncApiClient(self.configuration)
@@ -108,7 +105,6 @@ class LogForwarderClient(AsyncContextManager):
             self.web_client.__aenter__(),
             self.storage_client.__aenter__(),
             self.rest_client.__aenter__(),
-            self.monitor_client.__aenter__(),
             self.api_client.__aenter__(),
         )
         token = await self._credential.get_token("https://management.azure.com/.default")
@@ -122,7 +118,6 @@ class LogForwarderClient(AsyncContextManager):
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
             self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
