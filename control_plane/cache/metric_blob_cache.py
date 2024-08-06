@@ -15,9 +15,9 @@ class MetricBlobEntry(TypedDict, total=True):
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "Timeststamp": {"type": "number"},
-        "Runtime": {"type": "number"},
-        "ResourceLogAmounts": {"type": "object", "additionalProperties": {"type": "number"}},
+        "timestamp": {"type": "number"},
+        "runtime": {"type": "number"},
+        "resourceLogAmounts": {"type": "object", "additionalProperties": {"type": "number"}},
     },
     "additionalProperties": False,
 }
