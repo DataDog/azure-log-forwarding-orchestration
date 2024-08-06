@@ -10,4 +10,4 @@ cd control_plane
 pip install -e '.[dev]'
 
 : run linter
-ruff check --select I
+ruff check

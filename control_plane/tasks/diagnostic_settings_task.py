@@ -140,7 +140,9 @@ class DiagnosticSettingsTask(Task):
         # we assume no resources need to be "cleaned up"
         # because if they aren't in the assignment cache then they have been deleted
         async with MonitorManagementClient(self.credential, sub_id) as client:
-            # client.management_group_diagnostic_settings.list("management_group_id") TODO: do we want to do anything with this?
+            # TODO: do we want to do anything with management group diagnostic settings?
+            # client.management_group_diagnostic_settings.list("management_group_id")
+
             await gather(
                 *(
                     [
