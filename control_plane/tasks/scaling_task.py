@@ -166,8 +166,8 @@ class ScalingTask(Task):
 
             # split resources in half
             assigned_resources = sorted(
-                r
-                for r, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
+                resource_id
+                for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
                 if config_id == underscaled_forwarder
             )
             split_index = len(assigned_resources) // 2
