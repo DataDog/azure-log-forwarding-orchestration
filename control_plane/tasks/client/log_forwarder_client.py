@@ -50,7 +50,7 @@ from cache.common import (
     get_function_app_name,
     get_storage_account_name,
 )
-from cache.metric_blob_cache import LogForwarderBlobMetrics, MetricBlobEntry
+from cache.metric_blob_cache import MetricBlobEntry
 from tasks.task import wait_for_resource
 
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
@@ -316,16 +316,11 @@ class LogForwarderClient(AsyncContextManager):
             return []
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[LogForwarderBlobMetrics]) -> None:
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
         if "DD_API_KEY" not in environ:
             return
 
-        # because we are controling the order of how metrics are added to LogForwarderBlobMetrics
-        # we can utilize this fact to group metrics by metric name
-        combined_metric_list: zip[list[MetricBlobEntry]] = zip(*[metric["Values"] for metric in metrics])  # type: ignore
-        metric_series: list[MetricSeries] = [
-            self.create_metric_series(metric_entries, log_forwarder_id) for metric_entries in combined_metric_list
-        ]
+        metric_series: list[MetricSeries] = [self.create_metric_series(metrics, log_forwarder_id)]
         body = MetricPayload(
             series=metric_series,
         )
@@ -341,7 +336,7 @@ class LogForwarderClient(AsyncContextManager):
     def create_metric_series(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricSeries:
         metric_points: list[MetricPoint] = [self.create_metric_point(metric) for metric in metric_entries]
         return MetricSeries(  # type: ignore
-            metric=metric_entries[0]["Name"],
+            metric="Runtime",
             type=MetricIntakeType.UNSPECIFIED,
             points=metric_points,
             resources=[
@@ -354,6 +349,6 @@ class LogForwarderClient(AsyncContextManager):
 
     def create_metric_point(self, metric: MetricBlobEntry) -> MetricPoint:
         return MetricPoint(  # type: ignore
-            timestamp=int(metric["Time"]),
-            value=metric["Value"],
+            timestamp=int(metric["Timeststamp"]),
+            value=metric["Runtime"],
         )

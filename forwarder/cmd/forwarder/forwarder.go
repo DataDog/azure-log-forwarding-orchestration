@@ -19,13 +19,9 @@ import (
 )
 
 type MetricEntry struct {
-	Name  string
-	Value int64
-	Time  int64
-}
-
-type MetricValues struct {
-	Values []MetricEntry
+	Timeststamp        int64
+	Runtime            int64
+	ResourceLogAmounts map[string]int32
 }
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan string) error {
@@ -168,21 +164,19 @@ func main() {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	timeMetric := MetricEntry{"Timespan", time.Since(start).Milliseconds(), (time.Now()).Unix()}
-	metrics := MetricValues{[]MetricEntry{timeMetric}}
-	metricBuffer, err := json.Marshal(metrics)
+	test_map := make(map[string]int32)
+	test_map["5a095f74c60a"] = 4
+	test_map["93a5885365f5"] = 6
+	//TODO: Remove test_map once we have an actual map
+	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), test_map}
+
+	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	logForwarderId := os.Getenv("ForwarderId")
-	if logForwarderId == "" {
-		logger.Fatalf("error while running: log forwarder id must be set")
-	}
-
 	dateString := GetDateTimeString()
-	//blobName := dateString + "." + logForwarderId
 
 	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", dateString, metricBuffer)
 

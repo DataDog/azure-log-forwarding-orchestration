@@ -24,7 +24,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
-from cache.metric_blob_cache import LogForwarderBlobMetrics, MetricBlobEntry, validate_blob_metric_dict
+from cache.metric_blob_cache import MetricBlobEntry, validate_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import COLLECTED_METRIC_DEFINITIONS, LogForwarderClient
 from tasks.task import Task, now
@@ -37,12 +37,6 @@ METRIC_COLLECTION_PERIOD_MINUTES = 30
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
-
-LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
-"""
-Type alias that represents the result of collecting the log forwarder metrics.
-It is a mapping of log forwarder/config ids to metric names to the max metric value over the timeseries.
-"""
 
 
 class ScalingTask(Task):
@@ -153,39 +147,38 @@ class ScalingTask(Task):
 
     async def collect_forwarder_metrics(
         self, config_id: str, sub_id: str, client: LogForwarderClient
-    ) -> LogForwarderMetrics:
+    ) -> MetricBlobEntry | None:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
         # TODO Figure out how to get actual connection string + container name
         try:
+            longest_runtime_entry: MetricBlobEntry | None = None
             metric_dicts = await client.get_blob_metrics(
                 get_config_option("TEST_CONNECTION_STR"), "insights-logs-functionapplogs"
             )
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
-            forwarder_metrics: list[LogForwarderBlobMetrics] = [
+            forwarder_metrics: list[MetricBlobEntry] = [
                 metric_list
                 for metric_list in [validate_blob_metric_dict(mlist, oldest_time.timestamp()) for mlist in metric_dicts]
                 if metric_list is not None
             ]
             if len(forwarder_metrics) == 0:
                 log.info("No metrics found")
-                return {}
-            max_values: dict[str, float] = {}
+                return
             for met in forwarder_metrics:
-                for metric_entry in met["Values"]:
-                    max_values[metric_entry["Name"]] = max(
-                        max_values.get(metric_entry["Name"], 0), metric_entry["Value"]
-                    )
+                if (longest_runtime_entry is not None and (met["Runtime"] > longest_runtime_entry["Runtime"])) or (
+                    longest_runtime_entry is None
+                ):
+                    longest_runtime_entry = met
             if SHOULD_SUBMIT_METRICS:
                 task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
                 self.background_tasks.add(task)
-            return {config_id: max_values}
+            return longest_runtime_entry
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
-            return {}
         except RetryError:
             log.error("Max retries attempted")
-            return {}
+        return longest_runtime_entry
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
