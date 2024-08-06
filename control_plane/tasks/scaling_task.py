@@ -141,10 +141,7 @@ class ScalingTask(Task):
         log.info("Checking scaling for log forwarders in region %s", region)
         region_configs = self.assignment_cache[subscription_id][region]["configurations"]
         forwarder_metrics = await gather(
-            *(
-                self.collect_forwarder_metrics(config_id, subscription_id, client)
-                for config_id, config_type in region_configs.items()
-            )
+            *(self.collect_forwarder_metrics(config_id, subscription_id, client) for config_id in region_configs)
         )
 
         underscaled_forwarders = [
