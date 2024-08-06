@@ -16,7 +16,6 @@ from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
-    STORAGE_ACCOUNT_TYPE,
     DiagnosticSettingType,
     InvalidCacheError,
     get_config_option,
