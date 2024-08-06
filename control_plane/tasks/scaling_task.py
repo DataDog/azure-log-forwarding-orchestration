@@ -156,9 +156,9 @@ class ScalingTask(Task):
 
         new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarders])
 
-        for underscaled_forwarder, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
+        for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
             if new_forwarder is None:
-                log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder)
+                log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
                 continue
             new_config_id, new_config_type = new_forwarder
             # add new config
@@ -168,13 +168,13 @@ class ScalingTask(Task):
             assigned_resources = sorted(
                 resource_id
                 for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
-                if config_id == underscaled_forwarder
+                if config_id == underscaled_forwarder_id
             )
             split_index = len(assigned_resources) // 2
             self.assignment_cache[subscription_id][region]["resources"].update(
                 {
+                    **{resource: underscaled_forwarder_id for resource in assigned_resources[:split_index]},
                     **{resource: new_config_id for resource in assigned_resources[split_index:]},
-                    **{resource: underscaled_forwarder for resource in assigned_resources[:split_index]},
                 }
             )
 
