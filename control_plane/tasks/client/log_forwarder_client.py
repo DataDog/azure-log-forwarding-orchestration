@@ -1,11 +1,12 @@
 # stdlib
 from asyncio import Lock, gather
 from collections.abc import Awaitable
+from contextlib import AbstractAsyncContextManager
 from datetime import datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import AsyncContextManager, Self, TypeVar
+from typing import Self, TypeVar
 
 # 3p
 from aiohttp import ClientSession
@@ -81,12 +82,12 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
     if (future := state.outcome) and (e := future.exception()):
         if isinstance(e, HttpResponseError):
             return e.status_code is not None and (e.status_code == 429 or e.status_code >= 500)
-        if isinstance(e, RequestTimeout) or isinstance(e, ServiceResponseTimeoutError):
+        if isinstance(e, RequestTimeout | ServiceResponseTimeoutError):
             return True
     return False
 
 
-class LogForwarderClient(AsyncContextManager):
+class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.control_plane_storage_connection_string = get_config_option("AzureWebJobsStorage")
         self._credential = credential
@@ -240,8 +241,14 @@ class LogForwarderClient(AsyncContextManager):
         keys: list[StorageAccountKey] = keys_result.keys  # type: ignore
         if len(keys) == 0:
             raise ValueError("No keys found for storage account")
-        key = keys[0].value
-        return f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key};EndpointSuffix=core.windows.net"
+        key: str = keys[0].value  # type: ignore
+        return (
+            "DefaultEndpointsProtocol=https;AccountName="
+            + storage_account_name
+            + ";AccountKey="
+            + key
+            + ";EndpointSuffix=core.windows.net"
+        )
 
     async def get_blob_forwarder_data(self) -> bytes:
         async with self._blob_forwarder_data_lock:
@@ -299,9 +306,8 @@ class LogForwarderClient(AsyncContextManager):
             return
         metric_series: list[MetricSeries] = [self.create_metric_series(metric, log_forwarder_id) for metric in metrics]  # type: ignore
         if metric_series is None or not all(metric_series):
-            log.warn(
-                f"Invalid timestamps for resource: {get_function_app_id(sub_id, self.resource_group, log_forwarder_id)}\nSkipping..."
-            )
+            function_app_id = get_function_app_id(sub_id, self.resource_group, log_forwarder_id)
+            log.warn(f"Invalid timestamps for resource: {function_app_id}, Skipping...")
             return
         body = MetricPayload(
             series=metric_series,
