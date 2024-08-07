@@ -16,5 +16,4 @@ func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string)
 		return resp.ContainerItems
 	}, make([]*service.ContainerItem, 0))
 	return iter
-
 }
