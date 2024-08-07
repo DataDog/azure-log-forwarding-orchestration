@@ -156,6 +156,7 @@ class ScalingTask(Task):
         underscaled_forwarders = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
+            # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
             if metrics.get("function_execution_time", 0) > SCALE_UP_EXECUTION_SECONDS
         ]
         if not underscaled_forwarders:
