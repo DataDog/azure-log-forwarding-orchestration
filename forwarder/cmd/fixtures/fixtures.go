@@ -42,7 +42,7 @@ func getContainers(ctx context.Context, client storage.Client) ([]string, error)
 
 func getBlobs(ctx context.Context, client storage.Client, container string) ([]string, error) {
 	blobIter := client.ListBlobs(ctx, container)
-	blobs := make([]string, 0)
+	var blobs []string
 	for {
 		blobList, err := blobIter.Next(ctx)
 
