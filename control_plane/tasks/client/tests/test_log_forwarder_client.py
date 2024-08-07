@@ -22,7 +22,7 @@ rg1 = "test_lfo"
 
 class AsyncContextManagerMock(MagicMock):
     async def __aenter__(self):
-        return self.aenter
+        return self
 
     async def __aexit__(self, *args):
         pass
@@ -59,9 +59,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.monitor_client = AsyncMock()
         self.client.api_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
-        self.container_client = self.patch_path(
-            "tasks.client.log_forwarder_client.ContainerClient", new_callable=AsyncContextManagerMock
-        )
+        self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
 
         self.raise_for_status = Mock()
         (await self.client.rest_client.post()).raise_for_status = self.raise_for_status
@@ -201,7 +199,14 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 2, rg1, storage_account_name)
 
     async def test_get_blob_metrics_standard_execution(self):
-        self.container_client.from_connection_string = MagicMock(AsyncContextManagerMock)
+        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
+        container_client.get_blob_client = MagicMock()
+        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
+        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        decoded_str = MagicMock()
+        res_str.decode = decoded_str
+        decoded_str.return_value = "hi\nbye"
+
         async with self.client as client:
             res = await client.get_blob_metrics("test", "test")
-            self.assertEquals(res, ["", ""])
+            self.assertEquals(res, ["hi", "bye", "hi", "bye"])
