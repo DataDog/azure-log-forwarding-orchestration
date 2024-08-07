@@ -40,9 +40,10 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	//see if there is an existing blob
 	//if yes get it read append
 	//if not just write
-	var respErr *azcore.ResponseError
 
 	downloadResponse, downErr := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+
+	var respErr *azcore.ResponseError
 
 	if errors.As(downErr, &respErr) {
 		// Handle Error

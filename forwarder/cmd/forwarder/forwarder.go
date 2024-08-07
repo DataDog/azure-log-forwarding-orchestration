@@ -82,6 +82,9 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 }
 
+// This function provides a standardized name for each blob that we can use to read and write blobs
+// Return type is a string of the current time in the UTC timezone foratted as YYYY-MM-DD-HH
+// Standardized with the forwarder_client class in the control plane
 func GetDateTimeString() (date string) {
 	return time.Now().UTC().Format("2006-01-02-15")
 }
@@ -176,15 +179,9 @@ func main() {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	logForwarderId := os.Getenv("ForwarderId")
-	if logForwarderId == "" {
-		logger.Fatalf("error while running: log forwarder id must be set")
-	}
-
 	dateString := GetDateTimeString()
-	blobName := dateString + "." + logForwarderId
 
-	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", blobName, metricBuffer)
+	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", dateString, metricBuffer)
 
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
