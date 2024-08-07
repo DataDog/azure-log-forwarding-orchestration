@@ -296,10 +296,12 @@ class LogForwarderClient(AbstractAsyncContextManager):
             metrics = []
             current_time: datetime = datetime.now(UTC)
             previous_hour: datetime = current_time - timedelta(hours=1)
+            current_blob_name = f"{self.get_datetime_str(current_time)}.txt"
+            previous_blob_name = f"{self.get_datetime_str(previous_hour)}.txt"
             results = await gather(
                 *[
-                    self.read_blob(container_client, self.get_datetime_str(previous_hour)),
-                    self.read_blob(container_client, self.get_datetime_str(current_time)),
+                    self.read_blob(container_client, previous_blob_name),
+                    self.read_blob(container_client, current_blob_name),
                 ]
             )
             for result in results:
