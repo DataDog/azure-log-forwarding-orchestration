@@ -175,7 +175,7 @@ func main() {
 		dateString := GetDateTimeString()
 		blobName := dateString + ".txt"
 
-		err = client.UploadBlob(ctx, "insights-logs-functionapplogs", blobName, metricBuffer)
+		err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
 
 		if err != nil {
 			logger.Errorf("error while uploading metrics: %v", err)
