@@ -132,3 +132,21 @@ class TestResourcesTask(TaskTestCase):
             }
         )
         self.assertEqual(deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1], {})
+
+    async def test_global_resource_ignored(self):
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
+        )
+        self.resource_client_mapping = {
+            "sub1": Mock(
+                return_value=async_generator(
+                    mock_with_id(id="res1", location="global"), mock_with_id(id="res2", location="region1")
+                )
+            ),
+            "sub2": Mock(return_value=async_generator(mock_with_id(id="res3", location="region2"))),
+        }
+        await self.run_resources_task({})
+        self.assertEqual(
+            deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1],
+            {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}},
+        )

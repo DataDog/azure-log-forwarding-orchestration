@@ -1,7 +1,8 @@
 # stdlib
+from asyncio import create_task, sleep
 from json import dumps
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 # 3p
@@ -162,3 +163,16 @@ class TestScalingTask(TaskTestCase):
 
         log_forwarder_id = get_function_app_id(sub_id1, "test_lfo", OLD_LOG_FORWARDER_ID)
         self.client.get_log_forwarder_metrics.assert_called_once_with(log_forwarder_id)
+
+    async def test_background_tasks_awaited(self):
+        m = Mock()
+
+        async def background_task():
+            await sleep(0.05)
+            m()
+
+        async with ScalingTask(dumps({sub_id1: {}}), dumps({sub_id1: {}}), rg1) as task:
+            task.background_tasks.update(create_task(background_task()) for _ in range(3))
+            await task.run()
+
+        self.assertEqual(m.call_count, 3)

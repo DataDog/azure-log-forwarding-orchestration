@@ -1,3 +1,4 @@
+# stdlib
 from collections.abc import AsyncIterable
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
