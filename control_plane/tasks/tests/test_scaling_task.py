@@ -180,7 +180,7 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, "insights-logs-functionapplogs")
         self.assertTrue(call("No metrics found") not in self.log.info.call_args_list)
 
     async def test_old_log_forwarder_metrics_not_collected(self):
@@ -209,7 +209,7 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, "insights-logs-functionapplogs")
         self.assertTrue(call("No metrics found") in self.log.info.call_args_list)
 
     async def test_log_forwarder_collected_with_old_metrics(self):
@@ -243,5 +243,5 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        self.client.get_blob_metrics.assert_called_once_with("test", "insights-logs-functionapplogs")
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, "insights-logs-functionapplogs")
         self.assertTrue(call("No metrics found") not in self.log.info.call_args_list)
