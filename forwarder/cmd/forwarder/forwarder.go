@@ -161,11 +161,7 @@ func main() {
 
 	client := storage.NewClient(azBlobClient)
 
-	err = Run(ctx, client, logger)
-
-	if err != nil {
-		logger.Fatalf("error while running: %v", err)
-	}
+	runErr := Run(ctx, client, logger)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO: Remove resourceVolumeMap once we have an actual map
@@ -174,19 +170,21 @@ func main() {
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
-		logger.Fatalf("error while running: %v", err)
+		logger.Errorf("error while marshalling metrics: %v", err)
+	} else {
+		dateString := GetDateTimeString()
+		blobName := dateString + ".txt"
+
+		err = client.UploadBlob(ctx, "insights-logs-functionapplogs", blobName, metricBuffer)
+
+		if err != nil {
+			logger.Errorf("error while uploading metrics: %v", err)
+		}
 	}
 
-	dateString := GetDateTimeString()
-
-	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", dateString, metricBuffer)
-
-	if err != nil {
-		logger.Fatalf("error while running: %v", err)
-	}
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
-	if err != nil {
+	if runErr != nil {
 		logger.Fatalf("error while running: %v", err)
 	}
 }
