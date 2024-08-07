@@ -2,7 +2,6 @@
 from os import environ
 from unittest.mock import AsyncMock, MagicMock, Mock
 
-
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from tenacity import RetryError
@@ -53,7 +52,6 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.api_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
-
 
         self.raise_for_status = Mock()
         (await self.client.rest_client.post()).raise_for_status = self.raise_for_status
@@ -199,9 +197,8 @@ class TestLogForwarderClient(AsyncTestCase):
         res_str: AsyncMock = await (await blob_client.download_blob()).readall()
         decoded_str = MagicMock()
         res_str.decode = decoded_str
-        decoded_str.return_value = "hi\nbye"
+        decoded_str.return_value = "hi\nby"
 
         async with self.client as client:
             res = await client.get_blob_metrics("test", "test")
-            self.assertEquals(res, ["hi", "bye", "hi", "bye"])
-
+            self.assertEqual(res, ["hi", "by", "hi", "by"])
