@@ -3,11 +3,18 @@ from os import environ
 from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock
 
 # 3p
+from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
+from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
+from datadog_api_client.v2.model.metric_payload import MetricPayload
+from datadog_api_client.v2.model.metric_point import MetricPoint
+from datadog_api_client.v2.model.metric_resource import MetricResource
+from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError
 
 # project
-from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX
+from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX, get_function_app_name
+from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
 from tasks.tests.common import AsyncTestCase
 
@@ -36,6 +43,7 @@ class MockedLogForwarderClient(LogForwarderClient):
     storage_client: AsyncMock
     monitor_client: AsyncMock
     api_client: AsyncMock
+    api_instance: AsyncMock
 
 
 class TestLogForwarderClient(AsyncTestCase):
@@ -50,6 +58,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client = AsyncMock()
         self.client.monitor_client = AsyncMock()
         self.client.api_client = AsyncMock()
+        self.client.api_instance = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
 
@@ -260,3 +269,172 @@ class TestLogForwarderClient(AsyncTestCase):
             async with self.client as client:
                 await client.get_blob_metrics("test", "test")
                 self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
+
+    async def test_submit_metrics_normal_execution(self):
+        sample_metric_entry_list: list[MetricBlobEntry] = [
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+        ]
+        response_mock = MagicMock()
+        response_mock.get.return_value = []
+        self.client.api_instance.submit_metrics.return_value = response_mock
+        environ["DD_API_KEY"] = "test"
+        sample_body = MetricPayload(
+            series=[
+                MetricSeries(
+                    metric="Runtime",
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=1723040910,
+                            value=280,
+                        ),
+                        MetricPoint(
+                            timestamp=1723040911,
+                            value=281,
+                        ),
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=get_function_app_name("test"),
+                            type="logforwarder",
+                        ),
+                    ],
+                )
+            ],
+        )
+        async with self.client as client:
+            await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
+            self.client.api_instance.submit_metrics.assert_called_once_with(body=sample_body)
+
+    async def test_submit_metrics_no_api_key(self):
+        sample_metric_entry_list: list[MetricBlobEntry] = [
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+        ]
+        if "DD_API_KEY" in environ:
+            del environ["DD_API_KEY"]
+        async with self.client as client:
+            await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
+            self.client.api_instance.submit_metrics.assert_not_called()
+
+    async def test_submit_metrics_retries(self):
+        sample_metric_entry_list: list[MetricBlobEntry] = [
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+        ]
+        response_mock = MagicMock()
+        response_mock.get.return_value = []
+        self.client.api_instance.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
+        self.client.api_instance.submit_metrics.return_value = response_mock
+        environ["DD_API_KEY"] = "test"
+        sample_body = MetricPayload(
+            series=[
+                MetricSeries(
+                    metric="Runtime",
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=1723040910,
+                            value=280,
+                        ),
+                        MetricPoint(
+                            timestamp=1723040911,
+                            value=281,
+                        ),
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=get_function_app_name("test"),
+                            type="logforwarder",
+                        ),
+                    ],
+                )
+            ],
+        )
+        async with self.client as client:
+            await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
+            self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
+            self.assertEqual(self.client.api_instance.submit_metrics.call_count, 3)
+
+    async def test_submit_metrics_max_retries(self):
+        sample_metric_entry_list: list[MetricBlobEntry] = [
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+        ]
+        response_mock = MagicMock()
+        response_mock.get.return_value = []
+        self.client.api_instance.submit_metrics.side_effect = RequestTimeout()
+        self.client.api_instance.submit_metrics.return_value = response_mock
+        environ["DD_API_KEY"] = "test"
+        sample_body = MetricPayload(
+            series=[
+                MetricSeries(
+                    metric="Runtime",
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=1723040910,
+                            value=280,
+                        ),
+                        MetricPoint(
+                            timestamp=1723040911,
+                            value=281,
+                        ),
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=get_function_app_name("test"),
+                            type="logforwarder",
+                        ),
+                    ],
+                )
+            ],
+        )
+        with self.assertRaises(RetryError):
+            async with self.client as client:
+                await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
+                self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
+                self.assertEqual(self.client.api_instance.submit_metrics.call_count, MAX_ATTEMPS)
+                response_mock.get.assert_not_called()
+
+    async def test_submit_metrics_nonretryable_exception(self):
+        sample_metric_entry_list: list[MetricBlobEntry] = [
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+        ]
+        response_mock = MagicMock()
+        response_mock.get.return_value = []
+        self.client.api_instance.submit_metrics.side_effect = FakeHttpError(404)
+        self.client.api_instance.submit_metrics.return_value = response_mock
+        environ["DD_API_KEY"] = "test"
+        sample_body = MetricPayload(
+            series=[
+                MetricSeries(
+                    metric="Runtime",
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=1723040910,
+                            value=280,
+                        ),
+                        MetricPoint(
+                            timestamp=1723040911,
+                            value=281,
+                        ),
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=get_function_app_name("test"),
+                            type="logforwarder",
+                        ),
+                    ],
+                )
+            ],
+        )
+        with self.assertRaises(FakeHttpError):
+            async with self.client as client:
+                await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
+                self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
+                self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
+                response_mock.get.assert_not_called()

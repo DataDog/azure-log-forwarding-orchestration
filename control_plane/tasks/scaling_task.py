@@ -150,11 +150,12 @@ class ScalingTask(Task):
         If there is an error the entry is set to an empty dict"""
         # TODO Figure out how to get actual connection string + container name
         try:
+            forwarder_metrics: list[MetricBlobEntry] | None = None
             metric_dicts = await client.get_blob_metrics(
                 get_config_option("TEST_CONNECTION_STR"), "insights-logs-functionapplogs"
             )
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
-            forwarder_metrics: list[MetricBlobEntry] = [
+            forwarder_metrics = [
                 metric_list
                 for metric_list in [
                     validate_blob_metric_dict(metric_entry, oldest_time.timestamp()) for metric_entry in metric_dicts
@@ -167,10 +168,10 @@ class ScalingTask(Task):
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
-            return None
+            return forwarder_metrics
         except RetryError:
             log.error("Max retries attempted")
-            return None
+            return forwarder_metrics
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
