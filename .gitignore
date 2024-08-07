@@ -65,3 +65,4 @@ __azurite_db*__.json
 # coverage artifact
 ci/*coverage*
 !ci/scripts
+htmlcov
