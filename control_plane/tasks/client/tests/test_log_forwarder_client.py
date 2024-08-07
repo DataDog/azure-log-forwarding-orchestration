@@ -259,4 +259,4 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
                 await client.get_blob_metrics("test", "test")
-                self.assertEqual(blob_client.download_blob.call_count, (3))  # 1 call is from where res_str is set
+                self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
