@@ -56,7 +56,7 @@ class TestScalingTask(TaskTestCase):
         return cache
 
     async def run_scaling_task(
-        self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str
+        self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str = rg1
     ):
         async with ScalingTask(
             dumps(resource_cache_state, default=list), dumps(assignment_cache_state), resource_group
@@ -81,7 +81,6 @@ class TestScalingTask(TaskTestCase):
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={},
-            resource_group="test_lfo",
         )
 
         self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
@@ -108,7 +107,6 @@ class TestScalingTask(TaskTestCase):
                     }
                 },
             },
-            resource_group="test_lfo",
         )
 
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
@@ -128,7 +126,6 @@ class TestScalingTask(TaskTestCase):
                     }
                 },
             },
-            resource_group="test_lfo",
         )
 
         self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID)
@@ -157,7 +154,6 @@ class TestScalingTask(TaskTestCase):
                     }
                 },
             },
-            resource_group="test_lfo",
         )
 
         log_forwarder_id = get_function_app_id(sub_id1, "test_lfo", OLD_LOG_FORWARDER_ID)
@@ -178,7 +174,6 @@ class TestScalingTask(TaskTestCase):
                     }
                 },
             },
-            resource_group="test_lfo",
         )
 
         self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
@@ -210,7 +205,80 @@ class TestScalingTask(TaskTestCase):
                     }
                 },
             },
-            resource_group="test_lfo",
         )
         self.client.create_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_called()
+
+    async def test_new_resources_onboarded_during_scaling(self):
+        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 2.5})  # type: ignore
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        expected_cache: AssignmentCache = {
+            sub_id1: {
+                EAST_US: {
+                    "resources": {
+                        "resource1": OLD_LOG_FORWARDER_ID,
+                        "resource2": OLD_LOG_FORWARDER_ID,
+                        "resource3": OLD_LOG_FORWARDER_ID,
+                        "resource4": OLD_LOG_FORWARDER_ID,
+                    },
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            },
+        }
+        self.assertEqual(self.cache, expected_cache)
+
+    async def test_new_resources_onboard_to_the_least_busy_forwarder(self):
+        ScalingTask.collect_forwarder_metrics = AsyncMock(  # type: ignore
+            side_effect=lambda config_id, *_: {
+                OLD_LOG_FORWARDER_ID: {"function_execution_time": 2.5},
+                NEW_LOG_FORWARDER_ID: {"function_execution_time": 10.5},
+            }[config_id]
+        )
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                            NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        expected_cache: AssignmentCache = {
+            sub_id1: {
+                EAST_US: {
+                    "resources": {
+                        "resource1": OLD_LOG_FORWARDER_ID,
+                        "resource2": NEW_LOG_FORWARDER_ID,
+                        "resource3": OLD_LOG_FORWARDER_ID,
+                        "resource4": OLD_LOG_FORWARDER_ID,
+                    },
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            },
+        }
+        self.assertEqual(self.cache, expected_cache)
