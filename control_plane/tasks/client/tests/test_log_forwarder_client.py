@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, MagicMock, Mock
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -18,6 +18,14 @@ log_forwarder_id = "d6fc2c757f9c"
 log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
+
+
+class AsyncContextManagerMock(MagicMock):
+    async def __aenter__(self):
+        return self.aenter
+
+    async def __aexit__(self, *args):
+        pass
 
 
 class FakeHttpError(HttpResponseError):
@@ -51,7 +59,9 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.monitor_client = AsyncMock()
         self.client.api_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
-        self.container_client = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
+        self.container_client = self.patch_path(
+            "tasks.client.log_forwarder_client.ContainerClient", new_callable=AsyncContextManagerMock
+        )
 
         self.raise_for_status = Mock()
         (await self.client.rest_client.post()).raise_for_status = self.raise_for_status
@@ -189,3 +199,9 @@ class TestLogForwarderClient(AsyncTestCase):
             self.client.web_client.web_apps.delete, 2, rg1, log_forwarder_name, delete_empty_server_farm=True
         )
         self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 2, rg1, storage_account_name)
+
+    async def test_get_blob_metrics_standard_execution(self):
+        self.container_client.from_connection_string = MagicMock(AsyncContextManagerMock)
+        async with self.client as client:
+            res = await client.get_blob_metrics("test", "test")
+            self.assertEquals(res, ["", ""])
