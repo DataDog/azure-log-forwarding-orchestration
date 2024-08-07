@@ -167,9 +167,9 @@ func main() {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	testMap := make(map[string]int32)
-	//TODO: Remove test_map once we have an actual map
-	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), testMap}
+	resourceVolumeMap := make(map[string]int32)
+	//TODO: Remove resourceVolumeMap once we have an actual map
+	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
 
