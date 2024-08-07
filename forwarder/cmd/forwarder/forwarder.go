@@ -19,13 +19,9 @@ import (
 )
 
 type MetricEntry struct {
-	Name  string
-	Value int64
-	Time  int64
-}
-
-type MetricValues struct {
-	Values []MetricEntry
+	Timestamp          int64            `json:"timestamp"`
+	Runtime            int64            `json:"runtime"`
+	ResourceLogAmounts map[string]int32 `json:"resourceLogAmounts"`
 }
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
@@ -171,9 +167,13 @@ func main() {
 		logger.Fatalf("error while running: %v", err)
 	}
 
-	timeMetric := MetricEntry{"Timespan", time.Since(start).Milliseconds(), (time.Now()).Unix()}
-	metrics := MetricValues{[]MetricEntry{timeMetric}}
-	metricBuffer, err := json.Marshal(metrics)
+	testMap := make(map[string]int32)
+	testMap["5a095f74c60a"] = 4
+	testMap["93a5885365f5"] = 6
+	//TODO: Remove test_map once we have an actual map
+	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), testMap}
+
+	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
 		logger.Fatalf("error while running: %v", err)
