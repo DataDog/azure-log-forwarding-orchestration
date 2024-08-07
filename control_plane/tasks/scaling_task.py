@@ -3,10 +3,11 @@ from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
+from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ
-from typing import Any, TypeAlias
+from typing import Any
 from uuid import uuid4
 
 # 3p
@@ -16,16 +17,14 @@ from tenacity import RetryError
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
-    STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
     get_config_option,
-    get_function_app_id,
     read_cache,
     write_cache,
 )
 from cache.metric_blob_cache import MetricBlobEntry, validate_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.client.log_forwarder_client import COLLECTED_METRIC_DEFINITIONS, LogForwarderClient
+from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.task import Task, now
 
 SCALING_TASK_NAME = "scaling_task"
@@ -130,7 +129,7 @@ class ScalingTask(Task):
     ) -> None:
         log.info("Checking scaling for log forwarders in region %s", region)
 
-        await gather(
+        forwarder_metrics = await gather(
             *(
                 self.collect_forwarder_metrics(config_id, subscription_id, client)
                 for config_id, _ in self.assignment_cache[subscription_id][region]["configurations"].items()
