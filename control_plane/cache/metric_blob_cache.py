@@ -19,12 +19,12 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
         "runtime": {"type": "number"},
         "resourceLogAmounts": {"type": "object", "additionalProperties": {"type": "number"}},
     },
-    "minProperties": 3,
+    "required": ["timestamp", "runtime", "resourceLogAmounts"],
     "additionalProperties": False,
 }
 
 
-def validate_blob_metric_dict(blob_dict_str: str, oldest_legal_time: float) -> MetricBlobEntry | None:
+def deserialize_blob_metric_dict(blob_dict_str: str, oldest_legal_time: float) -> MetricBlobEntry | None:
     try:
         blob_dict: MetricBlobEntry = loads(blob_dict_str)
         validate(instance=blob_dict, schema=METRIC_BLOB_SCHEMA)

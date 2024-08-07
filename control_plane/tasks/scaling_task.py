@@ -22,7 +22,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
-from cache.metric_blob_cache import MetricBlobEntry, validate_blob_metric_dict
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.task import Task, now
@@ -146,17 +146,14 @@ class ScalingTask(Task):
     ) -> list[MetricBlobEntry] | None:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
-        # TODO Figure out how to get actual connection string + container name
         try:
             forwarder_metrics: list[MetricBlobEntry] | None = None
-            metric_dicts = await client.get_blob_metrics(
-                get_config_option("TEST_CONNECTION_STR"), "insights-logs-functionapplogs"
-            )
+            metric_dicts = await client.get_blob_metrics(config_id, "insights-logs-functionapplogs")
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
                 metric_list
                 for metric_list in [
-                    validate_blob_metric_dict(metric_entry, oldest_time.timestamp()) for metric_entry in metric_dicts
+                    deserialize_blob_metric_dict(metric_entry, oldest_time.timestamp()) for metric_entry in metric_dicts
                 ]
                 if metric_list is not None
             ]
