@@ -162,3 +162,55 @@ class TestScalingTask(TaskTestCase):
 
         log_forwarder_id = get_function_app_id(sub_id1, "test_lfo", OLD_LOG_FORWARDER_ID)
         self.client.get_log_forwarder_metrics.assert_called_once_with(log_forwarder_id)
+
+    async def test_log_forwarders_scale_up_when_underscaled(self):
+        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 29.045})  # type: ignore
+
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+            resource_group="test_lfo",
+        )
+
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        expected_cache: AssignmentCache = {
+            sub_id1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            }
+        }
+        self.assertEqual(self.cache, expected_cache)
+
+    async def test_log_forwarders_dont_scale_when_not_needed(self):
+        ScalingTask.collect_forwarder_metrics = AsyncMock(return_value={"function_execution_time": 22.78})  # type: ignore
+
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+            resource_group="test_lfo",
+        )
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.write_cache.assert_not_called()
