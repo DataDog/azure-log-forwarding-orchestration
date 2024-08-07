@@ -168,8 +168,6 @@ func main() {
 	}
 
 	testMap := make(map[string]int32)
-	testMap["5a095f74c60a"] = 4
-	testMap["93a5885365f5"] = 6
 	//TODO: Remove test_map once we have an actual map
 	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), testMap}
 
