@@ -76,9 +76,7 @@ class ScalingTask(Task):
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             tasks: list[Coroutine[Any, Any, None]] = []
             tasks.extend(self.set_up_region(client, subscription_id, region) for region in regions_to_add)
-            tasks.extend(
-                self.delete_region_log_forwarders(client, subscription_id, region) for region in regions_to_remove
-            )
+            tasks.extend(self.delete_region(client, subscription_id, region) for region in regions_to_remove)
             tasks.extend(self.scale_region(client, subscription_id, region) for region in regions_to_check_scaling)
 
             await gather(*tasks)
@@ -117,7 +115,7 @@ class ScalingTask(Task):
             "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
         }
 
-    async def delete_region_log_forwarders(
+    async def delete_region(
         self,
         client: LogForwarderClient,
         subscription_id: str,
