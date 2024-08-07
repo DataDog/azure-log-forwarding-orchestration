@@ -80,7 +80,7 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 // This function provides a standardized name for each blob that we can use to read and write blobs
 // Return type is a string of the current time in the UTC timezone foratted as YYYY-MM-DD-HH
-// Standardized with the forwarder_client class in the control plane
+// Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
 func GetDateTimeString() (date string) {
 	return time.Now().UTC().Format("2006-01-02-15")
 }

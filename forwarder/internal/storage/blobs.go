@@ -69,7 +69,7 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 
 	origBuf, readErr := io.ReadAll(downloadResponse.Body)
 	if readErr != nil {
-		return downErr
+		return readErr
 	}
 
 	origBuf = append(origBuf, "\n"...)
