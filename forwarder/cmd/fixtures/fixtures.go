@@ -28,13 +28,11 @@ func getContainers(ctx context.Context, client storage.Client) ([]string, error)
 			return nil, err
 		}
 
-		if containerList != nil {
-			for _, container := range containerList {
-				if container == nil {
-					continue
-				}
-				containers = append(containers, *container.Name)
+		for _, container := range containerList {
+			if container == nil {
+				continue
 			}
+			containers = append(containers, *container.Name)
 		}
 	}
 	return containers, nil
@@ -54,14 +52,13 @@ func getBlobs(ctx context.Context, client storage.Client, container string) ([]s
 			return nil, err
 		}
 
-		if blobList != nil {
-			for _, blob := range blobList {
-				if blob == nil {
-					continue
-				}
-				blobs = append(blobs, *blob.Name)
+		for _, blob := range blobList {
+			if blob == nil {
+				continue
 			}
+			blobs = append(blobs, *blob.Name)
 		}
+
 	}
 	return blobs, nil
 }

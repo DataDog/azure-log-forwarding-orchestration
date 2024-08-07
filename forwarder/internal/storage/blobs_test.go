@@ -39,7 +39,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 
 func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*container.BlobItem, error) {
 	ctrl := gomock.NewController(t)
-	handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse, azblob.ListBlobsFlatResponse{})
+	handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
 
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
@@ -54,20 +54,24 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	it := client.ListBlobs(ctx, containerName)
 
 	var results []*container.BlobItem
-	var v, err = it.Next(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error getting next blob: %v", err)
-	}
-	for ; v != nil; v, err = it.Next(ctx) {
-		if err != nil && err.Error() == iterator.Done.Error() {
+	for {
+		blobList, err := it.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
 			break
 		}
+
 		if err != nil {
-			return nil, fmt.Errorf("error getting next blob: %v", err)
+			return nil, err
 		}
-		for _, blob := range v {
+
+		for _, blob := range blobList {
+			if blob == nil {
+				continue
+			}
 			results = append(results, blob)
 		}
+
 	}
 	return results, nil
 }
