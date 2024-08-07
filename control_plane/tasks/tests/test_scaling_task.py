@@ -2,8 +2,8 @@
 from datetime import datetime, timedelta
 from json import dumps
 from os import environ
-from typing import Any, cast
-from unittest.mock import AsyncMock, call, patch
+from typing import Any
+from unittest.mock import AsyncMock, call
 from uuid import UUID
 
 # 3p
@@ -14,7 +14,6 @@ from cache.common import (
     STORAGE_ACCOUNT_PREFIX,
     STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
-    get_function_app_id,
 )
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import (
