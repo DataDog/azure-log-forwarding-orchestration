@@ -155,7 +155,7 @@ class ScalingTask(Task):
         new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarders])
 
         for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
-            if new_forwarder is None:
+            if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
                 continue
             new_config_id, new_config_type = new_forwarder
