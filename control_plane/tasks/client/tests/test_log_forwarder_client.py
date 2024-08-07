@@ -1,14 +1,14 @@
 # stdlib
 from os import environ
-from unittest.mock import AsyncMock, MagicMock, Mock
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock
 
 # 3p
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
 from tenacity import RetryError
 
 # project
 from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX
-from tasks.client.log_forwarder_client import LogForwarderClient
+from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
 from tasks.tests.common import AsyncTestCase
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
@@ -202,3 +202,55 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             res = await client.get_blob_metrics("test", "test")
             self.assertEqual(res, ["hi", "by", "hi", "by"])
+
+    async def test_get_blob_metrics_missing_blob(self):
+        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
+        container_client.get_blob_client = MagicMock()
+        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
+        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        blob_client.download_blob.side_effect = [ResourceNotFoundError(), DEFAULT]
+        decoded_str = MagicMock()
+        res_str.decode = decoded_str
+        decoded_str.return_value = "hi\nby"
+
+        async with self.client as client:
+            res = await client.get_blob_metrics("test", "test")
+            self.assertEqual(res, ["hi", "by"])
+
+    async def test_get_blob_timeout_retries(self):
+        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
+        container_client.get_blob_client = MagicMock()
+        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
+        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        blob_client.download_blob.side_effect = [
+            DEFAULT,
+            ServiceResponseTimeoutError("oops"),
+            ServiceResponseTimeoutError("oops"),
+            ServiceResponseTimeoutError("oops"),
+            DEFAULT,
+        ]
+        decoded_str = MagicMock()
+        res_str.decode = decoded_str
+        decoded_str.return_value = "hi\nby"
+
+        async with self.client as client:
+            res = await client.get_blob_metrics("test", "test")
+            self.assertEqual(res, ["hi", "by", "hi", "by"])
+            self.assertEqual(blob_client.download_blob.call_count, 6)  # 1 call is from where res_str is set
+
+    async def test_get_blob_max_retries(self):
+        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
+        container_client.get_blob_client = MagicMock()
+        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
+        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        blob_client.download_blob.side_effect = ServiceResponseTimeoutError("oops")
+        decoded_str = MagicMock()
+        res_str.decode = decoded_str
+        decoded_str.return_value = "hi\nby"
+
+        with self.assertRaises(RetryError):
+            async with self.client as client:
+                await client.get_blob_metrics("test", "test")
+                self.assertEqual(
+                    blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
+                )  # 1 call is from where res_str is set
