@@ -41,6 +41,10 @@ class TestResourcesTask(TaskTestCase):
         async with ResourcesTask(dumps(cache, default=list)) as task:
             await task.run()
 
+    @property
+    def cache(self) -> ResourceCache:
+        return self.cache_value(RESOURCE_CACHE_BLOB, deserialize_resource_cache)
+
     async def test_invalid_cache(self):
         self.sub_client.subscriptions.list = Mock(
             return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
@@ -58,10 +62,7 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertEqual(
-            deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1],
-            {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}},
-        )
+        self.assertEqual(self.cache, {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}})
 
     async def test_empty_cache_adds_resources(self):
         self.sub_client.subscriptions.list = Mock(
@@ -80,10 +81,7 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertEqual(
-            deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1],
-            {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}},
-        )
+        self.assertEqual(self.cache, {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}})
 
     async def test_no_new_resources_doesnt_cache(self):
         self.sub_client.subscriptions.list = Mock(
@@ -120,7 +118,7 @@ class TestResourcesTask(TaskTestCase):
                 "sub2": {"region1": {"res3"}},
             }
         )
-        self.assertEqual(deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1], {"sub1": {}, "sub2": {}})
+        self.assertEqual(self.cache, {"sub1": {}, "sub2": {}})
 
     async def test_subscriptions_gone(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator())
@@ -131,7 +129,7 @@ class TestResourcesTask(TaskTestCase):
                 "sub2": {"region2": {"res3"}},
             }
         )
-        self.assertEqual(deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1], {})
+        self.assertEqual(self.cache, {})
 
     async def test_global_resource_ignored(self):
         self.sub_client.subscriptions.list = Mock(
@@ -146,7 +144,4 @@ class TestResourcesTask(TaskTestCase):
             "sub2": Mock(return_value=async_generator(mock_with_id(id="res3", location="region2"))),
         }
         await self.run_resources_task({})
-        self.assertEqual(
-            deserialize_resource_cache(self.cache_value(RESOURCE_CACHE_BLOB))[1],
-            {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}},
-        )
+        self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}})

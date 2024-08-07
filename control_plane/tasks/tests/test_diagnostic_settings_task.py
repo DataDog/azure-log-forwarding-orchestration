@@ -61,11 +61,7 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
 
     @property
     def cache(self) -> DiagnosticSettingsCache:
-        success, cache = deserialize_diagnostic_settings_cache(self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB))
-        if not success:  # pragma: no cover
-            # should never happen when tests pass, but it provides a useful error message if they don't
-            raise InvalidCacheError("Diagnostic Settings Cache is in an invalid format after the task")
-        return cache
+        return self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB, deserialize_diagnostic_settings_cache)
 
     async def test_task_adds_missing_settings(self):
         self.list_diagnostic_settings.return_value = async_generator()

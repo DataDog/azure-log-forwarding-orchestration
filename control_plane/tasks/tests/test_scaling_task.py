@@ -7,7 +7,11 @@ from uuid import UUID
 
 # 3p
 # project
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
+from cache.assignment_cache import (
+    ASSIGNMENT_CACHE_BLOB,
+    AssignmentCache,
+    deserialize_assignment_cache,
+)
 from cache.common import (
     FUNCTION_APP_PREFIX,
     STORAGE_ACCOUNT_PREFIX,
@@ -51,10 +55,8 @@ class TestScalingTask(TaskTestCase):
         self.uuid.return_value = UUID(NEW_UUID)
 
     @property
-    def cache(self):
-        success, cache = deserialize_assignment_cache(self.cache_value(ASSIGNMENT_CACHE_BLOB))
-        self.assertTrue(success)
-        return cache
+    def cache(self) -> AssignmentCache:
+        return self.cache_value(ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache)
 
     async def run_scaling_task(
         self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str

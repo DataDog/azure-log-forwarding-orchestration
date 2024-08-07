@@ -1,8 +1,10 @@
 # stdlib
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Callable
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, call, patch
+
+from cache.common import InvalidCacheError
 
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
@@ -16,6 +18,9 @@ class AsyncTestCase(IsolatedAsyncioTestCase):
         self.assertEqual([call(*args, **kwargs)] * times, mock.await_args_list)
 
 
+T = TypeVar("T")
+
+
 class TaskTestCase(AsyncTestCase):
     TASK_NAME: str = NotImplemented
 
@@ -27,12 +32,14 @@ class TaskTestCase(AsyncTestCase):
         self.credential.side_effect = AsyncMock
         self.write_cache: AsyncMock = self.patch("write_cache")
 
-    def cache_value(self, cache_name: str) -> str:
+    def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], tuple[bool, T]]) -> T:
         self.write_cache.assert_called_with(cache_name, ANY)
-        return self.write_cache.call_args_list[-1][0][1]
-
-
-T = TypeVar("T")
+        raw_cache = self.write_cache.call_args_list[-1][0][1]
+        success, cache = deserialize_cache(raw_cache)
+        if not success:  # pragma: no cover
+            # should never happen when tests pass, but it provides a useful error message if they don't
+            raise InvalidCacheError("Diagnostic Settings Cache is in an invalid format after the task")
+        return cache
 
 
 async def async_generator(*items: T) -> AsyncIterable[T]:
