@@ -31,7 +31,7 @@ SCALING_TASK_NAME = "scaling_task"
 
 SHOULD_SUBMIT_METRICS = environ.get("SHOULD_SUBMIT_METRICS", False)
 METRIC_COLLECTION_PERIOD_MINUTES = 30
-CONTAINER_NAME = "insights-logs-functionapplogs"
+FORWARDER_METRIC_CONTAINER_NAME = "insights-logs-functionapplogs"
 
 
 log = getLogger(SCALING_TASK_NAME)
@@ -149,7 +149,7 @@ class ScalingTask(Task):
         If there is an error the entry is set to an empty dict"""
         try:
             forwarder_metrics: list[MetricBlobEntry] | None = None
-            metric_dicts = await client.get_blob_metrics(config_id, CONTAINER_NAME)
+            metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
                 metric_list
