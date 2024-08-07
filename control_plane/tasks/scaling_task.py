@@ -1,6 +1,6 @@
 # stdlib
 from asyncio import Task as AsyncTask
-from asyncio import gather, run, wait
+from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -139,8 +139,6 @@ class ScalingTask(Task):
         for fmetric in forwarder_metrics:
             log.info(fmetric)
 
-        await gather(*(self.background_tasks))
-
         # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
 
     async def collect_forwarder_metrics(
@@ -165,6 +163,10 @@ class ScalingTask(Task):
             if len(forwarder_metrics) == 0:
                 log.info("No metrics found")
                 return None
+            if SHOULD_SUBMIT_METRICS:
+                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+                self.background_tasks.add(task)
+                task.add_done_callback(self.background_tasks.discard)
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
