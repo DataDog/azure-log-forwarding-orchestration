@@ -63,4 +63,6 @@ __queuestorage__
 __azurite_db*__.json
 
 # coverage artifact
-ci/coverage.txt
+ci/*coverage*
+!ci/scripts
+htmlcov

@@ -34,7 +34,7 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 
 func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*service.ContainerItem, error) {
 	ctrl := gomock.NewController(t)
-	handler := newPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse, azblob.ListContainersResponse{})
+	handler := newPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
 
 	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
 
