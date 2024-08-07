@@ -76,7 +76,7 @@ class ScalingTask(Task):
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             await gather(
                 *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),
-                *(self.delete_region_log_forwarders(client, subscription_id, region) for region in regions_to_remove),
+                *(self.delete_region(client, subscription_id, region) for region in regions_to_remove),
                 *(self.scale_region(client, subscription_id, region) for region in regions_to_check_scaling),
             )
 
@@ -118,7 +118,7 @@ class ScalingTask(Task):
             "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
         }
 
-    async def delete_region_log_forwarders(
+    async def delete_region(
         self,
         client: LogForwarderClient,
         subscription_id: str,
@@ -166,7 +166,7 @@ class ScalingTask(Task):
         new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarders])
 
         for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
-            if new_forwarder is None:
+            if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
                 continue
             self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, *new_forwarder)

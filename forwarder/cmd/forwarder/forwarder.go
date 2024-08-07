@@ -17,32 +17,20 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
-	defer span.Finish(tracer.WithError(err))
-	eg, ctx := errgroup.WithContext(context.Background())
-
-	containerNameCh := make(chan string, 1000)
-
-	eg.Go(func() error {
-		for container := range containerNameCh {
-			logger.Info(fmt.Sprintf("Container: %s", container))
-		}
-		return nil
-	})
-
+func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
+	// Get the containers from the storage account
+	defer close(containerNameCh)
 	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 
 	for {
 		containerList, err := iter.Next(ctx)
 
 		if errors.Is(err, iterator.Done) {
-			err = nil
-			break
+			return nil
 		}
 
 		if err != nil {
-			break
+			return err
 		}
 
 		if containerList != nil {
@@ -54,7 +42,65 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 			}
 		}
 	}
-	close(containerNameCh)
+}
+
+func getBlobs(ctx context.Context, client storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
+	// Get the blobs from the container
+	iter := client.ListBlobs(ctx, containerName)
+
+	for {
+		blobList, err := iter.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
+			return nil
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if blobList != nil {
+			for _, blob := range blobList {
+				if blob == nil {
+					continue
+				}
+				blobChannel <- storage.Blob{Name: *blob.Name, Container: containerName}
+			}
+		}
+	}
+
+}
+
+func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
+	defer span.Finish(tracer.WithError(err))
+	eg, ctx := errgroup.WithContext(context.Background())
+
+	blobChannel := make(chan storage.Blob, 1000)
+
+	eg.Go(func() error {
+		for blob := range blobChannel {
+			logger.Info(fmt.Sprintf("Blob: %s Container: %s", blob.Name, blob.Container))
+		}
+		return nil
+	})
+
+	containerNameCh := make(chan string, 1000)
+
+	eg.Go(func() error {
+		defer close(blobChannel)
+		var err error
+		for container := range containerNameCh {
+			curErr := getBlobs(ctx, client, container, blobChannel)
+			if curErr != nil {
+				err = errors.Join(err, curErr)
+			}
+		}
+
+		return err
+	})
+
+	err = getContainers(ctx, client, containerNameCh)
 
 	err = errors.Join(err, eg.Wait())
 	if err != nil {

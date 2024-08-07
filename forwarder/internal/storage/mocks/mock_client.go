@@ -40,6 +40,20 @@ func (m *MockAzureBlobClient) EXPECT() *MockAzureBlobClientMockRecorder {
 	return m.recorder
 }
 
+// NewListBlobsFlatPager mocks base method.
+func (m *MockAzureBlobClient) NewListBlobsFlatPager(containerName string, o *azblob.ListBlobsFlatOptions) *runtime.Pager[azblob.ListBlobsFlatResponse] {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewListBlobsFlatPager", containerName, o)
+	ret0, _ := ret[0].(*runtime.Pager[azblob.ListBlobsFlatResponse])
+	return ret0
+}
+
+// NewListBlobsFlatPager indicates an expected call of NewListBlobsFlatPager.
+func (mr *MockAzureBlobClientMockRecorder) NewListBlobsFlatPager(containerName, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewListBlobsFlatPager", reflect.TypeOf((*MockAzureBlobClient)(nil).NewListBlobsFlatPager), containerName, o)
+}
+
 // NewListContainersPager mocks base method.
 func (m *MockAzureBlobClient) NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse] {
 	m.ctrl.T.Helper()
