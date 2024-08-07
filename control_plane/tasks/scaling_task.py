@@ -1,6 +1,6 @@
 # stdlib
 from asyncio import Task as AsyncTask
-from asyncio import create_task, gather, run, wait
+from asyncio import gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
@@ -145,12 +145,11 @@ class ScalingTask(Task):
 
     async def collect_forwarder_metrics(
         self, config_id: str, sub_id: str, client: LogForwarderClient
-    ) -> MetricBlobEntry | None:
+    ) -> list[MetricBlobEntry] | None:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
         # TODO Figure out how to get actual connection string + container name
         try:
-            longest_runtime_entry: MetricBlobEntry | None = None
             metric_dicts = await client.get_blob_metrics(
                 get_config_option("TEST_CONNECTION_STR"), "insights-logs-functionapplogs"
             )
@@ -164,21 +163,14 @@ class ScalingTask(Task):
             ]
             if len(forwarder_metrics) == 0:
                 log.info("No metrics found")
-                return longest_runtime_entry
-            for met in forwarder_metrics:
-                if (longest_runtime_entry is not None and (met["runtime"] > longest_runtime_entry["runtime"])) or (
-                    longest_runtime_entry is None
-                ):
-                    longest_runtime_entry = met
-            if SHOULD_SUBMIT_METRICS:
-                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
-                self.background_tasks.add(task)
-            return longest_runtime_entry
+                return None
+            return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
+            return None
         except RetryError:
             log.error("Max retries attempted")
-        return longest_runtime_entry
+            return None
 
     def update_assignments(self, sub_id: str) -> None:
         for region, region_config in self.assignment_cache[sub_id].items():
