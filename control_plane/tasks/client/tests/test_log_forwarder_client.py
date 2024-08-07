@@ -169,16 +169,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 5, rg1, storage_account_name)
 
     async def test_delete_log_forwarder_doesnt_retry_after_second_unretryable(self):
-        web_call_count = 0
-
-        def web_side_effect(*args, **kwargs):
-            nonlocal web_call_count
-            web_call_count += 1
-            if web_call_count < 2:
-                raise FakeHttpError(429)
-            raise FakeHttpError(400)
-
-        self.client.web_client.web_apps.delete.side_effect = web_side_effect
+        self.client.web_client.web_apps.delete.side_effect = [FakeHttpError(429), FakeHttpError(400)]
         self.client.storage_client.storage_accounts.delete.side_effect = ResourceNotFoundError()
 
         with self.assertRaises(FakeHttpError) as ctx:
@@ -254,3 +245,18 @@ class TestLogForwarderClient(AsyncTestCase):
                 self.assertEqual(
                     blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
                 )  # 1 call is from where res_str is set
+
+    async def test_get_blob_unretryable_exception(self):
+        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
+        container_client.get_blob_client = MagicMock()
+        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
+        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        blob_client.download_blob.side_effect = FakeHttpError(402)
+        decoded_str = MagicMock()
+        res_str.decode = decoded_str
+        decoded_str.return_value = "hi\nby"
+
+        with self.assertRaises(FakeHttpError):
+            async with self.client as client:
+                await client.get_blob_metrics("test", "test")
+                self.assertEqual(blob_client.download_blob.call_count, (3))  # 1 call is from where res_str is set
