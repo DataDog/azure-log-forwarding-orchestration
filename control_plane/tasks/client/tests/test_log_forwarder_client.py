@@ -2,6 +2,7 @@
 from os import environ
 from unittest.mock import AsyncMock, MagicMock, Mock
 
+
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from tenacity import RetryError
@@ -18,14 +19,6 @@ log_forwarder_id = "d6fc2c757f9c"
 log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
-
-
-class AsyncContextManagerMock(MagicMock):
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        pass
 
 
 class FakeHttpError(HttpResponseError):
@@ -60,6 +53,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.api_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
+
 
         self.raise_for_status = Mock()
         (await self.client.rest_client.post()).raise_for_status = self.raise_for_status
@@ -210,3 +204,4 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             res = await client.get_blob_metrics("test", "test")
             self.assertEquals(res, ["hi", "bye", "hi", "bye"])
+

@@ -3,7 +3,6 @@ from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
-from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ
@@ -131,10 +130,10 @@ class ScalingTask(Task):
     ) -> None:
         log.info("Checking scaling for log forwarders in region %s", region)
 
-        forwarder_metrics = await gather(
+        await gather(
             *(
                 self.collect_forwarder_metrics(config_id, subscription_id, client)
-                for config_id, config_type in self.assignment_cache[subscription_id][region]["configurations"].items()
+                for config_id, _ in self.assignment_cache[subscription_id][region]["configurations"].items()
             )
         )
 
