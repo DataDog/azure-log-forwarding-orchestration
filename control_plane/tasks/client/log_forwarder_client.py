@@ -29,7 +29,6 @@ from azure.mgmt.web.v2023_12_01.models import (
     SiteConfig,
     SkuDescription,
 )
-
 from azure.storage.blob.aio import ContainerClient
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
@@ -46,7 +45,6 @@ from cache.common import (
     DiagnosticSettingType,
     get_app_service_plan_name,
     get_config_option,
-    get_function_app_id,
     get_function_app_name,
     get_storage_account_name,
 )
