@@ -170,16 +170,16 @@ func main() {
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
-		logger.Errorf("error while marshalling metrics: %v", err)
-	} else {
-		dateString := GetDateTimeString()
-		blobName := dateString + ".txt"
+		logger.Fatalf("error while marshalling metrics: %v", err)
+	}
 
-		err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
+	dateString := GetDateTimeString()
+	blobName := dateString + ".txt"
 
-		if err != nil {
-			logger.Errorf("error while uploading metrics: %v", err)
-		}
+	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
+
+	if err != nil {
+		logger.Errorf("error while uploading metrics: %v", err)
 	}
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
