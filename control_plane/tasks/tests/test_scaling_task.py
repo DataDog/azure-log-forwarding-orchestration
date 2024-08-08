@@ -7,8 +7,6 @@ from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
 
 # 3p
-import pytest
-
 # project
 from cache.assignment_cache import (
     ASSIGNMENT_CACHE_BLOB,
@@ -187,7 +185,10 @@ class TestScalingTask(TaskTestCase):
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = {"function_execution_time": 29.045}
+        collect_forwarder_metrics.return_value = [
+            {"runtime": 29.045 - (i * 0.2), "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp()}
+            for i in range(60)
+        ]
 
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
@@ -253,10 +254,10 @@ class TestScalingTask(TaskTestCase):
         )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    @pytest.mark.skip("AZINTS-2684")
     async def test_log_forwarders_dont_scale_when_not_needed(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = {"function_execution_time": 22.78}
-
+        collect_forwarder_metrics.return_value = [
+            {"runtime": 22.2, "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp()} for i in range(60)
+        ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -270,14 +271,14 @@ class TestScalingTask(TaskTestCase):
                 },
             },
         )
-        # TODO[AZINTS-2684]: Fix test as create_log_forwarder is awaited
         self.client.create_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_called()
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    @pytest.mark.skip("AZINTS-2684")
     async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = {"function_execution_time": 2.5}
+        collect_forwarder_metrics.return_value = [
+            {"runtime": 23, "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp()} for i in range(60)
+        ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
@@ -292,7 +293,6 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        # TODO[AZINTS-2684]: Fix test as create_log_forwarder is awaited
         self.client.create_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
             sub_id1: {
@@ -309,16 +309,21 @@ class TestScalingTask(TaskTestCase):
                 }
             },
         }
-        # TODO[AZINTS-2684]: Fix test as self.cache is invalid
         self.assertEqual(self.cache, expected_cache)
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    @pytest.mark.skip("AZINTS-2684")
     async def test_new_resources_onboard_to_the_least_busy_forwarder(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.side_effect = lambda config_id, *_: {
-            OLD_LOG_FORWARDER_ID: {"function_execution_time": 2.5},
-            NEW_LOG_FORWARDER_ID: {"function_execution_time": 10.5},
-        }[config_id]
+        forwarder_runtimes = {
+            OLD_LOG_FORWARDER_ID: 2.5,
+            NEW_LOG_FORWARDER_ID: 10.5,
+        }
+        collect_forwarder_metrics.side_effect = lambda _client, config_id, _old_ts: [
+            {
+                "runtime": forwarder_runtimes[config_id],
+                "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
+            }
+            for i in range(60)
+        ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
@@ -350,7 +355,6 @@ class TestScalingTask(TaskTestCase):
                 }
             },
         }
-        # TODO[AZINTS-2684]: Fix test as self.cache is invalid
         self.assertEqual(self.cache, expected_cache)
 
     async def test_old_log_forwarder_metrics_not_collected(self):
