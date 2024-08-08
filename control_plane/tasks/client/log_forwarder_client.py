@@ -49,7 +49,7 @@ from cache.common import (
     get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from tasks.task import wait_for_resource
+from tasks.common import wait_for_resource
 
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
