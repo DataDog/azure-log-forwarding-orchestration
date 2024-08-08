@@ -29,6 +29,7 @@ from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.task import Task, now
 
 SCALING_TASK_NAME = "scaling_task"
+SCALING_TASK_PERIOD_MINUTES = 5
 
 SHOULD_SUBMIT_METRICS = environ.get("SHOULD_SUBMIT_METRICS", False)
 METRIC_COLLECTION_PERIOD_MINUTES = 30
@@ -39,6 +40,14 @@ SCALE_DOWN_EXECUTION_SECONDS = 3
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
+
+
+def is_over_threshold(metrics: list[MetricBlobEntry], threshold: float, duration: timedelta) -> bool:
+    return False  # TODO (AZINTS-2684) implement proper threshold checking
+
+
+def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, duration: timedelta) -> bool:
+    return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
 class ScalingTask(Task):
@@ -161,23 +170,24 @@ class ScalingTask(Task):
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
-        underscaled_forwarders = [
+        forwarders_to_scale_up = [
             config_id
-            for config_id, _ in forwarder_metrics.items()
-            if True  # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
+            for config_id, metrics in forwarder_metrics.items()
+            if is_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, timedelta(minutes=SCALING_TASK_PERIOD_MINUTES))
         ]
-        if not underscaled_forwarders:
+        if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
             # if we don't scale up and are good to scale down
             return
 
-        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarders])
+        # create a second forwarder for each forwarder that needs to scale up
+        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
 
-        for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
+        for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
             if not new_forwarder:
-                log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
+                log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
                 continue
-            self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, *new_forwarder)
+            self.split_forwarder_resources(subscription_id, region, overwhelmed_forwarder_id, *new_forwarder)
 
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
