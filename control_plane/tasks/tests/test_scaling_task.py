@@ -178,7 +178,9 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
-        self.assertTrue(call("No metrics found") not in self.log.info.call_args_list)
+        self.assertTrue(
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.info.call_args_list
+        )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
@@ -227,6 +229,25 @@ class TestScalingTask(TaskTestCase):
                 {"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}}
             ),
         ]
+
+        await self.run_scaling_task(
+            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                sub_id1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
+        self.assertTrue(
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.info.call_args_list
+        )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     @pytest.mark.skip("AZINTS-2684")
@@ -359,4 +380,6 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
-        self.assertTrue(call("No metrics found") in self.log.info.call_args_list)
+        self.assertTrue(
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) in self.log.info.call_args_list
+        )

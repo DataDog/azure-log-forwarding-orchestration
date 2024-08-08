@@ -222,6 +222,9 @@ class TestLogForwarderClient(AsyncTestCase):
         container_client.get_blob_client = MagicMock()
         blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
         res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        # These side effects will allow the first call to download blob to succeed
+        # The second call will fail with a timeout error
+        # The method will retry three times until it succeeds
         blob_client.download_blob.side_effect = [
             DEFAULT,
             ServiceResponseTimeoutError("oops"),
@@ -248,12 +251,13 @@ class TestLogForwarderClient(AsyncTestCase):
         res_str.decode = decoded_str
         decoded_str.return_value = "hi\nby"
 
-        with self.assertRaises(RetryError):
+        with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
                 await client.get_blob_metrics("test", "test")
                 self.assertEqual(
                     blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
                 )  # 1 call is from where res_str is set
+        self.assertIsInstance(ctx.exception.last_attempt.exception(), ServiceResponseTimeoutError)
 
     async def test_get_blob_unretryable_exception(self):
         container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
@@ -391,12 +395,14 @@ class TestLogForwarderClient(AsyncTestCase):
                 )
             ],
         )
-        with self.assertRaises(RetryError):
+        with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
                 self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
                 self.assertEqual(self.client.api_instance.submit_metrics.call_count, MAX_ATTEMPS)
                 response_mock.get.assert_not_called()
+
+        self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [

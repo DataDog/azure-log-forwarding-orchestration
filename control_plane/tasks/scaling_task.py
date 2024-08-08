@@ -227,14 +227,12 @@ class ScalingTask(Task):
             metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
-                metric_list
-                for metric_list in [
-                    deserialize_blob_metric_dict(metric_entry, oldest_time.timestamp()) for metric_entry in metric_dicts
-                ]
-                if metric_list is not None
+                metric_entry
+                for metric_str in metric_dicts
+                if (metric_entry := deserialize_blob_metric_dict(metric_str, oldest_time.timestamp()))
             ]
             if len(forwarder_metrics) == 0:
-                log.info("No metrics found")
+                log.info("No valid metrics found for forwarder %s", config_id)
                 return None
             if SHOULD_SUBMIT_METRICS:
                 task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
