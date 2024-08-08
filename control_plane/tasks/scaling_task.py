@@ -1,6 +1,7 @@
 # stdlib
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
+from collections.abc import Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
 from json import dumps
@@ -60,6 +61,16 @@ class ScalingTask(Task):
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache
         self.assignment_cache = deepcopy(assignment_cache)
+
+    def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
+        def _done_callback(task: AsyncTask[Any]) -> None:
+            self.background_tasks.discard(task)
+            if e := task.exception():
+                log.error("Background task failed with an exception", exc_info=e)
+
+        task = create_task(coro)
+        self.background_tasks.add(task)
+        task.add_done_callback(_done_callback)
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
@@ -232,9 +243,7 @@ class ScalingTask(Task):
                 log.info("No valid metrics found for forwarder %s", config_id)
                 return None
             if SHOULD_SUBMIT_METRICS:
-                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
-                self.background_tasks.add(task)
-                task.add_done_callback(self.background_tasks.discard)
+                self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
