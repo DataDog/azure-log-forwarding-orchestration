@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, NamedTuple
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
@@ -84,14 +84,31 @@ def get_event_hub_namespace(config_id: str) -> str:
     return EVENT_HUB_NAMESPACE_PREFIX + config_id
 
 
-DiagnosticSettingType = Literal["eventhub", "storageaccount"]
+LogForwarderType = Literal["eventhub", "storageaccount"]
 
-DIAGNOSTIC_SETTING_TYPE_SCHEMA: dict[str, Any] = {
+LOG_FORWARDER_TYPE_SCHEMA: dict[str, Any] = {
     "oneOf": [
         {"const": STORAGE_ACCOUNT_TYPE},
         {"const": EVENT_HUB_TYPE},
     ],
 }
+
+
+class LogForwarder(NamedTuple):
+    config_id: str
+    type: LogForwarderType
+
+    @property
+    def function_app_name(self):
+        return get_function_app_name(self.config_id)
+
+    @property
+    def app_service_plan_name(self):
+        return get_app_service_plan_name(self.config_id)
+
+    @property
+    def storage_account_name(self):
+        return get_storage_account_name(self.config_id)
 
 
 class InvalidCacheError(Exception):
