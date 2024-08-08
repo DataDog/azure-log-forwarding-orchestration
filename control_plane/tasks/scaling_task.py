@@ -26,7 +26,8 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.task import Task, now
+from tasks.common import now
+from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
 

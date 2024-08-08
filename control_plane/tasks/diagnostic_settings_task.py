@@ -34,7 +34,8 @@ from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_CACHE_BLOB,
     deserialize_diagnostic_settings_cache,
 )
-from tasks.task import Task, now
+from tasks.common import now
+from tasks.task import Task
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)

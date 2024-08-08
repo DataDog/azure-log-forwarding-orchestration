@@ -8,7 +8,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.core.polling import AsyncLROPoller
 
 # project
-from tasks.task import now, wait_for_resource
+from tasks.common import now, wait_for_resource
 
 
 class MockPoller(AsyncLROPoller):
