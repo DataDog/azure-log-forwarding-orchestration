@@ -236,7 +236,6 @@ class ScalingTask(Task):
     async def collect_forwarder_metrics(self, config_id: str, client: LogForwarderClient) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
         try:
-            forwarder_metrics: list[MetricBlobEntry] = []
             metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
@@ -251,10 +250,10 @@ class ScalingTask(Task):
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
-            return forwarder_metrics
+            return []
         except RetryError:
             log.error("Max retries attempted")
-            return forwarder_metrics
+            return []
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:
