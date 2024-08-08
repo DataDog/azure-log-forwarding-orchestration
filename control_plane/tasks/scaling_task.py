@@ -1,44 +1,43 @@
 # stdlib
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
-from collections.abc import Coroutine
 from copy import deepcopy
+from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from os import environ
-from typing import Any, TypeAlias
+from typing import Any
 from uuid import uuid4
 
 # 3p
 from azure.core.exceptions import HttpResponseError
-from tenacity import RetryError
+from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
+    DiagnosticSettingType,
     InvalidCacheError,
     get_config_option,
-    get_function_app_id,
     read_cache,
     write_cache,
 )
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.client.log_forwarder_client import COLLECTED_METRIC_DEFINITIONS, LogForwarderClient
+from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.task import Task, now
 
 SCALING_TASK_NAME = "scaling_task"
 
 SHOULD_SUBMIT_METRICS = environ.get("SHOULD_SUBMIT_METRICS", False)
+METRIC_COLLECTION_PERIOD_MINUTES = 30
+FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
+SCALE_UP_EXECUTION_SECONDS = 25
+SCALE_DOWN_EXECUTION_SECONDS = 3
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
-
-LogForwarderMetrics: TypeAlias = dict[str, dict[str, float]]
-"""
-Type alias that represents the result of collecting the log forwarder metrics.
-It is a mapping of log forwarder/config ids to metric names to the max metric value over the timeseries.
-"""
 
 
 class ScalingTask(Task):
@@ -74,48 +73,57 @@ class ScalingTask(Task):
         regions_to_remove = previous_region_assignments - current_regions
         regions_to_check_scaling = current_regions & previous_region_assignments
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
-            tasks: list[Coroutine[Any, Any, None]] = []
-            tasks.extend(self.create_log_forwarder(client, subscription_id, region) for region in regions_to_add)
-            tasks.extend(
-                self.delete_region_log_forwarders(client, subscription_id, region) for region in regions_to_remove
-            )
-            tasks.extend(
-                self.check_region_scaling(client, subscription_id, region) for region in regions_to_check_scaling
+            await gather(
+                *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),
+                *(self.delete_region(client, subscription_id, region) for region in regions_to_remove),
+                *(self.scale_region(client, subscription_id, region) for region in regions_to_check_scaling),
             )
 
-            await gather(*tasks)
-            if len(self.background_tasks) != 0:
+            if self.background_tasks:
                 await wait(self.background_tasks)
 
-        self.update_assignments(subscription_id)
-
+    @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder(
-        self,
-        client: LogForwarderClient,
-        subscription_id: str,
-        region: str,
-    ) -> None:
-        log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
+        self, client: LogForwarderClient, region: str
+    ) -> tuple[str, DiagnosticSettingType] | None:
+        """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
+        Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
         config_id = str(uuid4())[-12:]  # take the last section since we are length limited
         try:
             config_type = await client.create_log_forwarder(region, config_id)
+            return config_id, config_type
         except Exception:
             log.exception("Failed to create log forwarder %s, cleaning up", config_id)
             success = await client.delete_log_forwarder(config_id, raise_error=False)
             if not success:
                 log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
-            return
-        self.assignment_cache.setdefault(subscription_id, {})[region] = {
-            "configurations": {config_id: config_type},
-            "resources": {},
-        }
+            return None
 
-    async def delete_region_log_forwarders(
+    async def set_up_region(
         self,
         client: LogForwarderClient,
         subscription_id: str,
         region: str,
     ) -> None:
+        """Creates a log forwarder for the given subscription and region and assigns resources to it.
+        Only done the first time we discover a new region."""
+        log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
+        result = await self.create_log_forwarder(client, region)
+        if result is None:
+            return
+        config_id, config_type = result
+        self.assignment_cache.setdefault(subscription_id, {})[region] = {
+            "configurations": {config_id: config_type},
+            "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
+        }
+
+    async def delete_region(
+        self,
+        client: LogForwarderClient,
+        subscription_id: str,
+        region: str,
+    ) -> None:
+        """Cleans up a region by deleting all log forwarders for the given subscription and region."""
         log.info("Deleting log forwarder for subscription %s in region %s", subscription_id, region)
         await gather(
             *(
@@ -125,86 +133,118 @@ class ScalingTask(Task):
         )
         del self.assignment_cache[subscription_id][region]
 
-    async def check_region_scaling(
+    async def scale_region(
         self,
         client: LogForwarderClient,
         subscription_id: str,
         region: str,
     ) -> None:
-        log.info("Checking scaling for log forwarders in region %s", region)
+        """Checks the performance/scaling of a region and determines/performs scaling as needed
 
-        await gather(
-            *(
-                self.collect_forwarder_metrics(config_id, subscription_id, client)
-                for config_id, _ in self.assignment_cache[subscription_id][region]["configurations"].items()
-            )
+        Additionally assigns new resources to the least busy forwarder
+        and reassigns resources based on the new scaling"""
+        log.info("Checking scaling for log forwarders in region %s", region)
+        region_configs = self.assignment_cache[subscription_id][region]["configurations"]
+        metrics = await gather(
+            *(self.collect_forwarder_metrics(config_id, subscription_id, client) for config_id in region_configs)
+        )
+        forwarder_metrics = dict(zip(region_configs, metrics, strict=False))
+
+        self.onboard_new_resources(subscription_id, region, forwarder_metrics)
+
+        underscaled_forwarders = [
+            config_id
+            for config_id, _ in forwarder_metrics.items()
+            if True  # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
+        ]
+        if not underscaled_forwarders:
+            # TODO (AZINTS-2389) implement scaling down
+            # if we don't scale up and are good to scale down
+            return
+
+        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarders])
+
+        for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
+            if not new_forwarder:
+                log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
+                continue
+            self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, *new_forwarder)
+
+    def onboard_new_resources(
+        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry] | None]
+    ) -> None:
+        """Assigns new resources to the least busy forwarder in the region"""
+        new_resources = set(self.resource_cache[subscription_id][region]) - set(
+            self.assignment_cache[subscription_id][region]["resources"]
+        )
+        if not new_resources or not forwarder_metrics:
+            return
+
+        # any forwarders without metrics we should not add more resources to, there may be something wrong
+        least_busy_forwarder_id = "TODO"  # TODO (AZINTS-2684) implement proper min scaling based on new metrics
+        # least_busy_forwarder_id, _ = min(
+        #     forwarder_metrics.items(), key=lambda pair: pair[1][0]
+        # )
+
+        self.assignment_cache[subscription_id][region]["resources"].update(
+            {resource: least_busy_forwarder_id for resource in new_resources}
         )
 
-        await gather(*(self.background_tasks))
+    def split_forwarder_resources(
+        self,
+        subscription_id: str,
+        region: str,
+        underscaled_forwarder_id: str,
+        new_config_id: str,
+        new_config_type: DiagnosticSettingType,
+    ) -> None:
+        """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
 
-        # TODO: AZINTS-2388 implement logic to scale the forwarders based on the metrics
+        # add new config
+        self.assignment_cache[subscription_id][region]["configurations"][new_config_id] = new_config_type
+
+        # split resources in half
+        assigned_resources = sorted(
+            resource_id
+            for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
+            if config_id == underscaled_forwarder_id
+        )
+        split_index = len(assigned_resources) // 2
+        self.assignment_cache[subscription_id][region]["resources"].update(
+            {
+                **{resource: underscaled_forwarder_id for resource in assigned_resources[:split_index]},
+                **{resource: new_config_id for resource in assigned_resources[split_index:]},
+            }
+        )
 
     async def collect_forwarder_metrics(
         self, config_id: str, sub_id: str, client: LogForwarderClient
-    ) -> LogForwarderMetrics:
+    ) -> list[MetricBlobEntry] | None:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
-        metric_dict = {}
         try:
-            response = await client.get_log_forwarder_metrics(
-                get_function_app_id(sub_id, self.resource_group, config_id)
-            )
-
-            for metric in response.metrics:
-                log.debug(metric.name)
-                log.debug(metric.unit)
-                min_metric_val = None
-                max_metric_val = None
-                for time_series_element in metric.timeseries:
-                    for metric_value in time_series_element.data:
-                        log.debug(metric_value.timestamp)
-                        log.debug(
-                            f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, '')} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ''), None)}"
-                        )
-                        metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
-                        if metric_val is None:
-                            log.info(metric_value.__dict__)
-                            log.warning(f"{metric.name} is None for log forwarder: {config_id}. Skipping resource...")
-                            return {}
-                        if min_metric_val:
-                            min_metric_val = min(min_metric_val, metric_val)
-                            max_metric_val = max(max_metric_val, metric_val)
-                        else:
-                            min_metric_val, max_metric_val = metric_val, metric_val
-                if max_metric_val is not None:
-                    metric_dict[metric.name] = max_metric_val
+            forwarder_metrics: list[MetricBlobEntry] | None = None
+            metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
+            oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
+            forwarder_metrics = [
+                metric_entry
+                for metric_str in metric_dicts
+                if (metric_entry := deserialize_blob_metric_dict(metric_str, oldest_time.timestamp()))
+            ]
+            if len(forwarder_metrics) == 0:
+                log.info("No valid metrics found for forwarder %s", config_id)
+                return None
             if SHOULD_SUBMIT_METRICS:
-                task = create_task(client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id))
+                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
                 self.background_tasks.add(task)
                 task.add_done_callback(self.background_tasks.discard)
-            return metric_dict
-        except HttpResponseError as err:
-            log.error(err)
-            return {}
+            return forwarder_metrics
+        except HttpResponseError:
+            log.exception("Recieved azure HTTP error: ")
+            return forwarder_metrics
         except RetryError:
             log.error("Max retries attempted")
-            return {}
-
-    def update_assignments(self, sub_id: str) -> None:
-        for region, region_config in self.assignment_cache[sub_id].items():
-            diagnostic_setting_configurations = region_config["configurations"]
-            assert (
-                len(diagnostic_setting_configurations) == 1
-            )  # TODO(AZINTS-2388) right now we only have one config per region
-
-            # just use the one config we have for now
-            config_id = list(diagnostic_setting_configurations.keys())[0]
-
-            resource_assignments = region_config["resources"]
-
-            # update all the resource assignments to use the new config
-            for resource_id in self.resource_cache[sub_id][region]:
-                resource_assignments[resource_id] = config_id
+            return forwarder_metrics
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:

@@ -10,6 +10,7 @@
 package mocks
 
 import (
+	context "context"
 	reflect "reflect"
 
 	runtime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -40,6 +41,34 @@ func (m *MockAzureBlobClient) EXPECT() *MockAzureBlobClientMockRecorder {
 	return m.recorder
 }
 
+// DownloadStream mocks base method.
+func (m *MockAzureBlobClient) DownloadStream(ctx context.Context, containerName, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DownloadStream", ctx, containerName, blobName, o)
+	ret0, _ := ret[0].(azblob.DownloadStreamResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DownloadStream indicates an expected call of DownloadStream.
+func (mr *MockAzureBlobClientMockRecorder) DownloadStream(ctx, containerName, blobName, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DownloadStream", reflect.TypeOf((*MockAzureBlobClient)(nil).DownloadStream), ctx, containerName, blobName, o)
+}
+// NewListBlobsFlatPager mocks base method.
+func (m *MockAzureBlobClient) NewListBlobsFlatPager(containerName string, o *azblob.ListBlobsFlatOptions) *runtime.Pager[azblob.ListBlobsFlatResponse] {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewListBlobsFlatPager", containerName, o)
+	ret0, _ := ret[0].(*runtime.Pager[azblob.ListBlobsFlatResponse])
+	return ret0
+}
+
+// NewListBlobsFlatPager indicates an expected call of NewListBlobsFlatPager.
+func (mr *MockAzureBlobClientMockRecorder) NewListBlobsFlatPager(containerName, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewListBlobsFlatPager", reflect.TypeOf((*MockAzureBlobClient)(nil).NewListBlobsFlatPager), containerName, o)
+}
+
 // NewListContainersPager mocks base method.
 func (m *MockAzureBlobClient) NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse] {
 	m.ctrl.T.Helper()
@@ -52,4 +81,19 @@ func (m *MockAzureBlobClient) NewListContainersPager(o *azblob.ListContainersOpt
 func (mr *MockAzureBlobClientMockRecorder) NewListContainersPager(o any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewListContainersPager", reflect.TypeOf((*MockAzureBlobClient)(nil).NewListContainersPager), o)
+}
+
+// UploadBuffer mocks base method.
+func (m *MockAzureBlobClient) UploadBuffer(ctx context.Context, containerName, blobName string, buffer []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UploadBuffer", ctx, containerName, blobName, buffer, o)
+	ret0, _ := ret[0].(azblob.UploadBufferResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// UploadBuffer indicates an expected call of UploadBuffer.
+func (mr *MockAzureBlobClientMockRecorder) UploadBuffer(ctx, containerName, blobName, buffer, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UploadBuffer", reflect.TypeOf((*MockAzureBlobClient)(nil).UploadBuffer), ctx, containerName, blobName, buffer, o)
 }
