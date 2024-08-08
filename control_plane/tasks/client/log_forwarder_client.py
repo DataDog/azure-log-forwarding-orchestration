@@ -42,7 +42,7 @@ from tenacity import RetryCallState, retry, stop_after_attempt
 # project
 from cache.common import (
     STORAGE_ACCOUNT_TYPE,
-    DiagnosticSettingType,
+    LogForwarderType,
     get_app_service_plan_name,
     get_config_option,
     get_function_app_name,
@@ -121,7 +121,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder(self, region: str, config_id: str) -> DiagnosticSettingType:
+    async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
         app_service_plan_name = get_app_service_plan_name(config_id)
         log.info(

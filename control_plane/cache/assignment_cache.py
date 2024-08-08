@@ -6,13 +6,13 @@ from typing import Any, TypeAlias, TypedDict
 from jsonschema import ValidationError, validate
 
 # project
-from cache.common import DIAGNOSTIC_SETTING_TYPE_SCHEMA, DiagnosticSettingType
+from cache.common import LOG_FORWARDER_TYPE_SCHEMA, LogForwarderType
 
 ASSIGNMENT_CACHE_BLOB = "assignments.json"
 
 
 class RegionAssignmentConfiguration(TypedDict, total=True):
-    configurations: dict[str, DiagnosticSettingType]
+    configurations: dict[str, LogForwarderType]
     "Mapping of config_id to DiagnosticSettingType"
     resources: dict[str, str]
     "Mapping of resource_id to config_id"
@@ -31,7 +31,7 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
             "properties": {  # region config
                 "configurations": {
                     "type": "object",  # config_id
-                    "additionalProperties": DIAGNOSTIC_SETTING_TYPE_SCHEMA,
+                    "additionalProperties": LOG_FORWARDER_TYPE_SCHEMA,
                 },
                 "resources": {
                     "type": "object",  # resource_id

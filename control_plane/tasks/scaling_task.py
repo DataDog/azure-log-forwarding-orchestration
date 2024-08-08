@@ -16,8 +16,8 @@ from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
-    DiagnosticSettingType,
     InvalidCacheError,
+    LogForwarder,
     get_config_option,
     read_cache,
     write_cache,
@@ -83,15 +83,13 @@ class ScalingTask(Task):
                 await wait(self.background_tasks)
 
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
-    async def create_log_forwarder(
-        self, client: LogForwarderClient, region: str
-    ) -> tuple[str, DiagnosticSettingType] | None:
+    async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
         """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
         config_id = str(uuid4())[-12:]  # take the last section since we are length limited
         try:
             config_type = await client.create_log_forwarder(region, config_id)
-            return config_id, config_type
+            return LogForwarder(config_id, config_type)
         except Exception:
             log.exception("Failed to create log forwarder %s, cleaning up", config_id)
             success = await client.delete_log_forwarder(config_id, raise_error=False)
@@ -108,10 +106,10 @@ class ScalingTask(Task):
         """Creates a log forwarder for the given subscription and region and assigns resources to it.
         Only done the first time we discover a new region."""
         log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
-        result = await self.create_log_forwarder(client, region)
-        if result is None:
+        log_forwarder = await self.create_log_forwarder(client, region)
+        if log_forwarder is None:
             return
-        config_id, config_type = result
+        config_id, config_type = log_forwarder
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
             "configurations": {config_id: config_type},
             "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
@@ -144,31 +142,31 @@ class ScalingTask(Task):
         Additionally assigns new resources to the least busy forwarder
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
-        region_configs = self.assignment_cache[subscription_id][region]["configurations"]
+        log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
         metrics = await gather(
-            *(self.collect_forwarder_metrics(config_id, subscription_id, client) for config_id in region_configs)
+            *(self.collect_forwarder_metrics(config_id, subscription_id, client) for config_id in log_forwarders)
         )
-        forwarder_metrics = dict(zip(region_configs, metrics, strict=False))
+        forwarder_metrics = dict(zip(log_forwarders, metrics, strict=False))
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
-        underscaled_forwarders = [
+        underscaled_forwarder_ids = [
             config_id
             for config_id, _ in forwarder_metrics.items()
             if True  # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
         ]
-        if not underscaled_forwarders:
+        if not underscaled_forwarder_ids:
             # TODO (AZINTS-2389) implement scaling down
             # if we don't scale up and are good to scale down
             return
 
-        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarders])
+        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarder_ids])
 
-        for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarders, new_forwarders, strict=False):
+        for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarder_ids, new_forwarders, strict=False):
             if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
                 continue
-            self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, *new_forwarder)
+            self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, new_forwarder)
 
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry] | None]
@@ -195,13 +193,12 @@ class ScalingTask(Task):
         subscription_id: str,
         region: str,
         underscaled_forwarder_id: str,
-        new_config_id: str,
-        new_config_type: DiagnosticSettingType,
+        new_forwarder: LogForwarder,
     ) -> None:
         """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
 
         # add new config
-        self.assignment_cache[subscription_id][region]["configurations"][new_config_id] = new_config_type
+        self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
         # split resources in half
         assigned_resources = sorted(
@@ -213,7 +210,7 @@ class ScalingTask(Task):
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
                 **{resource: underscaled_forwarder_id for resource in assigned_resources[:split_index]},
-                **{resource: new_config_id for resource in assigned_resources[split_index:]},
+                **{resource: new_forwarder.config_id for resource in assigned_resources[split_index:]},
             }
         )
 
