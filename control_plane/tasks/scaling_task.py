@@ -22,7 +22,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
-from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_dict
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.task import Task, now
@@ -226,7 +226,7 @@ class ScalingTask(Task):
             forwarder_metrics = [
                 metric_entry
                 for metric_str in metric_dicts
-                if (metric_entry := deserialize_blob_metric_dict(metric_str, oldest_time.timestamp()))
+                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_time.timestamp()))
             ]
             if len(forwarder_metrics) == 0:
                 log.info("No valid metrics found for forwarder %s", config_id)
