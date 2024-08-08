@@ -179,7 +179,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
         self.assertTrue(
-            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.info.call_args_list
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
@@ -246,7 +246,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
         self.assertTrue(
-            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.info.call_args_list
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
@@ -380,6 +380,4 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
-        self.assertTrue(
-            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) in self.log.info.call_args_list
-        )
+        self.log.warning.assert_called_with("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID)

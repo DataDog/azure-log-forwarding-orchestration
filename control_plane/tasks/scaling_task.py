@@ -1,6 +1,7 @@
 # stdlib
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
+from collections.abc import Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
 from json import dumps
@@ -60,6 +61,16 @@ class ScalingTask(Task):
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache
         self.assignment_cache = deepcopy(assignment_cache)
+
+    def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
+        def _done_callback(task: AsyncTask[Any]) -> None:
+            self.background_tasks.discard(task)
+            if e := task.exception():
+                log.error("Background task failed with an exception", exc_info=e)
+
+        task = create_task(coro)
+        self.background_tasks.add(task)
+        task.add_done_callback(_done_callback)
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
@@ -145,9 +156,7 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         region_configs = self.assignment_cache[subscription_id][region]["configurations"]
-        metrics = await gather(
-            *(self.collect_forwarder_metrics(config_id, subscription_id, client) for config_id in region_configs)
-        )
+        metrics = await gather(*(self.collect_forwarder_metrics(config_id, client) for config_id in region_configs))
         forwarder_metrics = dict(zip(region_configs, metrics, strict=False))
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
@@ -171,7 +180,7 @@ class ScalingTask(Task):
             self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, *new_forwarder)
 
     def onboard_new_resources(
-        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry] | None]
+        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
     ) -> None:
         """Assigns new resources to the least busy forwarder in the region"""
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
@@ -217,13 +226,10 @@ class ScalingTask(Task):
             }
         )
 
-    async def collect_forwarder_metrics(
-        self, config_id: str, sub_id: str, client: LogForwarderClient
-    ) -> list[MetricBlobEntry] | None:
-        """Updates the log_forwarder_metric_cache entry for a log forwarder
-        If there is an error the entry is set to an empty dict"""
+    async def collect_forwarder_metrics(self, config_id: str, client: LogForwarderClient) -> list[MetricBlobEntry]:
+        """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
         try:
-            forwarder_metrics: list[MetricBlobEntry] | None = None
+            forwarder_metrics: list[MetricBlobEntry] = []
             metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
             oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
@@ -231,13 +237,10 @@ class ScalingTask(Task):
                 for metric_str in metric_dicts
                 if (metric_entry := deserialize_blob_metric_dict(metric_str, oldest_time.timestamp()))
             ]
-            if len(forwarder_metrics) == 0:
-                log.info("No valid metrics found for forwarder %s", config_id)
-                return None
+            if not forwarder_metrics:
+                log.warning("No valid metrics found for forwarder %s", config_id)
             if SHOULD_SUBMIT_METRICS:
-                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
-                self.background_tasks.add(task)
-                task.add_done_callback(self.background_tasks.discard)
+                self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
