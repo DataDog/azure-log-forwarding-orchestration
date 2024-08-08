@@ -58,7 +58,6 @@ func getBlobs(ctx context.Context, client storage.Client, container string) ([]s
 			}
 			blobs = append(blobs, *blob.Name)
 		}
-
 	}
 	return blobs, nil
 }

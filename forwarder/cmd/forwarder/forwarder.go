@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
+
+type MetricEntry struct {
+	Timestamp          int64            `json:"timestamp"`
+	Runtime            int64            `json:"runtime"`
+	ResourceLogAmounts map[string]int32 `json:"resourceLogAmounts"`
+}
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
 	// Get the containers from the storage account
@@ -71,6 +78,13 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 }
 
+// This function provides a standardized name for each blob that we can use to read and write blobs
+// Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
+// Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
+func GetDateTimeString() (date string) {
+	return time.Now().UTC().Format("2006-01-02-15")
+}
+
 func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
@@ -96,7 +110,6 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 				err = errors.Join(err, curErr)
 			}
 		}
-
 		return err
 	})
 
@@ -148,7 +161,24 @@ func main() {
 
 	client := storage.NewClient(azBlobClient)
 
-	err = Run(ctx, client, logger)
+	runErr := Run(ctx, client, logger)
+
+	resourceVolumeMap := make(map[string]int32)
+	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
+	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), resourceVolumeMap}
+
+	metricBuffer, err := json.Marshal(metricBlob)
+
+	if err != nil {
+		logger.Fatalf("error while marshalling metrics: %v", err)
+	}
+
+	dateString := GetDateTimeString()
+	blobName := dateString + ".txt"
+
+	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
+
+	err = errors.Join(runErr, err)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

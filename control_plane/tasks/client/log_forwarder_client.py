@@ -2,7 +2,7 @@
 from asyncio import Lock, gather
 from collections.abc import Awaitable
 from contextlib import AbstractAsyncContextManager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
@@ -29,8 +29,6 @@ from azure.mgmt.web.v2023_12_01.models import (
     SiteConfig,
     SkuDescription,
 )
-from azure.monitor.query import Metric, MetricsQueryResult, MetricValue
-from azure.monitor.query.aio import MetricsQueryClient
 from azure.storage.blob.aio import ContainerClient
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
@@ -47,10 +45,10 @@ from cache.common import (
     LogForwarderType,
     get_app_service_plan_name,
     get_config_option,
-    get_function_app_id,
     get_function_app_name,
     get_storage_account_name,
 )
+from cache.metric_blob_cache import MetricBlobEntry
 from tasks.task import wait_for_resource
 
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
@@ -94,7 +92,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
         self.web_client = WebSiteManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.rest_client = ClientSession()
-        self.monitor_client = MetricsQueryClient(credential)
         self.configuration = Configuration()
         self.configuration.request_timeout = CLIENT_MAX_SECONDS
         self.api_client = AsyncApiClient(self.configuration)
@@ -108,7 +105,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self.web_client.__aenter__(),
             self.storage_client.__aenter__(),
             self.rest_client.__aenter__(),
-            self.monitor_client.__aenter__(),
             self.api_client.__aenter__(),
         )
         token = await self._credential.get_token("https://management.azure.com/.default")
@@ -122,7 +118,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.monitor_client.__aexit__(exc_type, exc_val, exc_tb),
             self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
@@ -290,27 +285,47 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 raise
             return False
 
-    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def get_log_forwarder_metrics(self, log_forwarder_id: str) -> MetricsQueryResult:
-        return await self.monitor_client.query_resource(
-            log_forwarder_id,
-            metric_names=list(COLLECTED_METRIC_DEFINITIONS.keys()),
-            timespan=timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES),
-            granularity=timedelta(minutes=METRIC_COLLECTION_GRANULARITY),
-            timeout=CLIENT_MAX_SECONDS,
-        )
+    async def get_blob_metrics(self, config_id: str, container_name: str) -> list[str]:
+        """
+        Returns a list of json decodable strings that represent metrics
+        json string takes form of {'Values': [metric_dict]}
+        metric_dict is as follows {'Name': str, 'Value': float, 'Time': float}
+        Time is a unix timestamp
+        """
+        storage_account_name = get_storage_account_name(config_id)
+        conn_str = await self.get_connection_string(storage_account_name)
+        async with ContainerClient.from_connection_string(conn_str, container_name) as container_client:
+            metrics = []
+            current_time: datetime = datetime.now(UTC)
+            previous_hour: datetime = current_time - timedelta(hours=1)
+            current_blob_name = f"{self.get_datetime_str(current_time)}.txt"
+            previous_blob_name = f"{self.get_datetime_str(previous_hour)}.txt"
+            results = await gather(
+                *[
+                    self.read_blob(container_client, previous_blob_name),
+                    self.read_blob(container_client, current_blob_name),
+                ]
+            )
+            for result in results:
+                metrics.extend(result)
+            return metrics
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[Metric], sub_id: str) -> None:
+    async def read_blob(self, container_client: ContainerClient, blob_name: str) -> list[str]:
+        try:
+            async with container_client.get_blob_client(blob_name) as blob_client:
+                raw_data = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
+                dict_str = await raw_data.readall()
+                return dict_str.decode("utf-8").split("\n")
+        except ResourceNotFoundError:
+            return []
+
+    @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
+    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
         if "DD_API_KEY" not in environ:
             return
-        metric_series: list[MetricSeries] = [self.create_metric_series(metric, log_forwarder_id) for metric in metrics]  # type: ignore
-        if metric_series is None or not all(metric_series):
-            log.warn(
-                "Invalid timestamps for resource: %s, Skipping...",
-                get_function_app_id(sub_id, self.resource_group, log_forwarder_id),
-            )
-            return
+
+        metric_series: list[MetricSeries] = [self.create_metric_series(metrics, log_forwarder_id)]
         body = MetricPayload(
             series=metric_series,
         )
@@ -320,19 +335,15 @@ class LogForwarderClient(AbstractAsyncContextManager):
             for err in response.get("errors", []):
                 log.error(err)
 
-    def create_metric_series(self, metric: Metric, log_forwarder_id: str) -> MetricSeries | None:
-        metric_points: list[MetricPoint | None] = [
-            self.create_metric_point(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name))  # type: ignore
-            for time_series_element in metric.timeseries
-            for metric_value in time_series_element.data
-        ]
-        filtered_metric_points = [metric_point for metric_point in metric_points if metric_point is not None]
-        if len(metric_points) == 0:
-            return None
+    def get_datetime_str(self, time: datetime) -> str:
+        return f"{time:%Y-%m-%d-%H}"
+
+    def create_metric_series(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricSeries:
+        metric_points: list[MetricPoint] = [self.create_metric_point(metric) for metric in metric_entries]
         return MetricSeries(  # type: ignore
-            metric=metric.name,
+            metric="Runtime",
             type=MetricIntakeType.UNSPECIFIED,
-            points=filtered_metric_points,
+            points=metric_points,
             resources=[
                 MetricResource(
                     name=get_function_app_name(log_forwarder_id),
@@ -341,13 +352,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
             ],
         )
 
-    def create_metric_point(self, metric_value: MetricValue, metric_attr: str) -> MetricPoint | None:
-        metric_timestamp = metric_value.timestamp.timestamp()
-        if (datetime.now().timestamp() - metric_timestamp) > 3540:
-            return None
-        if getattr(metric_value, metric_attr, None) is None:
-            return None
+    def create_metric_point(self, metric: MetricBlobEntry) -> MetricPoint:
         return MetricPoint(  # type: ignore
-            timestamp=int(metric_timestamp),
-            value=getattr(metric_value, metric_attr),
+            timestamp=int(metric["timestamp"]),
+            value=metric["runtime"],
         )

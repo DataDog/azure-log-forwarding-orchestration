@@ -2,11 +2,11 @@
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
 from copy import deepcopy
+from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
-from math import inf
 from os import environ
-from typing import Any, TypeAlias
+from typing import Any
 from uuid import uuid4
 
 # 3p
@@ -19,26 +19,25 @@ from cache.common import (
     InvalidCacheError,
     LogForwarder,
     get_config_option,
-    get_function_app_id,
     read_cache,
     write_cache,
 )
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
-from tasks.client.log_forwarder_client import COLLECTED_METRIC_DEFINITIONS, LogForwarderClient
+from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.task import Task, now
 
 SCALING_TASK_NAME = "scaling_task"
 
 SHOULD_SUBMIT_METRICS = environ.get("SHOULD_SUBMIT_METRICS", False)
+METRIC_COLLECTION_PERIOD_MINUTES = 30
+FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
 SCALE_UP_EXECUTION_SECONDS = 25
 SCALE_DOWN_EXECUTION_SECONDS = 3
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
-
-Metrics: TypeAlias = dict[str, float]
-"Mapping of metric name to metric value"
 
 
 class ScalingTask(Task):
@@ -153,9 +152,8 @@ class ScalingTask(Task):
 
         underscaled_forwarder_ids = [
             config_id
-            for config_id, metrics in forwarder_metrics.items()
-            # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
-            if metrics.get("function_execution_time", 0) > SCALE_UP_EXECUTION_SECONDS
+            for config_id, _ in forwarder_metrics.items()
+            if True  # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
         ]
         if not underscaled_forwarder_ids:
             # TODO (AZINTS-2389) implement scaling down
@@ -170,7 +168,9 @@ class ScalingTask(Task):
                 continue
             self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, new_forwarder)
 
-    def onboard_new_resources(self, subscription_id: str, region: str, forwarder_metrics: dict[str, Metrics]) -> None:
+    def onboard_new_resources(
+        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry] | None]
+    ) -> None:
         """Assigns new resources to the least busy forwarder in the region"""
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
             self.assignment_cache[subscription_id][region]["resources"]
@@ -179,9 +179,10 @@ class ScalingTask(Task):
             return
 
         # any forwarders without metrics we should not add more resources to, there may be something wrong
-        least_busy_forwarder_id, _ = min(
-            forwarder_metrics.items(), key=lambda pair: pair[1].get("function_execution_time", inf)
-        )
+        least_busy_forwarder_id = "TODO"  # TODO (AZINTS-2684) implement proper min scaling based on new metrics
+        # least_busy_forwarder_id, _ = min(
+        #     forwarder_metrics.items(), key=lambda pair: pair[1][0]
+        # )
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {resource: least_busy_forwarder_id for resource in new_resources}
@@ -213,49 +214,34 @@ class ScalingTask(Task):
             }
         )
 
-    async def collect_forwarder_metrics(self, config_id: str, sub_id: str, client: LogForwarderClient) -> Metrics:
+    async def collect_forwarder_metrics(
+        self, config_id: str, sub_id: str, client: LogForwarderClient
+    ) -> list[MetricBlobEntry] | None:
         """Updates the log_forwarder_metric_cache entry for a log forwarder
         If there is an error the entry is set to an empty dict"""
-        metric_dict = {}
         try:
-            response = await client.get_log_forwarder_metrics(
-                get_function_app_id(sub_id, self.resource_group, config_id)
-            )
-
-            for metric in response.metrics:
-                log.debug(metric.name)
-                log.debug(metric.unit)
-                min_metric_val = None
-                max_metric_val = None
-                for time_series_element in metric.timeseries:
-                    for metric_value in time_series_element.data:
-                        log.debug(metric_value.timestamp)
-                        log.debug(
-                            f"{metric.name}: {COLLECTED_METRIC_DEFINITIONS.get(metric.name, '')} = {getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ''), None)}"
-                        )
-                        metric_val = getattr(metric_value, COLLECTED_METRIC_DEFINITIONS.get(metric.name, ""), None)
-                        if metric_val is None:
-                            log.info(metric_value.__dict__)
-                            log.warning(f"{metric.name} is None for log forwarder: {config_id}. Skipping resource...")
-                            return {}
-                        if min_metric_val:
-                            min_metric_val = min(min_metric_val, metric_val)
-                            max_metric_val = max(max_metric_val, metric_val)
-                        else:
-                            min_metric_val, max_metric_val = metric_val, metric_val
-                if max_metric_val is not None:
-                    metric_dict[metric.name] = max_metric_val
+            forwarder_metrics: list[MetricBlobEntry] | None = None
+            metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
+            oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
+            forwarder_metrics = [
+                metric_entry
+                for metric_str in metric_dicts
+                if (metric_entry := deserialize_blob_metric_dict(metric_str, oldest_time.timestamp()))
+            ]
+            if len(forwarder_metrics) == 0:
+                log.info("No valid metrics found for forwarder %s", config_id)
+                return None
             if SHOULD_SUBMIT_METRICS:
-                task = create_task(client.submit_log_forwarder_metrics(config_id, response.metrics, sub_id))
+                task = create_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
                 self.background_tasks.add(task)
                 task.add_done_callback(self.background_tasks.discard)
-            return metric_dict
-        except HttpResponseError as err:
-            log.error(err)
-            return {}
+            return forwarder_metrics
+        except HttpResponseError:
+            log.exception("Recieved azure HTTP error: ")
+            return forwarder_metrics
         except RetryError:
             log.error("Max retries attempted")
-            return {}
+            return forwarder_metrics
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:
