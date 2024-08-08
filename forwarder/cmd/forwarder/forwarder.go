@@ -24,7 +24,7 @@ type MetricEntry struct {
 	ResourceLogAmounts map[string]int32 `json:"resourceLogAmounts"`
 }
 
-func getContainers(ctx context.Context, client storage.Client, containerNameCh chan string) error {
+func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
 	// Get the containers from the storage account
 	defer close(containerNameCh)
 	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
@@ -51,7 +51,7 @@ func getContainers(ctx context.Context, client storage.Client, containerNameCh c
 	}
 }
 
-func getBlobs(ctx context.Context, client storage.Client, containerName string, blobChannel chan storage.Blob) error {
+func getBlobs(ctx context.Context, client storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
 	// Get the blobs from the container
 	iter := client.ListBlobs(ctx, containerName)
 
@@ -78,6 +78,9 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 }
 
+// This function provides a standardized name for each blob that we can use to read and write blobs
+// Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
+// Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
 func GetDateTimeString() (date string) {
 	return time.Now().UTC().Format("2006-01-02-15")
 }
@@ -99,6 +102,7 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 	containerNameCh := make(chan string, 1000)
 
 	eg.Go(func() error {
+		defer close(blobChannel)
 		var err error
 		for container := range containerNameCh {
 			curErr := getBlobs(ctx, client, container, blobChannel)
@@ -106,7 +110,6 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 				err = errors.Join(err, curErr)
 			}
 		}
-		close(blobChannel)
 		return err
 	})
 
@@ -158,31 +161,24 @@ func main() {
 
 	client := storage.NewClient(azBlobClient)
 
-	err = Run(ctx, client, logger)
+	runErr := Run(ctx, client, logger)
 
-	if err != nil {
-		logger.Fatalf("error while running: %v", err)
-	}
-
-	test_map := make(map[string]int32)
-	test_map["5a095f74c60a"] = 4
-	test_map["93a5885365f5"] = 6
-	//TODO: Remove test_map once we have an actual map
-	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), test_map}
+	resourceVolumeMap := make(map[string]int32)
+	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
+	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
-		logger.Fatalf("error while running: %v", err)
+		logger.Fatalf("error while marshalling metrics: %v", err)
 	}
 
 	dateString := GetDateTimeString()
+	blobName := dateString + ".txt"
 
-	err = client.UploadBlob(ctx, "insights-logs-functionapplogs", dateString, metricBuffer)
+	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
 
-	if err != nil {
-		logger.Fatalf("error while running: %v", err)
-	}
+	err = errors.Join(runErr, err)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

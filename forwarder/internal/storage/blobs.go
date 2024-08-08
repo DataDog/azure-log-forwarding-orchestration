@@ -34,14 +34,13 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[
 	return iter
 }
 
-func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, buffer []byte) error {
+func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
 	defer span.Finish()
 
 	//see if there is an existing blob
 	//if yes get it read append
 	//if not just write
-	var respErr *azcore.ResponseError
 
 	downloadResponse, downErr := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
 	//max-age = 2 hours or 7200 seconds
@@ -53,27 +52,28 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		},
 	}
 
+	var respErr *azcore.ResponseError
+
 	if errors.As(downErr, &respErr) {
-		// Handle Error
+		// Create new file when not found
 		if respErr.ErrorCode == "BlobNotFound" {
-			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
+			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, content, &uploadOptions)
 			return err
-		} else {
-			return downErr
 		}
 	}
+
 	if downErr != nil {
 		return downErr
 	}
 
-	origBuf, readErr := io.ReadAll(downloadResponse.Body)
+	buffer, readErr := io.ReadAll(downloadResponse.Body)
 	if readErr != nil {
-		return downErr
+		return readErr
 	}
 
-	origBuf = append(origBuf, "\n"...)
-	origBuf = append(origBuf, buffer...)
+	buffer = append(buffer, "\n"...)
+	buffer = append(buffer, content...)
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, origBuf, &uploadOptions)
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
 	return err
 }

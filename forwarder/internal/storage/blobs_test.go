@@ -43,7 +43,8 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 
 func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*container.BlobItem, error) {
 	ctrl := gomock.NewController(t)
-	handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse, azblob.ListBlobsFlatResponse{})
+
+	handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
 
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
@@ -58,25 +59,29 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	it := client.ListBlobs(ctx, containerName)
 
 	var results []*container.BlobItem
-	var v, err = it.Next(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error getting next blob: %v", err)
-	}
-	for ; v != nil; v, err = it.Next(ctx) {
-		if err != nil && err.Error() == iterator.Done.Error() {
+	for {
+		blobList, err := it.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
 			break
 		}
+
 		if err != nil {
-			return nil, fmt.Errorf("error getting next blob: %v", err)
+			return nil, err
 		}
-		for _, blob := range v {
+
+		for _, blob := range blobList {
+			if blob == nil {
+				continue
+			}
 			results = append(results, blob)
 		}
+
 	}
 	return results, nil
 }
 
-func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedUpResponse azblob.UploadBufferResponse, expectedUpErr error, expectedDownResponse azblob.DownloadStreamResponse, expectedDownErr error) error {
+func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedUpResponse azblob.UploadBufferResponse, expectedUpErr error, expectedDownResponse azblob.DownloadStreamResponse, expectedDownErr error, upCalls int, downCalls int) error {
 	ctrl := gomock.NewController(t)
 
 	var newBuf []byte
@@ -100,43 +105,8 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	}
 
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, newBuf, gomock.Any()).Return(expectedUpResponse, expectedUpErr)
-	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr)
-
-	client := storage.NewClient(mockClient)
-
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-	defer span.Finish()
-
-	return client.UploadBlob(ctx, containerName, blobName, buffer)
-}
-
-func uploadBlobError(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedUpResponse azblob.UploadBufferResponse, expectedUpErr error, expectedDownResponse azblob.DownloadStreamResponse, expectedDownErr error) error {
-	ctrl := gomock.NewController(t)
-
-	var newBuf []byte
-
-	if expectedDownErr == nil {
-		originalBuf, err := io.ReadAll(expectedDownResponse.Body)
-		if err != nil {
-			return err
-		}
-
-		//the body is empty after reading, thus we need to repopulate
-		bodyString := string(originalBuf[:])
-		stringReader := strings.NewReader(bodyString)
-		stringReadCloser := io.NopCloser(stringReader)
-		expectedDownResponse.Body = stringReadCloser
-
-		originalBuf = append(originalBuf, "\n"...)
-		newBuf = append(originalBuf, buffer...)
-	} else {
-		newBuf = buffer
-	}
-
-	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, newBuf, gomock.Any()).Return(expectedUpResponse, expectedUpErr).Times(0)
-	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr)
+	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, newBuf, gomock.Any()).Return(expectedUpResponse, expectedUpErr).Times(upCalls)
+	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr).Times(downCalls)
 
 	client := storage.NewClient(mockClient)
 
@@ -236,15 +206,11 @@ func TestUploadBlob(t *testing.T) {
 		downResp.Body = stringReadCloser
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, nil)
+		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, nil, 1, 1)
 
 		// THEN
 		assert.Nil(t, err)
 	})
-}
-
-func TestUploadBlobNoPrevious(t *testing.T) {
-	t.Parallel()
 
 	t.Run("uploads a buffer when there is no previous buffer", func(t *testing.T) {
 		t.Parallel()
@@ -263,15 +229,11 @@ func TestUploadBlobNoPrevious(t *testing.T) {
 		downErr := runtime.NewResponseErrorWithErrorCode(&resp, "BlobNotFound")
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr)
+		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 1, 1)
 
 		// THEN
 		assert.Nil(t, err)
 	})
-}
-
-func TestUploadBlobAzureDownloadError(t *testing.T) {
-	t.Parallel()
 
 	t.Run("uploads a buffer when there is an non BlobNotFound error", func(t *testing.T) {
 		t.Parallel()
@@ -290,7 +252,7 @@ func TestUploadBlobAzureDownloadError(t *testing.T) {
 		downErr := runtime.NewResponseErrorWithErrorCode(&resp, "Invalid")
 
 		// WHEN
-		err := uploadBlobError(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr)
+		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 0, 1)
 
 		// THEN
 		assert.EqualError(t, err, downErr.Error())

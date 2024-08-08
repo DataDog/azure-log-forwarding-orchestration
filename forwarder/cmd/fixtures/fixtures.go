@@ -16,7 +16,7 @@ import (
 
 func getContainers(ctx context.Context, client storage.Client) ([]string, error) {
 	containerIter := client.GetContainersMatchingPrefix(ctx, "insights-logs-")
-	containers := make([]string, 0)
+	var containers []string
 	for {
 		containerList, err := containerIter.Next(ctx)
 
@@ -28,13 +28,11 @@ func getContainers(ctx context.Context, client storage.Client) ([]string, error)
 			return nil, err
 		}
 
-		if containerList != nil {
-			for _, container := range containerList {
-				if container == nil {
-					continue
-				}
-				containers = append(containers, *container.Name)
+		for _, container := range containerList {
+			if container == nil {
+				continue
 			}
+			containers = append(containers, *container.Name)
 		}
 	}
 	return containers, nil
@@ -42,7 +40,7 @@ func getContainers(ctx context.Context, client storage.Client) ([]string, error)
 
 func getBlobs(ctx context.Context, client storage.Client, container string) ([]string, error) {
 	blobIter := client.ListBlobs(ctx, container)
-	blobs := make([]string, 0)
+	var blobs []string
 	for {
 		blobList, err := blobIter.Next(ctx)
 
@@ -54,13 +52,11 @@ func getBlobs(ctx context.Context, client storage.Client, container string) ([]s
 			return nil, err
 		}
 
-		if blobList != nil {
-			for _, blob := range blobList {
-				if blob == nil {
-					continue
-				}
-				blobs = append(blobs, *blob.Name)
+		for _, blob := range blobList {
+			if blob == nil {
+				continue
 			}
+			blobs = append(blobs, *blob.Name)
 		}
 	}
 	return blobs, nil
@@ -89,20 +85,17 @@ func main() {
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, clientOptions)
 	if err != nil {
 		logger.Fatalf("error creating azure client: %v", err)
-		return
 	}
 	client := storage.NewClient(azBlobClient)
 	containers, err := getContainers(ctx, client)
 	if err != nil {
 		logger.Fatalf("error getting containers: %v", err)
-		return
 	}
 
 	for _, container := range containers {
 		blobs, err := getBlobs(ctx, client, container)
 		if err != nil {
 			logger.Fatalf("error getting blobs: %v", err)
-			return
 		}
 		for _, blob := range blobs {
 			logger.Infof("Blob: %s Container: %s", blob, container)
