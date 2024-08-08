@@ -24,9 +24,9 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
 }
 
 
-def deserialize_blob_metric_dict(blob_dict_str: str, oldest_legal_time: float) -> MetricBlobEntry | None:
+def deserialize_blob_metric_entry(raw_metric_entry: str, oldest_legal_time: float) -> MetricBlobEntry | None:
     try:
-        blob_dict: MetricBlobEntry = loads(blob_dict_str)
+        blob_dict: MetricBlobEntry = loads(raw_metric_entry)
         validate(instance=blob_dict, schema=METRIC_BLOB_SCHEMA)
         # This is validated previously via the schema so this will always be legal
         if blob_dict["timestamp"] < oldest_legal_time:

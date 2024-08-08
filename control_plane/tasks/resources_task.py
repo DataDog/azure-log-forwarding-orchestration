@@ -72,5 +72,5 @@ async def main() -> None:
     log.info("Task finished at %s", now())
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     run(main())

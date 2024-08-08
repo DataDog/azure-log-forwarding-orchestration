@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from json import dumps
 from unittest import TestCase
 
-from cache.metric_blob_cache import deserialize_blob_metric_dict
+from cache.metric_blob_cache import deserialize_blob_metric_entry
 from tasks.scaling_task import METRIC_COLLECTION_PERIOD_MINUTES
 
 
@@ -27,7 +27,7 @@ class TestMetricBlobCache(TestCase):
             "runtime": 211,
             "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
         }
-        returned_dict = deserialize_blob_metric_dict(blob_dict_str, self.oldest_legal_time.timestamp())
+        returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNotNone(returned_dict)
         if returned_dict:
             self.assertDictEqual(returned_dict, expected_dict)
@@ -40,7 +40,7 @@ class TestMetricBlobCache(TestCase):
                 "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
-        returned_dict = deserialize_blob_metric_dict(blob_dict_str, self.oldest_legal_time.timestamp())
+        returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNone(returned_dict)
 
     def test_validation_oldest_legal_time(self):
@@ -56,7 +56,7 @@ class TestMetricBlobCache(TestCase):
             "runtime": 211,
             "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
         }
-        returned_dict = deserialize_blob_metric_dict(blob_dict_str, self.oldest_legal_time.timestamp())
+        returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNotNone(returned_dict)
         if returned_dict:
             self.assertDictEqual(returned_dict, expected_dict)
@@ -68,7 +68,7 @@ class TestMetricBlobCache(TestCase):
                 "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
-        returned_dict = deserialize_blob_metric_dict(blob_dict_str, self.oldest_legal_time.timestamp())
+        returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNone(returned_dict)
 
     def test_validation_too_many_properties(self):
@@ -80,5 +80,5 @@ class TestMetricBlobCache(TestCase):
                 "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
-        returned_dict = deserialize_blob_metric_dict(blob_dict_str, self.oldest_legal_time.timestamp())
+        returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNone(returned_dict)
