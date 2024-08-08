@@ -42,11 +42,15 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 
-def is_over_threshold(metrics: list[MetricBlobEntry], threshold: float, duration: timedelta) -> bool:
-    return False  # TODO (AZINTS-2684) implement proper threshold checking
+def is_over_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
+    """Check if the runtime is consistently over the threshold for the given duration"""
+    # if we have no metrics, we can't determine if we are over the threshold
+    if not metrics:
+        return False
+    return all(metric["runtime"] > threshold for metric in metrics if metric["timestamp"] > oldest_timestamp)
 
 
-def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, duration: timedelta) -> bool:
+def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
@@ -163,15 +167,24 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
-        metrics = await gather(*(self.collect_forwarder_metrics(config_id, client) for config_id in log_forwarders))
+        now_dt = datetime.now()
+        oldest_metric_timestamp = (now_dt - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
+
+        metrics = await gather(
+            *(
+                self.collect_forwarder_metrics(client, config_id, oldest_metric_timestamp)
+                for config_id in log_forwarders
+            )
+        )
         forwarder_metrics = dict(zip(log_forwarders, metrics, strict=False))
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
+        oldest_scale_up_timestamp = (now_dt - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
-            if is_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, timedelta(minutes=SCALING_TASK_PERIOD_MINUTES))
+            if is_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
         ]
         if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
@@ -233,15 +246,16 @@ class ScalingTask(Task):
             }
         )
 
-    async def collect_forwarder_metrics(self, config_id: str, client: LogForwarderClient) -> list[MetricBlobEntry]:
+    async def collect_forwarder_metrics(
+        self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
+    ) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
         try:
             metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
-            oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
                 metric_entry
                 for metric_str in metric_dicts
-                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_time.timestamp()))
+                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_valid_timestamp))
             ]
             if not forwarder_metrics:
                 log.warning("No valid metrics found for forwarder %s", config_id)
