@@ -26,7 +26,7 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_dict
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.task import Task, now
+from tasks.task import Task, average, now
 
 SCALING_TASK_NAME = "scaling_task"
 SCALING_TASK_PERIOD_MINUTES = 5
@@ -198,10 +198,10 @@ class ScalingTask(Task):
             return
 
         # any forwarders without metrics we should not add more resources to, there may be something wrong
-        least_busy_forwarder_id = "TODO"  # TODO (AZINTS-2684) implement proper min scaling based on new metrics
-        # least_busy_forwarder_id, _ = min(
-        #     forwarder_metrics.items(), key=lambda pair: pair[1][0]
-        # )
+        least_busy_forwarder_id, _ = min(
+            forwarder_metrics.items(),
+            key=lambda metrics_by_id: average(*(metric["runtime"] for metric in metrics_by_id[1])),
+        )
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {resource: least_busy_forwarder_id for resource in new_resources}

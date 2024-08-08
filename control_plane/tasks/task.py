@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
 from logging import ERROR, getLogger
+from math import inf
 from typing import Any, Self, TypeVar
 
 # 3p
@@ -21,6 +22,13 @@ getLogger("azure").setLevel(ERROR)
 def now() -> str:
     """Return the current time in ISO format"""
     return datetime.now().isoformat()
+
+
+def average(*items: float, default: float = inf) -> float:
+    """Return the average of the items, or `default` if no items are provided"""
+    if not items:
+        return default
+    return sum(items) / len(items)
 
 
 T = TypeVar("T")
