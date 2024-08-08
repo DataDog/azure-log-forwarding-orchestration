@@ -20,8 +20,8 @@ from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment
 
 # project
 from cache.common import (
-    DiagnosticSettingType,
     InvalidCacheError,
+    LogForwarderType,
     get_config_option,
     get_event_hub_name,
     get_event_hub_namespace,
@@ -63,7 +63,7 @@ class DiagnosticSettingConfiguration(NamedTuple):
     "Convenience Tuple for holding the configuration of a diagnostic setting"
 
     id: str
-    type: DiagnosticSettingType
+    type: LogForwarderType
 
 
 def get_diagnostic_setting(
