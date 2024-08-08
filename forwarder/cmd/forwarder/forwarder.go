@@ -178,13 +178,11 @@ func main() {
 
 	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
 
-	if err != nil {
-		logger.Errorf("error while uploading metrics: %v", err)
-	}
+	err = errors.Join(runErr, err)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
-	if runErr != nil {
+	if err != nil {
 		logger.Fatalf("error while running: %v", err)
 	}
 }
