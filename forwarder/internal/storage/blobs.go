@@ -34,7 +34,7 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[
 	return iter
 }
 
-func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, buffer []byte) error {
+func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBuffer")
 	defer span.Finish()
 
@@ -57,7 +57,7 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	if errors.As(downErr, &respErr) {
 		// Create new file when not found
 		if respErr.ErrorCode == "BlobNotFound" {
-			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
+			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, content, &uploadOptions)
 			return err
 		}
 	}
@@ -66,14 +66,14 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		return downErr
 	}
 
-	downloadBuf, readErr := io.ReadAll(downloadResponse.Body)
+	buffer, readErr := io.ReadAll(downloadResponse.Body)
 	if readErr != nil {
 		return readErr
 	}
 
-	downloadBuf = append(downloadBuf, "\n"...)
-	downloadBuf = append(downloadBuf, buffer...)
+	buffer = append(buffer, "\n"...)
+	buffer = append(buffer, content...)
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, downloadBuf, &uploadOptions)
+	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
 	return err
 }

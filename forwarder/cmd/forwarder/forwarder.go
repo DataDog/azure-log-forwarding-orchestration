@@ -164,7 +164,7 @@ func main() {
 	runErr := Run(ctx, client, logger)
 
 	resourceVolumeMap := make(map[string]int32)
-	//TODO: Remove resourceVolumeMap once we have an actual map
+	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
 	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
