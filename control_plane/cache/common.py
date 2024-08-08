@@ -76,11 +76,11 @@ EVENT_HUB_NAME_PREFIX = NotImplemented
 EVENT_HUB_NAMESPACE_PREFIX = NotImplemented
 
 
-def get_event_hub_name(config_id: str) -> str:
+def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
     return EVENT_HUB_NAME_PREFIX + config_id
 
 
-def get_event_hub_namespace(config_id: str) -> str:
+def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
     return EVENT_HUB_NAMESPACE_PREFIX + config_id
 
 

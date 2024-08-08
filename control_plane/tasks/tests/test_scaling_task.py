@@ -1,15 +1,20 @@
 # stdlib
+from asyncio import create_task, sleep
 from datetime import datetime, timedelta
 from json import dumps
 from typing import Any
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
 
+# 3p
 import pytest
 
-# 3p
 # project
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
+from cache.assignment_cache import (
+    ASSIGNMENT_CACHE_BLOB,
+    AssignmentCache,
+    deserialize_assignment_cache,
+)
 from cache.common import (
     FUNCTION_APP_PREFIX,
     STORAGE_ACCOUNT_PREFIX,
@@ -54,10 +59,8 @@ class TestScalingTask(TaskTestCase):
         self.uuid.return_value = UUID(NEW_UUID)
 
     @property
-    def cache(self):
-        success, cache = deserialize_assignment_cache(self.cache_value(ASSIGNMENT_CACHE_BLOB))
-        self.assertTrue(success)
-        return cache
+    def cache(self) -> AssignmentCache:
+        return self.cache_value(ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache)
 
     async def run_scaling_task(
         self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str = rg1
@@ -383,3 +386,16 @@ class TestScalingTask(TaskTestCase):
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) in self.log.info.call_args_list
         )
+
+    async def test_background_tasks_awaited(self):
+        m = Mock()
+
+        async def background_task():
+            await sleep(0.05)
+            m()
+
+        async with ScalingTask(dumps({sub_id1: {}}), dumps({sub_id1: {}}), rg1) as task:
+            task.background_tasks.update(create_task(background_task()) for _ in range(3))
+            await task.run()
+
+        self.assertEqual(m.call_count, 3)
