@@ -257,7 +257,7 @@ class ScalingTask(Task):
                 if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_valid_timestamp))
             ]
             if len(forwarder_metrics) == 0:
-                log.info("No valid metrics found for forwarder %s", config_id)
+                log.warning("No valid metrics found for forwarder %s", config_id)
             self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
         except HttpResponseError:
