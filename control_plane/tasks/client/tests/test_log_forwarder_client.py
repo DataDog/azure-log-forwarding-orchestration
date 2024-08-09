@@ -281,13 +281,13 @@ class TestLogForwarderClient(AsyncTestCase):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
-                "runtimeSeconds": 280,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 280,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
             {
                 "timestamp": 1723040911,
-                "runtimeSeconds": 281,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 281,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
         self.client.api_instance.submit_metrics.return_value = {}
@@ -325,13 +325,13 @@ class TestLogForwarderClient(AsyncTestCase):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
-                "runtimeSeconds": 2.80,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.80,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
             {
                 "timestamp": 1723040911,
-                "runtimeSeconds": 2.81,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.81,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
 
@@ -345,13 +345,13 @@ class TestLogForwarderClient(AsyncTestCase):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
-                "runtimeSeconds": 2.80,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.80,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
             {
                 "timestamp": 1723040911,
-                "runtimeSeconds": 2.81,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.81,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
         self.client.api_instance.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
@@ -391,13 +391,13 @@ class TestLogForwarderClient(AsyncTestCase):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
-                "runtimeSeconds": 2.80,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.80,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
             {
                 "timestamp": 1723040911,
-                "runtimeSeconds": 2.81,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.81,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
         self.client.api_instance.submit_metrics.side_effect = RequestTimeout()
@@ -438,13 +438,13 @@ class TestLogForwarderClient(AsyncTestCase):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
-                "runtimeSeconds": 2.80,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.80,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
             {
                 "timestamp": 1723040911,
-                "runtimeSeconds": 2.81,
-                "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "runtime_seconds": 2.81,
+                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
         self.client.api_instance.submit_metrics.side_effect = FakeHttpError(404)
@@ -488,7 +488,7 @@ class TestLogForwarderClient(AsyncTestCase):
         }
         async with self.client as client:
             await client.submit_log_forwarder_metrics(
-                "test", [{"runtimeSeconds": 2.80, "resourceLogVolumes": {}, "timestamp": 1723040910}]
+                "test", [{"runtime_seconds": 2.80, "resource_log_volume": {}, "timestamp": 1723040910}]
             )
 
         self.log.error.assert_called_once_with("oops something went wrong")

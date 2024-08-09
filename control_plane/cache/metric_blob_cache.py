@@ -13,20 +13,20 @@ class MetricBlobEntry(TypedDict, total=True):
 
     timestamp: float
     "a UNIX timestamp when metric was created"
-    runtimeSeconds: float
-    "runtimeSeconds: The number of seconds taken for the forwarder to run"
-    resourceLogVolumes: dict[str, int]
-    "resourceLogVolumes: A mapping of resource id ->log volume in bytes"
+    runtime_seconds: float
+    "The number of seconds taken for the forwarder to run"
+    resource_log_volume: dict[str, int]
+    "A mapping of resource id ->log volume in bytes"
 
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "timestamp": {"type": "number"},
-        "runtimeSeconds": {"type": "number"},
-        "resourceLogVolumes": {"type": "object", "additionalProperties": {"type": "number"}},
+        "runtime_seconds": {"type": "number"},
+        "resource_log_volume": {"type": "object", "additionalProperties": {"type": "number"}},
     },
-    "required": ["timestamp", "runtimeSeconds", "resourceLogVolumes"],
+    "required": ["timestamp", "runtime_seconds", "resource_log_volume"],
     "additionalProperties": False,
 }
 

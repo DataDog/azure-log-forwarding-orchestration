@@ -20,8 +20,8 @@ import (
 
 type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
-	RuntimeSeconds     float64          `json:"runtimeSeconds"`
-	ResourceLogVolumes map[string]int32 `json:"resourceLogVolumes"`
+	RuntimeSeconds     float64          `json:"runtime_seconds"`
+	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
