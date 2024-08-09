@@ -409,11 +409,11 @@ class TestLogForwarderClient(AsyncTestCase):
                     points=[
                         MetricPoint(
                             timestamp=1723040910,
-                            value=280,
+                            value=2.80,
                         ),
                         MetricPoint(
                             timestamp=1723040911,
-                            value=281,
+                            value=2.81,
                         ),
                     ],
                     resources=[
