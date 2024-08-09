@@ -1,22 +1,34 @@
 # stdlib
-from asyncio import Lock, gather
-from collections.abc import Awaitable
+from asyncio import Lock, create_task, gather
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Self, TypeVar
+from typing import Self, TypeVar, cast
 
 # 3p
 from aiohttp import ClientSession
 from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
+from azure.core.polling import AsyncLROPoller
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
+    BlobContainer,
+    DateAfterCreation,
+    DateAfterModification,
+    ManagementPolicyAction,
+    ManagementPolicyBaseBlob,
+    ManagementPolicyDefinition,
+    ManagementPolicyFilter,
+    ManagementPolicyRule,
+    ManagementPolicySchema,
+    ManagementPolicySnapShot,
     PublicNetworkAccess,
     Sku,
+    StorageAccount,
     StorageAccountCreateParameters,
     StorageAccountKey,
 )
@@ -124,8 +136,54 @@ class LogForwarderClient(AbstractAsyncContextManager):
             storage_account_name,
             app_service_plan_name,
         )
-        # storage account
-        storage_account_future = await self.storage_client.storage_accounts.begin_create(
+
+        blob_forwarder_data_task = create_task(self.get_blob_forwarder_data())
+
+        try:
+            storage_account, app_service_plan = await gather(
+                wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name)),
+                wait_for_resource(*await self.create_log_forwarder_app_service_plan(region, app_service_plan_name)),
+            )
+            log.info(
+                "Created log forwarder storage account (%s) and app service plan (%s)",
+                storage_account.id,
+                app_service_plan.id,
+            )
+        except Exception:
+            log.exception("Failed to create storage account and/or app service plan")
+            raise
+
+        create_containers_task = create_task(self.create_log_forwarder_containers(storage_account_name))
+
+        function_app_name = get_function_app_name(config_id)
+        log.info("Creating log forwarder app: %s", function_app_name)
+        connection_string = await self.get_connection_string(storage_account_name)
+        try:
+            function_app, blob_forwarder_data = await gather(
+                wait_for_resource(
+                    *await self.create_log_forwarder_function_app(
+                        region, function_app_name, cast(str, app_service_plan.id), connection_string
+                    )
+                ),
+                blob_forwarder_data_task,
+            )
+        except Exception:
+            log.exception("Failed to create function app and/or get blob forwarder data")
+            raise
+        log.info("Created log forwarder function app: %s", function_app.id)
+
+        await gather(
+            self.deploy_log_forwarder_function_app(function_app_name, blob_forwarder_data),
+            create_containers_task,
+        )
+
+        # for now this is the only type we support
+        return STORAGE_ACCOUNT_TYPE
+
+    async def create_log_forwarder_storage_account(
+        self, region: str, storage_account_name: str
+    ) -> tuple[AsyncLROPoller[StorageAccount], Callable[[], Awaitable[StorageAccount]]]:
+        return await self.storage_client.storage_accounts.begin_create(
             resource_group_name=self.resource_group,
             account_name=storage_account_name,
             parameters=StorageAccountCreateParameters(
@@ -137,9 +195,12 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 location=region,
                 public_network_access=PublicNetworkAccess.DISABLED,
             ),
-        )
-        # app service plan
-        app_service_plan_future = await self.web_client.app_service_plans.begin_create_or_update(
+        ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
+
+    async def create_log_forwarder_app_service_plan(
+        self, region: str, app_service_plan_name: str
+    ) -> tuple[AsyncLROPoller[AppServicePlan], Callable[[], Awaitable[AppServicePlan]]]:
+        return await self.web_client.app_service_plans.begin_create_or_update(
             self.resource_group,
             app_service_plan_name,
             AppServicePlan(
@@ -152,40 +213,50 @@ class LogForwarderClient(AbstractAsyncContextManager):
                     name="B1",
                 ),
             ),
-        )
-        try:
-            storage_account, app_service_plan = await gather(
-                wait_for_resource(
-                    storage_account_future,
-                    lambda: self.storage_client.storage_accounts.get_properties(
-                        self.resource_group, storage_account_name
-                    ),
-                ),
-                wait_for_resource(
-                    app_service_plan_future,
-                    lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name),
-                ),
-            )
-            log.info(
-                "Created log forwarder storage account (%s) and app service plan (%s)",
-                storage_account.id,
-                app_service_plan.id,
-            )
-        except Exception:
-            log.exception("Failed to create storage account and/or app service plan")
-            raise
+        ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
 
-        function_app_name = get_function_app_name(config_id)
-        log.info("Creating log forwarder app: %s", function_app_name)
-        connection_string = await self.get_connection_string(storage_account_name)
-        function_app_poller = await self.web_client.web_apps.begin_create_or_update(
+    async def create_log_forwarder_containers(self, storage_account_name: str) -> BlobContainer:
+        return await self.storage_client.blob_containers.create(
+            self.resource_group,
+            storage_account_name,
+            FORWARDER_METRIC_CONTAINER_NAME,
+            BlobContainer(
+                management_policy=ManagementPolicySchema(
+                    rules=[
+                        ManagementPolicyRule(
+                            enabled=True,
+                            name="Delete Old Metric Blobs",
+                            type="Lifecycle",
+                            definition=ManagementPolicyDefinition(
+                                actions=ManagementPolicyAction(
+                                    base_blob=ManagementPolicyBaseBlob(
+                                        delete=DateAfterModification(days_after_modification_greater_than=14)
+                                    ),
+                                    snapshot=ManagementPolicySnapShot(
+                                        delete=DateAfterCreation(days_after_creation_greater_than=14)
+                                    ),
+                                ),
+                                filters=ManagementPolicyFilter(
+                                    blob_types=["blockBlob", "appendBlob"], prefix_match=["forwarder-metrics/"]
+                                ),
+                            ),
+                        )
+                    ]
+                )
+            ),
+        )
+
+    async def create_log_forwarder_function_app(
+        self, region: str, function_app_name: str, app_service_plan_id: str, connection_string: str
+    ) -> tuple[AsyncLROPoller[Site], Callable[[], Awaitable[Site]]]:
+        return await self.web_client.web_apps.begin_create_or_update(
             self.resource_group,
             function_app_name,
             Site(
                 location=region,
                 kind="functionapp",
                 identity=ManagedServiceIdentity(type="SystemAssigned"),
-                server_farm_id=app_service_plan.id,
+                server_farm_id=app_service_plan_id,
                 https_only=True,
                 site_config=SiteConfig(
                     app_settings=[
@@ -195,21 +266,10 @@ class LogForwarderClient(AbstractAsyncContextManager):
                     ]
                 ),
             ),
-        )
-        try:
-            function_app, blob_forwarder_data = await gather(
-                wait_for_resource(
-                    function_app_poller, lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
-                ),
-                self.get_blob_forwarder_data(),
-            )
-        except Exception:
-            log.exception("Failed to create function app and/or get blob forwarder data")
-            raise
-        log.info("Created log forwarder function app: %s", function_app.id)
+        ), lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
 
-        # deploy code to function app
-        log.info("Deploying log forwarder code to function app: %s", function_app.id)
+    async def deploy_log_forwarder_function_app(self, function_app_name: str, blob_forwarder_data: bytes) -> None:
+        log.info("Deploying log forwarder code to function app: %s", function_app_name)
         resp = await self.rest_client.post(
             f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
             data=blob_forwarder_data,
@@ -222,9 +282,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
             resp.status,
             body,
         )
-
-        # for now this is the only type we support
-        return STORAGE_ACCOUNT_TYPE
 
     async def get_connection_string(self, storage_account_name: str) -> str:
         keys_result = await self.storage_client.storage_accounts.list_keys(self.resource_group, storage_account_name)
