@@ -54,10 +54,6 @@ from tasks.common import wait_for_resource
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
 
-METRIC_COLLECTION_PERIOD_MINUTES = 30  # How long we are mointoring in minutes
-METRIC_COLLECTION_SAMPLES = 6  # Number of samples we are collecting
-METRIC_COLLECTION_GRANULARITY = METRIC_COLLECTION_PERIOD_MINUTES // METRIC_COLLECTION_SAMPLES
-
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
