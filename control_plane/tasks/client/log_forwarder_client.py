@@ -19,6 +19,7 @@ from azure.mgmt.storage.v2023_05_01.models import (
     BlobContainer,
     DateAfterCreation,
     DateAfterModification,
+    ManagementPolicy,
     ManagementPolicyAction,
     ManagementPolicyBaseBlob,
     ManagementPolicyDefinition,
@@ -154,15 +155,17 @@ class LogForwarderClient(AbstractAsyncContextManager):
             raise
 
         create_containers_task = create_task(self.create_log_forwarder_containers(storage_account_name))
+        create_management_policy_task = create_task(
+            self.create_log_forwarder_storage_management_policy(storage_account_name)
+        )
 
         function_app_name = get_function_app_name(config_id)
         log.info("Creating log forwarder app: %s", function_app_name)
-        connection_string = await self.get_connection_string(storage_account_name)
         try:
             function_app, blob_forwarder_data = await gather(
                 wait_for_resource(
                     *await self.create_log_forwarder_function_app(
-                        region, function_app_name, cast(str, app_service_plan.id), connection_string
+                        region, function_app_name, cast(str, app_service_plan.id), storage_account_name
                     )
                 ),
                 blob_forwarder_data_task,
@@ -175,6 +178,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.deploy_log_forwarder_function_app(function_app_name, blob_forwarder_data),
             create_containers_task,
+            create_management_policy_task,
         )
 
         # for now this is the only type we support
@@ -215,13 +219,21 @@ class LogForwarderClient(AbstractAsyncContextManager):
             ),
         ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
 
-    async def create_log_forwarder_containers(self, storage_account_name: str) -> BlobContainer:
-        return await self.storage_client.blob_containers.create(
+    async def create_log_forwarder_containers(self, storage_account_name: str):
+        await self.storage_client.blob_containers.create(
             self.resource_group,
             storage_account_name,
             FORWARDER_METRIC_CONTAINER_NAME,
-            BlobContainer(
-                management_policy=ManagementPolicySchema(
+            BlobContainer(),
+        )
+
+    async def create_log_forwarder_storage_management_policy(self, storage_account_name: str) -> None:
+        await self.storage_client.management_policies.create_or_update(
+            self.resource_group,
+            storage_account_name,
+            "Delete Old Metric Blobs",
+            ManagementPolicy(
+                policy=ManagementPolicySchema(
                     rules=[
                         ManagementPolicyRule(
                             enabled=True,
@@ -247,8 +259,9 @@ class LogForwarderClient(AbstractAsyncContextManager):
         )
 
     async def create_log_forwarder_function_app(
-        self, region: str, function_app_name: str, app_service_plan_id: str, connection_string: str
+        self, region: str, function_app_name: str, app_service_plan_id: str, storage_account_name: str
     ) -> tuple[AsyncLROPoller[Site], Callable[[], Awaitable[Site]]]:
+        connection_string = await self.get_connection_string(storage_account_name)
         return await self.web_client.web_apps.begin_create_or_update(
             self.resource_group,
             function_app_name,
