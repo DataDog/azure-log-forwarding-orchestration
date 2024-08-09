@@ -8,7 +8,9 @@ from azure.core.exceptions import ResourceNotFoundError
 
 # project
 from cache.common import (
+    STORAGE_ACCOUNT_TYPE,
     STORAGE_CONNECTION_SETTING,
+    LogForwarder,
     MissingConfigOptionError,
     get_app_service_plan_id,
     get_config_option,
@@ -54,6 +56,24 @@ class TestCommon(TestCase):
             "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Storage/storageAccounts/ddlogstorageconfig1",
             get_storage_account_id(sub1, rg1, config1),
         )
+
+    def test_function_app_name(self):
+        self.assertEqual(
+            LogForwarder("12345abcd", STORAGE_ACCOUNT_TYPE).function_app_name, "dd-blob-log-forwarder-12345abcd"
+        )
+        self.assertEqual(LogForwarder("hello", STORAGE_ACCOUNT_TYPE).function_app_name, "dd-blob-log-forwarder-hello")
+
+    def test_app_service_plan_name(self):
+        self.assertEqual(
+            LogForwarder("12345abcd", STORAGE_ACCOUNT_TYPE).app_service_plan_name, "dd-log-forwarder-plan-12345abcd"
+        )
+        self.assertEqual(
+            LogForwarder("hello", STORAGE_ACCOUNT_TYPE).app_service_plan_name, "dd-log-forwarder-plan-hello"
+        )
+
+    def test_storage_account_name(self):
+        self.assertEqual(LogForwarder("12345abcd", STORAGE_ACCOUNT_TYPE).storage_account_name, "ddlogstorage12345abcd")
+        self.assertEqual(LogForwarder("hello", STORAGE_ACCOUNT_TYPE).storage_account_name, "ddlogstoragehello")
 
 
 class TestCacheUtils(IsolatedAsyncioTestCase):
