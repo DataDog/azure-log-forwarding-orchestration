@@ -2,13 +2,13 @@
 from collections.abc import AsyncIterable, Callable
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import ANY, AsyncMock, call, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 from cache.common import InvalidCacheError
 
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
-    def patch_path(self, path: str, **kwargs: Any):
+    def patch_path(self, path: str, **kwargs: Any) -> MagicMock | AsyncMock:
         p = patch(path, **kwargs)
         self.addCleanup(p.stop)
         return p.start()
