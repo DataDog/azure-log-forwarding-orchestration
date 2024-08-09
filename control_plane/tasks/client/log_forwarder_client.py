@@ -53,6 +53,7 @@ from tasks.common import wait_for_resource
 
 BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
+FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
@@ -279,16 +280,17 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 raise
             return False
 
-    async def get_blob_metrics(self, config_id: str, container_name: str) -> list[str]:
+    async def get_blob_metrics(self, config_id: str) -> list[str]:
         """
         Returns a list of json decodable strings that represent metrics
         json string takes form of {'Values': [metric_dict]}
         metric_dict is as follows {'Name': str, 'Value': float, 'Time': float}
         Time is a unix timestamp
         """
-        storage_account_name = get_storage_account_name(config_id)
-        conn_str = await self.get_connection_string(storage_account_name)
-        async with ContainerClient.from_connection_string(conn_str, container_name) as container_client:
+        conn_str = await self.get_connection_string(get_storage_account_name(config_id))
+        async with ContainerClient.from_connection_string(
+            conn_str, FORWARDER_METRIC_CONTAINER_NAME
+        ) as container_client:
             metrics = []
             current_time: datetime = datetime.now(UTC)
             previous_hour: datetime = current_time - timedelta(hours=1)

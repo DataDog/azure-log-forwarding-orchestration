@@ -202,7 +202,7 @@ class TestLogForwarderClient(AsyncTestCase):
         decoded_str.return_value = "hi\nby"
 
         async with self.client as client:
-            res = await client.get_blob_metrics("test", "test")
+            res = await client.get_blob_metrics("test")
             self.assertEqual(res, ["hi", "by", "hi", "by"])
 
     async def test_get_blob_metrics_missing_blob(self):
@@ -216,7 +216,7 @@ class TestLogForwarderClient(AsyncTestCase):
         decoded_str.return_value = "hi\nby"
 
         async with self.client as client:
-            res = await client.get_blob_metrics("test", "test")
+            res = await client.get_blob_metrics("test")
             self.assertEqual(res, ["hi", "by"])
 
     async def test_get_blob_timeout_retries(self):
@@ -239,7 +239,7 @@ class TestLogForwarderClient(AsyncTestCase):
         decoded_str.return_value = "hi\nby"
 
         async with self.client as client:
-            res = await client.get_blob_metrics("test", "test")
+            res = await client.get_blob_metrics("test")
             self.assertEqual(res, ["hi", "by", "hi", "by"])
             self.assertEqual(blob_client.download_blob.call_count, 6)  # 1 call is from where res_str is set
 
@@ -255,7 +255,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
-                await client.get_blob_metrics("test", "test")
+                await client.get_blob_metrics("test")
         self.assertEqual(
             blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
         )  # 1 call is from where res_str is set
@@ -273,7 +273,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
-                await client.get_blob_metrics("test", "test")
+                await client.get_blob_metrics("test")
         self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
 
     @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})

@@ -32,7 +32,6 @@ SCALING_TASK_NAME = "scaling_task"
 SCALING_TASK_PERIOD_MINUTES = 5
 
 METRIC_COLLECTION_PERIOD_MINUTES = 30
-FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
 SCALE_UP_EXECUTION_SECONDS = 25
 SCALE_DOWN_EXECUTION_SECONDS = 3
@@ -253,7 +252,7 @@ class ScalingTask(Task):
     ) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
         try:
-            metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
+            metric_dicts = await client.get_blob_metrics(config_id)
             forwarder_metrics = [
                 metric_entry
                 for metric_str in metric_dicts

@@ -23,7 +23,6 @@ from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.scaling_task import (
-    FORWARDER_METRIC_CONTAINER_NAME,
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_TASK_NAME,
     ScalingTask,
@@ -184,7 +183,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -252,7 +251,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -397,7 +396,7 @@ class TestScalingTask(TaskTestCase):
             resource_group="test_lfo",
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
+        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.log.warning.assert_called_with("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID)
 
     async def test_background_tasks_awaited(self):
