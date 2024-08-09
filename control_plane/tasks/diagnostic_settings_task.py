@@ -51,7 +51,8 @@ def get_diagnostic_setting_name(config_id: str) -> str:
     return DIAGNOSTIC_SETTING_PREFIX + config_id
 
 
-def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:
+def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:  # pragma: no cover
+    # no test coverage because we don't have event hub support yet
     return (
         get_resource_group_id(sub_id, resource_group)
         + "/providers/Microsoft.EventHub/namespaces/"
@@ -72,7 +73,7 @@ def get_diagnostic_setting(
 ) -> DiagnosticSettingsResource:
     log_settings = [LogSettings(category=category, enabled=True) for category in categories]
     if config.type == "eventhub":
-        return DiagnosticSettingsResource(
+        return DiagnosticSettingsResource(  # pragma: no cover
             event_hub_authorization_rule_id=get_authorization_rule_id(sub_id, resource_group, config.id),
             event_hub_name=get_event_hub_name(config.id),
             logs=log_settings,
