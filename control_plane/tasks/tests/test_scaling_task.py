@@ -286,7 +286,12 @@ class TestScalingTask(TaskTestCase):
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
-            {"runtime": 23, "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp()} for i in range(60)
+            {
+                "runtime": 23,
+                "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
+                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+            }
+            for i in range(60)
         ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
