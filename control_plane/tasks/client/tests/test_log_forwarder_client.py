@@ -254,9 +254,9 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
                 await client.get_blob_metrics("test", "test")
-                self.assertEqual(
-                    blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
-                )  # 1 call is from where res_str is set
+        self.assertEqual(
+            blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
+        )  # 1 call is from where res_str is set
         self.assertIsInstance(ctx.exception.last_attempt.exception(), ServiceResponseTimeoutError)
 
     async def test_get_blob_unretryable_exception(self):
@@ -272,7 +272,7 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
                 await client.get_blob_metrics("test", "test")
-                self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
+        self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
 
     async def test_submit_metrics_normal_execution(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
@@ -398,9 +398,9 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-                self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
-                self.assertEqual(self.client.api_instance.submit_metrics.call_count, MAX_ATTEMPS)
-                response_mock.get.assert_not_called()
+        self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
+        self.assertEqual(self.client.api_instance.submit_metrics.call_count, MAX_ATTEMPS)
+        response_mock.get.assert_not_called()
 
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
@@ -441,6 +441,6 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-                self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
-                self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
-                response_mock.get.assert_not_called()
+        self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
+        self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
+        response_mock.get.assert_not_called()
