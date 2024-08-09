@@ -7,9 +7,16 @@ from jsonschema import ValidationError, validate
 
 
 class MetricBlobEntry(TypedDict, total=True):
+    """
+    A representation of the metric blob entries
+    """
+
     timestamp: float
+    "a UNIX timestamp when metric was created"
     runtimeSeconds: float
+    "runtimeSeconds: The number of seconds taken for the forwarder to run"
     resourceLogVolumes: dict[str, int]
+    "resourceLogVolumes: A mapping of resource id ->log volume in bytes"
 
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
