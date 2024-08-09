@@ -1,5 +1,6 @@
 # stdlib
 from asyncio import sleep
+from math import inf
 from unittest import IsolatedAsyncioTestCase
 
 from azure.core.exceptions import ResourceNotFoundError
@@ -8,7 +9,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.core.polling import AsyncLROPoller
 
 # project
-from tasks.common import now, wait_for_resource
+from tasks.common import average, now, wait_for_resource
 
 
 class MockPoller(AsyncLROPoller):
@@ -31,9 +32,16 @@ def make_check_resource(tries: int = 0):
     return check_resource
 
 
-class TestTask(IsolatedAsyncioTestCase):
+class TestCommon(IsolatedAsyncioTestCase):
     async def test_now(self):
         self.assertRegex(now(), r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}")
+
+    async def test_average(self):
+        self.assertEqual(average(1, 2, 3), 2)
+        self.assertEqual(average(), inf)
+        self.assertEqual(average(default=-1), -1)
+        self.assertEqual(average(0), 0)
+        self.assertAlmostEqual(average(1, 3, 4), 2.6666, places=3)
 
     async def test_wait_for_resource_no_wait(self):
         res = await wait_for_resource(MockPoller(), make_check_resource())

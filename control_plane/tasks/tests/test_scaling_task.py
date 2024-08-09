@@ -3,11 +3,9 @@ from asyncio import sleep
 from datetime import datetime, timedelta
 from json import dumps
 from typing import Any
+from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
-
-# 3p
-import pytest
 
 # project
 from cache.assignment_cache import (
@@ -21,12 +19,15 @@ from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
 )
+from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache
+from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.scaling_task import (
     FORWARDER_METRIC_CONTAINER_NAME,
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_TASK_NAME,
     ScalingTask,
+    is_consistently_over_threshold,
 )
 from tasks.tests.common import TaskTestCase
 
@@ -38,6 +39,9 @@ log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
 
+
+resource1 = "resource1"
+resource2 = "resource2"
 
 NEW_UUID = "04cb0e0b-f268-4349-aa32-93a5885365f5"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
@@ -86,7 +90,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_new_regions_are_added(self):
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={sub_id1: {EAST_US: {resource1, resource2}}},
             assignment_cache_state={},
         )
 
@@ -94,7 +98,7 @@ class TestScalingTask(TaskTestCase):
         expected_cache: AssignmentCache = {
             sub_id1: {
                 EAST_US: {
-                    "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                    "resources": {resource1: NEW_LOG_FORWARDER_ID, resource2: NEW_LOG_FORWARDER_ID},
                     "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                 }
             }
@@ -107,7 +111,7 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state={
                 sub_id1: {
                     EAST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "resources": {resource1: OLD_LOG_FORWARDER_ID, resource2: OLD_LOG_FORWARDER_ID},
                         "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
@@ -122,11 +126,11 @@ class TestScalingTask(TaskTestCase):
 
     async def test_regions_added_and_deleted(self):
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {WEST_US: {"resource1", "resource2"}}},
+            resource_cache_state={sub_id1: {WEST_US: {resource1, resource2}}},
             assignment_cache_state={
                 sub_id1: {
                     EAST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "resources": {resource1: OLD_LOG_FORWARDER_ID, resource2: OLD_LOG_FORWARDER_ID},
                         "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
@@ -141,7 +145,7 @@ class TestScalingTask(TaskTestCase):
         expected_cache: AssignmentCache = {
             sub_id1: {
                 WEST_US: {
-                    "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                    "resources": {resource1: NEW_LOG_FORWARDER_ID, resource2: NEW_LOG_FORWARDER_ID},
                     "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                 }
             }
@@ -155,14 +159,14 @@ class TestScalingTask(TaskTestCase):
                 {
                     "timestamp": current_time,
                     "runtime": 211,
-                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                    "resourceLogAmounts": {resource1: 4, resource2: 6},
                 }
             ),
             dumps(
                 {
                     "timestamp": current_time,
                     "runtime": 199,
-                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                    "resourceLogAmounts": {resource1: 4, resource2: 6},
                 }
             ),
         ]
@@ -182,12 +186,19 @@ class TestScalingTask(TaskTestCase):
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
         self.assertTrue(
-            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.info.call_args_list
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = {"function_execution_time": 29.045}
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime": 29.045 - (i * 0.2),
+                "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
+                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+            }
+            for i in range(60)
+        ]
 
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
@@ -222,15 +233,9 @@ class TestScalingTask(TaskTestCase):
         current_time = (datetime.now()).timestamp()
         self.client.get_blob_metrics.return_value = [
             dumps(
-                {
-                    "timestamp": current_time,
-                    "runtime": 211,
-                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                }
+                {"timestamp": current_time, "runtime": 211, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}
             ),
-            dumps(
-                {"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}}
-            ),
+            dumps({"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
         ]
 
         await self.run_scaling_task(
@@ -249,14 +254,19 @@ class TestScalingTask(TaskTestCase):
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
         self.assertTrue(
-            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.info.call_args_list
+            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    @pytest.mark.skip("AZINTS-2684")
     async def test_log_forwarders_dont_scale_when_not_needed(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = {"function_execution_time": 22.78}
-
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime": 22.2,
+                "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
+                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+            }
+            for i in range(60)
+        ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -270,14 +280,19 @@ class TestScalingTask(TaskTestCase):
                 },
             },
         )
-        # TODO[AZINTS-2684]: Fix test as create_log_forwarder is awaited
         self.client.create_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_called()
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    @pytest.mark.skip("AZINTS-2684")
     async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = {"function_execution_time": 2.5}
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime": 23,
+                "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
+                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+            }
+            for i in range(60)
+        ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
@@ -292,7 +307,6 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        # TODO[AZINTS-2684]: Fix test as create_log_forwarder is awaited
         self.client.create_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
             sub_id1: {
@@ -309,16 +323,26 @@ class TestScalingTask(TaskTestCase):
                 }
             },
         }
-        # TODO[AZINTS-2684]: Fix test as self.cache is invalid
         self.assertEqual(self.cache, expected_cache)
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    @pytest.mark.skip("AZINTS-2684")
     async def test_new_resources_onboard_to_the_least_busy_forwarder(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.side_effect = lambda config_id, *_: {
-            OLD_LOG_FORWARDER_ID: {"function_execution_time": 2.5},
-            NEW_LOG_FORWARDER_ID: {"function_execution_time": 10.5},
-        }[config_id]
+        forwarder_runtimes = {
+            OLD_LOG_FORWARDER_ID: 2.5,
+            NEW_LOG_FORWARDER_ID: 10.5,
+        }
+
+        def metrics_side_effect(_client: LogForwarderClient, config_id: str, _old_ts: float) -> list[MetricBlobEntry]:
+            return [
+                {
+                    "runtime": forwarder_runtimes[config_id],
+                    "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
+                    "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                }
+                for i in range(60)
+            ]
+
+        collect_forwarder_metrics.side_effect = metrics_side_effect
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
@@ -350,22 +374,13 @@ class TestScalingTask(TaskTestCase):
                 }
             },
         }
-        # TODO[AZINTS-2684]: Fix test as self.cache is invalid
         self.assertEqual(self.cache, expected_cache)
 
     async def test_old_log_forwarder_metrics_not_collected(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
         self.client.get_blob_metrics.return_value = [
-            dumps(
-                {
-                    "timestamp": old_time,
-                    "runtime": 211,
-                    "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                }
-            ),
-            dumps(
-                {"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}}
-            ),
+            dumps({"timestamp": old_time, "runtime": 211, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
+            dumps({"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
         ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
@@ -383,9 +398,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, FORWARDER_METRIC_CONTAINER_NAME)
-        self.assertTrue(
-            call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) in self.log.info.call_args_list
-        )
+        self.log.warning.assert_called_with("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID)
 
     async def test_background_tasks_awaited(self):
         m = Mock()
@@ -403,3 +416,97 @@ class TestScalingTask(TaskTestCase):
 
         self.assertEqual(m.call_count, 3)
         self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
+
+
+class TestScalingTaskHelpers(TestCase):
+    def minutes_ago(self, minutes: float) -> float:
+        return (datetime.now() - timedelta(minutes=minutes)).timestamp()
+
+    def test_metrics_over_threshold(self):
+        self.assertTrue(
+            is_consistently_over_threshold(
+                metrics=[
+                    {
+                        "runtime": 19,
+                        "timestamp": self.minutes_ago(5.5),
+                        "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                    },
+                    {
+                        "runtime": 24,
+                        "timestamp": self.minutes_ago(4),
+                        "resourceLogAmounts": {resource1: 4200, resource2: 6100},
+                    },
+                    {
+                        "runtime": 28,
+                        "timestamp": self.minutes_ago(3),
+                        "resourceLogAmounts": {resource1: 4300, resource2: 6400},
+                    },
+                ],
+                threshold=20,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
+
+    def test_no_metrics_not_over_threshold(self):
+        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0, oldest_timestamp=self.minutes_ago(5)))
+
+    def test_old_metrics_not_over_threshold(self):
+        self.assertFalse(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 100, "timestamp": self.minutes_ago(i), "resourceLogAmounts": {resource2: 100000}}
+                    for i in range(3, 6)
+                ],
+                threshold=0,
+                oldest_timestamp=self.minutes_ago(2),
+            )
+        )
+
+    def test_metrics_partially_over_threshold(self):
+        self.assertFalse(
+            is_consistently_over_threshold(
+                metrics=[
+                    {
+                        "runtime": 23,
+                        "timestamp": self.minutes_ago(5.5),
+                        "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                    },
+                    {
+                        "runtime": 24,
+                        "timestamp": self.minutes_ago(4),
+                        "resourceLogAmounts": {resource1: 4200, resource2: 6100},
+                    },
+                    {
+                        "runtime": 28,
+                        "timestamp": self.minutes_ago(3),
+                        "resourceLogAmounts": {resource1: 4300, resource2: 6400},
+                    },
+                ],
+                threshold=25,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
+
+    def test_single_metric_over_threshold(self):
+        self.assertTrue(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 26, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {resource1: 5670}},
+                ],
+                threshold=25,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
+
+    def test_single_metric_exactly_at_threshold(self):
+        # granted it is extremely unlikely that we hit this edge case
+        # but it is still a valid one to test
+        self.assertFalse(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 25, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {resource1: 5600}},
+                ],
+                threshold=25,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
