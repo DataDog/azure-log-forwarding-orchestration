@@ -3,6 +3,7 @@ from asyncio import sleep
 from datetime import datetime, timedelta
 from json import dumps
 from typing import Any
+from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
 
@@ -25,6 +26,7 @@ from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_TASK_NAME,
     ScalingTask,
+    is_consistently_over_threshold,
 )
 from tasks.tests.common import TaskTestCase
 
@@ -405,3 +407,72 @@ class TestScalingTask(TaskTestCase):
 
         self.assertEqual(m.call_count, 3)
         self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
+
+
+class TestScalingTaskHelpers(TestCase):
+    def minutes_ago(self, minutes: float) -> float:
+        return (datetime.now() - timedelta(minutes=minutes)).timestamp()
+
+    def test_metrics_over_threshold(self):
+        self.assertTrue(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 23, "timestamp": self.minutes_ago(5.5), "resourceLogAmounts": {}},
+                    {"runtime": 24, "timestamp": self.minutes_ago(4), "resourceLogAmounts": {}},
+                    {"runtime": 28, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {}},
+                ],
+                threshold=20,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
+
+    def test_no_metrics_not_over_threshold(self):
+        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0, oldest_timestamp=self.minutes_ago(5)))
+
+    def test_old_metrics_not_over_threshold(self):
+        self.assertFalse(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 100, "timestamp": self.minutes_ago(i), "resourceLogAmounts": {}} for i in range(3, 6)
+                ],
+                threshold=0,
+                oldest_timestamp=self.minutes_ago(2),
+            )
+        )
+
+    def test_metrics_partially_over_threshold(self):
+        self.assertFalse(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 23, "timestamp": self.minutes_ago(5.5), "resourceLogAmounts": {}},
+                    {"runtime": 24, "timestamp": self.minutes_ago(4), "resourceLogAmounts": {}},
+                    {"runtime": 28, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {}},
+                ],
+                threshold=25,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
+
+    def test_single_metric_over_threshold(self):
+        self.assertTrue(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 26, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {}},
+                ],
+                threshold=25,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )
+
+    def test_single_metric_exactly_at_threshold(self):
+        # granted it is extremely unlikely that we hit this edge case
+        # but it is still a valid one to test
+        self.assertFalse(
+            is_consistently_over_threshold(
+                metrics=[
+                    {"runtime": 25, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {}},
+                ],
+                threshold=25,
+                oldest_timestamp=self.minutes_ago(5),
+            )
+        )

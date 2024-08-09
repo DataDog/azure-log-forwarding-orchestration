@@ -41,12 +41,15 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 
-def is_over_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
+def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
     """Check if the runtime is consistently over the threshold for the given duration"""
-    # if we have no metrics, we can't determine if we are over the threshold
+    metrics = list(filter(lambda metric: metric["timestamp"] > oldest_timestamp, metrics))
+
+    # if we have no valid metrics, we can't determine if we are over the threshold
     if not metrics:
         return False
-    return all(metric["runtime"] > threshold for metric in metrics if metric["timestamp"] > oldest_timestamp)
+
+    return all(metric["runtime"] > threshold for metric in metrics)
 
 
 def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
@@ -183,7 +186,7 @@ class ScalingTask(Task):
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
-            if is_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
+            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
         ]
         if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
