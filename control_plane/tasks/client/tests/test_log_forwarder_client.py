@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock, patch
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -61,6 +61,8 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.api_instance = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
+
+        self.log = self.patch_path("tasks.client.log_forwarder_client.log")
 
         self.raise_for_status = Mock()
         (await self.client.rest_client.post()).raise_for_status = self.raise_for_status
@@ -444,3 +446,17 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
         self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
         response_mock.get.assert_not_called()
+
+    @patch.dict(environ, {"DD_API_KEY": "test"})
+    async def test_submit_metrics_errors_logged(self):
+        self.client.api_instance.submit_metrics.return_value = {
+            "errors": [
+                "oops something went wrong",
+            ]
+        }
+        async with self.client as client:
+            await client.submit_log_forwarder_metrics(
+                "test", [{"runtime": 280, "resourceLogAmounts": {}, "timestamp": 1723040910}]
+            )
+
+        self.log.error.assert_called_once_with("oops something went wrong")

@@ -331,9 +331,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
         )
 
         response = await self.api_instance.submit_metrics(body=body)  # type: ignore
-        if len(response.get("errors", [])) > 0:
-            for err in response.get("errors", []):
-                log.error(err)
+        for error in response.get("errors", []):
+            log.error(error)
 
     def get_datetime_str(self, time: datetime) -> str:
         return f"{time:%Y-%m-%d-%H}"
