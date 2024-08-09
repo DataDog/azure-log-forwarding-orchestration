@@ -1,5 +1,5 @@
 # stdlib
-from asyncio import create_task, sleep
+from asyncio import sleep
 from datetime import datetime, timedelta
 from json import dumps
 from typing import Any
@@ -395,7 +395,11 @@ class TestScalingTask(TaskTestCase):
             m()
 
         async with ScalingTask(dumps({sub_id1: {}}), dumps({sub_id1: {}}), rg1) as task:
-            task.background_tasks.update(create_task(background_task()) for _ in range(3))
+            for _ in range(3):
+                task.submit_background_task(background_task())
+            failing_task_error = Exception("test")
+            task.submit_background_task(AsyncMock(side_effect=failing_task_error)())
             await task.run()
 
         self.assertEqual(m.call_count, 3)
+        self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
