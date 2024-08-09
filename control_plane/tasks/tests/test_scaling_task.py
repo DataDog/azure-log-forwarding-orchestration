@@ -335,9 +335,9 @@ class TestScalingTask(TaskTestCase):
         def metrics_side_effect(_client: LogForwarderClient, config_id: str, _old_ts: float) -> list[MetricBlobEntry]:
             return [
                 {
-                    "runtime": forwarder_runtimes[config_id],
+                    "runtimeSeconds": forwarder_runtimes[config_id],
                     "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                    "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                    "resourceLogVolumes": {resource1: 4000, resource2: 6000},
                 }
                 for i in range(60)
             ]
@@ -427,19 +427,19 @@ class TestScalingTaskHelpers(TestCase):
             is_consistently_over_threshold(
                 metrics=[
                     {
-                        "runtime": 19,
+                        "runtimeSeconds": 19,
                         "timestamp": self.minutes_ago(5.5),
-                        "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                        "resourceLogVolumes": {resource1: 4000, resource2: 6000},
                     },
                     {
-                        "runtime": 24,
+                        "runtimeSeconds": 24,
                         "timestamp": self.minutes_ago(4),
-                        "resourceLogAmounts": {resource1: 4200, resource2: 6100},
+                        "resourceLogVolumes": {resource1: 4200, resource2: 6100},
                     },
                     {
-                        "runtime": 28,
+                        "runtimeSeconds": 28,
                         "timestamp": self.minutes_ago(3),
-                        "resourceLogAmounts": {resource1: 4300, resource2: 6400},
+                        "resourceLogVolumes": {resource1: 4300, resource2: 6400},
                     },
                 ],
                 threshold=20,
@@ -454,7 +454,7 @@ class TestScalingTaskHelpers(TestCase):
         self.assertFalse(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime": 100, "timestamp": self.minutes_ago(i), "resourceLogAmounts": {resource2: 100000}}
+                    {"runtimeSeconds": 100, "timestamp": self.minutes_ago(i), "resourceLogVolumes": {resource2: 100000}}
                     for i in range(3, 6)
                 ],
                 threshold=0,
@@ -467,19 +467,19 @@ class TestScalingTaskHelpers(TestCase):
             is_consistently_over_threshold(
                 metrics=[
                     {
-                        "runtime": 23,
+                        "runtimeSeconds": 23,
                         "timestamp": self.minutes_ago(5.5),
-                        "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                        "resourceLogVolumes": {resource1: 4000, resource2: 6000},
                     },
                     {
-                        "runtime": 24,
+                        "runtimeSeconds": 24,
                         "timestamp": self.minutes_ago(4),
-                        "resourceLogAmounts": {resource1: 4200, resource2: 6100},
+                        "resourceLogVolumes": {resource1: 4200, resource2: 6100},
                     },
                     {
-                        "runtime": 28,
+                        "runtimeSeconds": 28,
                         "timestamp": self.minutes_ago(3),
-                        "resourceLogAmounts": {resource1: 4300, resource2: 6400},
+                        "resourceLogVolumes": {resource1: 4300, resource2: 6400},
                     },
                 ],
                 threshold=25,
@@ -491,7 +491,7 @@ class TestScalingTaskHelpers(TestCase):
         self.assertTrue(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime": 26, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {resource1: 5670}},
+                    {"runtimeSeconds": 26, "timestamp": self.minutes_ago(3), "resourceLogVolumes": {resource1: 5670}},
                 ],
                 threshold=25,
                 oldest_timestamp=self.minutes_ago(5),
@@ -504,7 +504,7 @@ class TestScalingTaskHelpers(TestCase):
         self.assertFalse(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime": 25, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {resource1: 5600}},
+                    {"runtimeSeconds": 25, "timestamp": self.minutes_ago(3), "resourceLogVolumes": {resource1: 5600}},
                 ],
                 threshold=25,
                 oldest_timestamp=self.minutes_ago(5),
