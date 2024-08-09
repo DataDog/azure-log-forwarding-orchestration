@@ -158,15 +158,15 @@ class TestScalingTask(TaskTestCase):
             dumps(
                 {
                     "timestamp": current_time,
-                    "runtime": 211,
-                    "resourceLogAmounts": {resource1: 4, resource2: 6},
+                    "runtimeSeconds": 211,
+                    "resourceLogVolumes": {resource1: 4, resource2: 6},
                 }
             ),
             dumps(
                 {
                     "timestamp": current_time,
-                    "runtime": 199,
-                    "resourceLogAmounts": {resource1: 4, resource2: 6},
+                    "runtimeSeconds": 199,
+                    "resourceLogVolumes": {resource1: 4, resource2: 6},
                 }
             ),
         ]
@@ -193,9 +193,9 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime": 29.045 - (i * 0.2),
+                "runtimeSeconds": 29.045 - (i * 0.2),
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                "resourceLogVolumes": {resource1: 4000, resource2: 6000},
             }
             for i in range(60)
         ]
@@ -233,9 +233,15 @@ class TestScalingTask(TaskTestCase):
         current_time = (datetime.now()).timestamp()
         self.client.get_blob_metrics.return_value = [
             dumps(
-                {"timestamp": current_time, "runtime": 211, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}
+                {
+                    "timestamp": current_time,
+                    "runtimeSeconds": 211,
+                    "resourceLogVolumes": {resource1: 4000, resource2: 6000},
+                }
             ),
-            dumps({"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
+            dumps(
+                {"timestamp": old_time, "runtimeSeconds": 199, "resourceLogVolumes": {resource1: 4000, resource2: 6000}}
+            ),
         ]
 
         await self.run_scaling_task(
@@ -261,9 +267,9 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarders_dont_scale_when_not_needed(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime": 22.2,
+                "runtimeSeconds": 22.2,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                "resourceLogVolumes": {resource1: 4000, resource2: 6000},
             }
             for i in range(60)
         ]
@@ -287,9 +293,9 @@ class TestScalingTask(TaskTestCase):
     async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime": 23,
+                "runtimeSeconds": 23,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                "resourceLogVolumes": {resource1: 4000, resource2: 6000},
             }
             for i in range(60)
         ]
@@ -379,8 +385,12 @@ class TestScalingTask(TaskTestCase):
     async def test_old_log_forwarder_metrics_not_collected(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
         self.client.get_blob_metrics.return_value = [
-            dumps({"timestamp": old_time, "runtime": 211, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
-            dumps({"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
+            dumps(
+                {"timestamp": old_time, "runtimeSeconds": 211, "resourceLogVolumes": {resource1: 4000, resource2: 6000}}
+            ),
+            dumps(
+                {"timestamp": old_time, "runtimeSeconds": 199, "resourceLogVolumes": {resource1: 4000, resource2: 6000}}
+            ),
         ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
