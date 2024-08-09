@@ -6,7 +6,6 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
-from os import environ
 from typing import Any
 from uuid import uuid4
 
@@ -31,7 +30,6 @@ from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
 
-SHOULD_SUBMIT_METRICS = environ.get("SHOULD_SUBMIT_METRICS", False)
 METRIC_COLLECTION_PERIOD_MINUTES = 30
 FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
@@ -243,8 +241,7 @@ class ScalingTask(Task):
             if len(forwarder_metrics) == 0:
                 log.info("No valid metrics found for forwarder %s", config_id)
                 return None
-            if SHOULD_SUBMIT_METRICS:
-                self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+            self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
