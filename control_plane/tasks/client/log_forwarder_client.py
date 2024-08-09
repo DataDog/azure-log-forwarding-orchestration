@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Self, TypeVar
+from typing import Self, TypeVar, cast
 
 # 3p
 from aiohttp import ClientSession
@@ -31,7 +31,7 @@ from azure.mgmt.web.v2023_12_01.models import (
 )
 from azure.storage.blob.aio import ContainerClient
 from datadog_api_client import AsyncApiClient, Configuration
-from datadog_api_client.v2.api.metrics_api import MetricsApi
+from datadog_api_client.v2.api.metrics_api import IntakePayloadAccepted, MetricsApi
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
 from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
@@ -321,34 +321,37 @@ class LogForwarderClient(AbstractAsyncContextManager):
         if not metrics or not environ.get("SHOULD_SUBMIT_METRICS", False) or not environ.get("DD_API_KEY"):
             return
 
-        metric_series: list[MetricSeries] = [self.create_metric_series(metrics, log_forwarder_id)]
-        body = MetricPayload(
-            series=metric_series,
-        )
-
-        response = await self.api_instance.submit_metrics(body=body)  # type: ignore
+        response: IntakePayloadAccepted = await self.api_instance.submit_metrics(
+            body=self.create_metric_payload(metrics, log_forwarder_id)
+        )  # type: ignore
         for error in response.get("errors", []):
             log.error(error)
 
     def get_datetime_str(self, time: datetime) -> str:
         return f"{time:%Y-%m-%d-%H}"
 
-    def create_metric_series(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricSeries:
-        metric_points: list[MetricPoint] = [self.create_metric_point(metric) for metric in metric_entries]
-        return MetricSeries(  # type: ignore
-            metric="Runtime",
-            type=MetricIntakeType.UNSPECIFIED,
-            points=metric_points,
-            resources=[
-                MetricResource(
-                    name=get_function_app_name(log_forwarder_id),
-                    type="logforwarder",
-                ),
-            ],
-        )
-
-    def create_metric_point(self, metric: MetricBlobEntry) -> MetricPoint:
-        return MetricPoint(  # type: ignore
-            timestamp=int(metric["timestamp"]),
-            value=metric["runtime_seconds"],
+    def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
+        return cast(  # annoying hack to get mypy typing to work since the SDK overrides __new__
+            MetricPayload,
+            MetricPayload(
+                series=[
+                    MetricSeries(
+                        metric="Runtime",
+                        type=MetricIntakeType.UNSPECIFIED,
+                        points=[
+                            MetricPoint(
+                                timestamp=int(metric["timestamp"]),
+                                value=metric["runtime_seconds"],
+                            )
+                            for metric in metric_entries
+                        ],
+                        resources=[
+                            MetricResource(
+                                name=get_function_app_name(log_forwarder_id),
+                                type="logforwarder",
+                            ),
+                        ],
+                    ),
+                ]
+            ),
         )
