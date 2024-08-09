@@ -231,7 +231,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await self.storage_client.management_policies.create_or_update(
             self.resource_group,
             storage_account_name,
-            "Delete Old Metric Blobs",
+            "default",  # required to be "default" because of the API
             ManagementPolicy(
                 policy=ManagementPolicySchema(
                     rules=[
