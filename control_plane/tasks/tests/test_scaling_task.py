@@ -7,7 +7,6 @@ from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import UUID
 
-# 3p
 # project
 from cache.assignment_cache import (
     ASSIGNMENT_CACHE_BLOB,
