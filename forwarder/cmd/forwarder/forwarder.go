@@ -21,7 +21,7 @@ import (
 type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
 	Runtime            int64            `json:"runtime"`
-	ResourceLogAmounts map[string]int32 `json:"resourceLogAmounts"`
+	ResourceLogVolumes map[string]int32 `json:"resourceLogVolumes"`
 }
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {

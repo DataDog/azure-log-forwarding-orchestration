@@ -9,7 +9,7 @@ from jsonschema import ValidationError, validate
 class MetricBlobEntry(TypedDict, total=True):
     timestamp: float
     runtime: float
-    resourceLogAmounts: dict[str, int]
+    resourceLogVolumes: dict[str, int]
 
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
@@ -17,7 +17,7 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "properties": {
         "timestamp": {"type": "number"},
         "runtime": {"type": "number"},
-        "resourceLogAmounts": {"type": "object", "additionalProperties": {"type": "number"}},
+        "resourceLogVolumes": {"type": "object", "additionalProperties": {"type": "number"}},
     },
     "required": ["timestamp", "runtime", "resourceLogAmounts"],
     "additionalProperties": False,

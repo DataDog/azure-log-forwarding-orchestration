@@ -279,8 +279,8 @@ class TestLogForwarderClient(AsyncTestCase):
     @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_normal_execution(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
-            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
-            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
         self.client.api_instance.submit_metrics.return_value = {}
         sample_body = MetricPayload(
@@ -315,8 +315,8 @@ class TestLogForwarderClient(AsyncTestCase):
     @patch.dict(environ, {"SHOULD_SUBMIT_METRICS": "1", "DD_API_KEY": ""})
     async def test_submit_metrics_no_api_key(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
-            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
-            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
 
         async with self.client as client:
@@ -327,8 +327,8 @@ class TestLogForwarderClient(AsyncTestCase):
     @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_retries(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
-            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
-            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
         self.client.api_instance.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
         self.client.api_instance.submit_metrics.return_value = {}
@@ -365,8 +365,8 @@ class TestLogForwarderClient(AsyncTestCase):
     @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_max_retries(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
-            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
-            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
         self.client.api_instance.submit_metrics.side_effect = RequestTimeout()
         sample_body = MetricPayload(
@@ -404,8 +404,8 @@ class TestLogForwarderClient(AsyncTestCase):
     @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_nonretryable_exception(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
-            {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
-            {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040910, "runtime": 280, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
+            {"timestamp": 1723040911, "runtime": 281, "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
         self.client.api_instance.submit_metrics.side_effect = FakeHttpError(404)
         self.client.api_instance.submit_metrics.return_value = {}
@@ -448,7 +448,7 @@ class TestLogForwarderClient(AsyncTestCase):
         }
         async with self.client as client:
             await client.submit_log_forwarder_metrics(
-                "test", [{"runtime": 280, "resourceLogAmounts": {}, "timestamp": 1723040910}]
+                "test", [{"runtime": 280, "resourceLogVolumes": {}, "timestamp": 1723040910}]
             )
 
         self.log.error.assert_called_once_with("oops something went wrong")
