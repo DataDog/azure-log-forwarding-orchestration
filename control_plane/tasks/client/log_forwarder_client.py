@@ -24,6 +24,7 @@ from azure.mgmt.storage.v2023_05_01.models import (
     ManagementPolicyBaseBlob,
     ManagementPolicyDefinition,
     ManagementPolicyFilter,
+    ManagementPolicyName,
     ManagementPolicyRule,
     ManagementPolicySchema,
     ManagementPolicySnapShot,
@@ -71,6 +72,7 @@ FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
+FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 14
 
 log = getLogger(__name__)
 
@@ -231,7 +233,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await self.storage_client.management_policies.create_or_update(
             self.resource_group,
             storage_account_name,
-            "default",  # required to be "default" because of the API
+            ManagementPolicyName.DEFAULT,
             ManagementPolicy(
                 policy=ManagementPolicySchema(
                     rules=[
@@ -242,10 +244,14 @@ class LogForwarderClient(AbstractAsyncContextManager):
                             definition=ManagementPolicyDefinition(
                                 actions=ManagementPolicyAction(
                                     base_blob=ManagementPolicyBaseBlob(
-                                        delete=DateAfterModification(days_after_modification_greater_than=14)
+                                        delete=DateAfterModification(
+                                            days_after_modification_greater_than=FORWARDER_METRIC_BLOB_LIFETIME_DAYS
+                                        )
                                     ),
                                     snapshot=ManagementPolicySnapShot(
-                                        delete=DateAfterCreation(days_after_creation_greater_than=14)
+                                        delete=DateAfterCreation(
+                                            days_after_creation_greater_than=FORWARDER_METRIC_BLOB_LIFETIME_DAYS
+                                        )
                                     ),
                                 ),
                                 filters=ManagementPolicyFilter(
