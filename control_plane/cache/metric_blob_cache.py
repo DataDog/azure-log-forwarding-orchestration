@@ -7,19 +7,26 @@ from jsonschema import ValidationError, validate
 
 
 class MetricBlobEntry(TypedDict, total=True):
+    """
+    A representation of the metric blob entries
+    """
+
     timestamp: float
-    runtime: float
-    resourceLogAmounts: dict[str, int]
+    "a UNIX timestamp when metric was created"
+    runtime_seconds: float
+    "The number of seconds taken for the forwarder to run"
+    resource_log_volume: dict[str, int]
+    "A mapping of resource id ->log volume in bytes"
 
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "timestamp": {"type": "number"},
-        "runtime": {"type": "number"},
-        "resourceLogAmounts": {"type": "object", "additionalProperties": {"type": "number"}},
+        "runtime_seconds": {"type": "number"},
+        "resource_log_volume": {"type": "object", "additionalProperties": {"type": "number"}},
     },
-    "required": ["timestamp", "runtime", "resourceLogAmounts"],
+    "required": ["timestamp", "runtime_seconds", "resource_log_volume"],
     "additionalProperties": False,
 }
 

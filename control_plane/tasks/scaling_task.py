@@ -48,7 +48,7 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
     if not metrics:
         return False
 
-    return all(metric["runtime"] > threshold for metric in metrics)
+    return all(metric["runtime_seconds"] > threshold for metric in metrics)
 
 
 def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
@@ -214,7 +214,7 @@ class ScalingTask(Task):
         # any forwarders without metrics we should not add more resources to, there may be something wrong
         least_busy_forwarder_id, _ = min(
             forwarder_metrics.items(),
-            key=lambda metrics_by_id: average(*(metric["runtime"] for metric in metrics_by_id[1])),
+            key=lambda metrics_by_id: average(*(metric["runtime_seconds"] for metric in metrics_by_id[1])),
         )
 
         self.assignment_cache[subscription_id][region]["resources"].update(
