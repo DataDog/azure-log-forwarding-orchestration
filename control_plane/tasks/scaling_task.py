@@ -25,10 +25,11 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import now
+from tasks.common import average, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
+SCALING_TASK_PERIOD_MINUTES = 5
 
 METRIC_COLLECTION_PERIOD_MINUTES = 30
 FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
@@ -38,6 +39,21 @@ SCALE_DOWN_EXECUTION_SECONDS = 3
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
+
+
+def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
+    """Check if the runtime is consistently over the threshold for the given duration"""
+    metrics = list(filter(lambda metric: metric["timestamp"] > oldest_timestamp, metrics))
+
+    # if we have no valid metrics, we can't determine if we are over the threshold
+    if not metrics:
+        return False
+
+    return all(metric["runtime"] > threshold for metric in metrics)
+
+
+def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
+    return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
 class ScalingTask(Task):
@@ -153,33 +169,41 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
+        now_dt = datetime.now()
+        oldest_metric_timestamp = (now_dt - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
+
         metrics = await gather(
-            *(self.collect_forwarder_metrics(config_id, subscription_id, client) for config_id in log_forwarders)
+            *(
+                self.collect_forwarder_metrics(client, config_id, oldest_metric_timestamp)
+                for config_id in log_forwarders
+            )
         )
         forwarder_metrics = dict(zip(log_forwarders, metrics, strict=False))
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
-        underscaled_forwarder_ids = [
+        oldest_scale_up_timestamp = (now_dt - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
+        forwarders_to_scale_up = [
             config_id
-            for config_id, _ in forwarder_metrics.items()
-            if True  # TODO (AZINTS-2684) implement proper thresholds based on multiple metrics
+            for config_id, metrics in forwarder_metrics.items()
+            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
         ]
-        if not underscaled_forwarder_ids:
+        if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
             # if we don't scale up and are good to scale down
             return
 
-        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in underscaled_forwarder_ids])
+        # create a second forwarder for each forwarder that needs to scale up
+        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
 
-        for underscaled_forwarder_id, new_forwarder in zip(underscaled_forwarder_ids, new_forwarders, strict=False):
+        for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
             if not new_forwarder:
-                log.warning("Failed to create new log forwarder, skipping scaling for %s", underscaled_forwarder_id)
+                log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
                 continue
-            self.split_forwarder_resources(subscription_id, region, underscaled_forwarder_id, new_forwarder)
+            self.split_forwarder_resources(subscription_id, region, overwhelmed_forwarder_id, new_forwarder)
 
     def onboard_new_resources(
-        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry] | None]
+        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
     ) -> None:
         """Assigns new resources to the least busy forwarder in the region"""
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
@@ -189,10 +213,10 @@ class ScalingTask(Task):
             return
 
         # any forwarders without metrics we should not add more resources to, there may be something wrong
-        least_busy_forwarder_id = "TODO"  # TODO (AZINTS-2684) implement proper min scaling based on new metrics
-        # least_busy_forwarder_id, _ = min(
-        #     forwarder_metrics.items(), key=lambda pair: pair[1][0]
-        # )
+        least_busy_forwarder_id, _ = min(
+            forwarder_metrics.items(),
+            key=lambda metrics_by_id: average(*(metric["runtime"] for metric in metrics_by_id[1])),
+        )
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {resource: least_busy_forwarder_id for resource in new_resources}
@@ -225,30 +249,26 @@ class ScalingTask(Task):
         )
 
     async def collect_forwarder_metrics(
-        self, config_id: str, sub_id: str, client: LogForwarderClient
-    ) -> list[MetricBlobEntry] | None:
-        """Updates the log_forwarder_metric_cache entry for a log forwarder
-        If there is an error the entry is set to an empty dict"""
+        self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
+    ) -> list[MetricBlobEntry]:
+        """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
         try:
-            forwarder_metrics: list[MetricBlobEntry] | None = None
             metric_dicts = await client.get_blob_metrics(config_id, FORWARDER_METRIC_CONTAINER_NAME)
-            oldest_time: datetime = datetime.now() - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)
             forwarder_metrics = [
                 metric_entry
                 for metric_str in metric_dicts
-                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_time.timestamp()))
+                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_valid_timestamp))
             ]
             if len(forwarder_metrics) == 0:
-                log.info("No valid metrics found for forwarder %s", config_id)
-                return None
+                log.warning("No valid metrics found for forwarder %s", config_id)
             self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
         except HttpResponseError:
             log.exception("Recieved azure HTTP error: ")
-            return forwarder_metrics
+            return []
         except RetryError:
             log.error("Max retries attempted")
-            return forwarder_metrics
+            return []
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:

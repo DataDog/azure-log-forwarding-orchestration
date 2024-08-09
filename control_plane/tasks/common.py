@@ -1,6 +1,7 @@
 # stdlib
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from math import inf
 from typing import Any, TypeVar
 
 # 3p
@@ -12,6 +13,13 @@ from tenacity import retry, retry_if_exception_type, stop_after_delay
 def now() -> str:
     """Return the current time in ISO format"""
     return datetime.now().isoformat()
+
+
+def average(*items: float, default: float = inf) -> float:
+    """Return the average of the items, or `default` if no items are provided"""
+    if not items:
+        return default
+    return sum(items) / len(items)
 
 
 T = TypeVar("T")
