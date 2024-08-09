@@ -276,15 +276,13 @@ class TestLogForwarderClient(AsyncTestCase):
                 await client.get_blob_metrics("test", "test")
         self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
 
+    @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_normal_execution(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
             {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
-        response_mock = MagicMock()
-        response_mock.get.return_value = []
-        self.client.api_instance.submit_metrics.return_value = response_mock
-        environ["DD_API_KEY"] = "test"
+        self.client.api_instance.submit_metrics.return_value = {}
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -311,29 +309,29 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-            self.client.api_instance.submit_metrics.assert_called_once_with(body=sample_body)
 
+        self.client.api_instance.submit_metrics.assert_called_once_with(body=sample_body)
+
+    @patch.dict(environ, {"SHOULD_SUBMIT_METRICS": "1", "DD_API_KEY": ""})
     async def test_submit_metrics_no_api_key(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
             {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
-        if "DD_API_KEY" in environ:
-            del environ["DD_API_KEY"]
+
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-            self.client.api_instance.submit_metrics.assert_not_called()
 
+        self.client.api_instance.submit_metrics.assert_not_called()
+
+    @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_retries(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
             {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
-        response_mock = MagicMock()
-        response_mock.get.return_value = []
         self.client.api_instance.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
-        self.client.api_instance.submit_metrics.return_value = response_mock
-        environ["DD_API_KEY"] = "test"
+        self.client.api_instance.submit_metrics.return_value = {}
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -360,19 +358,17 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-            self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
-            self.assertEqual(self.client.api_instance.submit_metrics.call_count, 3)
 
+        self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
+        self.assertEqual(self.client.api_instance.submit_metrics.call_count, 3)
+
+    @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_max_retries(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
             {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
-        response_mock = MagicMock()
-        response_mock.get.return_value = []
         self.client.api_instance.submit_metrics.side_effect = RequestTimeout()
-        self.client.api_instance.submit_metrics.return_value = response_mock
-        environ["DD_API_KEY"] = "test"
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -402,20 +398,17 @@ class TestLogForwarderClient(AsyncTestCase):
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
         self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
         self.assertEqual(self.client.api_instance.submit_metrics.call_count, MAX_ATTEMPS)
-        response_mock.get.assert_not_called()
 
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
+    @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_nonretryable_exception(self):
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {"timestamp": 1723040910, "runtime": 280, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
             {"timestamp": 1723040911, "runtime": 281, "resourceLogAmounts": {"5a095f74c60a": 4, "93a5885365f5": 6}},
         ]
-        response_mock = MagicMock()
-        response_mock.get.return_value = []
         self.client.api_instance.submit_metrics.side_effect = FakeHttpError(404)
-        self.client.api_instance.submit_metrics.return_value = response_mock
-        environ["DD_API_KEY"] = "test"
+        self.client.api_instance.submit_metrics.return_value = {}
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -445,9 +438,8 @@ class TestLogForwarderClient(AsyncTestCase):
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
         self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
         self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
-        response_mock.get.assert_not_called()
 
-    @patch.dict(environ, {"DD_API_KEY": "test"})
+    @patch.dict(environ, {"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
     async def test_submit_metrics_errors_logged(self):
         self.client.api_instance.submit_metrics.return_value = {
             "errors": [

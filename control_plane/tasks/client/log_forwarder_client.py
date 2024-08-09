@@ -322,7 +322,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
-        if "DD_API_KEY" not in environ:
+        if not metrics or not environ.get("SHOULD_SUBMIT_METRICS", False) or not environ.get("DD_API_KEY"):
             return
 
         metric_series: list[MetricSeries] = [self.create_metric_series(metrics, log_forwarder_id)]
