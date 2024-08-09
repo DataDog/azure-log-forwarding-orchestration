@@ -18,13 +18,13 @@ class TestMetricBlobCache(TestCase):
         blob_dict_str = dumps(
             {
                 "timestamp": self.current_time,
-                "runtimeSeconds": 211,
+                "runtimeSeconds": 2.11,
                 "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
         expected_dict = {
             "timestamp": self.current_time,
-            "runtimeSeconds": 211,
+            "runtimeSeconds": 2.11,
             "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
         }
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
@@ -36,7 +36,7 @@ class TestMetricBlobCache(TestCase):
         blob_dict_str = dumps(
             {
                 "timestamp": self.old_time,
-                "runtimeSeconds": 211,
+                "runtimeSeconds": 2.11,
                 "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
@@ -47,13 +47,13 @@ class TestMetricBlobCache(TestCase):
         blob_dict_str = dumps(
             {
                 "timestamp": self.oldest_legal_time.timestamp(),
-                "runtimeSeconds": 211,
+                "runtimeSeconds": 2.11,
                 "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
         expected_dict = {
             "timestamp": self.oldest_legal_time.timestamp(),
-            "runtimeSeconds": 211,
+            "runtimeSeconds": 2.11,
             "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
         }
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
@@ -64,7 +64,7 @@ class TestMetricBlobCache(TestCase):
     def test_validation_missing_property(self):
         blob_dict_str = dumps(
             {
-                "runtimeSeconds": 211,
+                "runtimeSeconds": 2.11,
                 "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
         )
@@ -75,7 +75,7 @@ class TestMetricBlobCache(TestCase):
         blob_dict_str = dumps(
             {
                 "timestamp": self.old_time,
-                "runtimeSeconds": 211,
+                "runtimeSeconds": 2.11,
                 "hello": "my_friend",
                 "resourceLogVolumes": {"5a095f74c60a": 4, "93a5885365f5": 6},
             }
