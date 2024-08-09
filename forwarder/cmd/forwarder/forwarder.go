@@ -20,8 +20,8 @@ import (
 
 type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
-	Runtime            int64            `json:"runtime"`
-	ResourceLogAmounts map[string]int32 `json:"resourceLogAmounts"`
+	RuntimeSeconds     float64          `json:"runtime_seconds"`
+	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
 func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
@@ -165,7 +165,7 @@ func main() {
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
-	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Milliseconds(), resourceVolumeMap}
+	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
 

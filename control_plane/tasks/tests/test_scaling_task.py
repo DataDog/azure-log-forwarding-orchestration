@@ -157,15 +157,15 @@ class TestScalingTask(TaskTestCase):
             dumps(
                 {
                     "timestamp": current_time,
-                    "runtime": 211,
-                    "resourceLogAmounts": {resource1: 4, resource2: 6},
+                    "runtime_seconds": 211,
+                    "resource_log_volume": {resource1: 4, resource2: 6},
                 }
             ),
             dumps(
                 {
                     "timestamp": current_time,
-                    "runtime": 199,
-                    "resourceLogAmounts": {resource1: 4, resource2: 6},
+                    "runtime_seconds": 199,
+                    "resource_log_volume": {resource1: 4, resource2: 6},
                 }
             ),
         ]
@@ -192,9 +192,9 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime": 29.045 - (i * 0.2),
+                "runtime_seconds": 29.045 - (i * 0.2),
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                "resource_log_volume": {resource1: 4000, resource2: 6000},
             }
             for i in range(60)
         ]
@@ -232,9 +232,19 @@ class TestScalingTask(TaskTestCase):
         current_time = (datetime.now()).timestamp()
         self.client.get_blob_metrics.return_value = [
             dumps(
-                {"timestamp": current_time, "runtime": 211, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}
+                {
+                    "timestamp": current_time,
+                    "runtime_seconds": 211,
+                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                }
             ),
-            dumps({"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
+            dumps(
+                {
+                    "timestamp": old_time,
+                    "runtime_seconds": 199,
+                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                }
+            ),
         ]
 
         await self.run_scaling_task(
@@ -260,9 +270,9 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarders_dont_scale_when_not_needed(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime": 22.2,
+                "runtime_seconds": 22.2,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                "resource_log_volume": {resource1: 4000, resource2: 6000},
             }
             for i in range(60)
         ]
@@ -286,9 +296,9 @@ class TestScalingTask(TaskTestCase):
     async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime": 23,
+                "runtime_seconds": 23,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                "resource_log_volume": {resource1: 4000, resource2: 6000},
             }
             for i in range(60)
         ]
@@ -334,9 +344,9 @@ class TestScalingTask(TaskTestCase):
         def metrics_side_effect(_client: LogForwarderClient, config_id: str, _old_ts: float) -> list[MetricBlobEntry]:
             return [
                 {
-                    "runtime": forwarder_runtimes[config_id],
+                    "runtime_seconds": forwarder_runtimes[config_id],
                     "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                    "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                    "resource_log_volume": {resource1: 4000, resource2: 6000},
                 }
                 for i in range(60)
             ]
@@ -378,8 +388,20 @@ class TestScalingTask(TaskTestCase):
     async def test_old_log_forwarder_metrics_not_collected(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
         self.client.get_blob_metrics.return_value = [
-            dumps({"timestamp": old_time, "runtime": 211, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
-            dumps({"timestamp": old_time, "runtime": 199, "resourceLogAmounts": {resource1: 4000, resource2: 6000}}),
+            dumps(
+                {
+                    "timestamp": old_time,
+                    "runtime_seconds": 211,
+                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                }
+            ),
+            dumps(
+                {
+                    "timestamp": old_time,
+                    "runtime_seconds": 199,
+                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                }
+            ),
         ]
         await self.run_scaling_task(
             resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
@@ -426,19 +448,19 @@ class TestScalingTaskHelpers(TestCase):
             is_consistently_over_threshold(
                 metrics=[
                     {
-                        "runtime": 19,
+                        "runtime_seconds": 19,
                         "timestamp": self.minutes_ago(5.5),
-                        "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                        "resource_log_volume": {resource1: 4000, resource2: 6000},
                     },
                     {
-                        "runtime": 24,
+                        "runtime_seconds": 24,
                         "timestamp": self.minutes_ago(4),
-                        "resourceLogAmounts": {resource1: 4200, resource2: 6100},
+                        "resource_log_volume": {resource1: 4200, resource2: 6100},
                     },
                     {
-                        "runtime": 28,
+                        "runtime_seconds": 28,
                         "timestamp": self.minutes_ago(3),
-                        "resourceLogAmounts": {resource1: 4300, resource2: 6400},
+                        "resource_log_volume": {resource1: 4300, resource2: 6400},
                     },
                 ],
                 threshold=20,
@@ -453,7 +475,11 @@ class TestScalingTaskHelpers(TestCase):
         self.assertFalse(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime": 100, "timestamp": self.minutes_ago(i), "resourceLogAmounts": {resource2: 100000}}
+                    {
+                        "runtime_seconds": 100,
+                        "timestamp": self.minutes_ago(i),
+                        "resource_log_volume": {resource2: 100000},
+                    }
                     for i in range(3, 6)
                 ],
                 threshold=0,
@@ -466,19 +492,19 @@ class TestScalingTaskHelpers(TestCase):
             is_consistently_over_threshold(
                 metrics=[
                     {
-                        "runtime": 23,
+                        "runtime_seconds": 23,
                         "timestamp": self.minutes_ago(5.5),
-                        "resourceLogAmounts": {resource1: 4000, resource2: 6000},
+                        "resource_log_volume": {resource1: 4000, resource2: 6000},
                     },
                     {
-                        "runtime": 24,
+                        "runtime_seconds": 24,
                         "timestamp": self.minutes_ago(4),
-                        "resourceLogAmounts": {resource1: 4200, resource2: 6100},
+                        "resource_log_volume": {resource1: 4200, resource2: 6100},
                     },
                     {
-                        "runtime": 28,
+                        "runtime_seconds": 28,
                         "timestamp": self.minutes_ago(3),
-                        "resourceLogAmounts": {resource1: 4300, resource2: 6400},
+                        "resource_log_volume": {resource1: 4300, resource2: 6400},
                     },
                 ],
                 threshold=25,
@@ -490,7 +516,7 @@ class TestScalingTaskHelpers(TestCase):
         self.assertTrue(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime": 26, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {resource1: 5670}},
+                    {"runtime_seconds": 26, "timestamp": self.minutes_ago(3), "resource_log_volume": {resource1: 5670}},
                 ],
                 threshold=25,
                 oldest_timestamp=self.minutes_ago(5),
@@ -503,7 +529,7 @@ class TestScalingTaskHelpers(TestCase):
         self.assertFalse(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime": 25, "timestamp": self.minutes_ago(3), "resourceLogAmounts": {resource1: 5600}},
+                    {"runtime_seconds": 25, "timestamp": self.minutes_ago(3), "resource_log_volume": {resource1: 5600}},
                 ],
                 threshold=25,
                 oldest_timestamp=self.minutes_ago(5),
