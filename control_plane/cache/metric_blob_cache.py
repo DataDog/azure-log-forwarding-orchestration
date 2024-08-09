@@ -8,7 +8,7 @@ from jsonschema import ValidationError, validate
 
 class MetricBlobEntry(TypedDict, total=True):
     timestamp: float
-    runtime: float
+    runtimeSeconds: float
     resourceLogVolumes: dict[str, int]
 
 
@@ -16,10 +16,10 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "timestamp": {"type": "number"},
-        "runtime": {"type": "number"},
+        "runtimeSeconds": {"type": "number"},
         "resourceLogVolumes": {"type": "object", "additionalProperties": {"type": "number"}},
     },
-    "required": ["timestamp", "runtime", "resourceLogAmounts"],
+    "required": ["timestamp", "runtimeSeconds", "resourceLogVolumes"],
     "additionalProperties": False,
 }
 
