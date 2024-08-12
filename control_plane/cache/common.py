@@ -27,17 +27,12 @@ EVENT_HUB_TYPE: Final = "eventhub"
 STORAGE_ACCOUNT_TYPE: Final = "storageaccount"
 
 CONTAINER_APP_PREFIX: Final = "dd-blob-log-forwarder-"
-CONTAINER_APP_JOB_SUFFIX: Final = "-job"
 MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 
 
 def get_container_app_name(config_id: str) -> str:
     return CONTAINER_APP_PREFIX + config_id
-
-
-def get_container_app_job_name(config_id: str) -> str:
-    return get_container_app_name(config_id) + CONTAINER_APP_JOB_SUFFIX
 
 
 def get_resource_group_id(subscription_id: str, resource_group: str) -> str:
