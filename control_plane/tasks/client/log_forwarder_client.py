@@ -31,7 +31,8 @@ from azure.mgmt.web.v2023_12_01.models import (
 )
 from azure.storage.blob.aio import ContainerClient
 from datadog_api_client import AsyncApiClient, Configuration
-from datadog_api_client.v2.api.metrics_api import IntakePayloadAccepted, MetricsApi
+from datadog_api_client.v2.api.metrics_api import MetricsApi
+from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
 from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
