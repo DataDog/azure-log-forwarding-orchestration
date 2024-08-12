@@ -190,9 +190,9 @@ class LogForwarderClient(AbstractAsyncContextManager):
         self, region: str, storage_account_name: str
     ) -> tuple[AsyncLROPoller[StorageAccount], Callable[[], Awaitable[StorageAccount]]]:
         return await self.storage_client.storage_accounts.begin_create(
-            resource_group_name=self.resource_group,
-            account_name=storage_account_name,
-            parameters=StorageAccountCreateParameters(
+            self.resource_group,
+            storage_account_name,
+            StorageAccountCreateParameters(
                 sku=Sku(
                     # TODO (AZINTS-2646): figure out which SKU we should be using here
                     name="Standard_LRS"

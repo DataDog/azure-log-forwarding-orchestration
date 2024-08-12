@@ -14,7 +14,7 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError
 
 # project
-from cache.common import FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX, get_function_app_name
+from cache.common import ASP_PREFIX, FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX, get_function_app_name
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
 from tasks.tests.common import AsyncTestCase
@@ -23,6 +23,7 @@ sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
 log_forwarder_id = "d6fc2c757f9c"
+app_service_plan_name = ASP_PREFIX + log_forwarder_id
 log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
@@ -70,21 +71,30 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.rest_client.post.reset_mock()
 
     async def test_create_log_forwarder(self):
+        # set up blob forwarder data
+        container_client = AsyncMock()
+        self.container_client_class.from_connection_string.return_value = container_client
+        (await (await container_client.__aenter__()).download_blob()).content_as_bytes.return_value = b"some data"
+
         async with self.client:
             await self.client.create_log_forwarder(EAST_US, log_forwarder_id)
 
         # app service plan
         asp_create: AsyncMock = self.client.web_client.app_service_plans.begin_create_or_update
-        asp_create.assert_awaited_once()
-        (await asp_create()).result.assert_awaited_once()
+        asp_create.assert_awaited_once_with(rg1, app_service_plan_name, ANY)
+        (await asp_create()).result.assert_awaited_once_with()
         # storage account
         storage_create: AsyncMock = self.client.storage_client.storage_accounts.begin_create
-        (await storage_create()).result.assert_awaited_once()
+        storage_create.assert_awaited_once_with(rg1, storage_account_name, ANY)
+        (await storage_create()).result.assert_awaited_once_with()
         # function app
         function_create: AsyncMock = self.client.web_client.web_apps.begin_create_or_update
-        (await function_create()).result.assert_awaited_once()
+        function_create.assert_awaited_once_with(rg1, log_forwarder_name, ANY)
+        (await function_create()).result.assert_awaited_once_with()
         # deploy code
-        self.client.rest_client.post.assert_awaited_once()
+        self.client.rest_client.post.assert_awaited_once_with(
+            f"https://{log_forwarder_name}.scm.azurewebsites.net/api/publish?type=zip", data=b"some data"
+        )
 
     async def test_create_log_forwarder_no_keys(self):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
@@ -510,7 +520,6 @@ class TestLogForwarderClient(AsyncTestCase):
             rg1, storage_account_name, "default", ANY
         )
         policy: ManagementPolicy = self.client.storage_client.management_policies.create_or_update.mock_calls[0][1][3]
-        # breakpoint()
         self.assertEqual(
             policy.as_dict(),
             {
