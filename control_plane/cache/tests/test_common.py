@@ -12,9 +12,9 @@ from cache.common import (
     STORAGE_CONNECTION_SETTING,
     LogForwarder,
     MissingConfigOptionError,
-    get_app_service_plan_id,
     get_config_option,
-    get_function_app_id,
+    get_container_app_id,
+    get_managed_env_id,
     get_resource_group_id,
     get_storage_account_id,
     read_cache,
@@ -42,13 +42,13 @@ class TestCommon(TestCase):
     def test_get_function_app_id(self):
         self.assertEqual(
             "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Web/sites/dd-blob-log-forwarder-config1",
-            get_function_app_id(sub1, rg1, config1),
+            get_container_app_id(sub1, rg1, config1),
         )
 
     def test_get_app_service_plan_id(self):
         self.assertEqual(
             "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Web/serverfarms/dd-log-forwarder-plan-config1",
-            get_app_service_plan_id(sub1, rg1, config1),
+            get_managed_env_id(sub1, rg1, config1),
         )
 
     def test_get_storage_account_id(self):

@@ -14,7 +14,7 @@ from cache.assignment_cache import (
     deserialize_assignment_cache,
 )
 from cache.common import (
-    FUNCTION_APP_PREFIX,
+    CONTAINER_APP_PREFIX,
     STORAGE_ACCOUNT_PREFIX,
     STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
@@ -34,7 +34,7 @@ sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
 log_forwarder_id = "d6fc2c757f9c"
-log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
+log_forwarder_name = CONTAINER_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
 

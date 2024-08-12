@@ -14,7 +14,12 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError
 
 # project
-from cache.common import ASP_PREFIX, FUNCTION_APP_PREFIX, STORAGE_ACCOUNT_PREFIX, get_function_app_name
+from cache.common import (
+    CONTAINER_APP_PREFIX,
+    MANAGED_ENVIRONMENT_PREFIX,
+    STORAGE_ACCOUNT_PREFIX,
+    get_container_app_name,
+)
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
 from tasks.tests.common import AsyncTestCase
@@ -23,8 +28,8 @@ sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
 log_forwarder_id = "d6fc2c757f9c"
-app_service_plan_name = ASP_PREFIX + log_forwarder_id
-log_forwarder_name = FUNCTION_APP_PREFIX + log_forwarder_id
+app_service_plan_name = MANAGED_ENVIRONMENT_PREFIX + log_forwarder_id
+log_forwarder_name = CONTAINER_APP_PREFIX + log_forwarder_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
 rg1 = "test_lfo"
 
@@ -319,7 +324,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     ],
                     resources=[
                         MetricResource(
-                            name=get_function_app_name("test"),
+                            name=get_container_app_name("test"),
                             type="logforwarder",
                         ),
                     ],
@@ -384,7 +389,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     ],
                     resources=[
                         MetricResource(
-                            name=get_function_app_name("test"),
+                            name=get_container_app_name("test"),
                             type="logforwarder",
                         ),
                     ],
@@ -429,7 +434,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     ],
                     resources=[
                         MetricResource(
-                            name=get_function_app_name("test"),
+                            name=get_container_app_name("test"),
                             type="logforwarder",
                         ),
                     ],
@@ -477,7 +482,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     ],
                     resources=[
                         MetricResource(
-                            name=get_function_app_name("test"),
+                            name=get_container_app_name("test"),
                             type="logforwarder",
                         ),
                     ],
