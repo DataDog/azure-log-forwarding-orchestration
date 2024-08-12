@@ -1,10 +1,11 @@
 # stdlib
 from os import environ
-from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
+from azure.mgmt.storage.models import ManagementPolicy
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
 from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
@@ -492,3 +493,45 @@ class TestLogForwarderClient(AsyncTestCase):
             )
 
         self.log.error.assert_called_once_with("oops something went wrong")
+
+    async def test_log_forwarder_container_created(self):
+        async with self.client as client:
+            await client.create_log_forwarder_containers(storage_account_name)
+
+        self.client.storage_client.blob_containers.create.assert_awaited_once_with(
+            rg1, storage_account_name, "forwarder-metrics", ANY
+        )
+
+    async def test_storage_management_policy_creation(self):
+        async with self.client as client:
+            await client.create_log_forwarder_storage_management_policy(storage_account_name)
+
+        self.client.storage_client.management_policies.create_or_update.assert_awaited_once_with(
+            rg1, storage_account_name, "default", ANY
+        )
+        policy: ManagementPolicy = self.client.storage_client.management_policies.create_or_update.mock_calls[0][1][3]
+        # breakpoint()
+        self.assertEqual(
+            policy.as_dict(),
+            {
+                "policy": {
+                    "rules": [
+                        {
+                            "enabled": True,
+                            "name": "Delete Old Metric Blobs",
+                            "type": "Lifecycle",
+                            "definition": {
+                                "actions": {
+                                    "base_blob": {"delete": {"days_after_modification_greater_than": 14}},
+                                    "snapshot": {"delete": {"days_after_creation_greater_than": 14}},
+                                },
+                                "filters": {
+                                    "prefix_match": ["forwarder-metrics/"],
+                                    "blob_types": ["blockBlob", "appendBlob"],
+                                },
+                            },
+                        }
+                    ]
+                }
+            },
+        )

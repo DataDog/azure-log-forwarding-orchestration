@@ -221,7 +221,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
             ),
         ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
 
-    async def create_log_forwarder_containers(self, storage_account_name: str):
+    async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
         await self.storage_client.blob_containers.create(
             self.resource_group,
             storage_account_name,
