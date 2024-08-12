@@ -148,7 +148,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         storage_account_name = get_storage_account_name(config_id)
         managed_env_name = get_managed_env_name(config_id)
 
-        maybe_errors = await gather(
+        maybe_errors: tuple[Any, ...] = await gather(
             wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name)),
             wait_for_resource(*await self.create_log_forwarder_managed_environment(region, managed_env_name)),
             return_exceptions=True,
