@@ -60,7 +60,6 @@ from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
     get_config_option,
-    get_container_app_job_name,
     get_container_app_name,
     get_managed_env_id,
     get_managed_env_name,
@@ -162,7 +161,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         self.log_and_raise_errors("Failed to create storage account and/or managed environment", *maybe_errors)
 
         maybe_errors = await gather(
-            wait_for_resource(*await self.create_log_forwarder_container_app_job(region, config_id)),
+            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -203,9 +202,9 @@ class LogForwarderClient(AbstractAsyncContextManager):
             ),
         ), lambda: self.container_apps_client.managed_environments.get(self.resource_group, env_name)
 
-    async def create_log_forwarder_container_app_job(self, region: str, config_id: str) -> ResourcePoller[Job]:
+    async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
         # connection_string = await self.get_connection_string(storage_account_name)
-        job_name = get_container_app_job_name(config_id)
+        job_name = get_container_app_name(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
             self.resource_group,
             job_name,
@@ -306,9 +305,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
 
             poller = await ignore_exception_type(
                 ResourceNotFoundError,
-                self.container_apps_client.jobs.begin_delete(
-                    self.resource_group, get_container_app_job_name(forwarder_id)
-                ),
+                self.container_apps_client.jobs.begin_delete(self.resource_group, get_container_app_name(forwarder_id)),
             )
             if poller:
                 await poller.result()
