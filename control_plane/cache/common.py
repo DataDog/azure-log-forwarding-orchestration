@@ -98,18 +98,6 @@ class LogForwarder(NamedTuple):
     config_id: str
     type: LogForwarderType
 
-    @property
-    def function_app_name(self):
-        return get_container_app_name(self.config_id)
-
-    @property
-    def app_service_plan_name(self):
-        return get_managed_env_name(self.config_id)
-
-    @property
-    def storage_account_name(self):
-        return get_storage_account_name(self.config_id)
-
 
 class InvalidCacheError(Exception):
     pass

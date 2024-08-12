@@ -9,7 +9,6 @@ from types import TracebackType
 from typing import Any, Self, TypeAlias, TypeVar, cast
 
 # 3p
-from aiohttp import ClientSession
 from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
 from azure.core.polling import AsyncLROPoller
@@ -18,6 +17,7 @@ from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from azure.mgmt.appcontainers.models import (
     Container,
     ContainerResources,
+    EnvironmentVar,
     Job,
     JobConfiguration,
     JobConfigurationScheduleTriggerConfig,
@@ -114,7 +114,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
         self._credential = credential
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
-        self.rest_client = ClientSession()
         self.configuration = Configuration()
         self.configuration.request_timeout = CLIENT_MAX_SECONDS
         self.api_client = AsyncApiClient(self.configuration)
@@ -126,11 +125,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
-            self.rest_client.__aenter__(),
             self.api_client.__aenter__(),
         )
-        token = await self._credential.get_token("https://management.azure.com/.default")
-        self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
 
     async def __aexit__(
@@ -139,7 +135,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
             self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
@@ -196,14 +191,14 @@ class LogForwarderClient(AbstractAsyncContextManager):
         return await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
-            environment_envelope=ManagedEnvironment(
+            ManagedEnvironment(
                 location=region,
                 zone_redundant=False,
             ),
         ), lambda: self.container_apps_client.managed_environments.get(self.resource_group, env_name)
 
     async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
-        # connection_string = await self.get_connection_string(storage_account_name)
+        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
         job_name = get_container_app_name(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
             self.resource_group,
@@ -223,6 +218,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                             name="forwarder",
                             image=self.acr_url,
                             resources=ContainerResources(cpu=1.0, memory="2Gi"),
+                            env=[EnvironmentVar(name="AzureWebJobsStorage", value=connection_string)],
                         )
                     ],
                 ),
