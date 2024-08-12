@@ -1,7 +1,6 @@
 # stdlib
 
 from asyncio import gather, run
-from contextlib import AbstractAsyncContextManager
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Self
 
@@ -10,6 +9,7 @@ from tenacity import RetryError, retry, stop_after_attempt
 
 # project
 from cache.manifest_cache import ManifestCache
+from tasks.task import Task
 
 DEPLOYER_NAME = "control_plane_deployer"
 MAX_ATTEMPTS = 5
@@ -18,7 +18,7 @@ log = getLogger(DEPLOYER_NAME)
 log.setLevel(DEBUG)
 
 
-class Deployer(AbstractAsyncContextManager):
+class Deployer(Task):
     def __init__(self) -> None:
         return None
 
@@ -28,7 +28,7 @@ class Deployer(AbstractAsyncContextManager):
     async def __aexit__(self, *_) -> None:
         pass
 
-    async def run_deployer(self) -> None:
+    async def run(self) -> None:
         public_manifest: dict[str, str] = {}
         private_manifest: dict[str, str] = {}
         try:
@@ -71,10 +71,13 @@ class Deployer(AbstractAsyncContextManager):
         log.info(component_names)
         pass
 
+    async def write_caches(self) -> None:
+        pass
+
 
 async def main():
     async with Deployer() as deployer:
-        await deployer.run_deployer()
+        await deployer.run()
 
 
 if __name__ == "__main__":

@@ -13,12 +13,12 @@ Mapping of deployable name to SHA-256 manifest
 MANIFEST_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "deploy": {"type": "string"},
+        "resources": {"type": "string"},
         "forwarder": {"type": "string"},
         "diagnostic_settings": {"type": "string"},
         "scaling": {"type": "string"},
     },
-    "required": ["deploy", "forwarder", "diagnostic_settings", "scaling"],
+    "required": ["resources", "forwarder", "diagnostic_settings", "scaling"],
     "additionalProperties": False,
 }
 
