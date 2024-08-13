@@ -101,7 +101,6 @@ ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
 
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
-        self.control_plane_storage_connection_string = get_config_option("AzureWebJobsStorage")
         self.acr_url = (
             get_config_option("forwarder_acr_name")
             + ".azurecr.io/"

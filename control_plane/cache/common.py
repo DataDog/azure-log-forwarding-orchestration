@@ -26,7 +26,7 @@ def get_config_option(name: str) -> str:
 EVENT_HUB_TYPE: Final = "eventhub"
 STORAGE_ACCOUNT_TYPE: Final = "storageaccount"
 
-CONTAINER_APP_PREFIX: Final = "dd-blob-log-forwarder-"
+CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
 MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 

@@ -17,7 +17,7 @@ getLogger("azure").setLevel(WARNING)
 log = getLogger("forwarder_cleanup")
 
 
-CONTAINER_APP_PREFIX = "dd-blob-log-forwarder-"
+CONTAINER_APP_PREFIX = "dd-log-forwarder-"
 MANAGED_ENV_PREFIX = "dd-log-forwarder-env-"
 STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
 DRY_RUN = False
@@ -67,9 +67,11 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
     log.info(f"Deleting... {resource.id}")
     future = await client.resources.begin_delete_by_id(
         resource.id,  # type: ignore
-        api_version="2024-01-01"
-        if resource.type.lower() == "microsoft.storage/storageaccounts"
-        else "2022-03-01",  # type: ignore
+        api_version=(
+            "2024-01-01"
+            if resource.type.lower() == "microsoft.storage/storageaccounts"  # type: ignore
+            else "2022-03-01"
+        ),
     )
     await future.result()
     log.info(f"Deleted {resource.id} ✅")
