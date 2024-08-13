@@ -39,7 +39,7 @@ class TestCommon(TestCase):
 
     def test_get_container_app_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.App/jobs/dd-blob-log-forwarder-config1",
+            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.App/jobs/dd-log-forwarder-config1",
             get_container_app_id(sub1, rg1, config1),
         )
 
