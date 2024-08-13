@@ -53,6 +53,29 @@ class ResourcesTask(Task):
                 resource_count += 1
             log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
             self.resource_cache[subscription_id] = resources_per_region
+            await self.confirm_deletions_for_subscription(client, subscription_id)
+
+    async def confirm_deletions_for_subscription(self, client: ResourceManagementClient, subscription_id: str) -> None:
+        if subscription_id not in self._resource_cache_initial_state:
+            # we discovered a new subscription, no need to check for deletions
+            return
+
+        await gather(
+            *(
+                self.confirm_deletion(
+                    client,
+                    subscription_id,
+                    region,
+                    previous_resources - self.resource_cache.get(subscription_id, {}).get(region, set()),
+                )
+                for region, previous_resources in self.resource_cache.get(subscription_id, {}).items()
+            )
+        )
+
+    async def confirm_deletion(
+        self, client: ResourceManagementClient, subscription_id: str, region: str, resources: set[str]
+    ) -> None:
+        """Confirm that the resources are deleted before removing them from the cache"""
 
     async def write_caches(self) -> None:
         if self.resource_cache == self._resource_cache_initial_state:
