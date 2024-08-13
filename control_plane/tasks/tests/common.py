@@ -45,3 +45,9 @@ class TaskTestCase(AsyncTestCase):
 async def async_generator(*items: T) -> AsyncIterable[T]:
     for x in items:
         yield x
+
+
+class UnexpectedException(Exception):
+    """Testing for exceptions that we havent accounted for"""
+
+    pass
