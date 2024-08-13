@@ -67,7 +67,9 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
     log.info(f"Deleting... {resource.id}")
     future = await client.resources.begin_delete_by_id(
         resource.id,  # type: ignore
-        api_version="2022-03-01",  # type: ignore
+        api_version="2024-01-01"
+        if resource.type.lower() == "microsoft.storage/storageaccounts"
+        else "2022-03-01",  # type: ignore
     )
     await future.result()
     log.info(f"Deleted {resource.id} ✅")
