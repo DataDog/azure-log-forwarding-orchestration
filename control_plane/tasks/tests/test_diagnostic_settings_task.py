@@ -131,6 +131,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
     async def test_unexpected_failure_skips_cache_write(self):
         self.patch("MonitorManagementClient").side_effect = UnexpectedException("unexpected")
+        write_caches = self.patch("DiagnosticSettingsTask.write_caches")
         with self.assertRaises(UnexpectedException):
             async with DiagnosticSettingsTask(
                 dumps(
@@ -150,4 +151,4 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                 task.diagnostic_settings_cache = {}
                 await task.run()
 
-        self.write_cache.assert_not_awaited()
+        write_caches.assert_not_awaited()

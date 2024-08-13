@@ -28,8 +28,8 @@ class Task(AbstractAsyncContextManager):
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
     ) -> None:
-        if exc_type is None and exc_value is None and traceback is None:
-            await self.write_caches()
+        # if exc_type is None and exc_value is None and traceback is None:
+        await self.write_caches()
         await self.credential.__aexit__(exc_type, exc_value, traceback)
 
     @abstractmethod

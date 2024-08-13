@@ -440,6 +440,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_unexpected_failure_skips_cache_write(self):
         self.client.get_blob_metrics.side_effect = UnexpectedException("unexpected")
+        write_caches = self.patch("ScalingTask.write_caches")
         with self.assertRaises(UnexpectedException):
             await self.run_scaling_task(
                 {sub_id1: {EAST_US: {"resource1", "resource2"}, WEST_US: {"resource3"}}},
@@ -455,7 +456,7 @@ class TestScalingTask(TaskTestCase):
                 },
                 rg1,
             )
-        self.write_cache.assert_not_awaited()
+        write_caches.assert_not_awaited()
 
 
 class TestScalingTaskHelpers(TestCase):

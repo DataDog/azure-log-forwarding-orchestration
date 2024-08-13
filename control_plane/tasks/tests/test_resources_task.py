@@ -147,6 +147,7 @@ class TestResourcesTask(TaskTestCase):
         self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}})
 
     async def test_unexpected_failure_skips_cache_write(self):
+        write_caches = self.patch("ResourcesTask.write_caches")
         self.sub_client.subscriptions.list = Mock(side_effect=UnexpectedException("unexpected"))
         with self.assertRaises(UnexpectedException):
             await self.run_resources_task(
@@ -155,4 +156,4 @@ class TestResourcesTask(TaskTestCase):
                     "sub2": {"region2": {"res3"}},
                 }
             )
-        self.write_cache.assert_not_called()
+        write_caches.assert_not_awaited()
