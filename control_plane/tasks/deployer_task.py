@@ -1,14 +1,18 @@
 # stdlib
 
 from asyncio import gather, run
+from copy import deepcopy
+from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Self
 
 # 3p
 from tenacity import RetryError, retry, stop_after_attempt
 
+from cache.common import write_cache
+
 # project
-from cache.manifest_cache import ManifestCache
+from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache
 from tasks.task import Task
 
 DEPLOYER_NAME = "control_plane_deployer"
@@ -20,13 +24,16 @@ log.setLevel(DEBUG)
 
 class Deployer(Task):
     def __init__(self) -> None:
-        return None
+        self.manifest_cache = {}
+        self.original_manifest_cache = {}
+        super().__init__()
+        return
 
     async def __aenter__(self) -> Self:
-        return self
+        return await super().__aenter__()
 
     async def __aexit__(self, *_) -> None:
-        pass
+        await super().__aexit__()
 
     async def run(self) -> None:
         public_manifest: dict[str, str] = {}
@@ -41,10 +48,11 @@ class Deployer(Task):
         if len(public_manifest) == 0:
             log.error("Failed to read public manifests, exiting...")
             return
+        self.manifest_cache = deepcopy(private_manifest)
+        self.original_manifest_cache = private_manifest
         try:
             if len(private_manifest) == 0:
-                await self.deploy_components(list(public_manifest.keys()))
-                pass  # deploy all
+                await self.deploy_components(list(public_manifest.keys()))  # deploy all
             else:
                 await self.deploy_components(
                     [
@@ -72,7 +80,10 @@ class Deployer(Task):
         pass
 
     async def write_caches(self) -> None:
-        pass
+        if self.manifest_cache == self.original_manifest_cache:
+            return
+        await write_cache(MANIFEST_CACHE_NAME, dumps(self.manifest_cache))
+        return
 
 
 async def main():

@@ -22,6 +22,8 @@ MANIFEST_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+MANIFEST_CACHE_NAME = "manifest.json"
+
 
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
     try:
