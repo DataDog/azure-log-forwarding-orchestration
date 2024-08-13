@@ -60,9 +60,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.env["AzureWebJobsStorage"] = "..."
         self.env["DD_API_KEY"] = ""
         self.env["SHOULD_SUBMIT_METRICS"] = ""
-        self.env["forwarder_acr_name"] = "ddlfo"
-        self.env["forwarder_image_name"] = "blobforwarder"
-        self.env["forwarder_image_tag"] = "latest"
+        self.env["forwarder_image"] = "ddlfo.azurecr.io/blobforwarder:latest"
 
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1

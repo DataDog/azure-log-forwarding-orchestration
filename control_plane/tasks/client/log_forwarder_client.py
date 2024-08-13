@@ -101,13 +101,7 @@ ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
 
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
-        self.acr_url = (
-            get_config_option("forwarder_acr_name")
-            + ".azurecr.io/"
-            + get_config_option("forwarder_image_name")
-            + ":"
-            + get_config_option("forwarder_image_tag")
-        )
+        self.forwarder_image = get_config_option("forwarder_image")
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self._credential = credential
@@ -215,7 +209,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                     containers=[
                         Container(
                             name="forwarder",
-                            image=self.acr_url,
+                            image=self.forwarder_image,
                             resources=ContainerResources(cpu=1.0, memory="2Gi"),
                             env=[EnvironmentVar(name="AzureWebJobsStorage", value=connection_string)],
                         )
