@@ -132,7 +132,7 @@ for task in "${!task_roles[@]}"; do
     [[ $role_assignments != *"$role"* ]] && {
         echo -n "$role role not found for $task (current roles: {$role_assignments}). Assigning role..."
         scope=$(get-scope "$role")
-        az role assignment create --assignee $principal_id --role "$role" --scope $scope
+        az role assignment create --assignee $principal_id --role "$role" --scope $scope > /dev/null
     }
     echo Done.
 
