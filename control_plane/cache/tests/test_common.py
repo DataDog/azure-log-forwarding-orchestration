@@ -39,13 +39,13 @@ class TestCommon(TestCase):
 
     def test_get_container_app_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Web/sites/dd-blob-log-forwarder-config1",
+            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.App/jobs/dd-blob-log-forwarder-config1",
             get_container_app_id(sub1, rg1, config1),
         )
 
     def test_get_managed_env_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Web/serverfarms/dd-log-forwarder-env-config1",
+            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.App/managedEnvironments/dd-log-forwarder-env-config1",
             get_managed_env_id(sub1, rg1, config1),
         )
 

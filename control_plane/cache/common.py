@@ -42,7 +42,7 @@ def get_resource_group_id(subscription_id: str, resource_group: str) -> str:
 def get_container_app_id(subscription_id: str, resource_group: str, config_id: str) -> str:
     return (
         get_resource_group_id(subscription_id, resource_group)
-        + "/providers/Microsoft.Web/sites/"
+        + "/providers/Microsoft.App/jobs/"
         + get_container_app_name(config_id)
     )
 
@@ -54,7 +54,7 @@ def get_managed_env_name(config_id: str) -> str:
 def get_managed_env_id(subscription_id: str, resource_group: str, config_id: str) -> str:
     return (
         get_resource_group_id(subscription_id, resource_group)
-        + "/providers/Microsoft.Web/serverfarms/"
+        + "/providers/Microsoft.App/managedEnvironments/"
         + get_managed_env_name(config_id)
     )
 
