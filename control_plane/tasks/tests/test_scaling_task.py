@@ -28,7 +28,7 @@ from tasks.scaling_task import (
     ScalingTask,
     is_consistently_over_threshold,
 )
-from tasks.tests.common import TaskTestCase
+from tasks.tests.common import TaskTestCase, UnexpectedException
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -437,6 +437,26 @@ class TestScalingTask(TaskTestCase):
 
         self.assertEqual(m.call_count, 3)
         self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
+
+    async def test_unexpected_failure_skips_cache_write(self):
+        self.client.get_blob_metrics.side_effect = UnexpectedException("unexpected")
+        write_caches = self.patch("ScalingTask.write_caches")
+        with self.assertRaises(UnexpectedException):
+            await self.run_scaling_task(
+                {sub_id1: {EAST_US: {"resource1", "resource2"}, WEST_US: {"resource3"}}},
+                {
+                    sub_id1: {
+                        EAST_US: {
+                            "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                            "configurations": {
+                                OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                            },
+                        }
+                    },
+                },
+                rg1,
+            )
+        write_caches.assert_not_awaited()
 
 
 class TestScalingTaskHelpers(TestCase):
