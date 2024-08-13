@@ -146,4 +146,22 @@ for task in "${!task_roles[@]}"; do
     echo Done.
 done
 
+echo -n Checking for the final scaling-task settings...
+settings="$(az functionapp config appsettings list --name scaling-task --resource-group lfo | jq -r '.[].name')"
+
+grep -q "forwarder_acr_name" <<< "$settings" || {
+    echo -n "Setting forwarder_acr_name for scaling-task..."
+    az functionapp config appsettings set --name scaling-task --resource-group lfo --settings forwarder_acr_name=mattlogger > /dev/null
+}
+
+grep -q "forwarder_image_name" <<< "$settings" || {
+    echo -n "Setting forwarder_image_name for scaling-task..."
+    az functionapp config appsettings set --name scaling-task --resource-group lfo --settings forwarder_image_name=forwarder > /dev/null
+}
+
+grep -q "forwarder_image_tag" <<< "$settings" || {
+    echo -n "Setting forwarder_image_tag for scaling-task..."
+    az functionapp config appsettings set --name scaling-task --resource-group lfo --settings forwarder_image_tag=latest > /dev/null
+}
+
 echo All Done!

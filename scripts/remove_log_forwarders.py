@@ -14,11 +14,11 @@ from azure.mgmt.resource.resources.v2022_09_01.models import Resource
 from tenacity import retry, stop_after_attempt
 
 getLogger("azure").setLevel(WARNING)
-log = getLogger("extension_cleanup")
+log = getLogger("forwarder_cleanup")
 
 
-FUNCTION_APP_PREFIX = "dd-blob-log-forwarder-"
-ASP_PREFIX = "dd-log-forwarder-plan-"
+CONTAINER_APP_PREFIX = "dd-blob-log-forwarder-"
+MANAGED_ENV_PREFIX = "dd-log-forwarder-env-"
 STORAGE_ACCOUNT_PREFIX = "ddlogstorage"
 DRY_RUN = False
 
@@ -35,10 +35,10 @@ def should_delete(resource: Resource, resource_group: str | None) -> bool:
 
     name: str = resource.name  # type: ignore
     match resource.type.lower():  # type: ignore
-        case "microsoft.web/sites":
-            return name.startswith(FUNCTION_APP_PREFIX)
-        case "microsoft.web/serverfarms":
-            return name.startswith(ASP_PREFIX)
+        case "microsoft.app/jobs":
+            return name.startswith(CONTAINER_APP_PREFIX)
+        case "microsoft.app/managedenvironments":
+            return name.startswith(MANAGED_ENV_PREFIX)
         case "microsoft.storage/storageaccounts":
             return name.startswith(STORAGE_ACCOUNT_PREFIX)
         case _:
@@ -67,7 +67,7 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
     log.info(f"Deleting... {resource.id}")
     future = await client.resources.begin_delete_by_id(
         resource.id,  # type: ignore
-        api_version="2022-09-01",  # type: ignore
+        api_version="2022-03-01",  # type: ignore
     )
     await future.result()
     log.info(f"Deleted {resource.id} ✅")
