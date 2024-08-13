@@ -210,7 +210,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                         Container(
                             name="forwarder",
                             image=self.forwarder_image,
-                            resources=ContainerResources(cpu=1.0, memory="2Gi"),
+                            resources=ContainerResources(cpu=0.5, memory="1Gi"),
                             env=[EnvironmentVar(name="AzureWebJobsStorage", value=connection_string)],
                         )
                     ],
