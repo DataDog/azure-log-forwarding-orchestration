@@ -21,12 +21,14 @@ type AzureBlobClient interface {
 }
 
 type Client struct {
-	azBlobClient AzureBlobClient
+	connectionString string
+	azBlobClient     AzureBlobClient
 }
 
-func NewClient(azBlobClient AzureBlobClient) Client {
+func NewClient(azBlobClient AzureBlobClient, connectionString string) Client {
 	return Client{
-		azBlobClient: azBlobClient,
+		connectionString: connectionString,
+		azBlobClient:     azBlobClient,
 	}
 }
 

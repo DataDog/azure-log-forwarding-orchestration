@@ -78,6 +78,64 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 }
 
+func getBlobContents(ctx context.Context, client storage.Client, containerName string, blobName string, blobContentChannel chan<- storage.BlobSegment) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
+	defer span.Finish(tracer.WithError(err))
+	downloadGroup, ctx := errgroup.WithContext(ctx)
+	joinGroup, ctx := errgroup.WithContext(ctx)
+
+	initialOffset := 0
+	offset := initialOffset
+	count := 1024 * 1024 * 25 // 25MB
+	//currentUsage := 0
+	limit, err := client.GetSize(ctx, containerName, blobName)
+	if err != nil {
+		return err
+	}
+
+	expectedSegments := (limit - initialOffset) / count
+	blobSegmentCh := make(chan storage.BlobSegment, expectedSegments)
+	//defer close(blobSegmentCh)
+
+	joinGroup.Go(func() error {
+		blobBuffer := make([]byte, limit-initialOffset)
+		for blobSegment := range blobSegmentCh {
+			copy(blobBuffer[blobSegment.Offset:blobSegment.Offset+(blobSegment.Count)], *blobSegment.Content)
+		}
+		return nil
+	})
+
+	joinGroup.Go(func() error {
+		for offset < limit {
+			if offset+count >= limit {
+				count = limit - offset
+			}
+			downloadGroup.Go(func() error {
+				if offset == limit {
+					return nil
+				}
+				current, downloadErr := client.DownloadRange(ctx, containerName, blobName, offset, count)
+				if downloadErr != nil {
+					return downloadErr
+				}
+				blobSegmentCh <- current
+				return nil
+			})
+			offset += count
+		}
+
+		downloadErr := downloadGroup.Wait()
+		close(blobSegmentCh)
+		return downloadErr
+	})
+
+	err = errors.Join(err, joinGroup.Wait())
+
+	emptyContent := make([]byte, 0)
+	blobContentChannel <- storage.BlobSegment{Name: blobName, Container: containerName, Content: &emptyContent, Offset: initialOffset, Count: limit}
+	return nil
+}
+
 // This function provides a standardized name for each blob that we can use to read and write blobs
 // Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
 // Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
@@ -90,22 +148,42 @@ func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err err
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(context.Background())
 
-	blobChannel := make(chan storage.Blob, 1000)
+	channelSize := 1000
+
+	blobContentCh := make(chan storage.BlobSegment, channelSize)
 
 	eg.Go(func() error {
-		for blob := range blobChannel {
-			logger.Info(fmt.Sprintf("Blob: %s Container: %s", blob.Name, blob.Container))
+		for blobContent := range blobContentCh {
+			logger.Info(fmt.Sprintf("Downaloded Blob: %s Container: %s, Content: %d", blobContent.Name, blobContent.Container, len(*blobContent.Content)))
 		}
 		return nil
 	})
 
-	containerNameCh := make(chan string, 1000)
+	blobCh := make(chan storage.Blob, channelSize)
 
 	eg.Go(func() error {
-		defer close(blobChannel)
+		defer close(blobContentCh)
+		var err error
+		blobsEg, ctx := errgroup.WithContext(ctx)
+		for blob := range blobCh {
+
+			if !storage.FromToday(blob.Name) {
+				continue
+			}
+			log.Printf("Downloading blob %s", blob.Name)
+			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob.Container, blob.Name, blobContentCh) })
+		}
+		err = blobsEg.Wait()
+		return err
+	})
+
+	containerNameCh := make(chan string, channelSize)
+
+	eg.Go(func() error {
+		defer close(blobCh)
 		var err error
 		for container := range containerNameCh {
-			curErr := getBlobs(ctx, client, container, blobChannel)
+			curErr := getBlobs(ctx, client, container, blobCh)
 			if curErr != nil {
 				err = errors.Join(err, curErr)
 			}
@@ -151,6 +229,8 @@ func main() {
 	}
 	defer profiler.Stop()
 
+	logger.Info(fmt.Sprintf("This is test time: %v", (time.Now()).String()))
+
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
@@ -159,7 +239,7 @@ func main() {
 		return
 	}
 
-	client := storage.NewClient(azBlobClient)
+	client := storage.NewClient(azBlobClient, storageAccountConnectionString)
 
 	runErr := Run(ctx, client, logger)
 
