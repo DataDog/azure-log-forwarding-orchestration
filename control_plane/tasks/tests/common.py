@@ -2,7 +2,7 @@
 from collections.abc import AsyncIterable, Callable
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
 
 from cache.common import InvalidCacheError
 
@@ -51,3 +51,10 @@ class UnexpectedException(Exception):
     """Testing for exceptions that we havent accounted for"""
 
     pass
+
+
+def mock(**kwargs: Any) -> Mock:
+    m = Mock()
+    for k, v in kwargs.items():
+        setattr(m, k, v)
+    return m

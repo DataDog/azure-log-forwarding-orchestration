@@ -1,6 +1,6 @@
 # stdlib
 from json import dumps
-from typing import Any, Final
+from typing import Final
 from unittest.mock import ANY, AsyncMock, Mock
 
 # 3p
@@ -21,20 +21,13 @@ from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTINGS_TASK_NAME,
     DiagnosticSettingsTask,
 )
-from tasks.tests.common import TaskTestCase, UnexpectedException, async_generator
+from tasks.tests.common import TaskTestCase, UnexpectedException, async_generator, mock
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"
 config_id1: Final = "bc666ef914ec"
 resource_id1: Final = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
 storage_account1: Final = "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1"
-
-
-def mock(**kwargs: Any) -> Mock:
-    m = Mock()
-    for k, v in kwargs.items():
-        setattr(m, k, v)
-    return m
 
 
 class TestDiagnosticSettingsTask(TaskTestCase):
