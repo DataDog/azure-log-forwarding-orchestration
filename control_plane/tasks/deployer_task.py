@@ -30,7 +30,7 @@ class Deployer(Task):
     def __init__(self) -> None:
         self.manifest_cache: ManifestCache = {}
         self.original_manifest_cache: ManifestCache = {}
-        self.public_manifest = {}
+        self.public_manifest: ManifestCache = {}
         self.public_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
         self.rest_client = ClientSession()
         super().__init__()
@@ -84,7 +84,12 @@ class Deployer(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_public_manifests(self) -> ManifestCache:
-        return {"test": "hi"}
+        stream = await self.public_client.download_blob(MANIFEST_CACHE_NAME)
+        blob_data = await stream.content_as_bytes(max_concurrency=4)
+        validated_blob = deserialize_manifest_cache(blob_data.decode())
+        if validated_blob:
+            return validated_blob
+        return {}
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_private_manifests(self) -> ManifestCache:
