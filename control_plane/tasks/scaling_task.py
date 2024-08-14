@@ -51,7 +51,7 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
     return all(metric["runtime_seconds"] > threshold for metric in metrics)
 
 
-def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
+def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
