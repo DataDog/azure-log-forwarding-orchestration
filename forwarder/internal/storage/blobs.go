@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 	"time"
 
@@ -71,20 +70,9 @@ func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
 	return resp.Segment.BlobItems
 }
 
-func ReflectStruct(i any) {
-	t := reflect.TypeOf(i)
-	fmt.Println(t)
-	v := reflect.ValueOf(i)
-	fmt.Println(v)
-}
-
 func (c *Client) DownloadRange(ctx context.Context, containerName string, blobName string, offset int, count int) (BlobSegment, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()
-
-	var client blob.Client
-	ReflectStruct(client)
-	ReflectStruct(c.azBlobClient)
 
 	options := &azblob.DownloadStreamOptions{
 		Range: azblob.HTTPRange{Offset: int64(offset), Count: int64(count)},
