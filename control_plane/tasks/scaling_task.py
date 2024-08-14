@@ -199,7 +199,13 @@ class ScalingTask(Task):
             if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
                 continue
-            self.split_forwarder_resources(subscription_id, region, overwhelmed_forwarder_id, new_forwarder)
+            self.split_forwarder_resources(
+                subscription_id,
+                region,
+                overwhelmed_forwarder_id,
+                new_forwarder,
+                forwarder_metrics[overwhelmed_forwarder_id],
+            )
 
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
@@ -227,23 +233,35 @@ class ScalingTask(Task):
         region: str,
         underscaled_forwarder_id: str,
         new_forwarder: LogForwarder,
+        metrics: list[MetricBlobEntry],
     ) -> None:
         """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
 
         # add new config
         self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
-        # split resources in half
-        assigned_resources = sorted(
-            resource_id
+        # split resources in half by resource load
+        resource_loads = {
+            resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
-        )
-        split_index = len(assigned_resources) // 2
+        }
+        if len(resource_loads) < 2:
+            log.error("Not enough resources to split for forwarder %s", underscaled_forwarder_id)
+            return
+        assigned_resources = sorted(resource_loads.items(), key=lambda kv: kv[1])
+        total_load = sum(resource_loads.values())
+        load_so_far, split_index = 0, 0
+        for _, load in assigned_resources:
+            load_so_far += load
+            split_index += 1
+            if load_so_far > total_load / 2:
+                break
+
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
-                **{resource: underscaled_forwarder_id for resource in assigned_resources[:split_index]},
-                **{resource: new_forwarder.config_id for resource in assigned_resources[split_index:]},
+                **{resource: underscaled_forwarder_id for resource, _ in assigned_resources[:split_index]},
+                **{resource: new_forwarder.config_id for resource, _ in assigned_resources[split_index:]},
             }
         )
 
