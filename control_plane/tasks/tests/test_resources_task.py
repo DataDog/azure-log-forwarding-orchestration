@@ -31,6 +31,7 @@ class TestResourcesTask(TaskTestCase):
         def create_resource_client(_: Any, sub_id: str):
             c = MagicMock()
             c.__aenter__.return_value.resources.list = self.resource_client_mapping[sub_id]
+            c.__aenter__.return_value.providers.list = Mock(return_value=async_generator(MagicMock()))
             return c
 
         self.resource_client.side_effect = create_resource_client
