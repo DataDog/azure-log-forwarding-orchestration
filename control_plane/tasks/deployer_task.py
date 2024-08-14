@@ -24,8 +24,8 @@ log.setLevel(DEBUG)
 
 class Deployer(Task):
     def __init__(self) -> None:
-        self.manifest_cache = {}
-        self.original_manifest_cache = {}
+        self.manifest_cache: ManifestCache = {}
+        self.original_manifest_cache: ManifestCache = {}
         super().__init__()
         return
 
@@ -77,6 +77,10 @@ class Deployer(Task):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_components(self, component_names: list[str]) -> None:
         log.info(component_names)
+        pass
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def deploy_function_apps(self, function_app_names: list[str]) -> None:
         pass
 
     async def write_caches(self) -> None:
