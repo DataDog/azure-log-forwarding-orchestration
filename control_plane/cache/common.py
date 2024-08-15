@@ -128,7 +128,7 @@ T = TypeVar("T")
 
 
 def deserialize_cache(
-    cache_str: str, schema: dict[str, Any], post_processing: Callable[[T], T] = lambda x: x
+    cache_str: str, schema: dict[str, Any], post_processing: Callable[[T], T | None] = lambda x: x
 ) -> T | None:
     try:
         cache = loads(cache_str)
