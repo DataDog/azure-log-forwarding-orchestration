@@ -10,16 +10,16 @@ from cache.tests import sub_id1, sub_id2
 class TestDeserializeResourceCache(TestCase):
     def test_valid_cache(self):
         cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}, sub_id2: {"region3": ["resource3"]}})
-        success, cache = deserialize_resource_cache(cache_str)
-        self.assertTrue(success)
+        cache = deserialize_resource_cache(cache_str)
+
         self.assertEqual(
             cache,
             {sub_id1: {"region2": {"resource1", "resource2"}}, sub_id2: {"region3": {"resource3"}}},
         )
 
     def assert_deserialize_failure(self, cache_str: str):
-        success, _ = deserialize_resource_cache(cache_str)
-        self.assertFalse(success)
+        cache = deserialize_resource_cache(cache_str)
+        self.assertIsNone(cache)
 
     def test_invalid_json(self):
         self.assert_deserialize_failure("{invalid_json}")

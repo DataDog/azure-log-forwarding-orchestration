@@ -32,11 +32,11 @@ class TaskTestCase(AsyncTestCase):
         self.credential.side_effect = AsyncMock
         self.write_cache: AsyncMock = self.patch("write_cache")
 
-    def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], tuple[bool, T]]) -> T:
+    def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], T | None]) -> T:
         self.write_cache.assert_called_with(cache_name, ANY)
         raw_cache = self.write_cache.call_args_list[-1][0][1]
-        success, cache = deserialize_cache(raw_cache)
-        if not success:  # pragma: no cover
+        cache = deserialize_cache(raw_cache)
+        if cache is None:  # pragma: no cover
             # should never happen when tests pass, but it provides a useful error message if they don't
             raise InvalidCacheError("Diagnostic Settings Cache is in an invalid format after the task")
         return cache

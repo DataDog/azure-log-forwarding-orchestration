@@ -22,8 +22,8 @@ log = getLogger(RESOURCES_TASK_NAME)
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
-        success, resource_cache = deserialize_resource_cache(resource_cache_state)
-        if not success:
+        resource_cache = deserialize_resource_cache(resource_cache_state)
+        if resource_cache is None:
             log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}
         self._resource_cache_initial_state = resource_cache

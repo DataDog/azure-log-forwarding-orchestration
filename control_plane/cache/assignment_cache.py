@@ -1,12 +1,11 @@
 # stdlib
-from json import JSONDecodeError, loads
 from typing import Any, TypeAlias, TypedDict
 
 # 3p
-from jsonschema import ValidationError, validate
+from jsonschema import ValidationError
 
 # project
-from cache.common import LOG_FORWARDER_TYPE_SCHEMA, LogForwarderType
+from cache.common import LOG_FORWARDER_TYPE_SCHEMA, LogForwarderType, deserialize_cache
 
 ASSIGNMENT_CACHE_BLOB = "assignments.json"
 
@@ -45,20 +44,16 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
 }
 
 
-def _validate_valid_config_ids(cache: AssignmentCache) -> None:
+def _validate_valid_config_ids(cache: AssignmentCache) -> AssignmentCache:
     for region_configs in cache.values():
         for region_config in region_configs.values():
             configs = region_config["configurations"]
             for config_id in region_config["resources"].values():
                 if config_id not in configs:
                     raise ValidationError(f"Config ID {config_id} not found in region configurations")
+    return cache
 
 
-def deserialize_assignment_cache(cache_str: str) -> tuple[bool, AssignmentCache]:
-    try:
-        cache: AssignmentCache = loads(cache_str)
-        validate(instance=cache, schema=ASSIGNMENT_CACHE_SCHEMA)
-        _validate_valid_config_ids(cache)
-        return True, cache
-    except (JSONDecodeError, ValidationError):
-        return False, {}
+def deserialize_assignment_cache(cache_str: str) -> AssignmentCache | None:
+    """Deserialize the assignment cache. Returns None if the cache is invalid."""
+    return deserialize_cache(cache_str, ASSIGNMENT_CACHE_SCHEMA, _validate_valid_config_ids)
