@@ -21,6 +21,7 @@ type AzureBlobClient interface {
 	NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse]
 	UploadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)
 	DownloadStream(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error)
+	DownloadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.DownloadBufferOptions) (int64, error)
 }
 
 type Client struct {
@@ -30,8 +31,8 @@ type Client struct {
 	mutex            sync.Mutex
 }
 
-func NewClient(azBlobClient AzureBlobClient, connectionString string) Client {
-	return Client{
+func NewClient(azBlobClient AzureBlobClient, connectionString string) *Client {
+	return &Client{
 		connectionString: connectionString,
 		azBlobClient:     azBlobClient,
 		blockClients:     make(map[string]map[string]*blockblob.Client),

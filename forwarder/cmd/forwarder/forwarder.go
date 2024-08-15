@@ -24,7 +24,7 @@ type MetricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-func getContainers(ctx context.Context, client storage.Client, containerNameCh chan<- string) error {
+func getContainers(ctx context.Context, client *storage.Client, containerNameCh chan<- string) error {
 	// Get the containers from the storage account
 	defer close(containerNameCh)
 	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
@@ -51,7 +51,7 @@ func getContainers(ctx context.Context, client storage.Client, containerNameCh c
 	}
 }
 
-func getBlobs(ctx context.Context, client storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
+func getBlobs(ctx context.Context, client *storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
 	// Get the blobs from the container
 	iter := client.ListBlobs(ctx, containerName)
 
@@ -78,7 +78,7 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 
 }
 
-func getBlobContents(ctx context.Context, client storage.Client, containerName string, blobName string, blobContentChannel chan<- storage.BlobSegment) (err error) {
+func getBlobContents(ctx context.Context, client *storage.Client, containerName string, blobName string, blobContentChannel chan<- storage.BlobSegment) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
 
@@ -104,7 +104,7 @@ func GetDateTimeString() (date string) {
 	return time.Now().UTC().Format("2006-01-02-15")
 }
 
-func Run(ctx context.Context, client storage.Client, logger *log.Entry) (err error) {
+func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(context.Background())
