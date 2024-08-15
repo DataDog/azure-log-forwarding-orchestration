@@ -1,10 +1,13 @@
 # stdlib
+from collections.abc import Callable
+from json import JSONDecodeError, loads
 from os import environ
-from typing import Any, Final, Literal, NamedTuple
+from typing import Any, Final, Literal, NamedTuple, TypeVar
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient
+from jsonschema import ValidationError, validate
 
 BLOB_STORAGE_CACHE = "control-plane-cache"
 
@@ -119,3 +122,17 @@ async def write_cache(blob_name: str, content: str) -> None:
         get_config_option(STORAGE_CONNECTION_SETTING), BLOB_STORAGE_CACHE, blob_name
     ) as blob_client:
         await blob_client.upload_blob(content, overwrite=True)
+
+
+T = TypeVar("T")
+
+
+def deserialize_cache(
+    cache_str: str, schema: dict[str, Any], post_processing: Callable[[T], T] = lambda x: x
+) -> T | None:
+    try:
+        cache = loads(cache_str)
+        validate(instance=cache, schema=schema)
+        return post_processing(cache)
+    except (JSONDecodeError, ValidationError):
+        return None

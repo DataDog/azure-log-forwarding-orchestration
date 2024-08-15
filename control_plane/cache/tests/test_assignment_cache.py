@@ -21,13 +21,12 @@ class TestDeserializeResourceCache(TestCase):
                 }
             },
         }
-        success, cache = deserialize_assignment_cache(dumps(raw_cache))
-        self.assertTrue(success)
+        cache = deserialize_assignment_cache(dumps(raw_cache))
         self.assertEqual(cache, raw_cache)
 
     def assert_deserialize_failure(self, cache_str: str):
-        success, _ = deserialize_assignment_cache(cache_str)
-        self.assertFalse(success)
+        cache = deserialize_assignment_cache(cache_str)
+        self.assertIsNone(cache)
 
     def test_invalid_json(self):
         self.assert_deserialize_failure("{invalid_json}")
