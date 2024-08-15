@@ -55,6 +55,20 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
+def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[str], list[str]]:
+    total_load = sum(resource_loads.values())
+    load_so_far = 0
+    first_half: list[str] = []
+    second_half: list[str] = []
+    for resource, load in sorted(resource_loads.items(), key=lambda kv: kv[1]):
+        load_so_far += load
+        if load_so_far < total_load / 2:
+            first_half.append(resource)
+        else:
+            second_half.append(resource)
+    return first_half, second_half
+
+
 class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str, resource_group: str) -> None:
         super().__init__()
@@ -249,19 +263,12 @@ class ScalingTask(Task):
         if len(resource_loads) < 2:
             log.error("Not enough resources to split for forwarder %s", underscaled_forwarder_id)
             return
-        assigned_resources = sorted(resource_loads.items(), key=lambda kv: kv[1])
-        total_load = sum(resource_loads.values())
-        load_so_far, split_index = 0, 0
-        for _, load in assigned_resources:
-            load_so_far += load
-            split_index += 1
-            if load_so_far > total_load / 2:
-                break
+        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
-                **{resource: underscaled_forwarder_id for resource, _ in assigned_resources[:split_index]},
-                **{resource: new_forwarder.config_id for resource, _ in assigned_resources[split_index:]},
+                **{resource: underscaled_forwarder_id for resource in old_forwarder_resources},
+                **{resource: new_forwarder.config_id for resource in new_forwarder_resources},
             }
         )
 
