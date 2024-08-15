@@ -119,7 +119,7 @@ class Deployer(Task):
     async def deploy_function_app(self, function_app_name: str) -> None:
         function_app_data = await self.download_function_app_data(function_app_name)
         resp = await self.rest_client.post(
-            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",  # TODO ASK HERE
+            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",  # TODO [AZINTS-2705] Figure out how to get the right name here
             data=function_app_data,
         )
         resp.raise_for_status()
