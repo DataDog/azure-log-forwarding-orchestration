@@ -27,6 +27,7 @@ from tasks.scaling_task import (
     SCALING_TASK_NAME,
     ScalingTask,
     is_consistently_over_threshold,
+    partition_resources_by_load,
 )
 from tasks.tests.common import TaskTestCase, UnexpectedException
 
@@ -217,7 +218,7 @@ class TestScalingTask(TaskTestCase):
         expected_cache: AssignmentCache = {
             sub_id1: {
                 EAST_US: {
-                    "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                    "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                     "configurations": {
                         OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
@@ -555,3 +556,61 @@ class TestScalingTaskHelpers(TestCase):
                 oldest_timestamp=self.minutes_ago(5),
             )
         )
+
+    def test_partition_resources_by_load_two_resources(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 1,
+                    "resource2": 9000,
+                }
+            ),
+            (["resource1"], ["resource2"]),
+        )
+
+    def test_partition_resources_by_load_four_resources(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 4000,
+                    "resource2": 6000,
+                    "resource3": 5000,
+                    "resource4": 7000,
+                }
+            ),
+            (["resource1", "resource3"], ["resource2", "resource4"]),
+        )
+
+    def test_partition_resources_by_load_three_resources(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 4000,
+                    "resource2": 6000,
+                    "resource3": 5000,
+                }
+            ),
+            (["resource1"], ["resource3", "resource2"]),
+        )
+
+    def test_partition_resources_by_load_all_the_same_load_prefer_second_partition(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 5000,
+                    "resource2": 5000,
+                    "resource3": 5000,
+                    "resource4": 5000,
+                    "resource5": 5000,
+                }
+            ),
+            (["resource1", "resource2"], ["resource3", "resource4", "resource5"]),
+        )
+
+    def test_partition_resources_by_load_one_resource(self):
+        # this isnt a real use case since we only call this function when we have
+        # more than one resource, but it is worth adding a unit test regardless
+        self.assertEqual(partition_resources_by_load({"resource1": 5000}), ([], ["resource1"]))
+
+    def test_partition_resources_by_load_no_resources(self):
+        self.assertEqual(partition_resources_by_load({}), ([], []))

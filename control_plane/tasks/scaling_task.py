@@ -56,13 +56,13 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
 
 
 def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[str], list[str]]:
-    total_load = sum(resource_loads.values())
+    half_load = sum(resource_loads.values()) / 2
     load_so_far = 0
     first_half: list[str] = []
     second_half: list[str] = []
     for resource, load in sorted(resource_loads.items(), key=lambda kv: kv[1]):
         load_so_far += load
-        if load_so_far < total_load / 2:
+        if load_so_far <= half_load:
             first_half.append(resource)
         else:
             second_half.append(resource)
@@ -263,7 +263,7 @@ class ScalingTask(Task):
         if len(resource_loads) < 2:
             log.error("Not enough resources to split for forwarder %s", underscaled_forwarder_id)
             return
-        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
+        new_forwarder_resources, old_forwarder_resources = partition_resources_by_load(resource_loads)
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
