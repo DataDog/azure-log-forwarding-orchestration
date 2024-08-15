@@ -218,7 +218,7 @@ class TestScalingTask(TaskTestCase):
         expected_cache: AssignmentCache = {
             sub_id1: {
                 EAST_US: {
-                    "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
                     "configurations": {
                         OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
@@ -358,7 +358,7 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state={
                 sub_id1: {
                     EAST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                        "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                             NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
@@ -372,8 +372,8 @@ class TestScalingTask(TaskTestCase):
             sub_id1: {
                 EAST_US: {
                     "resources": {
-                        "resource1": OLD_LOG_FORWARDER_ID,
-                        "resource2": NEW_LOG_FORWARDER_ID,
+                        "resource1": NEW_LOG_FORWARDER_ID,
+                        "resource2": OLD_LOG_FORWARDER_ID,
                         "resource3": OLD_LOG_FORWARDER_ID,
                         "resource4": OLD_LOG_FORWARDER_ID,
                     },
@@ -555,6 +555,34 @@ class TestScalingTaskHelpers(TestCase):
                 threshold=25,
                 oldest_timestamp=self.minutes_ago(5),
             )
+        )
+
+    def test_partition_resources_by_load_exactly_half_load(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "big_resource": 9001,
+                    "resource1": 500,
+                    "resource2": 1000,
+                    "resource3": 500,
+                    "resource4": 2000,
+                    "resource5": 1,
+                    "resource6": 3000,
+                    "resource7": 2000,
+                }
+            ),
+            (
+                [
+                    "resource5",
+                    "resource1",
+                    "resource3",
+                    "resource2",
+                    "resource4",
+                    "resource7",
+                    "resource6",
+                ],
+                ["big_resource"],
+            ),
         )
 
     def test_partition_resources_by_load_two_resources(self):

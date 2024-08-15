@@ -263,7 +263,7 @@ class ScalingTask(Task):
         if len(resource_loads) < 2:
             log.error("Not enough resources to split for forwarder %s", underscaled_forwarder_id)
             return
-        new_forwarder_resources, old_forwarder_resources = partition_resources_by_load(resource_loads)
+        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
