@@ -101,10 +101,13 @@ class Deployer(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_components(self, component_names: list[str]) -> None:
-        log.info(component_names)
-        pass
+        if len(component_names) == 0:
+            return
+        return
 
     async def deploy_function_apps(self, function_app_names: list[str]) -> None:
+        if len(function_app_names) == 0:
+            return
         try:
             await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
         except RetryError:
