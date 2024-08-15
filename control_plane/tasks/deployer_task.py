@@ -17,6 +17,8 @@ from cache.common import read_cache, write_cache
 from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
 from tasks.task import Task
 
+DEPLOYER_TASK_NAME = "deployer_task"
+
 DEPLOYER_NAME = "control_plane_deployer"
 MAX_ATTEMPTS = 5
 
@@ -26,7 +28,7 @@ log = getLogger(DEPLOYER_NAME)
 log.setLevel(DEBUG)
 
 
-class Deployer(Task):
+class DeployerTask(Task):
     def __init__(self) -> None:
         self.manifest_cache: ManifestCache = {}
         self.original_manifest_cache: ManifestCache = {}
@@ -151,7 +153,7 @@ class Deployer(Task):
 
 
 async def main():
-    async with Deployer() as deployer:
+    async with DeployerTask() as deployer:
         await deployer.run()
 
 
