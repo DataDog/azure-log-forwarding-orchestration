@@ -132,7 +132,7 @@ for task in "${!task_roles[@]}"; do
     [[ $role_assignments != *"$role"* ]] && {
         echo -n "$role role not found for $task (current roles: {$role_assignments}). Assigning role..."
         scope=$(get-scope "$role")
-        az role assignment create --assignee $principal_id --role "$role" --scope $scope
+        az role assignment create --assignee $principal_id --role "$role" --scope $scope > /dev/null
     }
     echo Done.
 
@@ -145,5 +145,13 @@ for task in "${!task_roles[@]}"; do
     }
     echo Done.
 done
+
+echo -n Checking for the final scaling-task settings...
+settings="$(az functionapp config appsettings list --name scaling-task --resource-group lfo | jq -r '.[].name')"
+
+grep -q "forwarder_image" <<< "$settings" || {
+    echo -n "Setting forwarder_acr_name for scaling-task..."
+    az functionapp config appsettings set --name scaling-task --resource-group lfo --settings forwarder_image=mattlogger.azurecr.io/forwarder:latest > /dev/null
+}
 
 echo All Done!
