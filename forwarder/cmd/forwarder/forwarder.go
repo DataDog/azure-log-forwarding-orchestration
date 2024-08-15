@@ -81,58 +81,19 @@ func getBlobs(ctx context.Context, client storage.Client, containerName string, 
 func getBlobContents(ctx context.Context, client storage.Client, containerName string, blobName string, blobContentChannel chan<- storage.BlobSegment) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
-	downloadGroup, ctx := errgroup.WithContext(ctx)
-	joinGroup, ctx := errgroup.WithContext(ctx)
 
-	initialOffset := 0
-	offset := initialOffset
-	count := 1024 * 1024 * 25 // 25MB
-	//currentUsage := 0
+	offset := 0
 	limit, err := client.GetSize(ctx, containerName, blobName)
 	if err != nil {
 		return err
 	}
 
-	expectedSegments := (limit - initialOffset) / count
-	blobSegmentCh := make(chan storage.BlobSegment, expectedSegments)
-	//defer close(blobSegmentCh)
-
-	joinGroup.Go(func() error {
-		blobBuffer := make([]byte, limit-initialOffset)
-		for blobSegment := range blobSegmentCh {
-			copy(blobBuffer[blobSegment.Offset:blobSegment.Offset+(blobSegment.Count)], *blobSegment.Content)
-		}
-		return nil
-	})
-
-	joinGroup.Go(func() error {
-		for offset < limit {
-			if offset+count >= limit {
-				count = limit - offset
-			}
-			downloadGroup.Go(func() error {
-				if offset == limit {
-					return nil
-				}
-				current, downloadErr := client.DownloadRange(ctx, containerName, blobName, offset, count)
-				if downloadErr != nil {
-					return downloadErr
-				}
-				blobSegmentCh <- current
-				return nil
-			})
-			offset += count
-		}
-
-		downloadErr := downloadGroup.Wait()
-		close(blobSegmentCh)
+	current, downloadErr := client.DownloadRange(ctx, containerName, blobName, offset, limit-1)
+	if downloadErr != nil {
 		return downloadErr
-	})
+	}
 
-	err = errors.Join(err, joinGroup.Wait())
-
-	emptyContent := make([]byte, 0)
-	blobContentChannel <- storage.BlobSegment{Name: blobName, Container: containerName, Content: &emptyContent, Offset: initialOffset, Count: limit}
+	blobContentChannel <- current
 	return nil
 }
 

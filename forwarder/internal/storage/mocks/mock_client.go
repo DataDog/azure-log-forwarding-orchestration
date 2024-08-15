@@ -55,6 +55,7 @@ func (mr *MockAzureBlobClientMockRecorder) DownloadStream(ctx, containerName, bl
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DownloadStream", reflect.TypeOf((*MockAzureBlobClient)(nil).DownloadStream), ctx, containerName, blobName, o)
 }
+
 // NewListBlobsFlatPager mocks base method.
 func (m *MockAzureBlobClient) NewListBlobsFlatPager(containerName string, o *azblob.ListBlobsFlatOptions) *runtime.Pager[azblob.ListBlobsFlatResponse] {
 	m.ctrl.T.Helper()

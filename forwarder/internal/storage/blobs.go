@@ -70,19 +70,43 @@ func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
 	return resp.Segment.BlobItems
 }
 
+func (c *Client) getBlockClient(containerName string, blobName string) (*blockblob.Client, error) {
+	//return blockblob.NewClientFromConnectionString(c.connectionString, containerName, blobName, nil)
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	if _, ok := c.blockClients[containerName]; !ok {
+		c.blockClients[containerName] = make(map[string]*blockblob.Client)
+	}
+	if _, ok := c.blockClients[containerName][blobName]; !ok {
+		client, err := blockblob.NewClientFromConnectionString(c.connectionString, containerName, blobName, nil)
+		if err != nil {
+			return &blockblob.Client{}, err
+		}
+		c.blockClients[containerName][blobName] = client
+	}
+	return c.blockClients[containerName][blobName], nil
+}
+
 func (c *Client) DownloadRange(ctx context.Context, containerName string, blobName string, offset int, count int) (BlobSegment, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()
-
-	options := &azblob.DownloadStreamOptions{
-		Range: azblob.HTTPRange{Offset: int64(offset), Count: int64(count)},
-	}
-
-	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, options)
+	blockClient, err := c.getBlockClient(containerName, blobName)
 	if err != nil {
 		return BlobSegment{}, err
 	}
-	content, err := io.ReadAll(resp.Body)
+
+	options := &azblob.DownloadBufferOptions{
+		Range: azblob.HTTPRange{Offset: int64(offset), Count: int64(count)},
+	}
+
+	size, err := c.GetSize(ctx, containerName, blobName)
+	if err != nil {
+		return BlobSegment{}, err
+	}
+
+	content := make([]byte, size)
+
+	_, err = blockClient.DownloadBuffer(ctx, content, options)
 	if err != nil {
 		return BlobSegment{}, err
 	}
@@ -98,7 +122,7 @@ func (c *Client) DownloadRange(ctx context.Context, containerName string, blobNa
 func (c *Client) GetSize(ctx context.Context, containerName string, blobName string) (int, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetSize")
 	defer span.Finish()
-	blockClient, err := blockblob.NewClientFromConnectionString(c.connectionString, containerName, blobName, nil)
+	blockClient, err := c.getBlockClient(containerName, blobName)
 	if err != nil {
 		return -1, err
 	}

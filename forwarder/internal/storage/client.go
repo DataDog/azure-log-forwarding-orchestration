@@ -2,6 +2,9 @@ package storage
 
 import (
 	"context"
+	"sync"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -23,12 +26,15 @@ type AzureBlobClient interface {
 type Client struct {
 	connectionString string
 	azBlobClient     AzureBlobClient
+	blockClients     map[string]map[string]*blockblob.Client
+	mutex            sync.Mutex
 }
 
 func NewClient(azBlobClient AzureBlobClient, connectionString string) Client {
 	return Client{
 		connectionString: connectionString,
 		azBlobClient:     azBlobClient,
+		blockClients:     make(map[string]map[string]*blockblob.Client),
 	}
 }
 
