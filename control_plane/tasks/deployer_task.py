@@ -68,8 +68,13 @@ class DeployerTask(Task):
         self.original_manifest_cache = private_manifest
         self.public_manifest = public_manifest
         try:
-            await self.deploy_components([component for component in public_manifest if public_manifest[component] != private_manifest.get(component))
-                pass
+            await self.deploy_components(
+                [
+                    component
+                    for component in public_manifest
+                    if public_manifest[component] != private_manifest.get(component)
+                ]
+            )
         except RetryError:
             log.error("Failed to successfully deploy, exiting...")
             return
