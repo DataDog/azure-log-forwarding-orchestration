@@ -99,10 +99,17 @@ class Deployer(Task):
             return validated_blob
         return {}
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_components(self, component_names: list[str]) -> None:
         if len(component_names) == 0:
             return
+        container_apps: list[str] = []
+        function_apps: list[str] = []
+        for component in component_names:
+            if component == "deploy":
+                container_apps.append(component)
+            else:
+                function_apps.append(component)
+        await gather(self.deploy_function_apps(function_apps), self.deploy_container_apps(container_apps))
         return
 
     async def deploy_function_apps(self, function_app_names: list[str]) -> None:
@@ -114,9 +121,10 @@ class Deployer(Task):
             log.error("Error deploy function apps")
         return
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_container_apps(self, container_app_names: list[str]) -> None:
-        pass
+        if len(container_app_names) == 0:
+            return
+        return
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_function_app(self, function_app_name: str) -> None:
@@ -129,7 +137,7 @@ class Deployer(Task):
         self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def download_function_app_data(self, function_app_name: str):
+    async def download_function_app_data(self, function_app_name: str) -> bytes:
         blob_name = function_app_name + "_task.zip"
         stream = await self.public_client.download_blob(blob_name)
         app_data = await stream.content_as_bytes(max_concurrency=4)
