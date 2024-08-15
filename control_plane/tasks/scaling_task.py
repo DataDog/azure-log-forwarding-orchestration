@@ -63,14 +63,14 @@ class ScalingTask(Task):
         self.background_tasks: set[AsyncTask[Any]] = set()
 
         # Resource Cache
-        success, resource_cache = deserialize_resource_cache(resource_cache_state)
-        if not success:
+        resource_cache = deserialize_resource_cache(resource_cache_state)
+        if resource_cache is None:
             raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
 
         # Assignment Cache
-        success, assignment_cache = deserialize_assignment_cache(assignment_cache_state)
-        if not success:
+        assignment_cache = deserialize_assignment_cache(assignment_cache_state)
+        if assignment_cache is None:
             log.warning("Assignment Cache is in an invalid format, task will reset the cache")
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache

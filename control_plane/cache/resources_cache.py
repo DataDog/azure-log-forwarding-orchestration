@@ -1,9 +1,8 @@
 # stdlib
-from json import JSONDecodeError, loads
 from typing import Any, TypeAlias
 
 # 3p
-from jsonschema import ValidationError, validate
+from cache.common import deserialize_cache
 
 RESOURCE_CACHE_BLOB = "resources.json"
 
@@ -19,15 +18,13 @@ RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
 }
 
 
-def deserialize_resource_cache(cache_str: str) -> tuple[bool, ResourceCache]:
-    """Deserialize the resource cache, returning a tuple of success and the cache dict."""
-    try:
-        cache = loads(cache_str)
-        validate(instance=cache, schema=RESOURCE_CACHE_SCHEMA)
-        # Convert the list of resources to a set
+def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
+    """Deserialize the resource cache. Returns None if the cache is invalid."""
+
+    def convert_resources_to_set(cache: ResourceCache) -> ResourceCache:
         for resources_per_region in cache.values():
             for region in resources_per_region:
                 resources_per_region[region] = set(resources_per_region[region])
-        return True, cache
-    except (JSONDecodeError, ValidationError):
-        return False, {}
+        return cache
+
+    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA, convert_resources_to_set)

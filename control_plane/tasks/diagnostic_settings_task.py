@@ -117,13 +117,13 @@ class DiagnosticSettingsTask(Task):
         super().__init__()
 
         # read caches
-        success, assignment_cache = deserialize_assignment_cache(assignment_cache_state)
-        if not success:
+        assignment_cache = deserialize_assignment_cache(assignment_cache_state)
+        if assignment_cache is None:
             raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
         self.assignment_cache = assignment_cache
 
-        success, diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
-        if not success:
+        diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
+        if diagnostic_settings_cache is None:
             log.warning("Diagnostic Settings Cache is in an invalid format, resetting the cache")
             diagnostic_settings_cache = {}
         self._diagnostic_settings_cache_initial = diagnostic_settings_cache
