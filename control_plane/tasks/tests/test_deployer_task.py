@@ -1,8 +1,6 @@
 # stdlib
-from collections.abc import AsyncIterable, Callable
 from json import dumps
-from typing import TypeAlias
-from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock
+from unittest.mock import DEFAULT, AsyncMock, MagicMock
 
 # 3p
 from azure.core.exceptions import HttpResponseError
@@ -10,8 +8,6 @@ from azure.core.exceptions import HttpResponseError
 # project
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import TaskTestCase
-
-AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
 
 class TestDeployerTask(TaskTestCase):
@@ -248,3 +244,51 @@ class TestDeployerTask(TaskTestCase):
 
         self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
         self.log.error.assert_not_called()
+
+    async def test_deploy_task_no_manifests(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {}
+        private_cache = {}
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        self.write_cache.assert_not_awaited()
+        self.assertEqual(self.public_client.download_blob.await_count, 0)
+        self.log.error.assert_called_once_with("Failed to read public manifests, exiting...")
+
+    async def test_deploy_task_private_manifest_retry_error(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        read_cache: AsyncMock = self.patch("read_cache")
+
+        public_cache = {
+            "forwarder": "2",
+            "resources": "2",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        read_cache.side_effect = HttpResponseError
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        public_cache_str = dumps(public_cache)
+
+        self.assertEqual(read_cache.await_count, 5)
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.log.error.assert_called_with("Failed to read private manifests.")
