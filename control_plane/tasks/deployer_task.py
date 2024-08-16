@@ -119,10 +119,7 @@ class DeployerTask(Task):
     async def deploy_function_apps(self, function_app_names: list[str]) -> None:
         if len(function_app_names) == 0:
             return
-        try:
-            await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
-        except RetryError:
-            log.error("Error deploy function apps")
+        await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
         return
 
     async def deploy_container_apps(self, container_app_names: list[str]) -> None:
