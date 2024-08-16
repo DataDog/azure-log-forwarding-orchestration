@@ -1,6 +1,7 @@
 # stdlib
 
-from asyncio import gather, run
+from asyncio import ALL_COMPLETED, create_task, gather, run, wait
+from asyncio import Task as AsyncTask
 from copy import deepcopy
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
@@ -57,10 +58,23 @@ class DeployerTask(Task):
     async def run(self) -> None:
         public_manifest: dict[str, str] = {}
         private_manifest: dict[str, str] = {}
-        try:
-            public_manifest, private_manifest = await gather(self.get_public_manifests(), self.get_private_manifests())
-        except RetryError:
-            log.error("Failed to read public manifests, exiting...")
+        public_task: AsyncTask = create_task(self.get_public_manifests(), name="public")
+        private_task: AsyncTask = create_task(self.get_private_manifests(), name="private")
+        done, pending = await wait([public_task, private_task], return_when=ALL_COMPLETED)
+        for task in done:
+            name = task.get_name()
+            if task.exception():
+                if name == "public":
+                    log.error("Failed to read public manifests, exiting...")
+                    return
+                log.error("Failed to read private manifests.")
+            else:
+                if name == "public":
+                    public_manifest = task.result()
+                else:
+                    private_manifest = task.result()
+        for task in pending:
+            task.cancel()
         if len(public_manifest) == 0:
             log.error("Failed to read public manifests, exiting...")
             return
