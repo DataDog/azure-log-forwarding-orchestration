@@ -67,17 +67,13 @@ class DeployerTask(Task):
         self.manifest_cache = deepcopy(private_manifest)
         self.original_manifest_cache = private_manifest
         self.public_manifest = public_manifest
-        try:
-            await self.deploy_components(
-                [
-                    component
-                    for component in public_manifest
-                    if public_manifest[component] != private_manifest.get(component)
-                ]
-            )
-        except RetryError:
-            log.error("Failed to successfully deploy, exiting...")
-            return
+        await self.deploy_components(
+            [
+                component
+                for component in public_manifest
+                if public_manifest[component] != private_manifest.get(component)
+            ]
+        )
         return
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
@@ -134,6 +130,7 @@ class DeployerTask(Task):
             function_app_data = await self.download_function_app_data(function_app_name)
             await self.upload_function_app_data(function_app_name, function_app_data)
         except RetryError:
+            log.error(f"Failed to deploy {function_app_name} task.")
             return
         self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
 
