@@ -56,9 +56,9 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
 
 
 class ScalingTask(Task):
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str, resource_group: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
-        self.resource_group = resource_group
+        self.resource_group = get_config_option("RESOURCE_GROUP")
 
         self.background_tasks: set[AsyncTask[Any]] = set()
 
@@ -280,12 +280,11 @@ class ScalingTask(Task):
 async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    resource_group = get_config_option("RESOURCE_GROUP")
     resources_cache_state, assignment_cache_state = await gather(
         read_cache(RESOURCE_CACHE_BLOB),
         read_cache(ASSIGNMENT_CACHE_BLOB),
     )
-    async with ScalingTask(resources_cache_state, assignment_cache_state, resource_group) as task:
+    async with ScalingTask(resources_cache_state, assignment_cache_state) as task:
         await task.run()
     log.info("Task finished at %s", now())
 
