@@ -109,7 +109,7 @@ class DeployerTask(Task):
         container_apps: list[str] = []
         function_apps: list[str] = []
         for component in component_names:
-            if component == "deploy":
+            if component == "forwarder":
                 container_apps.append(component)
             else:
                 function_apps.append(component)
