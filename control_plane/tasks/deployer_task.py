@@ -9,6 +9,7 @@ from typing import Self
 
 # 3p
 from aiohttp import ClientSession
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import ContainerClient
 from tenacity import RetryError, retry, stop_after_attempt
 
@@ -82,7 +83,10 @@ class DeployerTask(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_public_manifests(self) -> ManifestCache:
-        stream = await self.public_client.download_blob(MANIFEST_CACHE_NAME)
+        try:
+            stream = await self.public_client.download_blob(MANIFEST_CACHE_NAME)
+        except ResourceNotFoundError:
+            return {}
         blob_data = await stream.content_as_bytes(max_concurrency=4)
         validated_blob = deserialize_manifest_cache(blob_data.decode())
         if validated_blob:
@@ -91,7 +95,10 @@ class DeployerTask(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_private_manifests(self) -> ManifestCache:
-        blob_data = await read_cache(MANIFEST_CACHE_NAME)
+        try:
+            blob_data = await read_cache(MANIFEST_CACHE_NAME)
+        except ResourceNotFoundError:
+            return {}
         validated_blob = deserialize_manifest_cache(blob_data)
         if validated_blob:
             return validated_blob
