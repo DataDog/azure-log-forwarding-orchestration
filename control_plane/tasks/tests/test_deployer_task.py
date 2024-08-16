@@ -1,0 +1,197 @@
+# stdlib
+from collections.abc import AsyncIterable, Callable
+from json import dumps
+from typing import TypeAlias
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, Mock
+
+# 3p
+from azure.core.exceptions import HttpResponseError
+
+# project
+from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
+from tasks.tests.common import TaskTestCase
+
+AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
+
+
+class TestDeployerTask(TaskTestCase):
+    TASK_NAME = DEPLOYER_TASK_NAME
+
+    def setUp(self) -> None:
+        super().setUp()
+        container_client = self.patch("ContainerClient")
+        client_session = self.patch("ClientSession")
+        client_session.return_value = AsyncMock()
+        container_client.from_container_url.return_value = AsyncMock()
+        self.public_client: AsyncMock = container_client.from_container_url.return_value
+        self.rest_client: AsyncMock = client_session.return_value
+
+        self.log = self.patch("log")
+
+    async def run_resources_task(self):
+        async with DeployerTask() as task:
+            await task.run()
+
+    async def test_deploy_task_no_diff(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        private_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        await self.run_resources_task()
+
+        self.write_cache.assert_not_awaited()
+        self.log.error.assert_not_called()
+
+    async def test_deploy_task_diff_func_app(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {
+            "resources": "2",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        private_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        public_cache_str = dumps(public_cache)
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.log.error.assert_not_called()
+
+    async def test_deploy_task_diff_container_app(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {
+            "resources": "1",
+            "forwarder": "2",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        private_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        await self.run_resources_task()
+
+        public_cache_str = dumps(public_cache)
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.log.error.assert_not_called()
+
+    async def test_deploy_task_diff_func_and_container_app(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {
+            "resources": "2",
+            "forwarder": "2",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        private_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        public_cache_str = dumps(public_cache)
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.log.error.assert_not_called()
+
+    async def test_partial_success_func_app(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {
+            "resources": "2",
+            "forwarder": "1",
+            "diagnostic_settings": "2",
+            "scaling": "1",
+        }
+        private_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.side_effect = [
+            DEFAULT,
+            HttpResponseError,
+            HttpResponseError,
+            HttpResponseError,
+            HttpResponseError,
+            HttpResponseError,
+        ]
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        public_cache_str = dumps(
+            {
+                "resources": "2",
+                "forwarder": "1",
+                "diagnostic_settings": "1",
+                "scaling": "1",
+            }
+        )
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.assertEqual(self.public_client.download_blob.await_count, 6)
+        self.log.error.assert_called_with("Failed to deploy diagnostic_settings task.")
