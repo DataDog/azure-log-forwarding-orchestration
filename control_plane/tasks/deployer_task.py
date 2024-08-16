@@ -61,7 +61,6 @@ class DeployerTask(Task):
             public_manifest, private_manifest = await gather(self.get_public_manifests(), self.get_private_manifests())
         except RetryError:
             log.error("Failed to read public manifests, exiting...")
-            return
         if len(public_manifest) == 0:
             log.error("Failed to read public manifests, exiting...")
             return
