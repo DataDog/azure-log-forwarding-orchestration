@@ -515,6 +515,43 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_scaling_up_with_only_one_resource(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime_seconds": 35,
+                "timestamp": minutes_ago(1.5),
+                "resource_log_volume": {"resource1": 90000},
+            },
+            {
+                "runtime_seconds": 40,
+                "timestamp": minutes_ago(1),
+                "resource_log_volume": {"resource1": 100000},
+            },
+            {
+                "runtime_seconds": 39.1,
+                "timestamp": minutes_ago(0.5),
+                "resource_log_volume": {"resource1": 95000},
+            },
+        ]
+        initial_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}}, assignment_cache_state=initial_cache
+        )
+        self.log.warning.assert_called_once_with(
+            "Forwarder %s only has one resource but is overwhelmed", OLD_LOG_FORWARDER_ID
+        )
+
+        self.write_cache.assert_not_awaited()
+
 
 class TestScalingTaskHelpers(TestCase):
     def test_metrics_over_threshold(self):

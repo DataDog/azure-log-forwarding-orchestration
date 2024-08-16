@@ -182,6 +182,7 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
+        resources = self.assignment_cache[subscription_id][region]["resources"]
         now_dt = datetime.now()
         oldest_metric_timestamp = (now_dt - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
 
@@ -195,11 +196,19 @@ class ScalingTask(Task):
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
+        def _has_enough_resources_to_scale_up(config_id: str) -> bool:
+            num_resources = list(resources.values()).count(config_id)
+            if num_resources < 2:
+                log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
+                return False
+            return True
+
         oldest_scale_up_timestamp = (now_dt - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
             if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
+            and _has_enough_resources_to_scale_up(config_id)
         ]
         if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
@@ -260,9 +269,6 @@ class ScalingTask(Task):
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
         }
-        if len(resource_loads) < 2:
-            log.error("Not enough resources to split for forwarder %s", underscaled_forwarder_id)
-            return
         old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
 
         self.assignment_cache[subscription_id][region]["resources"].update(
