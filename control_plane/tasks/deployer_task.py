@@ -128,6 +128,8 @@ class DeployerTask(Task):
     async def deploy_container_apps(self, container_app_names: list[str]) -> None:
         if len(container_app_names) == 0:
             return
+        for container_app in container_app_names:
+            self.manifest_cache[container_app] = self.public_manifest[container_app]
         return
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
