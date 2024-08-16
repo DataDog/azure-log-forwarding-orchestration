@@ -150,13 +150,13 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
-        public_cache = {
+        public_cache: ManifestCache = {
             "resources": "2",
             "forwarder": "1",
             "diagnostic_settings": "2",
             "scaling": "1",
         }
-        private_cache = {
+        private_cache: ManifestCache = {
             "resources": "1",
             "forwarder": "1",
             "diagnostic_settings": "1",
@@ -199,7 +199,7 @@ class TestDeployerTask(TaskTestCase):
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
         public_cache: ManifestCache = {}
-        private_cache = {
+        private_cache: ManifestCache = {
             "resources": "1",
             "forwarder": "1",
             "diagnostic_settings": "1",
@@ -224,7 +224,7 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
-        public_cache = {
+        public_cache: ManifestCache = {
             "forwarder": "2",
             "resources": "2",
             "diagnostic_settings": "1",
@@ -272,7 +272,7 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         read_cache: AsyncMock = self.patch("read_cache")
 
-        public_cache = {
+        public_cache: ManifestCache = {
             "forwarder": "2",
             "resources": "2",
             "diagnostic_settings": "1",
@@ -299,13 +299,13 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
-        public_cache = {
+        public_cache: ManifestCache = {
             "resources": "2",
             "forwarder": "1",
             "diagnostic_settings": "1",
             "scaling": "1",
         }
-        private_cache = {
+        private_cache: ManifestCache = {
             "resources": "1",
             "forwarder": "1",
             "diagnostic_settings": "1",
