@@ -195,3 +195,56 @@ class TestDeployerTask(TaskTestCase):
         self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
         self.assertEqual(self.public_client.download_blob.await_count, 6)
         self.log.error.assert_called_with("Failed to deploy diagnostic_settings task.")
+
+    async def test_deploy_task_no_public_manifest(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {}
+        private_cache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        self.write_cache.assert_not_awaited()
+        self.assertEqual(self.public_client.download_blob.await_count, 0)
+        self.log.error.assert_called_once_with("Failed to read public manifests, exiting...")
+
+    async def test_deploy_task_no_private_manifests(self):
+        get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
+        get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
+
+        public_cache = {
+            "forwarder": "2",
+            "resources": "2",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        private_cache = {}
+
+        get_public_manifests.return_value = public_cache
+        get_private_manifests.return_value = private_cache
+
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
+
+        self.rest_client.post.return_value = MagicMock()
+
+        await self.run_resources_task()
+
+        public_cache_str = dumps(public_cache)
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.log.error.assert_not_called()
