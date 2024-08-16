@@ -132,15 +132,22 @@ class DeployerTask(Task):
             self.manifest_cache[container_app] = self.public_manifest[container_app]
         return
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_function_app(self, function_app_name: str) -> None:
-        function_app_data = await self.download_function_app_data(function_app_name)
+        try:
+            function_app_data = await self.download_function_app_data(function_app_name)
+            await self.upload_function_app_data(function_app_name, function_app_data)
+        except RetryError:
+            return
+        self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
         resp = await self.rest_client.post(
             f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",  # TODO [AZINTS-2705] Figure out how to get the right name here
             data=function_app_data,
         )
         resp.raise_for_status()
-        self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
+        return
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, function_app_name: str) -> bytes:
