@@ -16,9 +16,8 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
     Resource,
 )
 
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
-
 # project
+from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
     InvalidCacheError,
     LogForwarderType,

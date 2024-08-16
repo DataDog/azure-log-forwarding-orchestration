@@ -2,6 +2,7 @@
 from asyncio import sleep
 from datetime import datetime, timedelta
 from json import dumps
+from os import environ
 from typing import Any
 from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, call, patch
@@ -56,6 +57,9 @@ class TestScalingTask(TaskTestCase):
 
         self.log = self.patch("log")
         self.uuid = self.patch("uuid4")
+        p = patch.dict(environ, {"RESOURCE_GROUP": RG1})
+        p.start()
+        self.addCleanup(p.stop)
         self.uuid.return_value = UUID(NEW_UUID)
 
     @property
@@ -65,21 +69,18 @@ class TestScalingTask(TaskTestCase):
     async def run_scaling_task(
         self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str = RG1
     ):
-        async with ScalingTask(
-            dumps(resource_cache_state, default=list), dumps(assignment_cache_state), resource_group
-        ) as task:
+        async with ScalingTask(dumps(resource_cache_state, default=list), dumps(assignment_cache_state)) as task:
             await task.run()
 
     async def test_scaling_task_fails_without_valid_resource_cache(self):
         with self.assertRaises(InvalidCacheError):
-            ScalingTask("invalid json", "{}", "lfo")
+            ScalingTask("invalid json", "{}")
 
     async def test_reset_invalid_scaling_cache(self):
         invalid_cache: Any = "not valid"
         await self.run_scaling_task(
             {},
             invalid_cache,
-            "lfo",
         )
         self.write_cache.assert_not_awaited()
         self.log.warning.assert_called_once_with("Assignment Cache is in an invalid format, task will reset the cache")
@@ -425,7 +426,7 @@ class TestScalingTask(TaskTestCase):
             await sleep(0.05)
             m()
 
-        async with ScalingTask(dumps({SUB_ID1: {}}), dumps({SUB_ID1: {}}), RG1) as task:
+        async with ScalingTask(dumps({SUB_ID1: {}}), dumps({SUB_ID1: {}})) as task:
             for _ in range(3):
                 task.submit_background_task(background_task())
             failing_task_error = Exception("test")
@@ -451,7 +452,6 @@ class TestScalingTask(TaskTestCase):
                         }
                     },
                 },
-                RG1,
             )
         write_caches.assert_not_awaited()
 
