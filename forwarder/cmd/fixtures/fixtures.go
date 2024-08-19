@@ -14,10 +14,9 @@ import (
 	"google.golang.org/api/iterator"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
-	"gopkg.in/yaml.v3"
 )
 
-func cleanupBlobs(ctx context.Context, logger *log.Entry) error {
+func cleanUpBlobs(ctx context.Context, logger *log.Entry) {
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
@@ -26,12 +25,14 @@ func cleanupBlobs(ctx context.Context, logger *log.Entry) error {
 	client := storage.NewClient(azBlobClient)
 	containers, err := getContainers(ctx, client)
 	if err != nil {
-		return err
+		logger.Fatalf("error getting containers: %v", err)
+		return
 	}
 	for _, c := range containers {
 		blobs, err := getBlobs(ctx, client, c)
 		if err != nil {
-			return err
+			logger.Fatalf("error getting blobs: %v", err)
+			return
 		}
 		var latestBlob *storage.Blob
 		for _, blob := range blobs {
@@ -42,9 +43,6 @@ func cleanupBlobs(ctx context.Context, logger *log.Entry) error {
 					latestBlob = &blob
 				}
 			}
-			//if err := client.DeleteBlob(ctx, container, blob); err != nil {
-			//	return err
-			//}
 		}
 		logger.Printf("saving blob %s", *latestBlob.Item.Name)
 		for _, blob := range blobs {
@@ -54,7 +52,6 @@ func cleanupBlobs(ctx context.Context, logger *log.Entry) error {
 			}
 		}
 	}
-	return nil
 }
 
 func getContainers(ctx context.Context, client *storage.Client) ([]string, error) {
@@ -134,34 +131,6 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 
 	captureHook := func(i *cassette.Interaction) error {
 		delete(i.Request.Headers, "Authorization")
-		//if i.Request.Method != "GET" || !strings.Contains(i.Request.URL, ".json") {
-		//	return nil
-		//}
-		//scanner := bufio.NewScanner(bytes.NewReader([]byte(i.Response.Body)))
-		//var logs []string
-		//needsPopped := true
-		//logLimit := 25
-		//counter := 0
-		//for scanner.Scan() {
-		//	logs = append(logs, scanner.Text())
-		//	counter += 1
-		//	if counter == logLimit {
-		//		needsPopped = false
-		//		break
-		//	}
-		//}
-		//if needsPopped {
-		//	logs = logs[:len(logs)-1]
-		//}
-		//if err := scanner.Err(); err != nil {
-		//	fmt.Fprintln(os.Stderr, "reading standard input:", err)
-		//}
-		//newBody := ""
-		//for i := range logs {
-		//	newBody += fmt.Sprintf("%s\n", logs[i])
-		//}
-		//i.Response.Body = newBody
-
 		return nil
 	}
 	rec.AddHook(captureHook, recorder.AfterCaptureHook)
@@ -185,9 +154,6 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 			logger.Fatalf("error getting blobs: %v", err)
 		}
 		for _, blob := range blobs {
-			//if !storage.FromCurrentHour(blob) {
-			//	continue
-			//}
 			logger.Infof("Blob: %s Container: %s", blob, container)
 			_, err := getBlobContent(ctx, client, blob)
 			if err != nil {
@@ -197,53 +163,11 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 	}
 }
 
-// cleanRunFixtures will transform the generated fixtures into a human-readable one
-func cleanRunFixtures(ctx context.Context, logger *log.Entry, fixturePath string) {
-	//yamlFile, err := os.ReadFile(fmt.Sprintf("%s.yaml", fixturePath))
-	//if err != nil {
-	//	logger.Fatalf("yamlFile.Get err   #%v ", err)
-	//}
-	//
-	//var c cassette.Cassette
-
-	c, err := cassette.Load(fixturePath)
-	if err != nil {
-		log.Fatalf("Unmarshal: %v", err)
-	}
-
-	data, err := yaml.Marshal(c)
-	if err != nil {
-		log.Fatalf("Marshal: %v", err)
-	}
-
-	deleteCassetteFile(logger, fixturePath)
-
-	f, err := os.Create(c.File)
-	if err != nil {
-		log.Fatalf("Create: %v", err)
-	}
-
-	defer f.Close()
-
-	// Honor the YAML structure specification
-	// http://www.yaml.org/spec/1.2/spec.html#id2760395
-	_, err = f.Write([]byte("---\n"))
-	if err != nil {
-		log.Fatalf("error adding ---: %v", err)
-	}
-
-	_, err = f.Write(data)
-	if err != nil {
-		log.Fatalf("error writing data: %v", err)
-	}
-}
-
 func main() {
 	// Integration test fixture recording for the forwarder
 	ctx := context.Background()
 	logger := log.WithFields(log.Fields{"service": "forwarder"})
 	runFixturePath := path.Join("cmd", "forwarder", "fixtures", "run")
-	cleanupBlobs(ctx, logger)
+	cleanUpBlobs(ctx, logger)
 	generateRunFixtures(ctx, logger, runFixturePath)
-	//cleanRunFixtures(ctx, logger, runFixturePath)
 }
