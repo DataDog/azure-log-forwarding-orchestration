@@ -26,4 +26,7 @@ MANIFEST_CACHE_NAME = "manifest.json"
 
 
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
-    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA)
+    def return_cache(cache: ManifestCache) -> ManifestCache:
+        return cache
+
+    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA, return_cache)
