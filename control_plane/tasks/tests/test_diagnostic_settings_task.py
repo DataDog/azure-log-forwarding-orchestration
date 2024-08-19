@@ -1,6 +1,6 @@
 # stdlib
 from json import dumps
-from typing import Any, Final
+from typing import Final
 from unittest.mock import ANY, AsyncMock, Mock
 
 # 3p
@@ -21,7 +21,7 @@ from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTINGS_TASK_NAME,
     DiagnosticSettingsTask,
 )
-from tasks.tests.common import TaskTestCase, async_generator
+from tasks.tests.common import TaskTestCase, UnexpectedException, async_generator, mock
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"
@@ -30,14 +30,7 @@ resource_id1: Final = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.C
 storage_account1: Final = "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1"
 
 
-def mock(**kwargs: Any) -> Mock:
-    m = Mock()
-    for k, v in kwargs.items():
-        setattr(m, k, v)
-    return m
-
-
-class TestAzureDiagnosticSettingsTask(TaskTestCase):
+class TestDiagnosticSettingsTask(TaskTestCase):
     TASK_NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
     def setUp(self) -> None:
@@ -128,3 +121,27 @@ class TestAzureDiagnosticSettingsTask(TaskTestCase):
         self.assertEqual(
             str(e.exception), "Assignment Cache is in an invalid format, failing this task until it is valid"
         )
+
+    async def test_unexpected_failure_skips_cache_write(self):
+        self.patch("MonitorManagementClient").side_effect = UnexpectedException("unexpected")
+        write_caches = self.patch("DiagnosticSettingsTask.write_caches")
+        with self.assertRaises(UnexpectedException):
+            async with DiagnosticSettingsTask(
+                dumps(
+                    {
+                        sub_id1: {
+                            region1: {
+                                "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                                "resources": {resource_id1: config_id1},
+                            }
+                        }
+                    }
+                ),
+                dumps({sub_id1: {resource_id1: config_id1}}),
+                self.resource_group,
+            ) as task:
+                # change the cache so there is something to write
+                task.diagnostic_settings_cache = {}
+                await task.run()
+
+        write_caches.assert_not_awaited()

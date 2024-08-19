@@ -1,33 +1,48 @@
 # stdlib
-from asyncio import Lock, gather
-from collections.abc import Awaitable
+from asyncio import Lock, create_task, gather
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Self, TypeVar, cast
+from typing import Any, Self, TypeAlias, TypeVar, cast
 
 # 3p
-from aiohttp import ClientSession
 from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
+from azure.core.polling import AsyncLROPoller
 from azure.identity.aio import DefaultAzureCredential
+from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
+from azure.mgmt.appcontainers.models import (
+    Container,
+    ContainerResources,
+    EnvironmentVar,
+    Job,
+    JobConfiguration,
+    JobConfigurationScheduleTriggerConfig,
+    JobTemplate,
+    ManagedEnvironment,
+)
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
+    BlobContainer,
+    DateAfterCreation,
+    DateAfterModification,
+    ManagementPolicy,
+    ManagementPolicyAction,
+    ManagementPolicyBaseBlob,
+    ManagementPolicyDefinition,
+    ManagementPolicyFilter,
+    ManagementPolicyName,
+    ManagementPolicyRule,
+    ManagementPolicySchema,
+    ManagementPolicySnapShot,
     PublicNetworkAccess,
     Sku,
+    StorageAccount,
     StorageAccountCreateParameters,
     StorageAccountKey,
-)
-from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
-from azure.mgmt.web.v2023_12_01.models import (
-    AppServicePlan,
-    ManagedServiceIdentity,
-    NameValuePair,
-    Site,
-    SiteConfig,
-    SkuDescription,
 )
 from azure.storage.blob.aio import ContainerClient
 from datadog_api_client import AsyncApiClient, Configuration
@@ -44,21 +59,21 @@ from tenacity import RetryCallState, retry, stop_after_attempt
 from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
-    get_app_service_plan_name,
     get_config_option,
-    get_function_app_name,
+    get_container_app_name,
+    get_managed_env_id,
+    get_managed_env_name,
     get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.common import wait_for_resource
-
-BLOB_FORWARDER_DATA_CONTAINER, BLOB_FORWARDER_DATA_BLOB = "blob-forwarder", "data.zip"
 
 FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
+FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 14
 
 log = getLogger(__name__)
 
@@ -81,55 +96,77 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
     return False
 
 
+ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
+
+
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
-        self.control_plane_storage_connection_string = get_config_option("AzureWebJobsStorage")
+        self.forwarder_image = get_config_option("forwarder_image")
+        self.resource_group = resource_group
+        self.subscription_id = subscription_id
         self._credential = credential
-        self.web_client = WebSiteManagementClient(credential, subscription_id)
+        self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
-        self.rest_client = ClientSession()
         self.configuration = Configuration()
         self.configuration.request_timeout = CLIENT_MAX_SECONDS
         self.api_client = AsyncApiClient(self.configuration)
         self.api_instance = MetricsApi(self.api_client)
-        self.resource_group = resource_group
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
 
     async def __aenter__(self) -> Self:
         await gather(
-            self.web_client.__aenter__(),
+            self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
-            self.rest_client.__aenter__(),
             self.api_client.__aenter__(),
         )
-        token = await self._credential.get_token("https://management.azure.com/.default")
-        self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         await gather(
-            self.web_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
             self.api_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
+    def log_and_raise_errors(self, message: str, *maybe_errors: Any) -> None:
+        errors = [e for e in maybe_errors if isinstance(e, Exception)]
+        if errors:
+            log.exception("%s: %s", message, errors)
+            raise errors[0]
+
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
-        app_service_plan_name = get_app_service_plan_name(config_id)
-        log.info(
-            "Creating log forwarder storage (%s) and app service plan (%s)",
-            storage_account_name,
-            app_service_plan_name,
+        managed_env_name = get_managed_env_name(config_id)
+
+        maybe_errors: tuple[Any, ...] = await gather(
+            wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name)),
+            wait_for_resource(*await self.create_log_forwarder_managed_environment(region, managed_env_name)),
+            return_exceptions=True,
         )
-        # storage account
-        storage_account_future = await self.storage_client.storage_accounts.begin_create(
-            resource_group_name=self.resource_group,
-            account_name=storage_account_name,
-            parameters=StorageAccountCreateParameters(
+        self.log_and_raise_errors("Failed to create storage account and/or managed environment", *maybe_errors)
+
+        maybe_errors = await gather(
+            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
+            self.create_log_forwarder_containers(storage_account_name),
+            self.create_log_forwarder_storage_management_policy(storage_account_name),
+            return_exceptions=True,
+        )
+        self.log_and_raise_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors)
+
+        # for now this is the only type we support
+        return STORAGE_ACCOUNT_TYPE
+
+    async def create_log_forwarder_storage_account(
+        self, region: str, storage_account_name: str
+    ) -> ResourcePoller[StorageAccount]:
+        log.info("Creating storage account %s for region %s", storage_account_name, region)
+        return await self.storage_client.storage_accounts.begin_create(
+            self.resource_group,
+            storage_account_name,
+            StorageAccountCreateParameters(
                 sku=Sku(
                     # TODO (AZINTS-2646): figure out which SKU we should be using here
                     name="Standard_LRS"
@@ -138,94 +175,91 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 location=region,
                 public_network_access=PublicNetworkAccess.DISABLED,
             ),
-        )
-        # app service plan
-        app_service_plan_future = await self.web_client.app_service_plans.begin_create_or_update(
+        ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
+
+    async def create_log_forwarder_managed_environment(
+        self, region: str, env_name: str
+    ) -> ResourcePoller[ManagedEnvironment]:
+        log.info("Creating managed environment %s for region %s", env_name, region)
+        return await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
-            app_service_plan_name,
-            AppServicePlan(
+            env_name,
+            ManagedEnvironment(
                 location=region,
-                kind="linux",
-                reserved=True,
-                sku=SkuDescription(
-                    # TODO: figure out which SKU we should be using here
-                    tier="Basic",
-                    name="B1",
+                zone_redundant=False,
+            ),
+        ), lambda: self.container_apps_client.managed_environments.get(self.resource_group, env_name)
+
+    async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
+        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
+        job_name = get_container_app_name(config_id)
+        return await self.container_apps_client.jobs.begin_create_or_update(
+            self.resource_group,
+            job_name,
+            Job(
+                location=region,
+                environment_id=get_managed_env_id(self.subscription_id, self.resource_group, config_id),
+                configuration=JobConfiguration(
+                    trigger_type="Schedule",
+                    schedule_trigger_config=JobConfigurationScheduleTriggerConfig(cron_expression="* * * * *"),
+                    replica_timeout=1800,  # 30 minutes
+                    replica_retry_limit=1,
+                ),
+                template=JobTemplate(
+                    containers=[
+                        Container(
+                            name="forwarder",
+                            image=self.forwarder_image,
+                            resources=ContainerResources(cpu=0.5, memory="1Gi"),
+                            env=[EnvironmentVar(name="AzureWebJobsStorage", value=connection_string)],
+                        )
+                    ],
                 ),
             ),
-        )
-        try:
-            storage_account, app_service_plan = await gather(
-                wait_for_resource(
-                    storage_account_future,
-                    lambda: self.storage_client.storage_accounts.get_properties(
-                        self.resource_group, storage_account_name
-                    ),
-                ),
-                wait_for_resource(
-                    app_service_plan_future,
-                    lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name),
-                ),
-            )
-            log.info(
-                "Created log forwarder storage account (%s) and app service plan (%s)",
-                storage_account.id,
-                app_service_plan.id,
-            )
-        except Exception:
-            log.exception("Failed to create storage account and/or app service plan")
-            raise
+        ), lambda: self.container_apps_client.jobs.get(self.resource_group, job_name)
 
-        function_app_name = get_function_app_name(config_id)
-        log.info("Creating log forwarder app: %s", function_app_name)
-        connection_string = await self.get_connection_string(storage_account_name)
-        function_app_poller = await self.web_client.web_apps.begin_create_or_update(
+    async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
+        await self.storage_client.blob_containers.create(
             self.resource_group,
-            function_app_name,
-            Site(
-                location=region,
-                kind="functionapp",
-                identity=ManagedServiceIdentity(type="SystemAssigned"),
-                server_farm_id=app_service_plan.id,
-                https_only=True,
-                site_config=SiteConfig(
-                    app_settings=[
-                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="custom"),
-                        NameValuePair(name="AzureWebJobsStorage", value=connection_string),
-                        NameValuePair(name="FUNCTIONS_EXTENSION_VERSION", value="~4"),
+            storage_account_name,
+            FORWARDER_METRIC_CONTAINER_NAME,
+            BlobContainer(),
+        )
+
+    async def create_log_forwarder_storage_management_policy(self, storage_account_name: str) -> None:
+        await self.storage_client.management_policies.create_or_update(
+            self.resource_group,
+            storage_account_name,
+            ManagementPolicyName.DEFAULT,
+            ManagementPolicy(
+                policy=ManagementPolicySchema(
+                    rules=[
+                        ManagementPolicyRule(
+                            enabled=True,
+                            name="Delete Old Metric Blobs",
+                            type="Lifecycle",
+                            definition=ManagementPolicyDefinition(
+                                actions=ManagementPolicyAction(
+                                    base_blob=ManagementPolicyBaseBlob(
+                                        delete=DateAfterModification(
+                                            days_after_modification_greater_than=FORWARDER_METRIC_BLOB_LIFETIME_DAYS
+                                        )
+                                    ),
+                                    snapshot=ManagementPolicySnapShot(
+                                        delete=DateAfterCreation(
+                                            days_after_creation_greater_than=FORWARDER_METRIC_BLOB_LIFETIME_DAYS
+                                        )
+                                    ),
+                                ),
+                                filters=ManagementPolicyFilter(
+                                    blob_types=["blockBlob", "appendBlob"], prefix_match=["forwarder-metrics/"]
+                                ),
+                            ),
+                        )
                     ]
-                ),
+                )
             ),
         )
-        try:
-            function_app, blob_forwarder_data = await gather(
-                wait_for_resource(
-                    function_app_poller, lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
-                ),
-                self.get_blob_forwarder_data(),
-            )
-        except Exception:
-            log.exception("Failed to create function app and/or get blob forwarder data")
-            raise
-        log.info("Created log forwarder function app: %s", function_app.id)
-
-        # deploy code to function app
-        log.info("Deploying log forwarder code to function app: %s", function_app.id)
-        resp = await self.rest_client.post(
-            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
-            data=blob_forwarder_data,
-        )
-        resp.raise_for_status()
-        body = await resp.text()
-        log.info(
-            "Deployed log forwarder code to function app (zip size %s)\nstatus code: %s\nbody: %s",
-            len(blob_forwarder_data),
-            resp.status,
-            body,
-        )
-
-        # for now this is the only type we support
-        return STORAGE_ACCOUNT_TYPE
 
     async def get_connection_string(self, storage_account_name: str) -> str:
         keys_result = await self.storage_client.storage_accounts.list_keys(self.resource_group, storage_account_name)
@@ -241,36 +275,35 @@ class LogForwarderClient(AbstractAsyncContextManager):
             + ";EndpointSuffix=core.windows.net"
         )
 
-    async def get_blob_forwarder_data(self) -> bytes:
-        async with self._blob_forwarder_data_lock:
-            if self._blob_forwarder_data is None:
-                async with ContainerClient.from_connection_string(
-                    self.control_plane_storage_connection_string, BLOB_FORWARDER_DATA_CONTAINER
-                ) as client:
-                    stream = await client.download_blob(BLOB_FORWARDER_DATA_BLOB)
-                    self._blob_forwarder_data = await stream.content_as_bytes(max_concurrency=4)
-            return self._blob_forwarder_data
-
     async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
         """Deletes the Log forwarder, returns True if successful, False otherwise"""
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder():
             log.info("Attempting to delete log forwarder %s", forwarder_id)
-            await gather(
-                ignore_exception_type(
-                    ResourceNotFoundError,
-                    self.web_client.web_apps.delete(
-                        self.resource_group, get_function_app_name(forwarder_id), delete_empty_server_farm=True
-                    ),
-                ),
+
+            # start deleting the storage account now, it has no dependencies
+            delete_storage_account_task = create_task(
                 ignore_exception_type(
                     ResourceNotFoundError,
                     self.storage_client.storage_accounts.delete(
                         self.resource_group, get_storage_account_name(forwarder_id)
                     ),
-                ),
+                )
             )
+
+            poller = await ignore_exception_type(
+                ResourceNotFoundError,
+                self.container_apps_client.jobs.begin_delete(self.resource_group, get_container_app_name(forwarder_id)),
+            )
+            if poller:
+                await poller.result()
+
+            poller = await self.container_apps_client.managed_environments.begin_delete(
+                self.resource_group, get_managed_env_name(forwarder_id)
+            )
+
+            await gather(delete_storage_account_task, poller.result())
             log.info("Deleted log forwarder %s", forwarder_id)
 
         try:
@@ -348,7 +381,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                         ],
                         resources=[
                             MetricResource(
-                                name=get_function_app_name(log_forwarder_id),
+                                name=get_container_app_name(log_forwarder_id),
                                 type="logforwarder",
                             ),
                         ],
