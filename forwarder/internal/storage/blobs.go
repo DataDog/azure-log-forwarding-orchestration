@@ -25,7 +25,6 @@ type BlobSegment struct {
 	Container string
 	Content   *[]byte
 	Offset    int
-	Count     int
 }
 
 func FromCurrentHour(blobName string) bool {
@@ -94,7 +93,7 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[
 }
 
 func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.UploadBlob")
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
 	defer span.Finish()
 
 	//see if there is an existing blob
