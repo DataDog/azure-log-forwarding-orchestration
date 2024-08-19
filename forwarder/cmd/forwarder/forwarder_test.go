@@ -3,12 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
-	"io/ioutil"
-	"net/http"
 	"path"
 	"testing"
 
-	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -18,27 +15,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
-
-type Transport struct {
-	rec *cassette.Cassette
-}
-
-func (t *Transport) Do(r *http.Request) (*http.Response, error) {
-	if err := r.Context().Err(); err != nil {
-		return nil, err
-	}
-
-	i, err := t.rec.GetInteraction(r)
-	if err != nil {
-		return nil, err
-	}
-	resp := &http.Response{
-		StatusCode: i.Response.Code,
-		Body:       ioutil.NopCloser(bytes.NewReader([]byte(i.Response.Body))),
-		Header:     i.Response.Headers,
-	}
-	return resp, nil
-}
 
 func TestRun(t *testing.T) {
 	// Integration test for the storage forwarder
