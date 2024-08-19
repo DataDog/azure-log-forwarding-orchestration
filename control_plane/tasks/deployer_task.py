@@ -37,7 +37,6 @@ class DeployerTask(Task):
         self.public_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
         self.rest_client = ClientSession()
         super().__init__()
-        return
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -101,20 +100,17 @@ class DeployerTask(Task):
             else:
                 function_apps.append(component)
         await gather(self.deploy_function_apps(function_apps), self.deploy_container_apps(container_apps))
-        return
 
     async def deploy_function_apps(self, function_app_names: list[str]) -> None:
         if len(function_app_names) == 0:
             return
         await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
-        return
 
     async def deploy_container_apps(self, container_app_names: list[str]) -> None:
         if len(container_app_names) == 0:
             return
         for container_app in container_app_names:
             self.manifest_cache[container_app] = self.public_manifest[container_app]
-        return
 
     async def deploy_function_app(self, function_app_name: str) -> None:
         try:
@@ -132,7 +128,6 @@ class DeployerTask(Task):
             data=function_app_data,
         )
         resp.raise_for_status()
-        return
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, function_app_name: str) -> bytes:
@@ -145,7 +140,6 @@ class DeployerTask(Task):
         if self.manifest_cache == self.original_manifest_cache:
             return
         await write_cache(MANIFEST_CACHE_NAME, dumps(self.manifest_cache))
-        return
 
 
 async def main():
