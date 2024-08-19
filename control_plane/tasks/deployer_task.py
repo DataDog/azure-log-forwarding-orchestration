@@ -73,7 +73,6 @@ class DeployerTask(Task):
                 if public_manifest[component] != private_manifest.get(component)
             ]
         )
-        return
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_public_manifests(self) -> ManifestCache:
