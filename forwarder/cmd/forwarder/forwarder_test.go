@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"path"
-	"strings"
 	"testing"
 
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
@@ -31,13 +30,6 @@ func (t *Transport) Do(r *http.Request) (*http.Response, error) {
 
 	i, err := t.rec.GetInteraction(r)
 	if err != nil {
-		log.Printf("error getting interaction: %v", err)
-		log.Printf("request: %v", r.URL.String())
-		for i := range t.rec.Interactions {
-			if strings.Contains(t.rec.Interactions[i].Request.URL, ".json") && t.rec.Interactions[i].Request.Method == "GET" {
-				log.Printf("interaction %d: %v", i, t.rec.Interactions[i].Request.URL)
-			}
-		}
 		return nil, err
 	}
 	resp := &http.Response{
