@@ -3,8 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
+	"net/http"
 	"path"
+	"strings"
 	"testing"
+
+	"gopkg.in/dnaeon/go-vcr.v3/cassette"
+	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -12,19 +18,46 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
+
+type Transport struct {
+	rec *cassette.Cassette
+}
+
+func (t *Transport) Do(r *http.Request) (*http.Response, error) {
+	if err := r.Context().Err(); err != nil {
+		return nil, err
+	}
+
+	i, err := t.rec.GetInteraction(r)
+	if err != nil {
+		log.Printf("error getting interaction: %v", err)
+		log.Printf("request: %v", r.URL.String())
+		for i := range t.rec.Interactions {
+			if strings.Contains(t.rec.Interactions[i].Request.URL, ".json") && t.rec.Interactions[i].Request.Method == "GET" {
+				log.Printf("interaction %d: %v", i, t.rec.Interactions[i].Request.URL)
+			}
+		}
+		return nil, err
+	}
+	resp := &http.Response{
+		StatusCode: i.Response.Code,
+		Body:       ioutil.NopCloser(bytes.NewReader([]byte(i.Response.Body))),
+		Header:     i.Response.Headers,
+	}
+	return resp, nil
+}
 
 func TestRun(t *testing.T) {
 	// Integration test for the storage forwarder
 	// GIVEN
 	rec, err := recorder.New(path.Join("fixtures", "run"))
-	assert.NoErrorf(t, err, "failed creating recorder ")
+	assert.NoError(t, err)
 	defer rec.Stop()
 
 	clientOptions := &azblob.ClientOptions{}
 	clientOptions.Transport = rec.GetDefaultClient()
-	azBlobClient, err := azblob.NewClientWithNoCredential("https://mattlogger.blob.core.windows.net/", clientOptions)
+	azBlobClient, err := azblob.NewClientWithNoCredential("https://forwarderintegrationtest.blob.core.windows.net/", clientOptions)
 	assert.NoError(t, err)
 	client := storage.NewClient(azBlobClient)
 
@@ -36,9 +69,10 @@ func TestRun(t *testing.T) {
 	defer span.Finish()
 
 	// WHEN
-	Run(ctx, client, log.NewEntry(logger))
+	err = Run(ctx, client, log.NewEntry(logger))
 
 	// THEN
 	got := string(buffer.Bytes())
+	assert.NoError(t, err)
 	assert.Contains(t, got, "insights-logs-functionapplogs")
 }

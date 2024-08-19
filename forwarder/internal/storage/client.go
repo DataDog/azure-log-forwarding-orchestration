@@ -2,12 +2,10 @@ package storage
 
 import (
 	"context"
-	"sync"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
 	"google.golang.org/api/iterator"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -26,16 +24,15 @@ type AzureBlobClient interface {
 
 type Client struct {
 	connectionString string
+	host             string
+	options          *blockblob.ClientOptions
 	azBlobClient     AzureBlobClient
-	blockClients     map[string]map[string]*blockblob.Client
-	mutex            sync.Mutex
+	blockClient      func(connectionString string, containerName string, blobName string, options *blockblob.ClientOptions) (*blockblob.Client, error)
 }
 
-func NewClient(azBlobClient AzureBlobClient, connectionString string) *Client {
+func NewClient(azBlobClient AzureBlobClient) *Client {
 	return &Client{
-		connectionString: connectionString,
-		azBlobClient:     azBlobClient,
-		blockClients:     make(map[string]map[string]*blockblob.Client),
+		azBlobClient: azBlobClient,
 	}
 }
 

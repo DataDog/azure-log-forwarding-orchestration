@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blockblob"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -18,14 +16,8 @@ import (
 )
 
 type Blob struct {
-	Name      string
+	Item      *container.BlobItem
 	Container string
-}
-
-type BlobContent struct {
-	Name      string
-	Container string
-	Content   *[]byte
 }
 
 type BlobSegment struct {
@@ -45,10 +37,8 @@ func FromCurrentHour(blobName string) bool {
 // parses the blob file string to check for
 // EX: resourceId=/SUBSCRIPTIONS/xxx/RESOURCEGROUPS/xxx/PROVIDERS/MICROSOFT.WEB/SITES/xxx/y=2024/m=06/d=13/h=14/m=00/PT1H.json
 func FromToday(blobName string) bool {
-	isCurrentYear := strings.Contains(blobName, fmt.Sprintf("y=%02d", time.Now().Year()))
-	isCurrentMonth := strings.Contains(blobName, fmt.Sprintf("m=%02d", time.Now().Month()))
 	isCurrentDay := strings.Contains(blobName, fmt.Sprintf("d=%02d", time.Now().Day()))
-	if isCurrentYear && isCurrentMonth && isCurrentDay {
+	if FromCurrentMonth(blobName) && isCurrentDay {
 		return true
 	}
 	return false
@@ -70,48 +60,27 @@ func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
 	return resp.Segment.BlobItems
 }
 
-func (c *Client) DownloadRange(ctx context.Context, containerName string, blobName string, offset int, count int) (BlobSegment, error) {
+func (c *Client) DownloadRange(ctx context.Context, blob Blob, offset int) (BlobSegment, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()
 
 	options := &azblob.DownloadBufferOptions{
-		Range:     azblob.HTTPRange{Offset: int64(offset), Count: int64(count)},
+		Range:     azblob.HTTPRange{Offset: int64(offset)},
 		BlockSize: 1024 * 1024,
 	}
 
-	size, err := c.GetSize(ctx, containerName, blobName)
-	if err != nil {
-		return BlobSegment{}, err
-	}
+	content := make([]byte, int(*blob.Item.Properties.ContentLength)+1)
 
-	content := make([]byte, size)
-
-	_, err = c.azBlobClient.DownloadBuffer(ctx, containerName, blobName, content, options)
+	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
 	if err != nil {
 		return BlobSegment{}, err
 	}
 	return BlobSegment{
-		Name:      blobName,
-		Container: containerName,
+		Name:      *blob.Item.Name,
+		Container: blob.Container,
 		Content:   &content,
 		Offset:    offset,
-		Count:     count,
 	}, nil
-}
-
-func (c *Client) GetSize(ctx context.Context, containerName string, blobName string) (int, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetSize")
-	defer span.Finish()
-	blockClient, err := blockblob.NewClientFromConnectionString(c.connectionString, containerName, blobName, nil)
-	if err != nil {
-		return -1, err
-	}
-
-	props, err := blockClient.GetProperties(ctx, nil)
-	if err != nil {
-		return -1, err
-	}
-	return int(*props.ContentLength), nil
 }
 
 func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[]*container.BlobItem, azblob.ListBlobsFlatResponse] {

@@ -71,24 +71,19 @@ func getBlobs(ctx context.Context, client *storage.Client, containerName string,
 				if blob == nil {
 					continue
 				}
-				blobChannel <- storage.Blob{Name: *blob.Name, Container: containerName}
+				blobChannel <- storage.Blob{Item: blob, Container: containerName}
 			}
 		}
 	}
 
 }
 
-func getBlobContents(ctx context.Context, client *storage.Client, containerName string, blobName string, blobContentChannel chan<- storage.BlobSegment) (err error) {
+func getBlobContents(ctx context.Context, client *storage.Client, blob storage.Blob, blobContentChannel chan<- storage.BlobSegment) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
 
 	offset := 0
-	limit, err := client.GetSize(ctx, containerName, blobName)
-	if err != nil {
-		return err
-	}
-
-	current, downloadErr := client.DownloadRange(ctx, containerName, blobName, offset, limit-1)
+	current, downloadErr := client.DownloadRange(ctx, blob, offset)
 	if downloadErr != nil {
 		return downloadErr
 	}
@@ -127,12 +122,8 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 		var err error
 		blobsEg, ctx := errgroup.WithContext(ctx)
 		for blob := range blobCh {
-
-			if !storage.FromToday(blob.Name) {
-				continue
-			}
-			log.Printf("Downloading blob %s", blob.Name)
-			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob.Container, blob.Name, blobContentCh) })
+			log.Printf("Downloading blob %s", *blob.Item.Name)
+			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh) })
 		}
 		err = blobsEg.Wait()
 		return err
@@ -200,7 +191,7 @@ func main() {
 		return
 	}
 
-	client := storage.NewClient(azBlobClient, storageAccountConnectionString)
+	client := storage.NewClient(azBlobClient)
 
 	runErr := Run(ctx, client, logger)
 

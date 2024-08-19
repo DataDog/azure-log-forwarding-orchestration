@@ -41,6 +41,21 @@ func (m *MockAzureBlobClient) EXPECT() *MockAzureBlobClientMockRecorder {
 	return m.recorder
 }
 
+// DownloadBuffer mocks base method.
+func (m *MockAzureBlobClient) DownloadBuffer(ctx context.Context, containerName, blobName string, buffer []byte, o *azblob.DownloadBufferOptions) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DownloadBuffer", ctx, containerName, blobName, buffer, o)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DownloadBuffer indicates an expected call of DownloadBuffer.
+func (mr *MockAzureBlobClientMockRecorder) DownloadBuffer(ctx, containerName, blobName, buffer, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DownloadBuffer", reflect.TypeOf((*MockAzureBlobClient)(nil).DownloadBuffer), ctx, containerName, blobName, buffer, o)
+}
+
 // DownloadStream mocks base method.
 func (m *MockAzureBlobClient) DownloadStream(ctx context.Context, containerName, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
 	m.ctrl.T.Helper()
