@@ -89,10 +89,7 @@ class DeployerTask(Task):
             blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_CACHE_NAME)
         except RetryError:
             return {}
-        validated_blob = deserialize_manifest_cache(blob_data)
-        if validated_blob:
-            return validated_blob
-        return {}
+        return deserialize_manifest_cache(blob_data) or {}
 
     async def deploy_components(self, component_names: list[str]) -> None:
         if len(component_names) == 0:
