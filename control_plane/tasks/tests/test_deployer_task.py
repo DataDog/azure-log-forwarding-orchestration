@@ -230,7 +230,7 @@ class TestDeployerTask(TaskTestCase):
             "diagnostic_settings": "1",
             "scaling": "1",
         }
-        private_cache = {}
+        private_cache: ManifestCache = {}
 
         get_public_manifests.return_value = public_cache
         get_private_manifests.return_value = private_cache
@@ -251,8 +251,8 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
-        public_cache = {}
-        private_cache = {}
+        public_cache: ManifestCache = {}
+        private_cache: ManifestCache = {}
 
         get_public_manifests.return_value = public_cache
         get_private_manifests.return_value = private_cache
