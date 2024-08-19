@@ -82,10 +82,7 @@ class DeployerTask(Task):
         except ResourceNotFoundError:
             return {}
         blob_data = await stream.content_as_bytes(max_concurrency=4)
-        validated_blob = deserialize_manifest_cache(blob_data.decode())
-        if validated_blob:
-            return validated_blob
-        return {}
+        return deserialize_manifest_cache(blob_data.decode()) or {}
 
     async def get_private_manifests(self) -> ManifestCache:
         try:
