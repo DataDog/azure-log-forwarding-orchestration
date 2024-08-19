@@ -1,9 +1,9 @@
 # stdlib
-from json import JSONDecodeError, loads
 from typing import Any, TypeAlias
 
 # 3p
-from jsonschema import ValidationError, validate
+# project
+from cache.common import deserialize_cache
 
 ManifestCache: TypeAlias = dict[str, str]
 """
@@ -26,9 +26,4 @@ MANIFEST_CACHE_NAME = "manifest.json"
 
 
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
-    try:
-        manifest_dict: ManifestCache = loads(raw_manifest_cache)
-        validate(instance=manifest_dict, schema=MANIFEST_SCHEMA)
-        return manifest_dict
-    except (JSONDecodeError, ValidationError):
-        return None
+    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA)
