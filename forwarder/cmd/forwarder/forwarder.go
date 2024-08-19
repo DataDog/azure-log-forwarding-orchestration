@@ -181,8 +181,6 @@ func main() {
 	}
 	defer profiler.Stop()
 
-	logger.Info(fmt.Sprintf("This is test time: %v", (time.Now()).String()))
-
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
