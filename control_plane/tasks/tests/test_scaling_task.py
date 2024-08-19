@@ -15,8 +15,6 @@ from cache.assignment_cache import (
     deserialize_assignment_cache,
 )
 from cache.common import (
-    CONTAINER_APP_PREFIX,
-    STORAGE_ACCOUNT_PREFIX,
     STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
 )
@@ -28,24 +26,23 @@ from tasks.scaling_task import (
     SCALING_TASK_NAME,
     ScalingTask,
     is_consistently_over_threshold,
+    partition_resources_by_load,
 )
 from tasks.tests.common import TaskTestCase, UnexpectedException
 
-sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
+SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
-log_forwarder_id = "d6fc2c757f9c"
-log_forwarder_name = CONTAINER_APP_PREFIX + log_forwarder_id
-storage_account_name = STORAGE_ACCOUNT_PREFIX + log_forwarder_id
-rg1 = "test_lfo"
+RG1 = "test_lfo"
 
-
-resource1 = "resource1"
-resource2 = "resource2"
 
 NEW_UUID = "04cb0e0b-f268-4349-aa32-93a5885365f5"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
+
+
+def minutes_ago(minutes: float) -> float:
+    return (datetime.now() - timedelta(minutes=minutes)).timestamp()
 
 
 class TestScalingTask(TaskTestCase):
@@ -60,7 +57,7 @@ class TestScalingTask(TaskTestCase):
 
         self.log = self.patch("log")
         self.uuid = self.patch("uuid4")
-        p = patch.dict(environ, {"RESOURCE_GROUP": rg1})
+        p = patch.dict(environ, {"RESOURCE_GROUP": RG1})
         p.start()
         self.addCleanup(p.stop)
         self.uuid.return_value = UUID(NEW_UUID)
@@ -70,7 +67,7 @@ class TestScalingTask(TaskTestCase):
         return self.cache_value(ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache)
 
     async def run_scaling_task(
-        self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str = rg1
+        self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str = RG1
     ):
         async with ScalingTask(dumps(resource_cache_state, default=list), dumps(assignment_cache_state)) as task:
             await task.run()
@@ -90,15 +87,15 @@ class TestScalingTask(TaskTestCase):
 
     async def test_new_regions_are_added(self):
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {resource1, resource2}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={},
         )
 
         self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
         expected_cache: AssignmentCache = {
-            sub_id1: {
+            SUB_ID1: {
                 EAST_US: {
-                    "resources": {resource1: NEW_LOG_FORWARDER_ID, resource2: NEW_LOG_FORWARDER_ID},
+                    "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
                     "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                 }
             }
@@ -109,9 +106,9 @@ class TestScalingTask(TaskTestCase):
         await self.run_scaling_task(
             resource_cache_state={},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
-                        "resources": {resource1: OLD_LOG_FORWARDER_ID, resource2: OLD_LOG_FORWARDER_ID},
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
@@ -122,15 +119,15 @@ class TestScalingTask(TaskTestCase):
 
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
 
-        self.assertEqual(self.cache, {sub_id1: {}})
+        self.assertEqual(self.cache, {SUB_ID1: {}})
 
     async def test_regions_added_and_deleted(self):
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {WEST_US: {resource1, resource2}}},
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
-                        "resources": {resource1: OLD_LOG_FORWARDER_ID, resource2: OLD_LOG_FORWARDER_ID},
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
@@ -143,9 +140,9 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.assert_called_once_with(OLD_LOG_FORWARDER_ID)
 
         expected_cache: AssignmentCache = {
-            sub_id1: {
+            SUB_ID1: {
                 WEST_US: {
-                    "resources": {resource1: NEW_LOG_FORWARDER_ID, resource2: NEW_LOG_FORWARDER_ID},
+                    "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
                     "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                 }
             }
@@ -159,21 +156,21 @@ class TestScalingTask(TaskTestCase):
                 {
                     "timestamp": current_time,
                     "runtime_seconds": 211,
-                    "resource_log_volume": {resource1: 4, resource2: 6},
+                    "resource_log_volume": {"resource1": 4, "resource2": 6},
                 }
             ),
             dumps(
                 {
                     "timestamp": current_time,
                     "runtime_seconds": 199,
-                    "resource_log_volume": {resource1: 4, resource2: 6},
+                    "resource_log_volume": {"resource1": 4, "resource2": 6},
                 }
             ),
         ]
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
@@ -195,15 +192,15 @@ class TestScalingTask(TaskTestCase):
             {
                 "runtime_seconds": 29.045 - (i * 0.2),
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resource_log_volume": {resource1: 4000, resource2: 6000},
+                "resource_log_volume": {"resource1": 4000, "resource2": 6000},
             }
             for i in range(60)
         ]
 
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
@@ -216,7 +213,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
         expected_cache: AssignmentCache = {
-            sub_id1: {
+            SUB_ID1: {
                 EAST_US: {
                     "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
                     "configurations": {
@@ -236,22 +233,22 @@ class TestScalingTask(TaskTestCase):
                 {
                     "timestamp": current_time,
                     "runtime_seconds": 211,
-                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                    "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                 }
             ),
             dumps(
                 {
                     "timestamp": old_time,
                     "runtime_seconds": 199,
-                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                    "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                 }
             ),
         ]
 
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
@@ -273,14 +270,14 @@ class TestScalingTask(TaskTestCase):
             {
                 "runtime_seconds": 22.2,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resource_log_volume": {resource1: 4000, resource2: 6000},
+                "resource_log_volume": {"resource1": 4000, "resource2": 6000},
             }
             for i in range(60)
         ]
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
@@ -299,14 +296,14 @@ class TestScalingTask(TaskTestCase):
             {
                 "runtime_seconds": 23,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                "resource_log_volume": {resource1: 4000, resource2: 6000},
+                "resource_log_volume": {"resource1": 4000, "resource2": 6000},
             }
             for i in range(60)
         ]
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
@@ -319,7 +316,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.create_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
-            sub_id1: {
+            SUB_ID1: {
                 EAST_US: {
                     "resources": {
                         "resource1": OLD_LOG_FORWARDER_ID,
@@ -347,18 +344,18 @@ class TestScalingTask(TaskTestCase):
                 {
                     "runtime_seconds": forwarder_runtimes[config_id],
                     "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
-                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                    "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                 }
                 for i in range(60)
             ]
 
         collect_forwarder_metrics.side_effect = metrics_side_effect
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                        "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                             NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
@@ -369,11 +366,11 @@ class TestScalingTask(TaskTestCase):
         )
 
         expected_cache: AssignmentCache = {
-            sub_id1: {
+            SUB_ID1: {
                 EAST_US: {
                     "resources": {
-                        "resource1": OLD_LOG_FORWARDER_ID,
-                        "resource2": NEW_LOG_FORWARDER_ID,
+                        "resource1": NEW_LOG_FORWARDER_ID,
+                        "resource2": OLD_LOG_FORWARDER_ID,
                         "resource3": OLD_LOG_FORWARDER_ID,
                         "resource4": OLD_LOG_FORWARDER_ID,
                     },
@@ -393,21 +390,21 @@ class TestScalingTask(TaskTestCase):
                 {
                     "timestamp": old_time,
                     "runtime_seconds": 211,
-                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                    "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                 }
             ),
             dumps(
                 {
                     "timestamp": old_time,
                     "runtime_seconds": 199,
-                    "resource_log_volume": {resource1: 4000, resource2: 6000},
+                    "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                 }
             ),
         ]
         await self.run_scaling_task(
-            resource_cache_state={sub_id1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
-                sub_id1: {
+                SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {
@@ -429,7 +426,7 @@ class TestScalingTask(TaskTestCase):
             await sleep(0.05)
             m()
 
-        async with ScalingTask(dumps({sub_id1: {}}), dumps({sub_id1: {}})) as task:
+        async with ScalingTask(dumps({SUB_ID1: {}}), dumps({SUB_ID1: {}})) as task:
             for _ in range(3):
                 task.submit_background_task(background_task())
             failing_task_error = Exception("test")
@@ -444,9 +441,9 @@ class TestScalingTask(TaskTestCase):
         write_caches = self.patch("ScalingTask.write_caches")
         with self.assertRaises(UnexpectedException):
             await self.run_scaling_task(
-                {sub_id1: {EAST_US: {"resource1", "resource2"}, WEST_US: {"resource3"}}},
+                {SUB_ID1: {EAST_US: {"resource1", "resource2"}, WEST_US: {"resource3"}}},
                 {
-                    sub_id1: {
+                    SUB_ID1: {
                         EAST_US: {
                             "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                             "configurations": {
@@ -458,38 +455,132 @@ class TestScalingTask(TaskTestCase):
             )
         write_caches.assert_not_awaited()
 
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_scaling_up_based_on_resource_load_with_onboarding(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime_seconds": 40,
+                "timestamp": minutes_ago(1),
+                "resource_log_volume": {"resource1": 1000, "resource2": 10000, "resource3": 3000, "resource4": 50},
+            },
+            {
+                "runtime_seconds": 33,
+                "timestamp": minutes_ago(1.5),
+                "resource_log_volume": {"resource1": 1100, "resource2": 9000, "resource3": 2000, "resource4": 100},
+            },
+            {
+                "runtime_seconds": 42.2,
+                "timestamp": minutes_ago(2),
+                "resource_log_volume": {"resource1": 900, "resource2": 12000, "resource3": 3300, "resource4": 3},
+            },
+        ]
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4", "resource5", "resource6"}}
+            },
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {
+                            "resource1": OLD_LOG_FORWARDER_ID,
+                            "resource2": OLD_LOG_FORWARDER_ID,
+                            "resource3": OLD_LOG_FORWARDER_ID,
+                            "resource4": OLD_LOG_FORWARDER_ID,
+                        },
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        expected_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {
+                        "resource1": OLD_LOG_FORWARDER_ID,
+                        "resource2": NEW_LOG_FORWARDER_ID,
+                        "resource3": OLD_LOG_FORWARDER_ID,
+                        "resource4": OLD_LOG_FORWARDER_ID,
+                        "resource5": OLD_LOG_FORWARDER_ID,
+                        "resource6": OLD_LOG_FORWARDER_ID,
+                    },
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            },
+        }
+        self.assertEqual(self.cache, expected_cache)
+
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_scaling_up_with_only_one_resource(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime_seconds": 35,
+                "timestamp": minutes_ago(1.5),
+                "resource_log_volume": {"resource1": 90000},
+            },
+            {
+                "runtime_seconds": 40,
+                "timestamp": minutes_ago(1),
+                "resource_log_volume": {"resource1": 100000},
+            },
+            {
+                "runtime_seconds": 39.1,
+                "timestamp": minutes_ago(0.5),
+                "resource_log_volume": {"resource1": 95000},
+            },
+        ]
+        initial_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}}, assignment_cache_state=initial_cache
+        )
+        self.log.warning.assert_called_once_with(
+            "Forwarder %s only has one resource but is overwhelmed", OLD_LOG_FORWARDER_ID
+        )
+
+        self.write_cache.assert_not_awaited()
+
 
 class TestScalingTaskHelpers(TestCase):
-    def minutes_ago(self, minutes: float) -> float:
-        return (datetime.now() - timedelta(minutes=minutes)).timestamp()
-
     def test_metrics_over_threshold(self):
         self.assertTrue(
             is_consistently_over_threshold(
                 metrics=[
                     {
                         "runtime_seconds": 19,
-                        "timestamp": self.minutes_ago(5.5),
-                        "resource_log_volume": {resource1: 4000, resource2: 6000},
+                        "timestamp": minutes_ago(5.5),
+                        "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                     },
                     {
                         "runtime_seconds": 24,
-                        "timestamp": self.minutes_ago(4),
-                        "resource_log_volume": {resource1: 4200, resource2: 6100},
+                        "timestamp": minutes_ago(4),
+                        "resource_log_volume": {"resource1": 4200, "resource2": 6100},
                     },
                     {
                         "runtime_seconds": 28,
-                        "timestamp": self.minutes_ago(3),
-                        "resource_log_volume": {resource1: 4300, resource2: 6400},
+                        "timestamp": minutes_ago(3),
+                        "resource_log_volume": {"resource1": 4300, "resource2": 6400},
                     },
                 ],
                 threshold=20,
-                oldest_timestamp=self.minutes_ago(5),
+                oldest_timestamp=minutes_ago(5),
             )
         )
 
     def test_no_metrics_not_over_threshold(self):
-        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0, oldest_timestamp=self.minutes_ago(5)))
+        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0, oldest_timestamp=minutes_ago(5)))
 
     def test_old_metrics_not_over_threshold(self):
         self.assertFalse(
@@ -497,13 +588,13 @@ class TestScalingTaskHelpers(TestCase):
                 metrics=[
                     {
                         "runtime_seconds": 100,
-                        "timestamp": self.minutes_ago(i),
-                        "resource_log_volume": {resource2: 100000},
+                        "timestamp": minutes_ago(i),
+                        "resource_log_volume": {"resource2": 100000},
                     }
                     for i in range(3, 6)
                 ],
                 threshold=0,
-                oldest_timestamp=self.minutes_ago(2),
+                oldest_timestamp=minutes_ago(2),
             )
         )
 
@@ -513,22 +604,22 @@ class TestScalingTaskHelpers(TestCase):
                 metrics=[
                     {
                         "runtime_seconds": 23,
-                        "timestamp": self.minutes_ago(5.5),
-                        "resource_log_volume": {resource1: 4000, resource2: 6000},
+                        "timestamp": minutes_ago(5.5),
+                        "resource_log_volume": {"resource1": 4000, "resource2": 6000},
                     },
                     {
                         "runtime_seconds": 24,
-                        "timestamp": self.minutes_ago(4),
-                        "resource_log_volume": {resource1: 4200, resource2: 6100},
+                        "timestamp": minutes_ago(4),
+                        "resource_log_volume": {"resource1": 4200, "resource2": 6100},
                     },
                     {
                         "runtime_seconds": 28,
-                        "timestamp": self.minutes_ago(3),
-                        "resource_log_volume": {resource1: 4300, resource2: 6400},
+                        "timestamp": minutes_ago(3),
+                        "resource_log_volume": {"resource1": 4300, "resource2": 6400},
                     },
                 ],
                 threshold=25,
-                oldest_timestamp=self.minutes_ago(5),
+                oldest_timestamp=minutes_ago(5),
             )
         )
 
@@ -536,10 +627,10 @@ class TestScalingTaskHelpers(TestCase):
         self.assertTrue(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime_seconds": 26, "timestamp": self.minutes_ago(3), "resource_log_volume": {resource1: 5670}},
+                    {"runtime_seconds": 26, "timestamp": minutes_ago(3), "resource_log_volume": {"resource1": 5670}},
                 ],
                 threshold=25,
-                oldest_timestamp=self.minutes_ago(5),
+                oldest_timestamp=minutes_ago(5),
             )
         )
 
@@ -549,9 +640,95 @@ class TestScalingTaskHelpers(TestCase):
         self.assertFalse(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime_seconds": 25, "timestamp": self.minutes_ago(3), "resource_log_volume": {resource1: 5600}},
+                    {"runtime_seconds": 25, "timestamp": minutes_ago(3), "resource_log_volume": {"resource1": 5600}},
                 ],
                 threshold=25,
-                oldest_timestamp=self.minutes_ago(5),
+                oldest_timestamp=minutes_ago(5),
             )
         )
+
+    def test_partition_resources_by_load_exactly_half_load(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "big_resource": 9001,
+                    "resource1": 500,
+                    "resource2": 1000,
+                    "resource3": 500,
+                    "resource4": 2000,
+                    "resource5": 1,
+                    "resource6": 3000,
+                    "resource7": 2000,
+                }
+            ),
+            (
+                [
+                    "resource5",
+                    "resource1",
+                    "resource3",
+                    "resource2",
+                    "resource4",
+                    "resource7",
+                    "resource6",
+                ],
+                ["big_resource"],
+            ),
+        )
+
+    def test_partition_resources_by_load_two_resources(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 1,
+                    "resource2": 9000,
+                }
+            ),
+            (["resource1"], ["resource2"]),
+        )
+
+    def test_partition_resources_by_load_four_resources(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 4000,
+                    "resource2": 6000,
+                    "resource3": 5000,
+                    "resource4": 7000,
+                }
+            ),
+            (["resource1", "resource3"], ["resource2", "resource4"]),
+        )
+
+    def test_partition_resources_by_load_three_resources(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 4000,
+                    "resource2": 6000,
+                    "resource3": 5000,
+                }
+            ),
+            (["resource1"], ["resource3", "resource2"]),
+        )
+
+    def test_partition_resources_by_load_all_the_same_load_prefer_second_partition(self):
+        self.assertEqual(
+            partition_resources_by_load(
+                {
+                    "resource1": 5000,
+                    "resource2": 5000,
+                    "resource3": 5000,
+                    "resource4": 5000,
+                    "resource5": 5000,
+                }
+            ),
+            (["resource1", "resource2"], ["resource3", "resource4", "resource5"]),
+        )
+
+    def test_partition_resources_by_load_one_resource(self):
+        # this isnt a real use case since we only call this function when we have
+        # more than one resource, but it is worth adding a unit test regardless
+        self.assertEqual(partition_resources_by_load({"resource1": 5000}), ([], ["resource1"]))
+
+    def test_partition_resources_by_load_no_resources(self):
+        self.assertEqual(partition_resources_by_load({}), ([], []))

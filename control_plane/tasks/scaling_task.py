@@ -55,6 +55,20 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
+def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[str], list[str]]:
+    half_load = sum(resource_loads.values()) / 2
+    load_so_far = 0
+    first_half: list[str] = []
+    second_half: list[str] = []
+    for resource, load in sorted(resource_loads.items(), key=lambda kv: kv[1]):
+        load_so_far += load
+        if load_so_far <= half_load:
+            first_half.append(resource)
+        else:
+            second_half.append(resource)
+    return first_half, second_half
+
+
 class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
@@ -168,6 +182,7 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
+        resources = self.assignment_cache[subscription_id][region]["resources"]
         now_dt = datetime.now()
         oldest_metric_timestamp = (now_dt - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
 
@@ -181,11 +196,19 @@ class ScalingTask(Task):
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
+        def _has_enough_resources_to_scale_up(config_id: str) -> bool:
+            num_resources = list(resources.values()).count(config_id)
+            if num_resources < 2:
+                log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
+                return False
+            return True
+
         oldest_scale_up_timestamp = (now_dt - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
             if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
+            and _has_enough_resources_to_scale_up(config_id)
         ]
         if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
@@ -199,7 +222,13 @@ class ScalingTask(Task):
             if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
                 continue
-            self.split_forwarder_resources(subscription_id, region, overwhelmed_forwarder_id, new_forwarder)
+            self.split_forwarder_resources(
+                subscription_id,
+                region,
+                overwhelmed_forwarder_id,
+                new_forwarder,
+                forwarder_metrics[overwhelmed_forwarder_id],
+            )
 
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
@@ -227,23 +256,25 @@ class ScalingTask(Task):
         region: str,
         underscaled_forwarder_id: str,
         new_forwarder: LogForwarder,
+        metrics: list[MetricBlobEntry],
     ) -> None:
         """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
 
         # add new config
         self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
-        # split resources in half
-        assigned_resources = sorted(
-            resource_id
+        # split resources in half by resource load
+        resource_loads = {
+            resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
-        )
-        split_index = len(assigned_resources) // 2
+        }
+        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
+
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
-                **{resource: underscaled_forwarder_id for resource in assigned_resources[:split_index]},
-                **{resource: new_forwarder.config_id for resource in assigned_resources[split_index:]},
+                **{resource: underscaled_forwarder_id for resource in old_forwarder_resources},
+                **{resource: new_forwarder.config_id for resource in new_forwarder_resources},
             }
         )
 
