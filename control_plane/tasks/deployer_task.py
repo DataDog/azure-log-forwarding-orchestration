@@ -53,7 +53,7 @@ class DeployerTask(Task):
     ) -> None:
         await self.public_client.__aexit__(exc_type, exc_val, exc_tb)
         await self.rest_client.__aexit__(exc_type, exc_val, exc_tb)
-        await super().__aexit__()
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
         public_manifest: dict[str, str] = {}
