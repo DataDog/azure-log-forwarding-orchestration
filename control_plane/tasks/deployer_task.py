@@ -1,7 +1,6 @@
 # stdlib
 
-from asyncio import ALL_COMPLETED, create_task, gather, run, wait
-from asyncio import Task as AsyncTask
+from asyncio import gather, run
 from copy import deepcopy
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
@@ -58,26 +57,12 @@ class DeployerTask(Task):
     async def run(self) -> None:
         public_manifest: dict[str, str] = {}
         private_manifest: dict[str, str] = {}
-        public_task: AsyncTask = create_task(self.get_public_manifests(), name="public")
-        private_task: AsyncTask = create_task(self.get_private_manifests(), name="private")
-        done, pending = await wait([public_task, private_task], return_when=ALL_COMPLETED)
-        for task in done:
-            name = task.get_name()
-            if task.exception():
-                if name == "public":
-                    log.error("Failed to read public manifests, exiting...")
-                    return
-                log.error("Failed to read private manifests.")
-            else:
-                if name == "public":
-                    public_manifest = task.result()
-                else:
-                    private_manifest = task.result()
-        for task in pending:
-            task.cancel()
+        public_manifest, private_manifest = await gather(self.get_public_manifests(), self.get_private_manifests())
         if len(public_manifest) == 0:
             log.error("Failed to read public manifests, exiting...")
             return
+        if len(private_manifest) == 0:
+            log.warn("Failed to read private manifests. Manifests may not exist or error may have occured.")
         self.manifest_cache = deepcopy(private_manifest)
         self.original_manifest_cache = private_manifest
         self.public_manifest = public_manifest
@@ -102,11 +87,10 @@ class DeployerTask(Task):
             return validated_blob
         return {}
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_private_manifests(self) -> ManifestCache:
         try:
-            blob_data = await read_cache(MANIFEST_CACHE_NAME)
-        except ResourceNotFoundError:
+            blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_CACHE_NAME)
+        except RetryError:
             return {}
         validated_blob = deserialize_manifest_cache(blob_data)
         if validated_blob:

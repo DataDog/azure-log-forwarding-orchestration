@@ -293,7 +293,9 @@ class TestDeployerTask(TaskTestCase):
 
         self.assertEqual(read_cache.await_count, 5)
         self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
-        self.log.error.assert_called_with("Failed to read private manifests.")
+        self.log.warn.assert_called_with(
+            "Failed to read private manifests. Manifests may not exist or error may have occured."
+        )
 
     async def test_post_func_app_fails(self):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
