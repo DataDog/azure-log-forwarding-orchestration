@@ -154,10 +154,10 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 			logger.Fatalf("error getting blobs: %v", err)
 		}
 		for _, blob := range blobs {
-			logger.Infof("Blob: %s Container: %s", blob, container)
+			logger.Infof("Blob: %s Container: %s", *blob.Item.Name, container)
 			_, err := getBlobContent(ctx, client, blob)
 			if err != nil {
-				logger.Fatalf("error getting blob content for %s: %v", blob, err)
+				logger.Fatalf("error getting blob content for %s: %v", *blob.Item.Name, err)
 			}
 		}
 	}
