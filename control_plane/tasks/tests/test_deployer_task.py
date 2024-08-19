@@ -1,10 +1,12 @@
 # stdlib
+from asyncio import run
 from json import dumps
 from unittest.mock import DEFAULT, AsyncMock, MagicMock
 
 # 3p
 from aiohttp import ClientResponseError
-from azure.core.exceptions import HttpResponseError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from tenacity import RetryError
 
 # project
 from cache.manifest_cache import ManifestCache
@@ -329,3 +331,84 @@ class TestDeployerTask(TaskTestCase):
         self.write_cache.assert_not_awaited()
         self.assertEqual(self.rest_client.post.await_count, 5)
         self.log.error.assert_called_with("Failed to deploy resources task.")
+
+    async def public_manifest_helper(self) -> ManifestCache:
+        return await DeployerTask().get_public_manifests()
+
+    async def private_manifest_helper(self) -> ManifestCache:
+        return await DeployerTask().get_private_manifests()
+
+    def test_get_public_manifest_normal(self):
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = MagicMock()
+        public_cache: ManifestCache = {
+            "resources": "2",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        self.public_client.download_blob.return_value.content_as_bytes.return_value.decode.return_value = dumps(
+            public_cache
+        )
+        returned_cache = run(self.public_manifest_helper())
+        self.assertEqual(public_cache, returned_cache)
+
+    def test_get_public_manifest_invalid_cache(self):
+        self.public_client.download_blob.return_value = AsyncMock()
+        self.public_client.download_blob.return_value.content_as_bytes.return_value = MagicMock()
+        public_cache: ManifestCache = {
+            "resources": "2",
+            "forward": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        self.public_client.download_blob.return_value.content_as_bytes.return_value.decode.return_value = dumps(
+            public_cache
+        )
+        returned_cache = run(self.public_manifest_helper())
+        self.assertEqual({}, returned_cache)
+
+    def test_get_public_manifest_no_resource(self):
+        self.public_client.download_blob.side_effect = ResourceNotFoundError
+        returned_cache = run(self.public_manifest_helper())
+        self.assertEqual({}, returned_cache)
+        self.assertEqual(self.public_client.download_blob.await_count, 1)
+
+    def test_get_public_manifest_http_error(self):
+        self.public_client.download_blob.side_effect = HttpResponseError
+        with self.assertRaises(RetryError) as ctx:
+            returned_cache = run(self.public_manifest_helper())
+            self.assertEqual({}, returned_cache)
+            self.assertEqual(self.public_client.download_blob.await_count, 5)
+        self.assertIsInstance(ctx.exception.last_attempt.exception(), HttpResponseError)
+
+    def test_get_private_manifests_normal(self):
+        read_cache: AsyncMock = self.patch("read_cache")
+        private_cache: ManifestCache = {
+            "resources": "1",
+            "forwarder": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        read_cache.return_value = dumps(private_cache)
+        returned_cache = run(self.private_manifest_helper())
+        self.assertEqual(returned_cache, private_cache)
+
+    def test_get_private_manifests_invalid_cache(self):
+        read_cache: AsyncMock = self.patch("read_cache")
+        private_cache: ManifestCache = {
+            "resources": "1",
+            "forward": "1",
+            "diagnostic_settings": "1",
+            "scaling": "1",
+        }
+        read_cache.return_value = dumps(private_cache)
+        returned_cache = run(self.private_manifest_helper())
+        self.assertEqual(returned_cache, {})
+
+    def test_get_private_manifests_error(self):
+        read_cache: AsyncMock = self.patch("read_cache")
+        read_cache.side_effect = HttpResponseError
+        returned_cache = run(self.private_manifest_helper())
+        self.assertEqual(returned_cache, {})
+        self.assertEqual(read_cache.await_count, 5)
