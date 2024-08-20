@@ -1,10 +1,8 @@
 # stdlib
 from asyncio import gather, run
 from collections.abc import AsyncIterable
-from copy import deepcopy
-from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import NamedTuple, TypeVar
+from typing import NamedTuple, TypeVar, cast
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
@@ -27,11 +25,6 @@ from cache.common import (
     get_resource_group_id,
     get_storage_account_id,
     read_cache,
-    write_cache,
-)
-from cache.diagnostic_settings_cache import (
-    DIAGNOSTIC_SETTINGS_CACHE_BLOB,
-    deserialize_diagnostic_settings_cache,
 )
 from tasks.common import now
 from tasks.task import Task
@@ -112,8 +105,10 @@ async def get_existing_diagnostic_setting(
 
 
 class DiagnosticSettingsTask(Task):
-    def __init__(self, assignment_cache_state: str, diagnostic_settings_cache_state: str, resource_group: str) -> None:
+    def __init__(self, assignment_cache_state: str) -> None:
         super().__init__()
+
+        self.resource_group = get_config_option("RESOURCE_GROUP")
 
         # read caches
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
@@ -121,25 +116,13 @@ class DiagnosticSettingsTask(Task):
             raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
         self.assignment_cache = assignment_cache
 
-        diagnostic_settings_cache = deserialize_diagnostic_settings_cache(diagnostic_settings_cache_state)
-        if diagnostic_settings_cache is None:
-            log.warning("Diagnostic Settings Cache is in an invalid format, resetting the cache")
-            diagnostic_settings_cache = {}
-        self._diagnostic_settings_cache_initial = diagnostic_settings_cache
-        self.diagnostic_settings_cache = deepcopy(self._diagnostic_settings_cache_initial)
-
-        self.resource_group = resource_group
-
     async def run(self) -> None:
-        subs = set(self.assignment_cache) | set(self.diagnostic_settings_cache)
-        log.info("Processing %s subscriptions", len(subs))
-
-        await gather(*map(self.process_subscription, subs))
+        log.info("Processing %s subscriptions", len(self.assignment_cache))
+        await gather(*map(self.process_subscription, self.assignment_cache))
 
     async def process_subscription(self, sub_id: str) -> None:
         log.info("Processing subscription %s", sub_id)
-        # we assume no resources need to be "cleaned up"
-        # because if they aren't in the assignment cache then they have been deleted
+        # we assume if a resource isn't in the assignment cache then is has been deleted
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
@@ -151,10 +134,10 @@ class DiagnosticSettingsTask(Task):
                             client,
                             sub_id,
                             resource,
-                            DiagnosticSettingConfiguration(config_id, config["configurations"][config_id]),
+                            DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
                         )
-                        for config in self.assignment_cache[sub_id].values()
-                        for resource, config_id in config["resources"].items()
+                        for region_config in self.assignment_cache[sub_id].values()
+                        for resource, config_id in region_config["resources"].items()
                     ]
                     + [self.update_subscription_settings(sub_id, client)]
                 )
@@ -177,30 +160,11 @@ class DiagnosticSettingsTask(Task):
         resource_id: str,
         assigned_config: DiagnosticSettingConfiguration,
     ) -> None:
-        if current_config_id := self.diagnostic_settings_cache.get(sub_id, {}).get(resource_id):
-            try:
-                existing_setting = await get_existing_diagnostic_setting(
-                    resource_id,
-                    client.diagnostic_settings.list(resource_id),
-                    existing_diagnostic_setting_name=get_diagnostic_setting_name(current_config_id),
-                )
-            except Exception:
-                # TODO(AZINTS-2577) Error handling
-                return
-
-            if existing_setting and current_config_id == assigned_config.id:
-                # The setting is already set and no changes are needed. All other cases should update the setting
-
-                # do we ever want to update categories or anything?
-                # or trust that the customer knows what they are doing if they modify the setting?
-                return
-
         # covers 3 cases:
         # 1. no existing setting on this resource (and nothing in the DS cache)
         # 2. existing setting with different configuration
         # 3. settings was removed, we're re-adding it (with the new assignment)
         await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config)
-        self.diagnostic_settings_cache.setdefault(sub_id, {})[resource_id] = assigned_config.id
 
     async def set_diagnostic_setting(
         self,
@@ -211,7 +175,7 @@ class DiagnosticSettingsTask(Task):
     ) -> None:
         try:
             categories: list[str] = [
-                category.name  # type: ignore
+                cast(str, category.name)
                 async for category in client.diagnostic_settings_category.list(resource_id)
                 if category.category_type == CategoryType.LOGS
             ]
@@ -247,22 +211,14 @@ class DiagnosticSettingsTask(Task):
             )
 
     async def write_caches(self) -> None:
-        if self.diagnostic_settings_cache == self._diagnostic_settings_cache_initial:
-            log.info("Diagnostic settings have not changed, no update needed")
-            return
-        await write_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB, dumps(self.diagnostic_settings_cache))
-        num_resources = sum(len(resources) for resources in self.diagnostic_settings_cache.values())
-        log.info("Updated setting, %s resources stored in the settings cache", num_resources)
+        pass  # nothing to do here
 
 
 async def main():
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    resource_group = get_config_option("RESOURCE_GROUP")
-    assignment_cache, diagnostic_settings = await gather(
-        read_cache(ASSIGNMENT_CACHE_BLOB), read_cache(DIAGNOSTIC_SETTINGS_CACHE_BLOB)
-    )
-    async with DiagnosticSettingsTask(assignment_cache, diagnostic_settings, resource_group) as task:
+    assignment_cache = await read_cache(ASSIGNMENT_CACHE_BLOB)
+    async with DiagnosticSettingsTask(assignment_cache) as task:
         await task.run()
     log.info("Task finished at %s", now())
 
