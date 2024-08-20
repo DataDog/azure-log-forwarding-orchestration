@@ -9,6 +9,7 @@ csx
 edge
 Publish
 .coverage
+.DS_Store
 
 *.user
 *.suo

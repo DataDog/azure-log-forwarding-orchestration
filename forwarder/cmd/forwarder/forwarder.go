@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 
@@ -98,7 +99,7 @@ func GetDateTimeString() (date string) {
 	return time.Now().UTC().Format("2006-01-02-15")
 }
 
-func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err error) {
+func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(context.Background())
@@ -120,6 +121,9 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 		defer close(blobContentCh)
 		blobsEg, ctx := errgroup.WithContext(ctx)
 		for blob := range blobCh {
+			if !storage.Current(blob, now) {
+				continue
+			}
 			log.Printf("Downloading blob %s", *blob.Item.Name)
 			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh) })
 		}
@@ -188,7 +192,7 @@ func main() {
 
 	client := storage.NewClient(azBlobClient)
 
-	runErr := Run(ctx, client, logger)
+	runErr := Run(ctx, client, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it

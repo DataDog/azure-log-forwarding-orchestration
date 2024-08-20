@@ -10,46 +10,12 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
-
-func cleanUpBlobs(ctx context.Context, logger *log.Entry) {
-	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
-	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
-	if err != nil {
-		logger.Fatalf("error creating azure client: %v", err)
-	}
-	client := storage.NewClient(azBlobClient)
-	containers, err := getContainers(ctx, client)
-	if err != nil {
-		logger.Fatalf("error getting containers: %v", err)
-	}
-	for _, c := range containers {
-		blobs, err := getBlobs(ctx, client, c)
-		if err != nil {
-			logger.Fatalf("error getting blobs: %v", err)
-		}
-		var latestBlob *storage.Blob
-		for _, blob := range blobs {
-			if latestBlob == nil {
-				latestBlob = &blob
-			} else if blob.Item.Properties.LastModified.After(*latestBlob.Item.Properties.LastModified) {
-					latestBlob = &blob
-				}
-			}
-		}
-		logger.Printf("saving blob %s", *latestBlob.Item.Name)
-		for _, blob := range blobs {
-			if blob.Item.Name != latestBlob.Item.Name {
-				logger.Printf("deleting blob %s", *blob.Item.Name)
-				azBlobClient.DeleteBlob(ctx, c, *blob.Item.Name, nil)
-			}
-		}
-	}
-}
 
 func getContainers(ctx context.Context, client *storage.Client) ([]string, error) {
 	containerIter := client.GetContainersMatchingPrefix(ctx, "insights-logs-")
@@ -151,6 +117,9 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 			logger.Fatalf("error getting blobs: %v", err)
 		}
 		for _, blob := range blobs {
+			if !storage.Current(blob, customtime.RecordedNow) {
+				continue
+			}
 			logger.Infof("Blob: %s Container: %s", *blob.Item.Name, container)
 			_, err := getBlobContent(ctx, client, blob)
 			if err != nil {
@@ -165,6 +134,9 @@ func main() {
 	ctx := context.Background()
 	logger := log.WithFields(log.Fields{"service": "forwarder"})
 	runFixturePath := path.Join("cmd", "forwarder", "fixtures", "run")
-	cleanUpBlobs(ctx, logger)
+	err := customtime.RecordNow()
+	if err != nil {
+		logger.Fatalf("error recording time: %v", err)
+	}
 	generateRunFixtures(ctx, logger, runFixturePath)
 }
