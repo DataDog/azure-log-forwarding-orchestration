@@ -128,19 +128,17 @@ class DiagnosticSettingsTask(Task):
             # client.management_group_diagnostic_settings.list("management_group_id")
 
             await gather(
+                self.update_subscription_settings(sub_id, client),
                 *(
-                    [
-                        self.process_resource(
-                            client,
-                            sub_id,
-                            resource,
-                            DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
-                        )
-                        for region_config in self.assignment_cache[sub_id].values()
-                        for resource, config_id in region_config["resources"].items()
-                    ]
-                    + [self.update_subscription_settings(sub_id, client)]
-                )
+                    self.process_resource(
+                        client,
+                        sub_id,
+                        resource,
+                        DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
+                    )
+                    for region_config in self.assignment_cache[sub_id].values()
+                    for resource, config_id in region_config["resources"].items()
+                ),
             )
 
     async def update_subscription_settings(self, subscription_id: str, client: MonitorManagementClient) -> None:
