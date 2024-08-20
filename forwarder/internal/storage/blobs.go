@@ -68,7 +68,7 @@ func (c *Client) DownloadRange(ctx context.Context, blob Blob, offset int) (Blob
 		BlockSize: 1024 * 1024,
 	}
 
-	content := make([]byte, int(*blob.Item.Properties.ContentLength)+1)
+	content := make([]byte, int(*blob.Item.Properties.ContentLength))
 
 	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
 	if err != nil {
