@@ -1,5 +1,6 @@
 # stdlib
 from collections.abc import AsyncIterable, Callable
+from contextlib import suppress
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
@@ -30,7 +31,8 @@ class TaskTestCase(AsyncTestCase):
     def setUp(self) -> None:
         self.credential = self.patch_path("tasks.task.DefaultAzureCredential")
         self.credential.side_effect = AsyncMock
-        self.write_cache: AsyncMock = self.patch("write_cache")
+        with suppress(AttributeError):
+            self.write_cache: AsyncMock = self.patch("write_cache")
 
     def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], T | None]) -> T:
         self.write_cache.assert_called_with(cache_name, ANY)
