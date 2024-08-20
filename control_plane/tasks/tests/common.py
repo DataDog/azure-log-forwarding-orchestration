@@ -1,6 +1,7 @@
 # stdlib
 from collections.abc import AsyncIterable, Callable
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
@@ -69,3 +70,13 @@ def AsyncMockClient(**kwargs: Any) -> AsyncMock:
     m.__aenter__.return_value = m
     m.__aexit__.return_value = None
     return m
+
+
+@dataclass(frozen=True)
+class AzureModelMatcher:
+    expected: dict[str, Any]
+
+    def __eq__(self, other: Any) -> bool:
+        with suppress(Exception):
+            return other.as_dict() == self.expected
+        return False

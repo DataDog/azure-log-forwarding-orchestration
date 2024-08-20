@@ -2,11 +2,10 @@
 from json import dumps
 from os import environ
 from typing import Final
-from unittest.mock import ANY, AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 # 3p
 from azure.mgmt.monitor.models import CategoryType
-from azure.mgmt.monitor.v2021_05_01_preview.models import DiagnosticSettingsResource
 
 # project
 from cache.assignment_cache import AssignmentCache
@@ -17,7 +16,7 @@ from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTINGS_TASK_NAME,
     DiagnosticSettingsTask,
 )
-from tasks.tests.common import TaskTestCase, async_generator, mock
+from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator, mock
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"
@@ -68,15 +67,12 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.create_or_update_setting.assert_awaited_once_with(
             resource_id1,
             "datadog_log_forwarding_bc666ef914ec",
-            ANY,  # the azure sdk doesnt implement __eq__ so we have to check it separarely after
-        )
-        diagnostic_setting: DiagnosticSettingsResource = self.create_or_update_setting.call_args[0][2]
-        self.assertEqual(
-            diagnostic_setting.as_dict(),
-            {
-                "logs": [{"category": "cool_logs", "enabled": True}],
-                "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
-            },
+            AzureModelMatcher(
+                {
+                    "logs": [{"category": "cool_logs", "enabled": True}],
+                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                }
+            ),
         )
 
     async def test_task_leaves_existing_settings_unchanged(self):
