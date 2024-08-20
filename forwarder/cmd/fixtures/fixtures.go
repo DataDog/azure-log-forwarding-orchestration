@@ -26,13 +26,11 @@ func cleanUpBlobs(ctx context.Context, logger *log.Entry) {
 	containers, err := getContainers(ctx, client)
 	if err != nil {
 		logger.Fatalf("error getting containers: %v", err)
-		return
 	}
 	for _, c := range containers {
 		blobs, err := getBlobs(ctx, client, c)
 		if err != nil {
 			logger.Fatalf("error getting blobs: %v", err)
-			return
 		}
 		var latestBlob *storage.Blob
 		for _, blob := range blobs {
