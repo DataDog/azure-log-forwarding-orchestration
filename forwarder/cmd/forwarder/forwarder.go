@@ -110,7 +110,7 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 
 	eg.Go(func() error {
 		for blobContent := range blobContentCh {
-			logger.Info(fmt.Sprintf("Downaloded Blob: %s Container: %s, Content: %d", blobContent.Name, blobContent.Container, len(*blobContent.Content)))
+			logger.Info(fmt.Sprintf("Downloaded Blob: %s Container: %s, Content: %d", blobContent.Name, blobContent.Container, len(*blobContent.Content)))
 		}
 		return nil
 	})
