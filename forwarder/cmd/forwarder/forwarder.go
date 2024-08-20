@@ -82,8 +82,7 @@ func getBlobContents(ctx context.Context, client *storage.Client, blob storage.B
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
 
-	offset := 0
-	current, downloadErr := client.DownloadRange(ctx, blob, offset)
+	current, downloadErr := client.DownloadRange(ctx, blob, 0)
 	if downloadErr != nil {
 		return downloadErr
 	}
@@ -119,7 +118,6 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 
 	eg.Go(func() error {
 		defer close(blobContentCh)
-		var err error
 		blobsEg, ctx := errgroup.WithContext(ctx)
 		for blob := range blobCh {
 			log.Printf("Downloading blob %s", *blob.Item.Name)
