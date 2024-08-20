@@ -125,8 +125,7 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 			log.Printf("Downloading blob %s", *blob.Item.Name)
 			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh) })
 		}
-		err = blobsEg.Wait()
-		return err
+		return blobsEg.Wait()
 	})
 
 	containerNameCh := make(chan string, channelSize)

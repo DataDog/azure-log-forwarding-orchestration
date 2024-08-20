@@ -37,10 +37,7 @@ func FromCurrentHour(blobName string) bool {
 // EX: resourceId=/SUBSCRIPTIONS/xxx/RESOURCEGROUPS/xxx/PROVIDERS/MICROSOFT.WEB/SITES/xxx/y=2024/m=06/d=13/h=14/m=00/PT1H.json
 func FromToday(blobName string) bool {
 	isCurrentDay := strings.Contains(blobName, fmt.Sprintf("d=%02d", time.Now().Day()))
-	if FromCurrentMonth(blobName) && isCurrentDay {
-		return true
-	}
-	return false
+	return FromCurrentMonth(blobName) && isCurrentDay
 }
 
 func FromCurrentMonth(blobName string) bool {
