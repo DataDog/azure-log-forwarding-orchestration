@@ -36,8 +36,7 @@ func cleanUpBlobs(ctx context.Context, logger *log.Entry) {
 		for _, blob := range blobs {
 			if latestBlob == nil {
 				latestBlob = &blob
-			} else {
-				if blob.Item.Properties.LastModified.After(*latestBlob.Item.Properties.LastModified) {
+			} else if blob.Item.Properties.LastModified.After(*latestBlob.Item.Properties.LastModified) {
 					latestBlob = &blob
 				}
 			}
