@@ -5,7 +5,6 @@ from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
 # 3p
 from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
-from azure.mgmt.storage.models import ManagementPolicy
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
 from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
@@ -22,7 +21,7 @@ from cache.common import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
-from tasks.tests.common import AsyncMockClient, AsyncTestCase
+from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -489,30 +488,30 @@ class TestLogForwarderClient(AsyncTestCase):
             await client.create_log_forwarder_storage_management_policy(storage_account_name)
 
         self.client.storage_client.management_policies.create_or_update.assert_awaited_once_with(
-            rg1, storage_account_name, "default", ANY
-        )
-        policy: ManagementPolicy = self.client.storage_client.management_policies.create_or_update.mock_calls[0][1][3]
-        self.assertEqual(
-            policy.as_dict(),
-            {
-                "policy": {
-                    "rules": [
-                        {
-                            "enabled": True,
-                            "name": "Delete Old Metric Blobs",
-                            "type": "Lifecycle",
-                            "definition": {
-                                "actions": {
-                                    "base_blob": {"delete": {"days_after_modification_greater_than": 14}},
-                                    "snapshot": {"delete": {"days_after_creation_greater_than": 14}},
+            rg1,
+            storage_account_name,
+            "default",
+            AzureModelMatcher(
+                {
+                    "policy": {
+                        "rules": [
+                            {
+                                "enabled": True,
+                                "name": "Delete Old Metric Blobs",
+                                "type": "Lifecycle",
+                                "definition": {
+                                    "actions": {
+                                        "base_blob": {"delete": {"days_after_modification_greater_than": 14}},
+                                        "snapshot": {"delete": {"days_after_creation_greater_than": 14}},
+                                    },
+                                    "filters": {
+                                        "prefix_match": ["forwarder-metrics/"],
+                                        "blob_types": ["blockBlob", "appendBlob"],
+                                    },
                                 },
-                                "filters": {
-                                    "prefix_match": ["forwarder-metrics/"],
-                                    "blob_types": ["blockBlob", "appendBlob"],
-                                },
-                            },
-                        }
-                    ]
+                            }
+                        ]
+                    }
                 }
-            },
+            ),
         )
