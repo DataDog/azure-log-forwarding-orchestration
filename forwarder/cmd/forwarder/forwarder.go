@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
@@ -85,11 +89,24 @@ func getBlobContents(ctx context.Context, client *storage.Client, blob storage.B
 	offset := 0
 	current, downloadErr := client.DownloadRange(ctx, blob, offset)
 	if downloadErr != nil {
-		return downloadErr
+		return fmt.Errorf("getBlobContents: %v", downloadErr)
 	}
 
 	blobContentChannel <- current
 	return nil
+}
+
+func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel chan<- []byte) (err error) {
+	scanner := bufio.NewScanner(bytes.NewReader(*blob.Content))
+	for scanner.Scan() {
+		logsChannel <- []byte(scanner.Text())
+	}
+	return nil
+}
+
+func formatLog(log []byte) error {
+	_, err := logs.Format(log)
+	return err
 }
 
 // This function provides a standardized name for each blob that we can use to read and write blobs
@@ -106,11 +123,29 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 
 	channelSize := 1000
 
+	rawLogCh := make(chan []byte, channelSize)
+
+	eg.Go(func() error {
+		for rawLog := range rawLogCh {
+			err := formatLog(rawLog)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
+				return err
+			}
+		}
+		return nil
+	})
+
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
 
 	eg.Go(func() error {
+		defer close(rawLogCh)
 		for blobContent := range blobContentCh {
-			logger.Info(fmt.Sprintf("Downaloded Blob: %s Container: %s, Content: %d", blobContent.Name, blobContent.Container, len(*blobContent.Content)))
+			err := getLogsFromBlob(ctx, blobContent, rawLogCh)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
+				return err
+			}
 		}
 		return nil
 	})
