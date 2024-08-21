@@ -9,24 +9,14 @@ import (
 )
 
 type Log struct {
-	ByteSize int `json:"-"`
-	//DDRequire     DDLogs
+	ByteSize   int             `json:"-"`
 	Json       json.RawMessage `json:"-"`
 	ResourceId string          `json:"resourceId"`
 	Category   string          `json:"category"`
 	Tags       []string        `json:"tags"`
 }
 
-//type DDLogs struct {
-//	ResourceId       string `json:"resourceId"` // important
-//	Category         string `json:"category"`
-//	DDSource         string `json:"ddsource"`
-//	DDSourceCategory string `json:"ddsourcecategory"`
-//	Service          string `json:"service"`
-//	DDTags           string `json:"ddtags"` // string array of tags
-//}
-
-func TrimQuotes(s string) string {
+func trimQuotes(s string) string {
 	if s[0] == '"' {
 		s = s[1:]
 	}
@@ -36,25 +26,23 @@ func TrimQuotes(s string) string {
 	return s
 }
 
-func unmarshallToPartialStruct(azureLog []byte) (*Log, error) {
-	var err error
-	// partially unmarshall json to struct and keep remaining data as Raw json
+func unmarshall(azureLog []byte) (*Log, error) {
 	tempJson := make(map[string]json.RawMessage)
-	if err = json.Unmarshal(azureLog, &tempJson); err != nil {
+	if err := json.Unmarshal(azureLog, &tempJson); err != nil {
 		return nil, err
 	}
 
 	var category string
 	categoryBytes := tempJson["category"]
 	if categoryBytes != nil {
-		category = TrimQuotes(string(categoryBytes))
+		category = trimQuotes(string(categoryBytes))
 	}
 	delete(tempJson, "category")
 
 	var resourceId string
 	resourceIdBytes := tempJson["resourceId"]
 	if resourceIdBytes != nil {
-		resourceId = TrimQuotes(string(resourceIdBytes))
+		resourceId = trimQuotes(string(resourceIdBytes))
 	}
 	delete(tempJson, "resourceId")
 
@@ -86,7 +74,7 @@ func getForwarderTags() []string {
 
 func NewLog(logBytes []byte) (*Log, error) {
 	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
-	log, err := unmarshallToPartialStruct(logBytes)
+	log, err := unmarshall(logBytes)
 	if err != nil {
 		return nil, err
 	}
