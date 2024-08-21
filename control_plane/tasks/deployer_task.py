@@ -157,7 +157,7 @@ class DeployerTask(Task):
         return func_app_name_short + self.uuid_parts[0] + self.uuid_parts[1]
 
     def generate_app_service_plan_name(self) -> str:
-        return f"dd-forwarder{self.uuid_parts[0]}{self.uuid_parts[1]}"
+        return f"dd-lfo-control{self.uuid_parts[0]}{self.uuid_parts[1]}"
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def create_log_forwarder_app_service_plan(
@@ -194,7 +194,7 @@ class DeployerTask(Task):
                 https_only=True,
                 site_config=SiteConfig(
                     app_settings=[
-                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="custom"),
+                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="python"),
                         NameValuePair(name="AzureWebJobsStorage", value=connection_string),
                         NameValuePair(name="FUNCTIONS_EXTENSION_VERSION", value="~4"),
                     ]
