@@ -9,10 +9,10 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
@@ -149,7 +149,7 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 			logger.Fatalf("error getting blobs: %v", err)
 		}
 		for _, blob := range blobs {
-			if !storage.Current(blob, customtime.RecordedNow) {
+			if !storage.Current(blob, time.Now) {
 				continue
 			}
 			logger.Infof("Blob: %s Container: %s", *blob.Item.Name, container)
@@ -174,9 +174,5 @@ func main() {
 		logger.Fatalf("error removing azurite fixtures path: %v", err)
 	}
 	runFixturePath := path.Join("cmd", "forwarder", "fixtures", "run")
-	err = customtime.RecordNow()
-	if err != nil {
-		logger.Fatalf("error recording time: %v", err)
-	}
 	generateRunFixtures(ctx, logger, runFixturePath)
 }

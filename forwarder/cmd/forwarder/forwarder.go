@@ -95,9 +95,6 @@ func getBlobContents(ctx context.Context, client *storage.Client, blob storage.B
 // This function provides a standardized name for each blob that we can use to read and write blobs
 // Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
 // Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
-func GetDateTimeString() (date string) {
-	return time.Now().UTC().Format("2006-01-02-15")
-}
 
 func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
@@ -204,7 +201,7 @@ func main() {
 		logger.Fatalf("error while marshalling metrics: %v", err)
 	}
 
-	dateString := GetDateTimeString()
+	dateString := time.Now().UTC().Format("2006-01-02-15")
 	blobName := dateString + ".txt"
 
 	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
