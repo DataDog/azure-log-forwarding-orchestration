@@ -22,7 +22,7 @@ repos:
     rev: v1.35.1
     hooks:
       - id: yamllint
-        args: [-d, 'rules: {line-length: {max: 120, ignore: forwarder/cmd/forwarder/fixtures/run.yaml}}']
+        args: [-d, 'rules: {line-length: {max: 120}}']
   - repo: https://github.com/dnephin/pre-commit-golang
     rev: v0.5.1
     hooks:
