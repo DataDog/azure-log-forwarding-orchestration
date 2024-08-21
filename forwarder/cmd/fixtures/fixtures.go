@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -70,6 +72,34 @@ func getBlobContent(ctx context.Context, client *storage.Client, blob storage.Bl
 	if err != nil {
 		return nil, err
 	}
+	fixturesPath, err := storage.GetAzuriteFixturesPath()
+	if err != nil {
+		return nil, err
+	}
+	filePath := path.Join(fixturesPath, *blob.Item.Name)
+
+	err = os.MkdirAll(path.Dir(filePath), 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	var content []byte
+	scanner := bufio.NewScanner(bytes.NewReader(*segment.Content))
+	counter := 0
+	for scanner.Scan() {
+		content = append(content, scanner.Bytes()...)
+		content = append(content, '\n')
+		counter++
+		if counter > 50 {
+			break
+		}
+	}
+
+	err = os.WriteFile(filePath, content, 0644)
+	if err != nil {
+		return nil, err
+	}
+
 	return segment.Content, nil
 }
 
@@ -105,7 +135,9 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath str
 	if err != nil {
 		logger.Fatalf("error creating azure client: %v", err)
 	}
+
 	client := storage.NewClient(azBlobClient)
+
 	containers, err := getContainers(ctx, client)
 	if err != nil {
 		logger.Fatalf("error getting containers: %v", err)
@@ -133,8 +165,16 @@ func main() {
 	// Integration test fixture recording for the forwarder
 	ctx := context.Background()
 	logger := log.WithFields(log.Fields{"service": "forwarder"})
+	azuriteFixturesPath, err := storage.GetAzuriteFixturesPath()
+	if err != nil {
+		log.Fatalf("error getting azurite fixtures path: %v", err)
+	}
+	err = os.RemoveAll(azuriteFixturesPath)
+	if err != nil {
+		logger.Fatalf("error removing azurite fixtures path: %v", err)
+	}
 	runFixturePath := path.Join("cmd", "forwarder", "fixtures", "run")
-	err := customtime.RecordNow()
+	err = customtime.RecordNow()
 	if err != nil {
 		logger.Fatalf("error recording time: %v", err)
 	}
