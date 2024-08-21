@@ -3,15 +3,14 @@ package storage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -27,29 +26,8 @@ type BlobSegment struct {
 	Offset    int
 }
 
-func FromCurrentHour(blobName string) bool {
-	isCurrentHour := strings.Contains(blobName, fmt.Sprintf("h=%02d", time.Now().UTC().Hour()))
-	return FromToday(blobName) && isCurrentHour
-}
-
-// CheckBlobIsFromToday checks if the blob is from today given the current time.Now Day and Month
-// parses the blob file string to check for
-// EX: resourceId=/SUBSCRIPTIONS/xxx/RESOURCEGROUPS/xxx/PROVIDERS/MICROSOFT.WEB/SITES/xxx/y=2024/m=06/d=13/h=14/m=00/PT1H.json
-func FromToday(blobName string) bool {
-	isCurrentDay := strings.Contains(blobName, fmt.Sprintf("d=%02d", time.Now().Day()))
-	if FromCurrentMonth(blobName) && isCurrentDay {
-		return true
-	}
-	return false
-}
-
-func FromCurrentMonth(blobName string) bool {
-	isCurrentYear := strings.Contains(blobName, fmt.Sprintf("y=%02d", time.Now().Year()))
-	isCurrentMonth := strings.Contains(blobName, fmt.Sprintf("m=%02d", time.Now().Month()))
-	if isCurrentYear && isCurrentMonth {
-		return true
-	}
-	return false
+func Current(blob Blob, now customtime.Now) bool {
+	return blob.Item.Properties.CreationTime.After(now().Add(-2 * time.Hour))
 }
 
 func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
@@ -68,7 +46,7 @@ func (c *Client) DownloadRange(ctx context.Context, blob Blob, offset int) (Blob
 		BlockSize: 1024 * 1024,
 	}
 
-	content := make([]byte, int(*blob.Item.Properties.ContentLength)+1)
+	content := make([]byte, int(*blob.Item.Properties.ContentLength)*1024)
 
 	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
 	if err != nil {

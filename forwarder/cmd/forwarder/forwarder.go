@@ -14,6 +14,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 
@@ -86,8 +87,7 @@ func getBlobContents(ctx context.Context, client *storage.Client, blob storage.B
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
 
-	offset := 0
-	current, downloadErr := client.DownloadRange(ctx, blob, offset)
+	current, downloadErr := client.DownloadRange(ctx, blob, 0)
 	if downloadErr != nil {
 		return fmt.Errorf("getBlobContents: %v", downloadErr)
 	}
@@ -112,11 +112,8 @@ func formatLog(log []byte) error {
 // This function provides a standardized name for each blob that we can use to read and write blobs
 // Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
 // Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
-func GetDateTimeString() (date string) {
-	return time.Now().UTC().Format("2006-01-02-15")
-}
 
-func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err error) {
+func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(context.Background())
@@ -154,14 +151,15 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry) (err er
 
 	eg.Go(func() error {
 		defer close(blobContentCh)
-		var err error
 		blobsEg, ctx := errgroup.WithContext(ctx)
 		for blob := range blobCh {
+			if !storage.Current(blob, now) {
+				continue
+			}
 			log.Printf("Downloading blob %s", *blob.Item.Name)
 			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh) })
 		}
-		err = blobsEg.Wait()
-		return err
+		return blobsEg.Wait()
 	})
 
 	containerNameCh := make(chan string, channelSize)
@@ -226,7 +224,7 @@ func main() {
 
 	client := storage.NewClient(azBlobClient)
 
-	runErr := Run(ctx, client, logger)
+	runErr := Run(ctx, client, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
@@ -238,7 +236,7 @@ func main() {
 		logger.Fatalf("error while marshalling metrics: %v", err)
 	}
 
-	dateString := GetDateTimeString()
+	dateString := time.Now().UTC().Format("2006-01-02-15")
 	blobName := dateString + ".txt"
 
 	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
