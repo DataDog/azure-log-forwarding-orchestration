@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -314,5 +315,57 @@ func TestDownloadRange(t *testing.T) {
 		// THEN
 		assert.NotNil(t, got)
 		assert.Equal(t, want, got)
+	})
+}
+
+func getBlob(creationTime time.Time) storage.Blob {
+	return storage.Blob{
+		Container: "container",
+		Item: &container.BlobItem{
+			Name: to.StringPtr("blob"),
+			Properties: &container.BlobProperties{
+				CreationTime: &creationTime,
+			},
+		},
+	}
+}
+
+func TestCurrent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("now is current", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := getBlob(time.Now())
+
+		// WHEN
+		current := storage.Current(blob, time.Now)
+
+		// THEN
+		assert.True(t, current)
+	})
+
+	t.Run("an hour ago is current", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := getBlob(time.Now().Add(-1 * time.Hour))
+
+		// WHEN
+		current := storage.Current(blob, time.Now)
+
+		// THEN
+		assert.True(t, current)
+	})
+
+	t.Run("three hours ago is not current", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := getBlob(time.Now().Add(-3 * time.Hour))
+
+		// WHEN
+		current := storage.Current(blob, time.Now)
+
+		// THEN
+		assert.False(t, current)
 	})
 }

@@ -14,7 +14,6 @@ require (
 	google.golang.org/api v0.188.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.65.1
 	gopkg.in/dnaeon/go-vcr.v3 v3.2.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -88,4 +87,5 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
