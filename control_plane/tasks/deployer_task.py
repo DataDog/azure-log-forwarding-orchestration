@@ -145,7 +145,6 @@ class DeployerTask(Task):
             return
         self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def create_function_app_first_time(self, function_app_name: str) -> None:
         service_plan = await wait_for_resource(
             *await self.create_log_forwarder_app_service_plan(self.region, self.generate_app_service_plan_name())
@@ -160,6 +159,7 @@ class DeployerTask(Task):
     def generate_app_service_plan_name(self) -> str:
         return f"dd-forwarder{self.uuid_parts[0]}{self.uuid_parts[1]}"
 
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def create_log_forwarder_app_service_plan(
         self, region: str, app_service_plan_name: str
     ) -> tuple[AsyncLROPoller[AppServicePlan], Callable[[], Awaitable[AppServicePlan]]]:
@@ -178,6 +178,7 @@ class DeployerTask(Task):
             ),
         ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
 
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def create_log_forwarder_function_app(
         self, region: str, function_app_name: str, app_service_plan_id: str
     ) -> tuple[AsyncLROPoller[Site], Callable[[], Awaitable[Site]]]:
