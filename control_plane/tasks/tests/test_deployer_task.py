@@ -18,13 +18,23 @@ class TestDeployerTask(TaskTestCase):
     TASK_NAME = DEPLOYER_TASK_NAME
 
     def setUp(self) -> None:
+        get_config = self.patch("get_config_option")
+        config_defaults = {
+            "CONTROL_PLANE_SUB_ID": "test_id",
+            "RESOURCE_GROUP": "test_rg",
+            "REGION": "test_loc",
+            "UUID": "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
+        }
+        get_config.side_effect = config_defaults.get
         super().setUp()
         container_client = self.patch("ContainerClient")
         client_session = self.patch("ClientSession")
+        web_client = self.patch("WebSiteManagementClient")
         client_session.return_value = AsyncMock()
         container_client.from_container_url.return_value = AsyncMock()
         self.public_client: AsyncMock = container_client.from_container_url.return_value
         self.rest_client: AsyncMock = client_session.return_value
+        self.web_client: AsyncMock = web_client.return_value
 
         self.log = self.patch("log")
 
