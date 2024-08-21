@@ -1,17 +1,15 @@
 # stdlib
 from asyncio import gather, run
-from collections.abc import AsyncIterable
 from logging import ERROR, INFO, basicConfig, getLogger
-from typing import NamedTuple, TypeVar, cast
+from typing import NamedTuple, cast
 
 # 3p
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
     CategoryType,
     DiagnosticSettingsResource,
     LogSettings,
-    Resource,
 )
 
 # project
@@ -77,33 +75,6 @@ def get_diagnostic_setting(
         )
 
 
-DiagnosticSetting = TypeVar("DiagnosticSetting", bound=Resource)
-
-
-async def get_existing_diagnostic_setting(
-    resource_id: str,
-    settings: AsyncIterable[DiagnosticSetting],
-    existing_diagnostic_setting_name: str | None = None,
-) -> DiagnosticSetting | None:
-    try:
-        async for s in settings:
-            if (existing_diagnostic_setting_name is not None and s.name == existing_diagnostic_setting_name) or (
-                existing_diagnostic_setting_name is None and s.name.startswith(DIAGNOSTIC_SETTING_PREFIX)  # type: ignore
-            ):
-                return s
-        log.debug("No existing diagnostic setting found for resource %s", resource_id)
-        return None
-    except ResourceNotFoundError as e:
-        log.warning("Resource %s not found: %s", resource_id, e.error)
-        raise
-    except HttpResponseError as e:
-        if e.error and e.error.code == "ResourceTypeNotSupported":
-            log.debug("Got ResourceTypeNotSupported error for resource id %s", resource_id)
-            raise
-        log.error("Failed to get diagnostic settings for %s", resource_id, exc_info=True)
-        raise
-
-
 class DiagnosticSettingsTask(Task):
     def __init__(self, assignment_cache_state: str) -> None:
         super().__init__()
@@ -142,14 +113,8 @@ class DiagnosticSettingsTask(Task):
             )
 
     async def update_subscription_settings(self, subscription_id: str, client: MonitorManagementClient) -> None:
+        # TODO client.subscription_diagnostic_settings.list()
         return
-        if (
-            setting := await get_existing_diagnostic_setting(
-                subscription_id, client.subscription_diagnostic_settings.list()
-            )
-        ) and setting.logs:
-            # We have already added the setting for this subscription
-            ...
 
     async def process_resource(
         self,
@@ -158,11 +123,22 @@ class DiagnosticSettingsTask(Task):
         resource_id: str,
         assigned_config: DiagnosticSettingConfiguration,
     ) -> None:
-        # covers 3 cases:
-        # 1. no existing setting on this resource (and nothing in the DS cache)
-        # 2. existing setting with different configuration
-        # 3. settings was removed, we're re-adding it (with the new assignment)
-        await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config)
+        assigned_setting_name = get_diagnostic_setting_name(assigned_config.id)
+        assigned_storage_account = get_storage_account_id(sub_id, self.resource_group, assigned_config.id).lower()
+        ds_categories = None
+        async for diagnostic_setting in client.diagnostic_settings.list(resource_id):
+            setting_name = cast(str, diagnostic_setting.name).lower()
+            if setting_name == assigned_setting_name:  # expected setting exists
+                if diagnostic_setting.storage_account_id == assigned_storage_account:
+                    should_add_setting = False  # everything is set up correctly, no need to add/update
+                else:
+                    # no need to requery, we already know the settings
+                    ds_categories = [cast(str, log.category) for log in diagnostic_setting.logs or []]
+            elif setting_name.startswith(DIAGNOSTIC_SETTING_PREFIX):
+                ...  # TODO(AZINTS-2689) old/unused setting cleanup
+
+        if should_add_setting:
+            await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config, ds_categories)
 
     async def set_diagnostic_setting(
         self,
@@ -170,9 +146,10 @@ class DiagnosticSettingsTask(Task):
         sub_id: str,
         resource_id: str,
         config: DiagnosticSettingConfiguration,
+        ds_categories: list[str] | None = None,
     ) -> None:
         try:
-            categories: list[str] = [
+            categories: list[str] = ds_categories or [
                 cast(str, category.name)
                 async for category in client.diagnostic_settings_category.list(resource_id)
                 if category.category_type == CategoryType.LOGS
