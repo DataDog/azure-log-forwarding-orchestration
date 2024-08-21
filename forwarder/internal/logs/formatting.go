@@ -35,7 +35,7 @@ func unmarshallToPartialStruct(azureLog []byte) (*Log, error) {
 	return &logStruct, err
 }
 
-func Format(logBytes []byte) (any, error) {
+func Format(logBytes []byte) ([]byte, error) {
 	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
 	_, err := unmarshallToPartialStruct(logBytes)
 	if err != nil {

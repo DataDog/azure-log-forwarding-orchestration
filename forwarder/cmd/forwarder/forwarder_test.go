@@ -118,5 +118,5 @@ func TestRun(t *testing.T) {
 	// THEN
 	got := string(buffer.Bytes())
 	assert.NoError(t, err)
-	assert.Contains(t, got, "insights-logs-functionapplogs")
+	assert.Contains(t, got, "Formatted log")
 }

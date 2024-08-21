@@ -104,15 +104,6 @@ func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel 
 	return nil
 }
 
-func formatLog(log []byte) error {
-	_, err := logs.Format(log)
-	return err
-}
-
-// This function provides a standardized name for each blob that we can use to read and write blobs
-// Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
-// Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
-
 func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
@@ -124,11 +115,12 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 
 	eg.Go(func() error {
 		for rawLog := range rawLogCh {
-			err := formatLog(rawLog)
+			formattedLog, err := logs.Format(rawLog)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
 				return err
 			}
+			logger.Info(fmt.Sprintf("Formatted log: %s", string(formattedLog)))
 		}
 		return nil
 	})
