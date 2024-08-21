@@ -125,6 +125,7 @@ class DiagnosticSettingsTask(Task):
     ) -> None:
         assigned_setting_name = get_diagnostic_setting_name(assigned_config.id)
         assigned_storage_account = get_storage_account_id(sub_id, self.resource_group, assigned_config.id).lower()
+        should_add_setting = True
         ds_categories = None
         async for diagnostic_setting in client.diagnostic_settings.list(resource_id):
             setting_name = cast(str, diagnostic_setting.name).lower()
