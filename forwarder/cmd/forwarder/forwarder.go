@@ -115,12 +115,12 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 
 	eg.Go(func() error {
 		for rawLog := range rawLogCh {
-			formattedLog, err := logs.Format(rawLog)
+			formattedLog, err := logs.NewLog(rawLog)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
 				return err
 			}
-			logger.Info(fmt.Sprintf("Formatted log: %s", string(formattedLog)))
+			logger.Info(fmt.Sprintf("Formatted log with tags: %s", formattedLog.Tags))
 		}
 		return nil
 	})

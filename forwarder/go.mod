@@ -3,7 +3,7 @@ module github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 go 1.22.2
 
 require (
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.14.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.3.2
 	github.com/Azure/go-autorest/autorest/to v0.4.0
 	github.com/sirupsen/logrus v1.9.3
@@ -14,12 +14,11 @@ require (
 	google.golang.org/api v0.188.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.65.1
 	gopkg.in/dnaeon/go-vcr.v3 v3.2.0
-	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	dario.cat/mergo v1.0.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.2 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/DataDog/appsec-internal-go v1.6.0 // indirect
@@ -88,4 +87,5 @@ require (
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -119,4 +119,6 @@ func TestRun(t *testing.T) {
 	got := string(buffer.Bytes())
 	assert.NoError(t, err)
 	assert.Contains(t, got, "Formatted log")
+	assert.Contains(t, got, "forwarder:lfo")
+	assert.Contains(t, got, "resource_group:")
 }
