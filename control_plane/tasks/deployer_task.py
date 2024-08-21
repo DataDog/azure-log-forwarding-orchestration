@@ -137,7 +137,9 @@ class DeployerTask(Task):
     async def deploy_function_app(self, function_app_name: str) -> None:
         try:
             function_app_data = await self.download_function_app_data(function_app_name)
-            await self.upload_function_app_data(function_app_name, function_app_data, False)
+            await self.upload_function_app_data(
+                self.get_full_function_app_name(function_app_name), function_app_data, False
+            )
         except RetryError:
             log.error(f"Failed to deploy {function_app_name} task.")
             return
