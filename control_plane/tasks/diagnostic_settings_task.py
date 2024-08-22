@@ -147,10 +147,10 @@ class DiagnosticSettingsTask(Task):
         sub_id: str,
         resource_id: str,
         config: DiagnosticSettingConfiguration,
-        ds_categories: list[str] | None = None,
+        categories: list[str] | None = None,
     ) -> None:
         try:
-            categories: list[str] = ds_categories or [
+            categories = categories or [
                 cast(str, category.name)
                 async for category in client.diagnostic_settings_category.list(resource_id)
                 if category.category_type == CategoryType.LOGS
