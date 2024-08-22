@@ -18,15 +18,19 @@ from cache.common import (
     MANAGED_ENVIRONMENT_PREFIX,
     STORAGE_ACCOUNT_PREFIX,
     get_container_app_name,
+    get_managed_env_name,
+    get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
-from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher, async_generator
+from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher, async_generator, mock
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
 config_id = "d6fc2c757f9c"
+config_id2 = "e8d5222d1c46"
+config_id3 = "619fff16cae1"
 managed_env_name = MANAGED_ENVIRONMENT_PREFIX + config_id
 container_app_name = CONTAINER_APP_PREFIX + config_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + config_id
@@ -525,3 +529,53 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             res = await client.list_log_forwarder_ids()
         self.assertEqual(res, set())
+
+    async def test_list_log_forwarder_ids_all_same(self):
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(
+            return_value=async_generator(mock(name=get_container_app_name(config_id)))
+        )
+        self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
+            return_value=async_generator(mock(name=get_managed_env_name(config_id)))
+        )
+        self.client.storage_client.storage_accounts.list_by_resource_group = Mock(
+            return_value=async_generator(mock(name=get_storage_account_name(config_id)))
+        )
+        async with self.client as client:
+            res = await client.list_log_forwarder_ids()
+        self.assertEqual(res, {config_id})
+
+    async def test_list_log_forwarder_ids_mixed(self):
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(
+            return_value=async_generator(
+                mock(name=get_container_app_name(config_id)), mock(name=get_container_app_name(config_id3))
+            )
+        )
+        self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
+            return_value=async_generator(
+                mock(name=get_managed_env_name(config_id)), mock(name=get_storage_account_name(config_id2))
+            )
+        )
+        self.client.storage_client.storage_accounts.list_by_resource_group = Mock(
+            return_value=async_generator(
+                mock(name=get_storage_account_name(config_id2)), mock(name=get_storage_account_name(config_id3))
+            )
+        )
+        async with self.client as client:
+            res = await client.list_log_forwarder_ids()
+        self.assertEqual(res, {config_id, config_id2, config_id3})
+
+    async def test_list_log_forwarder_ids_other_resources(self):
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(
+            return_value=async_generator(mock(name=get_container_app_name(config_id)), mock(name="other_job"))
+        )
+        self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
+            return_value=async_generator(mock(name=get_managed_env_name(config_id)), mock(name="other_env"))
+        )
+        self.client.storage_client.storage_accounts.list_by_resource_group = Mock(
+            return_value=async_generator(
+                mock(name=get_storage_account_name("way_more_than_twelve_chars")), mock(name="storage_other")
+            )
+        )
+        async with self.client as client:
+            res = await client.list_log_forwarder_ids()
+        self.assertEqual(res, {config_id, "way_more_than_twelve_chars"})
