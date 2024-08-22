@@ -10,6 +10,10 @@ import (
 	"testing"
 	"time"
 
+	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	testcontainers "github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -112,8 +116,15 @@ func TestRun(t *testing.T) {
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.test")
 	defer span.Finish()
 
+	datadogConfig := datadog.NewConfiguration()
+	apiClient := datadog.NewAPIClient(datadogConfig)
+
+	logsClient := datadogV2.NewLogsApi(apiClient)
+
+	datadogClient := dd.NewClient(logsClient)
+
 	// WHEN
-	err = Run(ctx, client, log.NewEntry(logger), time.Now)
+	err = Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
 
 	// THEN
 	got := string(buffer.Bytes())

@@ -2,14 +2,30 @@ package datadog
 
 import (
 	"context"
+	"log"
 	"net/http"
+	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
-func NewHTTPLogItem(log logs.Log) datadogV2.HTTPLogItem {
-	return datadogV2.HTTPLogItem{}
+const BUFFER_SIZE = 100
+
+func NewHTTPLogItem(log *logs.Log) (datadogV2.HTTPLogItem, error) {
+	message, err := log.Json.MarshalJSON()
+	if err != nil {
+		return datadogV2.HTTPLogItem{}, err
+	}
+
+	logItem := datadogV2.HTTPLogItem{
+		Ddsource: to.Ptr("azure"),
+		Ddtags:   to.Ptr(strings.Join(log.Tags, ",")),
+		Message:  string(message),
+	}
+	return logItem, nil
 }
 
 type LogsApiInterface interface {
@@ -21,9 +37,23 @@ type Client struct {
 	logsBuffer []datadogV2.HTTPLogItem
 }
 
-func (c *Client) SubmitLog(ctx context.Context, log logs.Log) error {
-	c.logsBuffer = append(c.logsBuffer, NewHTTPLogItem(log))
-	if len(c.logsBuffer) >= 100 {
+func NewClient(logsApi LogsApiInterface) *Client {
+	return &Client{
+		logsApi: logsApi,
+	}
+}
+
+func (c *Client) Close() error {
+	return c.Flush(context.Background())
+}
+
+func (c *Client) SubmitLog(ctx context.Context, log *logs.Log) error {
+	logItem, err := NewHTTPLogItem(log)
+	if err != nil {
+		return err
+	}
+	c.logsBuffer = append(c.logsBuffer, logItem)
+	if len(c.logsBuffer) >= BUFFER_SIZE {
 		return c.Flush(ctx)
 	}
 	return nil
@@ -31,7 +61,9 @@ func (c *Client) SubmitLog(ctx context.Context, log logs.Log) error {
 
 func (c *Client) Flush(ctx context.Context) error {
 	if len(c.logsBuffer) > 0 {
-		_, _, err := c.logsApi.SubmitLog(ctx, c.logsBuffer)
+		obj, resp, err := c.logsApi.SubmitLog(ctx, c.logsBuffer)
+		log.Printf("Response: %v", resp)
+		log.Println(obj)
 		if err != nil {
 			return err
 		}
@@ -40,7 +72,13 @@ func (c *Client) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) SubmitLogs(ctx context.Context, logs []datadogV2.HTTPLogItem) error {
-	_, _, err := c.logsApi.SubmitLog(ctx, logs)
+func (c *Client) SubmitLogs(ctx context.Context, logs []*logs.Log) error {
+	var err error
+	for _, log := range logs {
+		err = c.SubmitLog(ctx, log)
+		if err != nil {
+			break
+		}
+	}
 	return err
 }

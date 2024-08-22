@@ -10,6 +10,10 @@ import (
 	"os"
 	"time"
 
+	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -104,10 +108,12 @@ func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel 
 	return nil
 }
 
-func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
+func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(context.Background())
+
+	defer datadogClient.Close()
 
 	channelSize := 1000
 
@@ -120,7 +126,11 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
 				return err
 			}
-			logger.Info(fmt.Sprintf("Formatted log with tags: %s", formattedLog.Tags))
+			err = datadogClient.SubmitLog(ctx, formattedLog)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Error submitting log: %v", err))
+				return err
+			}
 		}
 		return nil
 	})
@@ -149,7 +159,7 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 				continue
 			}
 			log.Printf("Downloading blob %s", *blob.Item.Name)
-			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh) })
+			blobsEg.Go(func() error { return getBlobContents(ctx, storageClient, blob, blobContentCh) })
 		}
 		return blobsEg.Wait()
 	})
@@ -160,7 +170,7 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 		defer close(blobCh)
 		var err error
 		for container := range containerNameCh {
-			curErr := getBlobs(ctx, client, container, blobCh)
+			curErr := getBlobs(ctx, storageClient, container, blobCh)
 			if curErr != nil {
 				err = errors.Join(err, curErr)
 			}
@@ -168,12 +178,14 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 		return err
 	})
 
-	err = getContainers(ctx, client, containerNameCh)
+	err = getContainers(ctx, storageClient, containerNameCh)
 
 	err = errors.Join(err, eg.Wait())
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
+
+	logger.Info("Finished processing logs")
 
 	return nil
 }
@@ -210,13 +222,20 @@ func main() {
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf("error creating azure client: %v", err)
+		logger.Fatalf("error creating azure storageClient: %v", err)
 		return
 	}
 
-	client := storage.NewClient(azBlobClient)
+	storageClient := storage.NewClient(azBlobClient)
 
-	runErr := Run(ctx, client, logger, time.Now)
+	datadogConfig := datadog.NewConfiguration()
+	apiClient := datadog.NewAPIClient(datadogConfig)
+
+	logsClient := datadogV2.NewLogsApi(apiClient)
+
+	datadogClient := dd.NewClient(logsClient)
+
+	runErr := Run(ctx, storageClient, datadogClient, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
@@ -231,7 +250,7 @@ func main() {
 	dateString := time.Now().UTC().Format("2006-01-02-15")
 	blobName := dateString + ".txt"
 
-	err = client.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
+	err = storageClient.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
 
 	err = errors.Join(runErr, err)
 
