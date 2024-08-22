@@ -409,8 +409,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         )
 
         def _get_forwarder_config_ids(it: Iterable[Resource], prefix: str) -> set[str]:
-            split_idx = len(prefix)
-            return {resource.name[split_idx:] for resource in it if resource.name.startswith(prefix)}
+            return {resource.name.removeprefix(prefix) for resource in it if resource.name.startswith(prefix)}
 
         return (
             _get_forwarder_config_ids(jobs, CONTAINER_APP_PREFIX)  # type: ignore
