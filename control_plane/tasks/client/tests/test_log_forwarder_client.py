@@ -21,7 +21,7 @@ from cache.common import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
-from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher
+from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher, async_generator
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -515,3 +515,13 @@ class TestLogForwarderClient(AsyncTestCase):
                 }
             ),
         )
+
+    async def test_list_log_forwarder_ids_empty(self):
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(return_value=async_generator())
+        self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
+            return_value=async_generator()
+        )
+        self.client.storage_client.storage_accounts.list_by_resource_group = Mock(return_value=async_generator())
+        async with self.client as client:
+            res = await client.list_log_forwarder_ids()
+        self.assertEqual(res, set())
