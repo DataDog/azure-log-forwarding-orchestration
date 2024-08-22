@@ -4,6 +4,7 @@ from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
+from itertools import chain
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any
@@ -119,6 +120,8 @@ class ScalingTask(Task):
 
             if self.background_tasks:
                 await wait(self.background_tasks)
+
+            await self.clean_up_orphaned_forwarders(client, subscription_id)
 
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
@@ -298,6 +301,27 @@ class ScalingTask(Task):
         except RetryError:
             log.error("Max retries attempted")
             return []
+
+    async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
+        existing_log_forwarders = await client.list_log_forwarder_ids()
+        orphaned_forwarders = set(existing_log_forwarders) - set(
+            chain.from_iterable(
+                region_config["configurations"]
+                for region_config in self.assignment_cache.get(subscription_id, {}).values()
+            )
+        )
+        if not orphaned_forwarders:
+            return
+
+        log.info("Cleaning up orphaned forwarders for subscription %s: %s", subscription_id, orphaned_forwarders)
+        await gather(
+            *(
+                # only try once and don't error, if something transiently fails
+                # we can wait til next time, we don't want to spend much time here
+                client.delete_log_forwarder(forwarder_id, raise_error=False, max_attempts=1)
+                for forwarder_id in orphaned_forwarders
+            )
+        )
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:
