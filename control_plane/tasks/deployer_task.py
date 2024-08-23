@@ -7,6 +7,7 @@ from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
 from typing import Self
+from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
@@ -37,6 +38,7 @@ MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
 
 PUBLIC_CONTAINER_URL = "google.com"
+SERVICE_PLAN_NAME = "dd-lfo-control"
 
 log = getLogger(DEPLOYER_NAME)
 log.setLevel(DEBUG)
@@ -49,7 +51,7 @@ class DeployerTask(Task):
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
 
-        self.uuid = get_config_option("UUID")
+        self.uuid = str(uuid4())
         self.uuid_parts = self.uuid.split("-")
         self.manifest_cache: ManifestCache = {}
         self.original_manifest_cache: ManifestCache = {}
@@ -126,7 +128,10 @@ class DeployerTask(Task):
     async def deploy_function_apps(self, function_app_names: list[str]) -> None:
         if len(function_app_names) == 0:
             return
-        await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
+        try:
+            await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
+        except RetryError:
+            log.error("Error deploying function apps")
 
     async def deploy_container_apps(self, container_app_names: list[str]) -> None:
         if len(container_app_names) == 0:
@@ -134,30 +139,45 @@ class DeployerTask(Task):
         for container_app in container_app_names:
             self.manifest_cache[container_app] = self.public_manifest[container_app]
 
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_function_app(self, function_app_name: str) -> None:
-        try:
-            function_app_data = await self.download_function_app_data(function_app_name)
-            await self.upload_function_app_data(
-                self.get_full_function_app_name(function_app_name), function_app_data, False
+        current_apps = self.web_client.web_apps.list_by_resource_group(self.resource_group)
+        already_deployed = False
+        async for app in current_apps:
+            if function_app_name in app.name:  # type: ignore
+                full_app_name: str = app.name  # type: ignore
+                function_app_data = await self.download_function_app_data(function_app_name)
+                await self.upload_function_app_data(full_app_name, function_app_data)
+                already_deployed = True
+                break
+        if not already_deployed:
+            current_service_plans = self.web_client.app_service_plans.list_by_resource_group(self.resource_group)
+            uuid_parts = str(uuid4()).split("-")
+            uuid_str = uuid_parts[0] + uuid_parts[1]
+            async for service_plan in current_service_plans:
+                if SERVICE_PLAN_NAME in service_plan.name:  # type: ignore
+                    uuid_str = service_plan.name[len(SERVICE_PLAN_NAME) :]  # type: ignore
+                    break
+            service_plan = await wait_for_resource(
+                *await self.create_log_forwarder_app_service_plan(
+                    self.region, self.generate_app_service_plan_name(uuid_str)
+                )
             )
-        except RetryError:
-            log.error(f"Failed to deploy {function_app_name} task.")
-            return
+            await wait_for_resource(
+                *await self.create_log_forwarder_function_app(
+                    self.region,
+                    self.get_full_function_app_name(function_app_name, uuid_str),
+                    service_plan.id,  # type: ignore
+                )
+            )
+
         self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
 
-    async def create_function_app_first_time(self, function_app_name: str) -> None:
-        service_plan = await wait_for_resource(
-            *await self.create_log_forwarder_app_service_plan(self.region, self.generate_app_service_plan_name())
-        )
-        await wait_for_resource(
-            *await self.create_log_forwarder_function_app(self.region, function_app_name, service_plan.id)  # type: ignore
-        )
+    def get_full_function_app_name(self, func_app_name_short: str, uuid_str: str) -> str:
+        return func_app_name_short + uuid_str
 
-    def get_full_function_app_name(self, func_app_name_short: str) -> str:
-        return func_app_name_short + self.uuid_parts[0] + self.uuid_parts[1]
-
-    def generate_app_service_plan_name(self) -> str:
-        return f"dd-lfo-control{self.uuid_parts[0]}{self.uuid_parts[1]}"
+    def generate_app_service_plan_name(self, uuid_str: str) -> str:
+        return f"{SERVICE_PLAN_NAME}{uuid_str}"
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def create_log_forwarder_app_service_plan(
@@ -203,19 +223,12 @@ class DeployerTask(Task):
         ), lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes, has_run: bool) -> None:
-        try:
-            resp = await self.rest_client.post(
-                f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",  # TODO [AZINTS-2705] Figure out how to get the right name here
-                data=function_app_data,
-            )
-            resp.raise_for_status()
-        except Exception as exc:
-            if not has_run:
-                await self.create_function_app_first_time(function_app_name)
-                await self.upload_function_app_data(function_app_name, function_app_data, True)
-            else:
-                raise exc
+    async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
+        resp = await self.rest_client.post(
+            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",  # TODO [AZINTS-2705] Figure out how to get the right name here
+            data=function_app_data,
+        )
+        resp.raise_for_status()
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, function_app_name: str) -> bytes:
