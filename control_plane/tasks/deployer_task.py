@@ -158,20 +158,29 @@ class DeployerTask(Task):
                 if SERVICE_PLAN_NAME in service_plan.name:  # type: ignore
                     uuid_str = service_plan.name[len(SERVICE_PLAN_NAME) :]  # type: ignore
                     break
-            service_plan = await wait_for_resource(
-                *await self.create_log_forwarder_app_service_plan(
-                    self.region, self.generate_app_service_plan_name(uuid_str)
-                )
+            _, function_app_data = await gather(
+                self.create_or_update_function_app(function_app_name, uuid_str),
+                self.download_function_app_data(function_app_name),
             )
-            await wait_for_resource(
-                *await self.create_log_forwarder_function_app(
-                    self.region,
-                    self.get_full_function_app_name(function_app_name, uuid_str),
-                    service_plan.id,  # type: ignore
-                )
+            await self.upload_function_app_data(
+                self.get_full_function_app_name(function_app_name, uuid_str), function_app_data
             )
 
         self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
+
+    async def create_or_update_function_app(self, function_app_name: str, uuid_str: str) -> None:
+        service_plan = await wait_for_resource(
+            *await self.create_log_forwarder_app_service_plan(
+                self.region, self.generate_app_service_plan_name(uuid_str)
+            )
+        )
+        await wait_for_resource(
+            *await self.create_log_forwarder_function_app(
+                self.region,
+                self.get_full_function_app_name(function_app_name, uuid_str),
+                service_plan.id,  # type: ignore
+            )
+        )
 
     def get_full_function_app_name(self, func_app_name_short: str, uuid_str: str) -> str:
         return func_app_name_short + uuid_str
