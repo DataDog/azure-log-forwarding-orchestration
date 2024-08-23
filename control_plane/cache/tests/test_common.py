@@ -18,6 +18,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
+from tasks.tests.common import AsyncMockClient
 
 sub1 = "sub1"
 rg1 = "rg1"
@@ -63,8 +64,8 @@ class TestCacheUtils(IsolatedAsyncioTestCase):
         self.client_class = client_patch.start()
 
         environ[STORAGE_CONNECTION_SETTING] = "connection_string"
-
-        self.client: AsyncMock = await self.client_class.from_connection_string.return_value.__aenter__()
+        self.client = AsyncMockClient()
+        self.client_class.from_connection_string.return_value = self.client
 
     def tearDown(self) -> None:
         del environ[STORAGE_CONNECTION_SETTING]

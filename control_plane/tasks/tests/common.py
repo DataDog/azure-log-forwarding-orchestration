@@ -58,3 +58,11 @@ def mock(**kwargs: Any) -> Mock:
     for k, v in kwargs.items():
         setattr(m, k, v)
     return m
+
+
+def AsyncMockClient(**kwargs: Any) -> AsyncMock:
+    """An AsyncMock with the context manager methods set up to use as a client"""
+    m = AsyncMock(**kwargs)
+    m.__aenter__.return_value = m
+    m.__aexit__.return_value = None
+    return m

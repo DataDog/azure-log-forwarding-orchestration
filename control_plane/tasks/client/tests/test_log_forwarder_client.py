@@ -22,7 +22,7 @@ from cache.common import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
-from tasks.tests.common import AsyncTestCase
+from tasks.tests.common import AsyncMockClient, AsyncTestCase
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -76,11 +76,15 @@ class TestLogForwarderClient(AsyncTestCase):
 
         self.log = self.patch_path("tasks.client.log_forwarder_client.log")
 
+        self.container_client = AsyncMockClient()
+        self.container_client_class.from_connection_string.return_value = self.container_client
+        self.container_client.get_blob_client = MagicMock()
+        self.blob_client = AsyncMockClient()
+        self.container_client.get_blob_client.return_value = self.blob_client
+
     async def test_create_log_forwarder(self):
         # set up blob forwarder data
-        container_client = AsyncMock()
-        self.container_client_class.from_connection_string.return_value = container_client
-        (await (await container_client.__aenter__()).download_blob()).content_as_bytes.return_value = b"some data"
+        (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
             await self.client.create_log_forwarder(EAST_US, config_id)
@@ -187,10 +191,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 2, rg1, storage_account_name)
 
     async def test_get_blob_metrics_standard_execution(self):
-        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
-        container_client.get_blob_client = MagicMock()
-        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
-        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        res_str: AsyncMock = await (await self.blob_client.download_blob()).readall()
         decoded_str = MagicMock()
         res_str.decode = decoded_str
         decoded_str.return_value = "hi\nby"
@@ -200,11 +201,8 @@ class TestLogForwarderClient(AsyncTestCase):
             self.assertEqual(res, ["hi", "by", "hi", "by"])
 
     async def test_get_blob_metrics_missing_blob(self):
-        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
-        container_client.get_blob_client = MagicMock()
-        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
-        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
-        blob_client.download_blob.side_effect = [ResourceNotFoundError(), DEFAULT]
+        res_str: AsyncMock = await (await self.blob_client.download_blob()).readall()
+        self.blob_client.download_blob.side_effect = [ResourceNotFoundError(), DEFAULT]
         decoded_str = MagicMock()
         res_str.decode = decoded_str
         decoded_str.return_value = "hi\nby"
@@ -214,14 +212,11 @@ class TestLogForwarderClient(AsyncTestCase):
             self.assertEqual(res, ["hi", "by"])
 
     async def test_get_blob_timeout_retries(self):
-        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
-        container_client.get_blob_client = MagicMock()
-        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
-        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
+        res_str: AsyncMock = await (await self.blob_client.download_blob()).readall()
         # These side effects will allow the first call to download blob to succeed
         # The second call will fail with a timeout error
         # The method will retry three times until it succeeds
-        blob_client.download_blob.side_effect = [
+        self.blob_client.download_blob.side_effect = [
             DEFAULT,
             ServiceResponseTimeoutError("oops"),
             ServiceResponseTimeoutError("oops"),
@@ -235,14 +230,11 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             res = await client.get_blob_metrics("test")
             self.assertEqual(res, ["hi", "by", "hi", "by"])
-            self.assertEqual(blob_client.download_blob.call_count, 6)  # 1 call is from where res_str is set
+            self.assertEqual(self.blob_client.download_blob.call_count, 6)  # 1 call is from where res_str is set
 
     async def test_get_blob_max_retries(self):
-        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
-        container_client.get_blob_client = MagicMock()
-        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
-        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
-        blob_client.download_blob.side_effect = ServiceResponseTimeoutError("oops")
+        res_str: AsyncMock = await (await self.blob_client.download_blob()).readall()
+        self.blob_client.download_blob.side_effect = ServiceResponseTimeoutError("oops")
         decoded_str = MagicMock()
         res_str.decode = decoded_str
         decoded_str.return_value = "hi\nby"
@@ -251,16 +243,13 @@ class TestLogForwarderClient(AsyncTestCase):
             async with self.client as client:
                 await client.get_blob_metrics("test")
         self.assertEqual(
-            blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
+            self.blob_client.download_blob.call_count, (2 * MAX_ATTEMPS + 1)
         )  # 1 call is from where res_str is set
         self.assertIsInstance(ctx.exception.last_attempt.exception(), ServiceResponseTimeoutError)
 
     async def test_get_blob_unretryable_exception(self):
-        container_client: AsyncMock = await self.container_client_class.from_connection_string.return_value.__aenter__()
-        container_client.get_blob_client = MagicMock()
-        blob_client: AsyncMock = await container_client.get_blob_client.return_value.__aenter__()
-        res_str: AsyncMock = await (await blob_client.download_blob()).readall()
-        blob_client.download_blob.side_effect = FakeHttpError(402)
+        res_str: AsyncMock = await (await self.blob_client.download_blob()).readall()
+        self.blob_client.download_blob.side_effect = FakeHttpError(402)
         decoded_str = MagicMock()
         res_str.decode = decoded_str
         decoded_str.return_value = "hi\nby"
@@ -268,7 +257,7 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
                 await client.get_blob_metrics("test")
-        self.assertEqual(blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
+        self.assertEqual(self.blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
 
     async def test_submit_metrics_normal_execution(self):
         self.env.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})

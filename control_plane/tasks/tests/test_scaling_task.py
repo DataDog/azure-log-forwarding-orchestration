@@ -27,7 +27,7 @@ from tasks.scaling_task import (
     is_consistently_over_threshold,
     partition_resources_by_load,
 )
-from tasks.tests.common import TaskTestCase, UnexpectedException
+from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -48,9 +48,8 @@ class TestScalingTask(TaskTestCase):
 
     async def asyncSetUp(self) -> None:
         super().setUp()
-        client = AsyncMock()
-        self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = client
-        self.client = await client.__aenter__()
+        self.client = AsyncMockClient()
+        self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
 
         self.log = self.patch("log")
