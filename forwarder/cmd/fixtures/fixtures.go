@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"time"
@@ -15,8 +14,6 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
-	"gopkg.in/dnaeon/go-vcr.v3/cassette"
-	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
 
 func getContainers(ctx context.Context, client *storage.Client) ([]string, error) {
@@ -83,55 +80,35 @@ func getBlobContent(ctx context.Context, client *storage.Client, blob storage.Bl
 		return nil, fmt.Errorf("mkdir `%s`: %w", path.Dir(filePath), err)
 	}
 
-	var content []byte
+	f, err := os.Create(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
 	scanner := bufio.NewScanner(bytes.NewReader(*segment.Content))
 	counter := 0
 	for scanner.Scan() {
-		content = append(content, scanner.Bytes()...)
-		content = append(content, '\n')
+		_, err = f.Write(scanner.Bytes())
+		if err != nil {
+			return nil, err
+		}
+		_, err = f.WriteString("\n")
+		if err != nil {
+			return nil, err
+		}
 		counter++
 		if counter > 50 {
 			break
 		}
 	}
 
-	err = os.WriteFile(filePath, content, 0644)
-	if err != nil {
-		return nil, err
-	}
-
 	return segment.Content, nil
 }
 
-func deleteCassetteFile(logger *log.Entry, fixturePath string) {
-	err := os.Remove(fmt.Sprintf("%s.yaml", fixturePath))
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		logger.Fatalf("failed removing fixtures: %v", err)
-	}
-}
-
-func generateRunFixtures(ctx context.Context, logger *log.Entry, fixturePath string) {
-	deleteCassetteFile(logger, fixturePath)
-
-	rec, err := recorder.New(fixturePath)
-
-	if err != nil {
-		logger.Fatalf("failed creating recorder: %v", err)
-	}
-	defer rec.Stop()
-
-	rec.SetReplayableInteractions(false)
-
-	captureHook := func(i *cassette.Interaction) error {
-		delete(i.Request.Headers, "Authorization")
-		return nil
-	}
-	rec.AddHook(captureHook, recorder.AfterCaptureHook)
-
-	clientOptions := &azblob.ClientOptions{}
-	clientOptions.Transport = rec.GetDefaultClient()
+func generateRunFixtures(ctx context.Context, logger *log.Entry) {
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
-	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, clientOptions)
+	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
 		logger.Fatalf("error creating azure client: %v", err)
 	}
@@ -173,6 +150,5 @@ func main() {
 	if err != nil {
 		logger.Fatalf("error removing azurite fixtures path: %v", err)
 	}
-	runFixturePath := path.Join("cmd", "forwarder", "fixtures", "run")
-	generateRunFixtures(ctx, logger, runFixturePath)
+	generateRunFixtures(ctx, logger)
 }
