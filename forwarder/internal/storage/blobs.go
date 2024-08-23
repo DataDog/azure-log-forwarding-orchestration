@@ -96,7 +96,10 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		// Create new file when not found
 		if respErr.ErrorCode == "BlobNotFound" {
 			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, content, &uploadOptions)
-			return fmt.Errorf("blob not found, failed to upload blob: %w", err)
+			if err != nil {
+				return fmt.Errorf("blob not found, failed to upload blob: %w", err)
+			}
+			return nil
 		}
 	}
 

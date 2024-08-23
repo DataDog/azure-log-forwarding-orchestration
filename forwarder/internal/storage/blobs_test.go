@@ -280,7 +280,7 @@ func TestUploadBlob(t *testing.T) {
 		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 0, 1)
 
 		// THEN
-		assert.EqualError(t, err, downErr.Error())
+		assert.Contains(t, err.Error(), downErr.Error())
 	})
 }
 
