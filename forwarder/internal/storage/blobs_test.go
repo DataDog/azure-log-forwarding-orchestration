@@ -307,14 +307,14 @@ func TestDownloadRange(t *testing.T) {
 		containerName := "container"
 		blobName := "blob"
 		buffer := []byte("data")
-		want := errors.New("error")
+		want := errors.New("someError")
 
 		// WHEN
 		got := downloadBlob(t, context.Background(), containerName, blobName, buffer, 0, want)
 
 		// THEN
 		assert.NotNil(t, got)
-		assert.Equal(t, want, got)
+		assert.Contains(t, got.Error(), want.Error())
 	})
 }
 
