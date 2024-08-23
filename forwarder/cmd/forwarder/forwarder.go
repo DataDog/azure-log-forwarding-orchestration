@@ -38,7 +38,7 @@ func getContainers(ctx context.Context, client *storage.Client, containerNameCh 
 		}
 
 		if err != nil {
-			return err
+			return fmt.Errorf("getting next page of containers: %v", err)
 		}
 
 		if containerList != nil {
@@ -64,7 +64,7 @@ func getBlobs(ctx context.Context, client *storage.Client, containerName string,
 		}
 
 		if err != nil {
-			return err
+			return fmt.Errorf("getting next page of blobs for %s: %v", containerName, err)
 		}
 
 		if blobList != nil {
@@ -83,9 +83,9 @@ func getBlobContents(ctx context.Context, client *storage.Client, blob storage.B
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
 
-	current, downloadErr := client.DownloadRange(ctx, blob, 0)
-	if downloadErr != nil {
-		return downloadErr
+	current, err := client.DownloadRange(ctx, blob, 0)
+	if err != nil {
+		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
 	}
 
 	blobContentChannel <- current
