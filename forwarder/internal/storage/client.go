@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -46,7 +47,7 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 
 	resp, err := i.pager.NextPage(ctx)
 	if err != nil {
-		return i.nilValue, err
+		return i.nilValue, fmt.Errorf("getting next page: %w", err)
 	}
 
 	return i.getter(resp), nil

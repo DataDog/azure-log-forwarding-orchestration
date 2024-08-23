@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -51,7 +52,7 @@ func (c *Client) DownloadRange(ctx context.Context, blob Blob, offset int) (Blob
 
 	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
 	if err != nil {
-		return BlobSegment{}, err
+		return BlobSegment{}, fmt.Errorf("failed to download blob: %w", err)
 	}
 	return BlobSegment{
 		Name:      *blob.Item.Name,
@@ -95,12 +96,12 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		// Create new file when not found
 		if respErr.ErrorCode == "BlobNotFound" {
 			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, content, &uploadOptions)
-			return err
+			return fmt.Errorf("blob not found, failed to upload blob: %w", err)
 		}
 	}
 
 	if downErr != nil {
-		return downErr
+		return fmt.Errorf("failed to download blob: %w", downErr)
 	}
 
 	buffer, readErr := io.ReadAll(downloadResponse.Body)
@@ -112,5 +113,8 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	buffer = append(buffer, content...)
 
 	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to upload blob: %w", err)
+	}
+	return nil
 }
