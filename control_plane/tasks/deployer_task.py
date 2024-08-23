@@ -7,7 +7,6 @@ from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from types import TracebackType
 from typing import Self
-from uuid import uuid4
 
 # 3p
 from aiohttp import ClientSession
@@ -28,7 +27,7 @@ from tenacity import RetryError, retry, stop_after_attempt
 # project
 from cache.common import STORAGE_CONNECTION_SETTING, get_config_option, read_cache, write_cache
 from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
-from tasks.common import wait_for_resource
+from tasks.common import generate_unique_id, wait_for_resource
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"
@@ -38,7 +37,7 @@ MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
 
 PUBLIC_CONTAINER_URL = "google.com"
-SERVICE_PLAN_NAME = "dd-lfo-control"
+APP_SERVICE_PLAN_PREFIX = "dd-lfo-control"
 
 log = getLogger(DEPLOYER_NAME)
 log.setLevel(DEBUG)
@@ -51,8 +50,6 @@ class DeployerTask(Task):
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
 
-        self.uuid = str(uuid4())
-        self.uuid_parts = self.uuid.split("-")
         self.manifest_cache: ManifestCache = {}
         self.original_manifest_cache: ManifestCache = {}
         self.public_manifest: ManifestCache = {}
@@ -129,13 +126,12 @@ class DeployerTask(Task):
         if len(function_app_names) == 0:
             return
         try:
-            uuid_parts = str(uuid4()).split("-")
-            uuid_str = uuid_parts[0] + uuid_parts[1]
+            uuid_str = generate_unique_id()
             current_service_plans = self.web_client.app_service_plans.list_by_resource_group(self.resource_group)
             has_deployed = False
             async for service_plan in current_service_plans:
-                if SERVICE_PLAN_NAME in service_plan.name:  # type: ignore
-                    uuid_str = service_plan.name[len(SERVICE_PLAN_NAME) :]  # type: ignore
+                if service_plan.name.startswith(APP_SERVICE_PLAN_PREFIX):  # type: ignore
+                    uuid_str = service_plan.name.removeprefix(APP_SERVICE_PLAN_PREFIX)  # type: ignore
                     await gather(
                         *[
                             self.deploy_function_app(function_app_name, service_plan, uuid_str)
@@ -170,7 +166,7 @@ class DeployerTask(Task):
         current_apps = self.web_client.web_apps.list_by_resource_group(self.resource_group)
         already_deployed = False
         async for app in current_apps:
-            if function_app_name in app.name:  # type: ignore
+            if app.name.startswith(function_app_name):  # type: ignore
                 full_app_name: str = app.name  # type: ignore
                 function_app_data = await self.download_function_app_data(function_app_name)
                 await self.upload_function_app_data(full_app_name, function_app_data)
@@ -201,7 +197,7 @@ class DeployerTask(Task):
         return func_app_name_short + uuid_str
 
     def generate_app_service_plan_name(self, uuid_str: str) -> str:
-        return f"{SERVICE_PLAN_NAME}{uuid_str}"
+        return f"{APP_SERVICE_PLAN_PREFIX}{uuid_str}"
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def create_log_forwarder_app_service_plan(
