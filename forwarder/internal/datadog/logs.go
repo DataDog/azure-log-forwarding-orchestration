@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
@@ -43,11 +45,16 @@ func NewClient(logsApi LogsApiInterface) *Client {
 	}
 }
 
-func (c *Client) Close() error {
-	return c.Flush(context.Background())
+func (c *Client) Close(ctx context.Context) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
+	defer span.Finish(tracer.WithError(err))
+	return c.Flush(ctx)
 }
 
-func (c *Client) SubmitLog(ctx context.Context, log *logs.Log) error {
+func (c *Client) SubmitLog(ctx context.Context, log *logs.Log) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
+	defer span.Finish(tracer.WithError(err))
+
 	logItem, err := NewHTTPLogItem(log)
 	if err != nil {
 		return err
@@ -59,7 +66,10 @@ func (c *Client) SubmitLog(ctx context.Context, log *logs.Log) error {
 	return nil
 }
 
-func (c *Client) Flush(ctx context.Context) error {
+func (c *Client) Flush(ctx context.Context) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Flush")
+	defer span.Finish(tracer.WithError(err))
+
 	if len(c.logsBuffer) > 0 {
 		obj, resp, err := c.logsApi.SubmitLog(ctx, c.logsBuffer)
 		log.Printf("Response: %v", resp)
@@ -72,8 +82,9 @@ func (c *Client) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (c *Client) SubmitLogs(ctx context.Context, logs []*logs.Log) error {
-	var err error
+func (c *Client) SubmitLogs(ctx context.Context, logs []*logs.Log) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
+	defer span.Finish(tracer.WithError(err))
 	for _, log := range logs {
 		err = c.SubmitLog(ctx, log)
 		if err != nil {

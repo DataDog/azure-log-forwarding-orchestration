@@ -14,14 +14,12 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
-	testcontainers "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	testcontainers "github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func uploadBlobs(ctx context.Context, client *storage.Client) error {
@@ -53,7 +51,18 @@ func uploadBlobs(ctx context.Context, client *storage.Client) error {
 func TestRun(t *testing.T) {
 	// Integration test for the storage forwarder
 	// GIVEN
-	ctx := context.Background()
+	ctx := context.WithValue(
+		context.Background(),
+		datadog.ContextAPIKeys,
+		map[string]datadog.APIKey{
+			"apiKeyAuth": {
+				Key: os.Getenv("DD_API_KEY"),
+			},
+			"appKeyAuth": {
+				Key: os.Getenv("DD_APP_KEY"),
+			},
+		},
+	)
 	req := testcontainers.ContainerRequest{
 		Image:        "mcr.microsoft.com/azure-storage/azurite:latest",
 		ExposedPorts: []string{"10000/tcp", "10001/tcp", "10002/tcp"},
@@ -113,8 +122,6 @@ func TestRun(t *testing.T) {
 	buffer := bytes.NewBuffer(output)
 	logger := log.New()
 	logger.SetOutput(buffer)
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.test")
-	defer span.Finish()
 
 	datadogConfig := datadog.NewConfiguration()
 	apiClient := datadog.NewAPIClient(datadogConfig)

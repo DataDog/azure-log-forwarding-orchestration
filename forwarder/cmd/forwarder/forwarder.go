@@ -111,9 +111,9 @@ func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel 
 func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
-	eg, ctx := errgroup.WithContext(context.Background())
+	eg, ctx := errgroup.WithContext(ctx)
 
-	defer datadogClient.Close()
+	defer datadogClient.Close(ctx)
 
 	channelSize := 1000
 
@@ -132,7 +132,7 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 				return err
 			}
 		}
-		return nil
+		return datadogClient.Flush(ctx)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -197,7 +197,18 @@ func main() {
 	var err error
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
 	defer span.Finish(tracer.WithError(err))
-
+	ctx = context.WithValue(
+		ctx,
+		datadog.ContextAPIKeys,
+		map[string]datadog.APIKey{
+			"apiKeyAuth": {
+				Key: os.Getenv("DD_API_KEY"),
+			},
+			"appKeyAuth": {
+				Key: os.Getenv("DD_APP_KEY"),
+			},
+		},
+	)
 	start := time.Now()
 	// use JSONFormatter
 	log.SetFormatter(&log.JSONFormatter{})
