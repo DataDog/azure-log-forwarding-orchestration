@@ -120,13 +120,15 @@ func generateRunFixtures(ctx context.Context, logger *log.Entry) {
 		logger.Fatalf("error getting containers: %v", err)
 	}
 
+	now := time.Now()
+
 	for _, container := range containers {
 		blobs, err := getBlobs(ctx, client, container)
 		if err != nil {
 			logger.Fatalf("error getting blobs: %v", err)
 		}
 		for _, blob := range blobs {
-			if !storage.Current(blob, time.Now) {
+			if !storage.Current(blob, now) {
 				continue
 			}
 			logger.Infof("Blob: %s Container: %s", *blob.Item.Name, container)

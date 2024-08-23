@@ -114,11 +114,13 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 
 	blobCh := make(chan storage.Blob, channelSize)
 
+	currNow := now()
+
 	eg.Go(func() error {
 		defer close(blobContentCh)
 		blobsEg, ctx := errgroup.WithContext(ctx)
 		for blob := range blobCh {
-			if !storage.Current(blob, now) {
+			if !storage.Current(blob, currNow) {
 				continue
 			}
 			log.Printf("Downloading blob %s", *blob.Item.Name)

@@ -336,10 +336,11 @@ func TestCurrent(t *testing.T) {
 	t.Run("now is current", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		blob := getBlob(time.Now())
+		currTime := time.Now()
+		blob := getBlob(currTime)
 
 		// WHEN
-		current := storage.Current(blob, time.Now)
+		current := storage.Current(blob, currTime)
 
 		// THEN
 		assert.True(t, current)
@@ -348,10 +349,11 @@ func TestCurrent(t *testing.T) {
 	t.Run("an hour ago is current", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		blob := getBlob(time.Now().Add(-1 * time.Hour))
+		currTime := time.Now()
+		blob := getBlob(currTime.Add(-1 * time.Hour))
 
 		// WHEN
-		current := storage.Current(blob, time.Now)
+		current := storage.Current(blob, currTime)
 
 		// THEN
 		assert.True(t, current)
@@ -360,10 +362,11 @@ func TestCurrent(t *testing.T) {
 	t.Run("three hours ago is not current", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		blob := getBlob(time.Now().Add(-3 * time.Hour))
+		currTime := time.Now()
+		blob := getBlob(currTime.Add(-3 * time.Hour))
 
 		// WHEN
-		current := storage.Current(blob, time.Now)
+		current := storage.Current(blob, currTime)
 
 		// THEN
 		assert.False(t, current)

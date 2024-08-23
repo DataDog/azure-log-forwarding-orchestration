@@ -10,9 +10,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
+
+const MinusTwoHours = -2 * time.Hour
 
 type Blob struct {
 	Item      *container.BlobItem
@@ -26,8 +27,8 @@ type BlobSegment struct {
 	Offset    int
 }
 
-func Current(blob Blob, now customtime.Now) bool {
-	return blob.Item.Properties.CreationTime.After(now().Add(-2 * time.Hour))
+func Current(blob Blob, now time.Time) bool {
+	return blob.Item.Properties.CreationTime.After(now.Add(MinusTwoHours))
 }
 
 func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
