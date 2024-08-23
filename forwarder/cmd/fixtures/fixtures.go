@@ -80,7 +80,7 @@ func getBlobContent(ctx context.Context, client *storage.Client, blob storage.Bl
 
 	err = os.MkdirAll(path.Dir(filePath), 0755)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("mkdir `%s`: %w", path.Dir(filePath), err)
 	}
 
 	var content []byte
