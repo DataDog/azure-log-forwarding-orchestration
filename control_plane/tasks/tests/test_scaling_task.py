@@ -6,7 +6,6 @@ from os import environ
 from typing import Any
 from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, call, patch
-from uuid import UUID
 
 # project
 from cache.assignment_cache import (
@@ -28,7 +27,7 @@ from tasks.scaling_task import (
     is_consistently_over_threshold,
     partition_resources_by_load,
 )
-from tasks.tests.common import TaskTestCase, UnexpectedException
+from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -36,7 +35,6 @@ WEST_US = "westus"
 RG1 = "test_lfo"
 
 
-NEW_UUID = "04cb0e0b-f268-4349-aa32-93a5885365f5"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
 
@@ -50,17 +48,16 @@ class TestScalingTask(TaskTestCase):
 
     async def asyncSetUp(self) -> None:
         super().setUp()
-        client = AsyncMock()
-        self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = client
-        self.client = await client.__aenter__()
+        self.client = AsyncMockClient()
+        self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
 
         self.log = self.patch("log")
-        self.uuid = self.patch("uuid4")
+        self.generate_unique_id = self.patch("generate_unique_id")
         p = patch.dict(environ, {"RESOURCE_GROUP": RG1})
         p.start()
         self.addCleanup(p.stop)
-        self.uuid.return_value = UUID(NEW_UUID)
+        self.generate_unique_id.return_value = NEW_LOG_FORWARDER_ID
 
     @property
     def cache(self) -> AssignmentCache:

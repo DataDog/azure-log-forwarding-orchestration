@@ -15,4 +15,4 @@ python -m coverage run -m pytest ./control_plane
 python -m coverage xml --skip-empty -o ci/control_plane_coverage.xml
 
 : generate coverage report in markdown
-python -m pycobertura show --format markdown ci/control_plane_coverage.xml > ci/control_plane_coverage.md
+python -m pycobertura show --format markdown ci/control_plane_coverage.xml | grep -v '100.00%' > ci/control_plane_coverage.md

@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any
-from uuid import uuid4
 
 # 3p
 from azure.core.exceptions import HttpResponseError
@@ -25,7 +24,7 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import average, now
+from tasks.common import average, generate_unique_id, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
@@ -125,7 +124,7 @@ class ScalingTask(Task):
     async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
         """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
-        config_id = str(uuid4())[-12:]  # take the last section since we are length limited
+        config_id = generate_unique_id()
         try:
             config_type = await client.create_log_forwarder(region, config_id)
             return LogForwarder(config_id, config_type)
