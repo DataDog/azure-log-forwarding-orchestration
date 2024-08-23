@@ -412,7 +412,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
             return {resource.name.removeprefix(prefix) for resource in it if resource.name.startswith(prefix)}
 
         return (
-            _get_forwarder_config_ids(jobs, CONTAINER_APP_PREFIX)  # type: ignore
-            | _get_forwarder_config_ids(envs, MANAGED_ENVIRONMENT_PREFIX)  # type: ignore
-            | _get_forwarder_config_ids(storage_accounts, STORAGE_ACCOUNT_PREFIX)  # type: ignore
+            _get_forwarder_config_ids(cast(Iterable[Resource], jobs), CONTAINER_APP_PREFIX)
+            | _get_forwarder_config_ids(cast(Iterable[Resource], envs), MANAGED_ENVIRONMENT_PREFIX)
+            | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), STORAGE_ACCOUNT_PREFIX)
         )
