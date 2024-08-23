@@ -129,7 +129,33 @@ class DeployerTask(Task):
         if len(function_app_names) == 0:
             return
         try:
-            await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
+            uuid_parts = str(uuid4()).split("-")
+            uuid_str = uuid_parts[0] + uuid_parts[1]
+            current_service_plans = self.web_client.app_service_plans.list_by_resource_group(self.resource_group)
+            has_deployed = False
+            async for service_plan in current_service_plans:
+                if SERVICE_PLAN_NAME in service_plan.name:  # type: ignore
+                    uuid_str = service_plan.name[len(SERVICE_PLAN_NAME) :]  # type: ignore
+                    await gather(
+                        *[
+                            self.deploy_function_app(function_app_name, service_plan, uuid_str)
+                            for function_app_name in function_app_names
+                        ]
+                    )
+                    has_deployed = True
+                    break
+            if not has_deployed:
+                service_plan = await wait_for_resource(
+                    *await self.create_log_forwarder_app_service_plan(
+                        self.region, self.generate_app_service_plan_name(uuid_str)
+                    )
+                )
+                await gather(
+                    *[
+                        self.deploy_function_app(function_app_name, service_plan, uuid_str)
+                        for function_app_name in function_app_names
+                    ]
+                )
         except RetryError:
             log.error("Error deploying function apps")
 
@@ -140,7 +166,7 @@ class DeployerTask(Task):
             self.manifest_cache[container_app] = self.public_manifest[container_app]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def deploy_function_app(self, function_app_name: str) -> None:
+    async def deploy_function_app(self, function_app_name: str, service_plan: AppServicePlan, uuid_str: str) -> None:
         current_apps = self.web_client.web_apps.list_by_resource_group(self.resource_group)
         already_deployed = False
         async for app in current_apps:
@@ -151,29 +177,18 @@ class DeployerTask(Task):
                 already_deployed = True
                 break
         if not already_deployed:
-            current_service_plans = self.web_client.app_service_plans.list_by_resource_group(self.resource_group)
-            uuid_parts = str(uuid4()).split("-")
-            uuid_str = uuid_parts[0] + uuid_parts[1]
-            async for service_plan in current_service_plans:
-                if SERVICE_PLAN_NAME in service_plan.name:  # type: ignore
-                    uuid_str = service_plan.name[len(SERVICE_PLAN_NAME) :]  # type: ignore
-                    break
             _, function_app_data = await gather(
-                self.create_or_update_function_app(function_app_name, uuid_str),
+                self.create_or_update_function_app(function_app_name, uuid_str, service_plan),
                 self.download_function_app_data(function_app_name),
             )
             await self.upload_function_app_data(
                 self.get_full_function_app_name(function_app_name, uuid_str), function_app_data
             )
-
         self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
 
-    async def create_or_update_function_app(self, function_app_name: str, uuid_str: str) -> None:
-        service_plan = await wait_for_resource(
-            *await self.create_log_forwarder_app_service_plan(
-                self.region, self.generate_app_service_plan_name(uuid_str)
-            )
-        )
+    async def create_or_update_function_app(
+        self, function_app_name: str, uuid_str: str, service_plan: AppServicePlan
+    ) -> None:
         await wait_for_resource(
             *await self.create_log_forwarder_function_app(
                 self.region,
