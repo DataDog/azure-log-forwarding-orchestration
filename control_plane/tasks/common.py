@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from math import inf
 from typing import Any, TypeVar
+from uuid import uuid4
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
@@ -38,3 +39,13 @@ async def wait_for_resource(
     )(confirm)()
 
     return res
+
+
+def generate_unique_id() -> str:
+    """Generate a unique ID which is 12 characters long using hex characters
+
+    Example:
+    >>> generate_unique_id()
+    "c5653797a664"
+    """
+    return str(uuid4())[:12]
