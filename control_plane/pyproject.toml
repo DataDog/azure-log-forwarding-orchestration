@@ -24,7 +24,6 @@ dev = [
     "coverage==7.4.4",
     "pycobertura==3.3.2",
     "stickytape==0.2.1",
-    "toml==0.10.2",
     "mypy==1.10",
     "ruff==0.5.4",
     "types-jsonschema==4.22.0.20240610",
