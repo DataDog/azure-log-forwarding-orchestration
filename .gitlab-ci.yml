@@ -63,9 +63,9 @@ build:
     - ci/scripts/control_plane/build.sh
 # ------------- FORWARDER -------------
 forwarder-tests:
-  image: $CI_IMAGE
+  image: $GO_CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ["arch:amd64", "runner:docker"]
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
