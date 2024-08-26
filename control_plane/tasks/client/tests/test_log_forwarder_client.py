@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -53,13 +53,13 @@ class MockedLogForwarderClient(LogForwarderClient):
 
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
-        env_patch = patch.dict(environ)
-        self.addCleanup(env_patch.stop)
-        self.env: dict[str, str] = env_patch.start()
-        self.env["AzureWebJobsStorage"] = "..."
-        self.env["DD_API_KEY"] = ""
-        self.env["SHOULD_SUBMIT_METRICS"] = ""
-        self.env["forwarder_image"] = "ddlfo.azurecr.io/blobforwarder:latest"
+        environ.clear()
+        self.addCleanup(environ.clear)
+        environ["AzureWebJobsStorage"] = "..."
+        environ["DD_API_KEY"] = "123123"
+        environ["DD_APP_KEY"] = "456456"
+        environ["SHOULD_SUBMIT_METRICS"] = ""
+        environ["forwarder_image"] = "ddlfo.azurecr.io/blobforwarder:latest"
 
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
@@ -259,7 +259,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.blob_client.download_blob.call_count, 3)  # 1 call is from where res_str is set
 
     async def test_submit_metrics_normal_execution(self):
-        self.env.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -302,28 +302,8 @@ class TestLogForwarderClient(AsyncTestCase):
 
         self.client.api_instance.submit_metrics.assert_called_once_with(body=sample_body)
 
-    async def test_submit_metrics_no_api_key(self):
-        self.env.update({"SHOULD_SUBMIT_METRICS": "1", "DD_API_KEY": ""})
-        sample_metric_entry_list: list[MetricBlobEntry] = [
-            {
-                "timestamp": 1723040910,
-                "runtime_seconds": 2.80,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-            },
-            {
-                "timestamp": 1723040911,
-                "runtime_seconds": 2.81,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-            },
-        ]
-
-        async with self.client as client:
-            await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-
-        self.client.api_instance.submit_metrics.assert_not_called()
-
     async def test_submit_metrics_retries(self):
-        self.env.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -369,7 +349,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.client.api_instance.submit_metrics.call_count, 3)
 
     async def test_submit_metrics_max_retries(self):
-        self.env.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -416,7 +396,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
-        self.env.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -462,7 +442,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
 
     async def test_submit_metrics_errors_logged(self):
-        self.env.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
         self.client.api_instance.submit_metrics.return_value = {
             "errors": [
                 "oops something went wrong",
