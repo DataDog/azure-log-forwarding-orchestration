@@ -255,7 +255,7 @@ class ScalingTask(Task):
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
             self.assignment_cache[subscription_id][region]["resources"]
         )
-        if not new_resources or not forwarder_metrics:
+        if not new_resources or not forwarder_metrics:  # no new resources or no forwarders
             return
 
         # any forwarders without metrics we should not add more resources to, there may be something wrong
@@ -311,8 +311,13 @@ class ScalingTask(Task):
                 log.warning("No valid metrics found for forwarder %s", config_id)
             self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
-        except HttpResponseError:
-            log.exception("Recieved azure HTTP error: ")
+        except HttpResponseError as e:
+            log.error(
+                "Unable to fetch metrics for forwarder %s.\nResponse Code: %s\nError: %s",
+                config_id,
+                e.status_code,
+                e.error,
+            )
             return []
         except RetryError:
             log.error("Max retries attempted")
