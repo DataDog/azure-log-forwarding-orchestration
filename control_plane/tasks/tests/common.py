@@ -1,9 +1,12 @@
 # stdlib
 from collections.abc import AsyncIterable, Callable
+from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
 
+# project
 from cache.common import InvalidCacheError
 
 
@@ -30,7 +33,8 @@ class TaskTestCase(AsyncTestCase):
     def setUp(self) -> None:
         self.credential = self.patch_path("tasks.task.DefaultAzureCredential")
         self.credential.side_effect = AsyncMock
-        self.write_cache: AsyncMock = self.patch("write_cache")
+        with suppress(AttributeError):
+            self.write_cache: AsyncMock = self.patch("write_cache")
 
     def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], T | None]) -> T:
         self.write_cache.assert_called_with(cache_name, ANY)
@@ -66,3 +70,13 @@ def AsyncMockClient(**kwargs: Any) -> AsyncMock:
     m.__aenter__.return_value = m
     m.__aexit__.return_value = None
     return m
+
+
+@dataclass(frozen=True)
+class AzureModelMatcher:
+    expected: dict[str, Any]
+
+    def __eq__(self, other: Any) -> bool:
+        with suppress(Exception):
+            return other.as_dict() == self.expected
+        return False

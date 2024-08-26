@@ -1,27 +1,22 @@
 # stdlib
 from json import dumps
+from os import environ
 from typing import Final
-from unittest.mock import ANY, AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 # 3p
 from azure.mgmt.monitor.models import CategoryType
-from azure.mgmt.monitor.v2021_05_01_preview.models import DiagnosticSettingsResource
 
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
-from cache.diagnostic_settings_cache import (
-    DIAGNOSTIC_SETTINGS_CACHE_BLOB,
-    DiagnosticSettingsCache,
-    deserialize_diagnostic_settings_cache,
-)
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_NAME,
     DiagnosticSettingsTask,
 )
-from tasks.tests.common import TaskTestCase, UnexpectedException, async_generator, mock
+from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator, mock
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"
@@ -42,19 +37,21 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories: Mock = client.diagnostic_settings_category.list
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
         client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
-        self.resource_group = "lfo"
 
-    async def run_diagnostic_settings_task(
-        self, assignment_cache: AssignmentCache, diagnostic_settings_cache: DiagnosticSettingsCache
-    ):
-        async with DiagnosticSettingsTask(
-            dumps(assignment_cache), dumps(diagnostic_settings_cache), self.resource_group
-        ) as task:
+        env = patch.dict(environ, {"RESOURCE_GROUP": "lfo"})
+        env.start()
+        self.addCleanup(env.stop)
+
+    async def run_diagnostic_settings_task(self, assignment_cache: AssignmentCache):
+        async with DiagnosticSettingsTask(dumps(assignment_cache)) as task:
             await task.run()
 
-    @property
-    def cache(self) -> DiagnosticSettingsCache:
-        return self.cache_value(DIAGNOSTIC_SETTINGS_CACHE_BLOB, deserialize_diagnostic_settings_cache)
+    def test_malformed_resources_cache_errors_in_constructor(self):
+        with self.assertRaises(InvalidCacheError) as e:
+            DiagnosticSettingsTask("malformed")
+        self.assertEqual(
+            str(e.exception), "Assignment Cache is in an invalid format, failing this task until it is valid"
+        )
 
     async def test_task_adds_missing_settings(self):
         self.list_diagnostic_settings.return_value = async_generator()
@@ -71,27 +68,19 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            diagnostic_settings_cache={},
         )
 
         # check the diagnostic setting was created
         self.create_or_update_setting.assert_awaited_once_with(
             resource_id1,
             "datadog_log_forwarding_bc666ef914ec",
-            ANY,  # the azure sdk doesnt implement __eq__ so we have to check it separarely after
+            AzureModelMatcher(
+                {
+                    "logs": [{"category": "cool_logs", "enabled": True}],
+                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                }
+            ),
         )
-        diagnostic_setting: DiagnosticSettingsResource = self.create_or_update_setting.call_args[0][2]
-        self.assertEqual(
-            diagnostic_setting.as_dict(),
-            {
-                "logs": [{"category": "cool_logs", "enabled": True}],
-                "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
-            },
-        )
-
-        # check the cache was updated
-        expected_cache: DiagnosticSettingsCache = {sub_id1: {resource_id1: config_id1}}
-        self.assertEqual(self.cache, expected_cache)
 
     async def test_task_leaves_existing_settings_unchanged(self):
         config_id = "3168b2251a45"
@@ -110,38 +99,69 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            diagnostic_settings_cache={sub_id1: {resource_id1: config_id1}},
         )
         self.create_or_update_setting.assert_not_awaited()
-        self.write_cache.assert_not_awaited()
 
-    def test_malformed_resources_cache_errors_in_constructor(self):
-        with self.assertRaises(InvalidCacheError) as e:
-            DiagnosticSettingsTask("malformed", "{}", "rg")
-        self.assertEqual(
-            str(e.exception), "Assignment Cache is in an invalid format, failing this task until it is valid"
+    async def test_task_updates_incorrect_settings(self):
+        self.list_diagnostic_settings.return_value = async_generator(
+            mock(name="datadog_log_forwarding_bc666ef914ec", storage_account_id="wrong_storage_account_id", logs=None),
+        )
+        self.list_diagnostic_settings_categories.return_value = async_generator(
+            mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
-    async def test_unexpected_failure_skips_cache_write(self):
-        self.patch("MonitorManagementClient").side_effect = UnexpectedException("unexpected")
-        write_caches = self.patch("DiagnosticSettingsTask.write_caches")
-        with self.assertRaises(UnexpectedException):
-            async with DiagnosticSettingsTask(
-                dumps(
-                    {
-                        sub_id1: {
-                            region1: {
-                                "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
-                                "resources": {resource_id1: config_id1},
-                            }
-                        }
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
                     }
-                ),
-                dumps({sub_id1: {resource_id1: config_id1}}),
-                self.resource_group,
-            ) as task:
-                # change the cache so there is something to write
-                task.diagnostic_settings_cache = {}
-                await task.run()
+                }
+            },
+        )
 
-        write_caches.assert_not_awaited()
+        # check the diagnostic setting was created
+        self.create_or_update_setting.assert_awaited_once_with(
+            resource_id1,
+            "datadog_log_forwarding_bc666ef914ec",
+            AzureModelMatcher(
+                {
+                    "logs": [{"category": "cool_logs", "enabled": True}],
+                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                }
+            ),
+        )
+
+    async def test_task_uses_already_found_settings_instead_of_requerying(self):
+        self.list_diagnostic_settings.return_value = async_generator(
+            mock(
+                name="datadog_log_forwarding_bc666ef914ec",
+                storage_account_id="wrong_storage_account_id",
+                logs=[mock(category="cool_logs")],
+            ),
+        )
+        self.list_diagnostic_settings_categories.side_effect = AssertionError("Should not be called")
+
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+        )
+
+        # check the diagnostic setting was created
+        self.create_or_update_setting.assert_awaited_once_with(
+            resource_id1,
+            "datadog_log_forwarding_bc666ef914ec",
+            AzureModelMatcher(
+                {
+                    "logs": [{"category": "cool_logs", "enabled": True}],
+                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                }
+            ),
+        )
