@@ -65,7 +65,7 @@ build:
 forwarder-tests:
   image: $GO_CI_IMAGE
   stage: test
-  tags: ["arch:amd64", "runner:docker"]
+  tags: ["runner:docker"]
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
