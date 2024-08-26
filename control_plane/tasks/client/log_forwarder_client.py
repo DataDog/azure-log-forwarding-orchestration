@@ -1,12 +1,12 @@
 # stdlib
 from asyncio import Lock, create_task, gather
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Any, Self, TypeAlias, TypeVar, cast
+from typing import Any, Protocol, Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -57,6 +57,9 @@ from tenacity import RetryCallState, retry, stop_after_attempt
 
 # project
 from cache.common import (
+    CONTAINER_APP_PREFIX,
+    MANAGED_ENVIRONMENT_PREFIX,
+    STORAGE_ACCOUNT_PREFIX,
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
     get_config_option,
@@ -94,6 +97,14 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
         if isinstance(e, RequestTimeout | ServiceResponseTimeoutError):
             return True
     return False
+
+
+async def collect(it: AsyncIterable[T]) -> list[T]:
+    return [item async for item in it]
+
+
+class Resource(Protocol):
+    name: str
 
 
 ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
@@ -388,4 +399,20 @@ class LogForwarderClient(AbstractAsyncContextManager):
                     ),
                 ]
             ),
+        )
+
+    async def list_log_forwarder_ids(self) -> set[str]:
+        jobs, envs, storage_accounts = await gather(
+            collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group)),
+            collect(self.container_apps_client.managed_environments.list_by_resource_group(self.resource_group)),
+            collect(self.storage_client.storage_accounts.list_by_resource_group(self.resource_group)),
+        )
+
+        def _get_forwarder_config_ids(it: Iterable[Resource], prefix: str) -> set[str]:
+            return {resource.name.removeprefix(prefix) for resource in it if resource.name.startswith(prefix)}
+
+        return (
+            _get_forwarder_config_ids(cast(Iterable[Resource], jobs), CONTAINER_APP_PREFIX)
+            | _get_forwarder_config_ids(cast(Iterable[Resource], envs), MANAGED_ENVIRONMENT_PREFIX)
+            | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), STORAGE_ACCOUNT_PREFIX)
         )

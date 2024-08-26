@@ -114,6 +114,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
+        self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
 
         self.assertEqual(self.cache, {SUB_ID1: {}})
@@ -209,6 +210,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -285,6 +287,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
         self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_called()
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
@@ -312,6 +315,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -361,6 +365,9 @@ class TestScalingTask(TaskTestCase):
                 },
             },
         )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
 
         expected_cache: AssignmentCache = {
             SUB_ID1: {
@@ -492,6 +499,9 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_not_awaited()
+
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -547,6 +557,31 @@ class TestScalingTask(TaskTestCase):
             "Forwarder %s only has one resource but is overwhelmed", OLD_LOG_FORWARDER_ID
         )
 
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
+
+        self.write_cache.assert_not_awaited()
+
+    async def test_orphaned_forwarders_are_cleaned_up(self):
+        self.client.list_log_forwarder_ids.return_value = {OLD_LOG_FORWARDER_ID, NEW_LOG_FORWARDER_ID}
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_awaited_once_with(
+            NEW_LOG_FORWARDER_ID, raise_error=False, max_attempts=1
+        )
         self.write_cache.assert_not_awaited()
 
 
