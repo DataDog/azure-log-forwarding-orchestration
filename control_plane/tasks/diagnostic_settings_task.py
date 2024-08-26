@@ -113,7 +113,8 @@ class DiagnosticSettingsTask(Task):
             )
 
     async def update_subscription_settings(self, subscription_id: str, client: MonitorManagementClient) -> None:
-        # TODO client.subscription_diagnostic_settings.list()
+        # TODO: do we want to do anything with management group diagnostic settings?
+        # i.e. client.subscription_diagnostic_settings.list()
         return
 
     async def process_resource(
