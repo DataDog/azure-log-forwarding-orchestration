@@ -14,7 +14,7 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
-const BUFFER_SIZE = 100
+const BufferSize = 100
 
 func NewHTTPLogItem(log *logs.Log) (datadogV2.HTTPLogItem, error) {
 	message, err := log.Json.MarshalJSON()
@@ -30,6 +30,9 @@ func NewHTTPLogItem(log *logs.Log) (datadogV2.HTTPLogItem, error) {
 	return logItem, nil
 }
 
+// LogsApiInterface wraps around the datadogV2.LogsApi struct
+//
+//go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
 type LogsApiInterface interface {
 	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
 }
@@ -60,7 +63,7 @@ func (c *Client) SubmitLog(ctx context.Context, log *logs.Log) (err error) {
 		return err
 	}
 	c.logsBuffer = append(c.logsBuffer, logItem)
-	if len(c.logsBuffer) >= BUFFER_SIZE {
+	if len(c.logsBuffer) >= BufferSize {
 		return c.Flush(ctx)
 	}
 	return nil

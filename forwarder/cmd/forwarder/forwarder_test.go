@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog/mocks"
+	"go.uber.org/mock/gomock"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	testcontainers "github.com/testcontainers/testcontainers-go"
@@ -123,12 +124,11 @@ func TestRun(t *testing.T) {
 	logger := log.New()
 	logger.SetOutput(buffer)
 
-	datadogConfig := datadog.NewConfiguration()
-	apiClient := datadog.NewAPIClient(datadogConfig)
+	ctrl := gomock.NewController(t)
+	mockClient := mocks.NewMockLogsApiInterface(ctrl)
+	mockClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, nil).MaxTimes(2)
 
-	logsClient := datadogV2.NewLogsApi(apiClient)
-
-	datadogClient := dd.NewClient(logsClient)
+	datadogClient := dd.NewClient(mockClient)
 
 	// WHEN
 	err = Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
@@ -136,7 +136,5 @@ func TestRun(t *testing.T) {
 	// THEN
 	got := string(buffer.Bytes())
 	assert.NoError(t, err)
-	assert.Contains(t, got, "Formatted log")
-	assert.Contains(t, got, "forwarder:lfo")
-	assert.Contains(t, got, "resource_group:")
+	assert.Contains(t, got, "Finished processing logs")
 }

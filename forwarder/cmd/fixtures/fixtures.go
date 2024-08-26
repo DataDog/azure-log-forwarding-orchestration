@@ -11,6 +11,8 @@ import (
 	"path"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	log "github.com/sirupsen/logrus"
@@ -90,7 +92,8 @@ func getBlobContent(ctx context.Context, client *storage.Client, blob storage.Bl
 		content = append(content, scanner.Bytes()...)
 		content = append(content, '\n')
 		counter++
-		if counter > 50 {
+		// Ensure we make at least two calls to DD per blob
+		if counter > datadog.BufferSize+1 {
 			break
 		}
 	}
