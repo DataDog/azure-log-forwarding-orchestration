@@ -113,7 +113,7 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
 
-        self.assertEqual(self.cache, {SUB_ID1: {}})
+        self.assertEqual(self.cache, {})
 
     async def test_regions_added_and_deleted(self):
         await self.run_scaling_task(
