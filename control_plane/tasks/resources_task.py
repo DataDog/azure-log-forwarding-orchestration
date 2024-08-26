@@ -23,6 +23,7 @@ DISALLOWED_REGIONS = {"global"}
 DISALLOWED_RESOURCE_TYPES = {
     # resources without diagnostic settings:
     "microsoft.compute/snapshots",
+    "microsoft.alertsmanagement/prometheusrulegroups",
 }
 
 
