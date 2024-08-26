@@ -316,7 +316,7 @@ class ScalingTask(Task):
                 "Unable to fetch metrics for forwarder %s.\nResponse Code: %s\nError: %s",
                 config_id,
                 e.status_code,
-                e.error,
+                e.error or e.reason or e.message,
             )
             return []
         except RetryError:
