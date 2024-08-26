@@ -1,5 +1,5 @@
 # stdlib
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterable, Awaitable, Callable
 from datetime import datetime
 from math import inf
 from typing import Any, TypeVar
@@ -49,3 +49,7 @@ def generate_unique_id() -> str:
     "c5653797a664"
     """
     return str(uuid4())[:12]
+
+
+async def collect(it: AsyncIterable[T]) -> list[T]:
+    return [item async for item in it]
