@@ -48,6 +48,8 @@ class TaskTestCase(AsyncTestCase):
 
 async def async_generator(*items: T) -> AsyncIterable[T]:
     for x in items:
+        if isinstance(x, Exception):
+            raise x
         yield x
 
 
