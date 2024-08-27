@@ -19,14 +19,6 @@ RESOURCES_TASK_NAME = "resources_task"
 log = getLogger(RESOURCES_TASK_NAME)
 
 
-DISALLOWED_REGIONS = {"global"}
-DISALLOWED_RESOURCE_TYPES = {
-    # resources without diagnostic settings:
-    "microsoft.compute/snapshots",
-    "microsoft.alertsmanagement/prometheusrulegroups",
-}
-
-
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
@@ -54,9 +46,8 @@ class ResourcesTask(Task):
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
             async for r in client.resources.list():
-                region = cast(str, r.location).lower()
-                resource_type = cast(str, r.type).lower()
-                if region in DISALLOWED_REGIONS or resource_type in DISALLOWED_RESOURCE_TYPES:
+                region = cast(str, r.location)
+                if region == "global":
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id))
                 resource_count += 1
