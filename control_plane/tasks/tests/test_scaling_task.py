@@ -419,8 +419,10 @@ class TestScalingTask(TaskTestCase):
                 SUB_ID1: {
                     EAST_US: {
                         "resources": {
-                            resource: OLD_LOG_FORWARDER_ID
-                            for resource in ("resource1", "resource2", "resource3", "resource4")
+                            "resource1": OLD_LOG_FORWARDER_ID,
+                            "resource2": OLD_LOG_FORWARDER_ID,
+                            "resource3": OLD_LOG_FORWARDER_ID,
+                            "resource4": OLD_LOG_FORWARDER_ID,
                         },
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     }

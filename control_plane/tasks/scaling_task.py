@@ -65,7 +65,12 @@ def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[st
     load_so_far = 0
     first_half: list[str] = []
     second_half: list[str] = []
-    for resource, load in sorted(resource_loads.items(), key=lambda kv: kv[1]):
+
+    def _sort_key(kv: tuple[str, int]) -> tuple[int, str]:
+        """Sort by load, then alphabetically if we have a tie"""
+        return kv[1], kv[0]
+
+    for resource, load in sorted(resource_loads.items(), key=_sort_key):
         load_so_far += load
         if load_so_far <= half_load:
             first_half.append(resource)
