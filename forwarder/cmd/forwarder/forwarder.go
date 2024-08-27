@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"time"
+
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -27,14 +28,9 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-type MetricEntry struct {
-	Timestamp          int64            `json:"timestamp"`
-	RuntimeSeconds     float64          `json:"runtime_seconds"`
-	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
-}
-
-func getContainers(ctx context.Context, client *storage.Client, containerNameCh chan<- string) error {
-	// Get the containers from the storage account
+func getContainers(ctx context.Context, client *storage.Client, containerNameCh chan<- string) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getContainers")
+	defer span.Finish(tracer.WithError(err))
 	defer close(containerNameCh)
 	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 
@@ -60,8 +56,9 @@ func getContainers(ctx context.Context, client *storage.Client, containerNameCh 
 	}
 }
 
-func getBlobs(ctx context.Context, client *storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
-	// Get the blobs from the container
+func getBlobs(ctx context.Context, client *storage.Client, containerName string, blobChannel chan<- storage.Blob) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getLogsFromBlob")
+	defer span.Finish(tracer.WithError(err))
 	iter := client.ListBlobs(ctx, containerName)
 
 	for {
@@ -101,6 +98,8 @@ func getBlobContents(ctx context.Context, client *storage.Client, blob storage.B
 }
 
 func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel chan<- []byte) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getLogsFromBlob")
+	defer span.Finish(tracer.WithError(err))
 	scanner := bufio.NewScanner(bytes.NewReader(*blob.Content))
 	for scanner.Scan() {
 		logsChannel <- []byte(scanner.Text())
@@ -108,31 +107,55 @@ func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel 
 	return nil
 }
 
+func getMetricFileName(now time.Time) string {
+	return now.UTC().Format("2006-01-02-15") + ".json"
+}
+
 func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
-	eg, ctx := errgroup.WithContext(ctx)
+
+	start := time.Now()
+
+	eg, egCtx := errgroup.WithContext(ctx)
 
 	defer datadogClient.Close(ctx)
 
 	channelSize := 1000
 
+	logCh := make(chan *logs.Log, channelSize)
+
+	resourceVolumes := make(map[string]int64)
+
+	eg.Go(func() error {
+		for currLog := range logCh {
+			_, ok := resourceVolumes[currLog.ResourceId]
+			if !ok {
+				resourceVolumes[currLog.ResourceId] = 0
+			}
+			resourceVolumes[currLog.ResourceId]++
+		}
+		return nil
+	})
+
 	rawLogCh := make(chan []byte, channelSize)
 
 	eg.Go(func() error {
+		defer close(logCh)
 		for rawLog := range rawLogCh {
 			formattedLog, err := logs.NewLog(rawLog)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
 				return err
 			}
-			err = datadogClient.SubmitLog(ctx, formattedLog)
+			logCh <- formattedLog
+			err = datadogClient.SubmitLog(egCtx, formattedLog)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error submitting log: %v", err))
 				return err
 			}
 		}
-		return datadogClient.Flush(ctx)
+		return datadogClient.Flush(egCtx)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -140,7 +163,7 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	eg.Go(func() error {
 		defer close(rawLogCh)
 		for blobContent := range blobContentCh {
-			err := getLogsFromBlob(ctx, blobContent, rawLogCh)
+			err := getLogsFromBlob(egCtx, blobContent, rawLogCh)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
 				return err
@@ -153,13 +176,13 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 
 	eg.Go(func() error {
 		defer close(blobContentCh)
-		blobsEg, ctx := errgroup.WithContext(ctx)
+		blobsEg, newCtx := errgroup.WithContext(egCtx)
 		for blob := range blobCh {
 			if !storage.Current(blob, now) {
 				continue
 			}
 			log.Printf("Downloading blob %s", *blob.Item.Name)
-			blobsEg.Go(func() error { return getBlobContents(ctx, storageClient, blob, blobContentCh) })
+			blobsEg.Go(func() error { return getBlobContents(newCtx, storageClient, blob, blobContentCh) })
 		}
 		return blobsEg.Wait()
 	})
@@ -170,7 +193,7 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 		defer close(blobCh)
 		var err error
 		for container := range containerNameCh {
-			curErr := getBlobs(ctx, storageClient, container, blobCh)
+			curErr := getBlobs(egCtx, storageClient, container, blobCh)
 			if curErr != nil {
 				err = errors.Join(err, curErr)
 			}
@@ -181,11 +204,27 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	err = getContainers(ctx, storageClient, containerNameCh)
 
 	err = errors.Join(err, eg.Wait())
+
+	metricBlob := metrics.MetricEntry{
+		Timestamp:          time.Now().Unix(),
+		RuntimeSeconds:     time.Since(start).Seconds(),
+		ResourceLogVolumes: resourceVolumes,
+	}
+
+	metricBuffer, err := metricBlob.ToBytes()
+
+	if err != nil {
+		logger.Fatalf("error while marshalling metrics: %v", err)
+	}
+
+	blobName := getMetricFileName(time.Now())
+
+	err = storageClient.UploadBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
+
+	logger.Info("Finished processing logs")
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
-
-	logger.Info("Finished processing logs")
 
 	return nil
 }
@@ -246,24 +285,7 @@ func main() {
 
 	datadogClient := dd.NewClient(logsClient)
 
-	runErr := Run(ctx, storageClient, datadogClient, logger, time.Now)
-
-	resourceVolumeMap := make(map[string]int32)
-	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
-	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
-
-	metricBuffer, err := json.Marshal(metricBlob)
-
-	if err != nil {
-		logger.Fatalf("error while marshalling metrics: %v", err)
-	}
-
-	dateString := time.Now().UTC().Format("2006-01-02-15")
-	blobName := dateString + ".txt"
-
-	err = storageClient.UploadBlob(ctx, "forwarder-metrics", blobName, metricBuffer)
-
-	err = errors.Join(runErr, err)
+	err = Run(ctx, storageClient, datadogClient, logger, time.Now)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

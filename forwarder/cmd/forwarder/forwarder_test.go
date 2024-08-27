@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -9,6 +10,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog/mocks"
 	"go.uber.org/mock/gomock"
@@ -23,11 +27,12 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func uploadBlobs(ctx context.Context, client *storage.Client) error {
+func uploadBlobs(ctx context.Context, client *storage.Client) (int, error) {
 	fixturesPath, err := storage.GetAzuriteFixturesPath()
 	if err != nil {
-		return err
+		return 0, err
 	}
+	counter := 0
 	err = filepath.Walk(fixturesPath, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -39,6 +44,11 @@ func uploadBlobs(ctx context.Context, client *storage.Client) error {
 		if err != nil {
 			return err
 		}
+		reader := bufio.NewScanner(bytes.NewReader(data))
+		for reader.Scan() {
+			_ = reader.Text()
+			counter++
+		}
 		targetPath := filePath[len(fixturesPath):]
 		err = client.UploadBlob(ctx, storage.FunctionAppLogsContainerPrefix, targetPath, data)
 		if err != nil {
@@ -46,7 +56,10 @@ func uploadBlobs(ctx context.Context, client *storage.Client) error {
 		}
 		return nil
 	})
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return counter, nil
 }
 
 func TestRun(t *testing.T) {
@@ -105,18 +118,18 @@ func TestRun(t *testing.T) {
 	azBlobClient, err := azblob.NewClientFromConnectionString(connectionString, nil)
 	assert.NoError(t, err)
 
-	_, err = azBlobClient.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix, nil)
-	if err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "The specified container already exists") {
-			err = nil
-		}
-	}
-	assert.NoError(t, err)
-
 	client := storage.NewClient(azBlobClient)
 
-	err = uploadBlobs(context.Background(), client)
+	err = client.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix)
+	assert.NoError(t, err)
+
+	err = client.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix)
+	assert.NoError(t, err)
+
+	err = client.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix)
+	assert.NoError(t, err)
+
+	lineCounter, err := uploadBlobs(context.Background(), client)
 	assert.NoError(t, err)
 
 	var output []byte
@@ -132,9 +145,41 @@ func TestRun(t *testing.T) {
 
 	// WHEN
 	err = Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
+	metricFileName := getMetricFileName(time.Now())
+	var metricsBlob *container.BlobItem
+	resultingBlobs := client.ListBlobs(context.Background(), metrics.MetricsBucket)
+	for {
+		blobList, err := resultingBlobs.Next(context.Background())
+		if err != nil {
+			break
+		}
+		for _, blob := range blobList {
+			if blob == nil {
+				continue
+			}
+			if strings.Contains(*blob.Name, metricFileName) {
+				metricsBlob = blob
+				break
+			}
+		}
+	}
+	blob := storage.Blob{Item: metricsBlob, Container: metrics.MetricsBucket}
+
+	metricsSegment, err := client.DownloadRange(context.Background(), blob, 0)
+	assert.NoError(t, err)
+	metricValues, err := metrics.FromBytes(*metricsSegment.Content)
+	assert.NoError(t, err)
+
+	volume := 0
+	for _, currMetric := range metricValues {
+		for _, count := range currMetric.ResourceLogVolumes {
+			volume += int(count)
+		}
+	}
 
 	// THEN
 	got := string(buffer.Bytes())
 	assert.NoError(t, err)
 	assert.Contains(t, got, "Finished processing logs")
+	assert.Equal(t, lineCounter, volume)
 }

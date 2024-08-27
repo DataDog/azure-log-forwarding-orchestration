@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 
@@ -74,6 +75,12 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
 	defer span.Finish()
 
+	// create container if needed
+	err := c.CreateContainer(ctx, containerName)
+	if err != nil {
+		return fmt.Errorf("error creating container %s: %v", containerName, err)
+	}
+
 	//see if there is an existing blob
 	//if yes get it read append
 	//if not just write
@@ -94,22 +101,28 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		// Create new file when not found
 		if respErr.ErrorCode == "BlobNotFound" {
 			_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, content, &uploadOptions)
-			return err
+			if err != nil {
+				return fmt.Errorf("error uploading new blob %s: %v", blobName, err)
+			}
+			return nil
 		}
 	}
 
 	if downErr != nil {
-		return downErr
+		return fmt.Errorf("error downloading existing blob %s: %v", blobName, downErr)
 	}
 
 	buffer, readErr := io.ReadAll(downloadResponse.Body)
 	if readErr != nil {
-		return readErr
+		return fmt.Errorf("error reading existing blob %s: %v", blobName, readErr)
 	}
 
 	buffer = append(buffer, "\n"...)
 	buffer = append(buffer, content...)
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
-	return err
+	_, err = c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
+	if err != nil {
+		return fmt.Errorf("error uploading blob %s: %v", blobName, err)
+	}
+	return nil
 }
