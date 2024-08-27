@@ -13,7 +13,6 @@ require (
 	golang.org/x/sync v0.7.0
 	google.golang.org/api v0.188.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.65.1
-	gopkg.in/dnaeon/go-vcr.v3 v3.2.0
 )
 
 require (
