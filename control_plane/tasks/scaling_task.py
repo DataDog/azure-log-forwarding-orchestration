@@ -104,6 +104,22 @@ class ScalingTask(Task):
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
         all_subscriptions = set(self.resource_cache.keys()) | set(self.assignment_cache.keys())
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
+        self.prune_assignment_cache()
+
+    def prune_assignment_cache(self) -> None:
+        """Updates the assignment cache based on any deletions in the resource cache"""
+
+        # update subscriptions
+        for deleted_subscription_id in set(self.assignment_cache) - set(self.resource_cache):
+            del self.assignment_cache[deleted_subscription_id]
+
+        # update resources
+        for subscription_id, region_assignments in self.assignment_cache.items():
+            for region, region_assignment in region_assignments.items():
+                region_resources = self.resource_cache[subscription_id].get(region, set())
+                for resource_id in list(region_assignment["resources"]):
+                    if resource_id not in region_resources:
+                        del region_assignment["resources"][resource_id]
 
     async def process_subscription(self, subscription_id: str) -> None:
         previous_region_assignments = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())

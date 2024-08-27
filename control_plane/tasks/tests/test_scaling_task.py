@@ -113,7 +113,7 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
 
-        self.assertEqual(self.cache, {SUB_ID1: {}})
+        self.assertEqual(self.cache, {})
 
     async def test_regions_added_and_deleted(self):
         await self.run_scaling_task(
@@ -140,6 +140,38 @@ class TestScalingTask(TaskTestCase):
             }
         }
         self.assertEqual(self.cache, expected_cache)
+
+    async def test_resource_task_deleted_resources_are_deleted(self):
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {
+                    EAST_US: {"resource1"},
+                },
+            },
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
+
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
 
     async def test_log_forwarder_metrics_collected(self):
         current_time = (datetime.now()).timestamp()
