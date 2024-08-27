@@ -3,8 +3,9 @@
 set -euxo pipefail
 
 cd forwarder
+go mod tidy
 go mod download
-ls -a
+go mod vendor
 
 : run tests with coverage
 go test -coverprofile=forwarder_coverage.txt -race -json -v ./...
