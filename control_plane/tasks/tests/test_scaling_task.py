@@ -63,9 +63,7 @@ class TestScalingTask(TaskTestCase):
     def cache(self) -> AssignmentCache:
         return self.cache_value(ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache)
 
-    async def run_scaling_task(
-        self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache, resource_group: str = RG1
-    ):
+    async def run_scaling_task(self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache):
         async with ScalingTask(dumps(resource_cache_state, default=list), dumps(assignment_cache_state)) as task:
             await task.run()
 
@@ -399,7 +397,6 @@ class TestScalingTask(TaskTestCase):
                     }
                 },
             },
-            resource_group="test_lfo",
         )
 
         self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
