@@ -14,7 +14,7 @@ from azure.core.exceptions import HttpResponseError
 from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 
 # project
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
+from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
@@ -23,7 +23,7 @@ from cache.common import (
     write_cache,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, generate_unique_id, now
 from tasks.task import Task
@@ -69,6 +69,54 @@ def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[st
     return first_half, second_half
 
 
+def prune_assignment_cache_build(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
+    """Updates the assignment cache based on any deletions in the resource cache"""
+
+    return {
+        sub_id: {
+            region: {
+                # keep configurations the same
+                "configurations": (
+                    region_config := assignment_cache.get(sub_id, {}).get(
+                        region,
+                        {"configurations": {}, "resources": {}},  # default empty region config
+                    )
+                )["configurations"],
+                # only keep the resources in both the resource and assignment cache
+                "resources": {
+                    resource_id: config_id
+                    for resource_id in resources
+                    if (config_id := region_config["resources"].get(resource_id))
+                },
+            }
+            for region, resources in region_resources.items()
+        }
+        for sub_id, region_resources in resource_cache.items()
+    }
+
+
+def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
+    """Updates the assignment cache based on any deletions in the resource cache"""
+    assignment_cache = deepcopy(assignment_cache)
+    # update subscriptions
+    for deleted_subscription_id in set(assignment_cache) - set(resource_cache):
+        del assignment_cache[deleted_subscription_id]
+
+    # update regions
+    for subscription_id, region_assignments in assignment_cache.items():
+        for deleted_region in set(region_assignments) - set(resource_cache[subscription_id]):
+            del region_assignments[deleted_region]
+
+        # update resources
+        for region, region_assignment in region_assignments.items():
+            region_resources = resource_cache[subscription_id].get(region, set())
+            for resource_id in list(region_assignment["resources"]):
+                if resource_id not in region_resources:
+                    del region_assignment["resources"][resource_id]
+
+    return assignment_cache
+
+
 class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
@@ -88,7 +136,7 @@ class ScalingTask(Task):
             log.warning("Assignment Cache is in an invalid format, task will reset the cache")
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache
-        self.assignment_cache = deepcopy(assignment_cache)
+        self.assignment_cache = prune_assignment_cache(resource_cache, assignment_cache)
 
     def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
         def _done_callback(task: AsyncTask[Any]) -> None:
@@ -102,24 +150,8 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
-        all_subscriptions = set(self.resource_cache.keys()) | set(self.assignment_cache.keys())
+        all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
-        self.prune_assignment_cache()
-
-    def prune_assignment_cache(self) -> None:
-        """Updates the assignment cache based on any deletions in the resource cache"""
-
-        # update subscriptions
-        for deleted_subscription_id in set(self.assignment_cache) - set(self.resource_cache):
-            del self.assignment_cache[deleted_subscription_id]
-
-        # update resources
-        for subscription_id, region_assignments in self.assignment_cache.items():
-            for region, region_assignment in region_assignments.items():
-                region_resources = self.resource_cache[subscription_id].get(region, set())
-                for resource_id in list(region_assignment["resources"]):
-                    if resource_id not in region_resources:
-                        del region_assignment["resources"][resource_id]
 
     async def process_subscription(self, subscription_id: str) -> None:
         previous_region_assignments = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
@@ -183,10 +215,12 @@ class ScalingTask(Task):
         await gather(
             *(
                 client.delete_log_forwarder(forwarder_id)
-                for forwarder_id in self.assignment_cache[subscription_id][region]["configurations"]
+                for forwarder_id in self._assignment_cache_initial_state[subscription_id][region]["configurations"]
             )
         )
-        del self.assignment_cache[subscription_id][region]
+
+        # delete if we haven't already cleaned it up
+        self.assignment_cache.get(subscription_id, {}).pop(region, None)
 
     async def scale_region(
         self,

@@ -46,6 +46,7 @@ def minutes_ago(minutes: float) -> float:
 
 class TestScalingTask(TaskTestCase):
     TASK_NAME = SCALING_TASK_NAME
+    maxDiff = 2000
 
     async def asyncSetUp(self) -> None:
         super().setUp()
@@ -435,7 +436,7 @@ class TestScalingTask(TaskTestCase):
                 SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
-                        "configations": {
+                        "configurations": {
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                             NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
