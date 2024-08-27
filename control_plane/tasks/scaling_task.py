@@ -14,7 +14,12 @@ from azure.core.exceptions import HttpResponseError
 from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 
 # project
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, AssignmentCache, deserialize_assignment_cache
+from cache.assignment_cache import (
+    ASSIGNMENT_CACHE_BLOB,
+    AssignmentCache,
+    RegionAssignmentConfiguration,
+    deserialize_assignment_cache,
+)
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
@@ -69,52 +74,28 @@ def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[st
     return first_half, second_half
 
 
-def prune_assignment_cache_build(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
-    """Updates the assignment cache based on any deletions in the resource cache"""
-
-    return {
-        sub_id: {
-            region: {
-                # keep configurations the same
-                "configurations": (
-                    region_config := assignment_cache.get(sub_id, {}).get(
-                        region,
-                        {"configurations": {}, "resources": {}},  # default empty region config
-                    )
-                )["configurations"],
-                # only keep the resources in both the resource and assignment cache
-                "resources": {
-                    resource_id: config_id
-                    for resource_id in resources
-                    if (config_id := region_config["resources"].get(resource_id))
-                },
-            }
-            for region, resources in region_resources.items()
-        }
-        for sub_id, region_resources in resource_cache.items()
-    }
-
-
 def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
     """Updates the assignment cache based on any deletions in the resource cache"""
-    assignment_cache = deepcopy(assignment_cache)
-    # update subscriptions
-    for deleted_subscription_id in set(assignment_cache) - set(resource_cache):
-        del assignment_cache[deleted_subscription_id]
 
-    # update regions
-    for subscription_id, region_assignments in assignment_cache.items():
-        for deleted_region in set(region_assignments) - set(resource_cache[subscription_id]):
-            del region_assignments[deleted_region]
+    def _prune_region_config(subscription_id: str, region: str) -> RegionAssignmentConfiguration:
+        resources = resource_cache.get(subscription_id, {}).get(region, set())
+        current_region_config = deepcopy(
+            assignment_cache.get(subscription_id, {}).get(
+                region,
+                {"configurations": {}, "resources": {}},  # default empty region config
+            )
+        )
+        current_region_config["resources"] = {
+            resource_id: config_id
+            for resource_id in resources
+            if (config_id := current_region_config["resources"].get(resource_id))
+        }
+        return current_region_config
 
-        # update resources
-        for region, region_assignment in region_assignments.items():
-            region_resources = resource_cache[subscription_id].get(region, set())
-            for resource_id in list(region_assignment["resources"]):
-                if resource_id not in region_resources:
-                    del region_assignment["resources"][resource_id]
-
-    return assignment_cache
+    return {
+        sub_id: {region: _prune_region_config(sub_id, region) for region in region_resources}
+        for sub_id, region_resources in resource_cache.items()
+    }
 
 
 class ScalingTask(Task):
