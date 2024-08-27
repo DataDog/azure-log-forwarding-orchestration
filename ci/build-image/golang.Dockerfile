@@ -8,3 +8,5 @@ RUN tar -C /usr/local -xvf go1.22.2.linux-amd64.tar.gz
 RUN rm go1.22.2.linux-amd64.tar.gz
 
 ENV PATH=$PATH:/usr/local/go/bin
+
+ENV CGO_ENABLED=1
