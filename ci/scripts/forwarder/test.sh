@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 
-source /venv/bin/activate
-
 set -euxo pipefail
 
 cd forwarder
 go mod download
+ls -a
+
 : run tests with coverage
 go test -coverprofile=forwarder_coverage.txt -race -json -v ./...
 
