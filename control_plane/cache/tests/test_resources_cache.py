@@ -3,7 +3,7 @@ from json import dumps
 from unittest import TestCase
 
 # project
-from cache.resources_cache import deserialize_resource_cache
+from cache.resources_cache import ResourceCache, deserialize_resource_cache, prune_resource_cache
 from cache.tests import sub_id1, sub_id2
 
 
@@ -35,3 +35,18 @@ class TestDeserializeResourceCache(TestCase):
 
     def test_dict_with_some_non_list_values(self):
         self.assert_deserialize_failure(dumps({sub_id1: {"region1": ["r1"]}, sub_id2: {"region2": {"hi": "value"}}}))
+
+    def test_prune_resources_cache_empty(self):
+        cache: ResourceCache = {}
+        prune_resource_cache(cache)
+        self.assertEqual(cache, {})
+
+    def test_prune_resources_cache_empty_subscription(self):
+        cache: ResourceCache = {"sub1": {}, "sub2": {"region1": {"resource1"}}}
+        prune_resource_cache(cache)
+        self.assertEqual(cache, {"sub2": {"region1": {"resource1"}}})
+
+    def test_prune_resources_cache_empty_region(self):
+        cache: ResourceCache = {"sub1": {"region2": set()}, "sub2": {"region1": {"resource1"}}}
+        prune_resource_cache(cache)
+        self.assertEqual(cache, {"sub2": {"region1": {"resource1"}}})

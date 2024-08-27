@@ -105,7 +105,7 @@ class TestResourcesTask(TaskTestCase):
                 "sub2": {"region1": {"res3"}},
             }
         )
-        self.assertEqual(self.cache, {"sub1": {}, "sub2": {}})
+        self.assertEqual(self.cache, {})
 
     async def test_subscriptions_gone(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator())
@@ -149,7 +149,7 @@ class TestResourcesTask(TaskTestCase):
             ),
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {}})
+        self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}})
 
     async def test_unexpected_failure_skips_cache_write(self):
         write_caches = self.patch("ResourcesTask.write_caches")

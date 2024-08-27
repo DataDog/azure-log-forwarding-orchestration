@@ -28,3 +28,13 @@ def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
         return cache
 
     return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA, convert_resources_to_set)
+
+
+def prune_resource_cache(cache: ResourceCache) -> None:
+    """Prune the cache by removing empty regions and subscriptions."""
+    for subscription_id, resources_per_region in list(cache.items()):
+        for region, resources in list(resources_per_region.items()):
+            if not resources:
+                del resources_per_region[region]
+        if not resources_per_region:
+            del cache[subscription_id]
