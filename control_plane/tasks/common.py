@@ -52,4 +52,5 @@ def generate_unique_id() -> str:
 
 
 async def collect(it: AsyncIterable[T]) -> list[T]:
+    """Helper for collecting an async iterable, useful for simplifying error handling"""
     return [item async for item in it]
