@@ -160,6 +160,30 @@
             }
         },
         {
+            "name": "[concat('diagnostic-settings-task-monitor-role-', variables('lfoId'))]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "scope": "[resourceGroup().id]",
+            "properties": {
+                // Monitoring Contributor role
+                "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/749f88d5-cbae-40b8-bcfc-e573ddc772fa",
+                "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
+        },
+        {
+            "name": "[concat('diagnostic-settings-task-blob-role-', variables('lfoId'))]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "scope": "[resourceGroup().id]",
+            "properties": {
+                // Storage Blob Data Contributor role
+                "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe",
+                "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
+        },
+        {
             "name": "[variables('scalingTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
