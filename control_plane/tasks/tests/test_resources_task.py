@@ -131,6 +131,26 @@ class TestResourcesTask(TaskTestCase):
         await self.run_resources_task({})
         self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}})
 
+    async def test_unsupported_resource_types_ignored(self):
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
+        )
+        self.resource_client_mapping = {
+            "sub1": Mock(
+                return_value=async_generator(
+                    mock(id="res1", location="region1", type="Microsoft.Compute/Snapshots"),
+                    mock(id="res2", location="region1", type="Microsoft.Compute/VirtualMachines"),
+                )
+            ),
+            "sub2": Mock(
+                return_value=async_generator(
+                    mock(id="res3", location="region2", type="Microsoft.AlertsManagement/PrometheusRuleGroups")
+                )
+            ),
+        }
+        await self.run_resources_task({})
+        self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {}})
+
     async def test_unexpected_failure_skips_cache_write(self):
         write_caches = self.patch("ResourcesTask.write_caches")
         self.sub_client.subscriptions.list = Mock(side_effect=UnexpectedException("unexpected"))
