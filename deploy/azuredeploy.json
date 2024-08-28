@@ -110,6 +110,10 @@
                             "value": "EnableWorkerIndexing"
                         },
                         {
+                            "name": "RESOURCE_GROUP",
+                            "value": "[resourceGroup().name]"
+                        },
+                        {
                             "name": "FUNCTIONS_EXTENSION_VERSION",
                             "value": "~4"
                         },
@@ -148,6 +152,10 @@
                         {
                             "name": "AzureWebJobsFeatureFlags",
                             "value": "EnableWorkerIndexing"
+                        },
+                        {
+                            "name": "RESOURCE_GROUP",
+                            "value": "[resourceGroup().name]"
                         },
                         {
                             "name": "FUNCTIONS_EXTENSION_VERSION",
