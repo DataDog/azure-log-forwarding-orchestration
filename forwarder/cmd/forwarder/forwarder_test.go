@@ -54,6 +54,7 @@ func TestRun(t *testing.T) {
 		Image:        "mcr.microsoft.com/azure-storage/azurite:latest",
 		ExposedPorts: []string{"10000/tcp", "10001/tcp", "10002/tcp"},
 		WaitingFor:   wait.ForLog("Azurite Table service is successfully listening at http://0.0.0.0:10002"),
+		Networks:     []string{"host"},
 	}
 	azurite, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
