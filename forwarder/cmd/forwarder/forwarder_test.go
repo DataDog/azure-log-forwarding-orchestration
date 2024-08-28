@@ -49,12 +49,15 @@ func uploadBlobs(ctx context.Context, client *storage.Client) error {
 func TestRun(t *testing.T) {
 	// Integration test for the storage forwarder
 	// GIVEN
+	//modifier := func(hostConfig *container.HostConfig) {
+	//	hostConfig.NetworkMode = "host"
+	//}
 	ctx := context.Background()
 	req := testcontainers.ContainerRequest{
 		Image:        "mcr.microsoft.com/azure-storage/azurite:latest",
 		ExposedPorts: []string{"10000/tcp", "10001/tcp", "10002/tcp"},
 		WaitingFor:   wait.ForLog("Azurite Table service is successfully listening at http://0.0.0.0:10002").WithStartupTimeout(90 * time.Second),
-		Networks:     []string{"host"},
+		//HostConfigModifier: modifier,
 	}
 	azurite, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
@@ -74,18 +77,21 @@ func TestRun(t *testing.T) {
 		t.Fatalf("Could not get azurite blob endpoint: %s", err)
 	}
 	blobPort := strings.Split(blobEndpoint, ":")[2]
+	//blobPort := "10000"
 
 	queueEndpoint, err := azurite.Endpoint(ctx, "10001/tcp")
 	if err != nil {
 		t.Fatalf("Could not get azurite queue endpoint: %s", err)
 	}
 	queuePort := strings.Split(queueEndpoint, ":")[2]
+	//queuePort := "10001"
 
 	tableEndpoint, err := azurite.Endpoint(ctx, "10002/tcp")
 	if err != nil {
 		t.Fatalf("Could not get azurite table endpoint: %s", err)
 	}
 	tablePort := strings.Split(tableEndpoint, ":")[2]
+	//tablePort := "10002"
 
 	connectionString := fmt.Sprintf("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:%s/devstoreaccount1;QueueEndpoint=http://127.0.0.1:%s/devstoreaccount1;TableEndpoint=http://127.0.0.1:%s/devstoreaccount1;", blobPort, queuePort, tablePort)
 
