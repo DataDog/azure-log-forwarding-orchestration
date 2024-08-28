@@ -10,7 +10,7 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import read_cache, write_cache
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache, prune_resource_cache
 from tasks.common import now
 from tasks.task import Task
 
@@ -64,6 +64,7 @@ class ResourcesTask(Task):
             self.resource_cache[subscription_id] = resources_per_region
 
     async def write_caches(self) -> None:
+        prune_resource_cache(self.resource_cache)
         if self.resource_cache == self._resource_cache_initial_state:
             log.info("Resources have not changed, no update needed")
             return
