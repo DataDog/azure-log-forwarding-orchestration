@@ -23,8 +23,11 @@
         "storageAccountName": "[concat('lfostorage', variables('lfoId'))]",
         "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
         "resourceTaskName": "[concat('resources-task-', variables('lfoId'))]",
+        "resourceTaskId": "[resourceId('Microsoft.Web/sites', variables('resourceTaskName'))]",
         "diagnosticSettingsTaskName": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
-        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]"
+        "diagnosticSettingsTaskId": "[resourceId('Microsoft.Web/sites', variables('diagnosticSettingsTaskName'))]",
+        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]",
+        "scalingTaskId": "[resourceId('Microsoft.Web/sites', variables('scalingTaskName'))]"
     },
     "resources": [
         {
@@ -106,12 +109,11 @@
             "apiVersion": "2022-04-01",
             "scope": "[resourceGroup().id]",
             "properties": {
-                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
-                "principalId": "[reference(resourceId('Microsoft.Web/sites', variables('functionAppName')), '2022-09-01', 'full').identity.principalId]"
+                // Monitoring Reader role
+                "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/43d0d8ad-25c7-4714-9337-8ba259a9fe05",
+                "principalId": "[reference(variables('resourceTaskId'), '2022-09-01', 'full').identity.principalId]"
             },
-            "dependsOn": [
-                "[resourceId('Microsoft.Web/sites', variables('functionAppName'))]"
-            ]
+            "dependsOn": [ "[variables('resourceTaskId')]" ]
         },
         {
             "name": "[variables('diagnosticSettingsTaskName')]",
