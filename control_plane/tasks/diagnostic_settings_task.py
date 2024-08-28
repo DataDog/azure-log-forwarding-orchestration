@@ -24,7 +24,7 @@ from cache.common import (
     get_storage_account_id,
     read_cache,
 )
-from tasks.common import now
+from tasks.common import collect, now
 from tasks.task import Task
 
 # silence azure logging except for errors
@@ -124,23 +124,40 @@ class DiagnosticSettingsTask(Task):
         resource_id: str,
         assigned_config: DiagnosticSettingConfiguration,
     ) -> None:
+        try:
+            current_diagnostic_settings = await collect(client.diagnostic_settings.list(resource_id))
+        except HttpResponseError as e:
+            if e.error and e.error.code == "ResourceTypeNotSupported":
+                log.warning("Resource type for %s unsupported, skipping", resource_id)
+                return
+            log.exception("Failed to get diagnostic settings for resource %s", resource_id)
+            return
+
         assigned_setting_name = get_diagnostic_setting_name(assigned_config.id)
         assigned_storage_account = get_storage_account_id(sub_id, self.resource_group, assigned_config.id).lower()
-        should_add_setting = True
-        ds_categories = None
-        async for diagnostic_setting in client.diagnostic_settings.list(resource_id):
-            setting_name = cast(str, diagnostic_setting.name).lower()
-            if setting_name == assigned_setting_name:  # expected setting exists
-                if diagnostic_setting.storage_account_id == assigned_storage_account:
-                    should_add_setting = False  # everything is set up correctly, no need to add/update
-                else:
-                    # no need to requery, we already know the settings
-                    ds_categories = [cast(str, log.category) for log in diagnostic_setting.logs or []]
-            elif setting_name.startswith(DIAGNOSTIC_SETTING_PREFIX):
-                ...  # TODO(AZINTS-2689) old/unused setting cleanup
 
-        if should_add_setting:
-            await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config, ds_categories)
+        current_settings_by_name = {
+            setting_name: ds
+            for ds in current_diagnostic_settings
+            if (setting_name := cast(str, ds.name).lower()).startswith(DIAGNOSTIC_SETTING_PREFIX)
+        }
+        assigned_setting = current_settings_by_name.pop(assigned_setting_name, None)
+
+        if assigned_setting and assigned_setting.storage_account_id != assigned_storage_account:
+            await self.set_diagnostic_setting(
+                client,
+                sub_id,
+                resource_id,
+                assigned_config,
+                # keep the same categories selected, just fix the storage account
+                categories=[cast(str, log.category) for log in (assigned_setting.logs or [])],
+            )
+        elif not assigned_setting:
+            # no existing setting, create a new one
+            await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config)
+
+        if current_settings_by_name:  # any others that start with the same prefix
+            ...  # TODO(AZINTS-2689) old/unused setting cleanup
 
     async def set_diagnostic_setting(
         self,

@@ -5,6 +5,7 @@ from typing import Final
 from unittest.mock import AsyncMock, Mock, patch
 
 # 3p
+from azure.core.exceptions import HttpResponseError
 from azure.mgmt.monitor.models import CategoryType
 
 # project
@@ -38,6 +39,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
         client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
 
+        self.log = self.patch("log")
         env = patch.dict(environ, {"RESOURCE_GROUP": "lfo"})
         env.start()
         self.addCleanup(env.stop)
@@ -165,3 +167,30 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                 }
             ),
         )
+
+    async def test_resource_type_not_supported_skips_resource(self):
+        http_error = HttpResponseError()
+        http_error.error = Mock(code="ResourceTypeNotSupported")
+        self.list_diagnostic_settings.return_value = async_generator(
+            mock(
+                name="datadog_log_forwarding_bc666ef914ec",
+                storage_account_id="wrong_storage_account_id",
+                logs=[mock(category="cool_logs")],
+            ),
+            http_error,
+        )
+
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+        )
+
+        self.log.warning.assert_called_once_with("Resource type for %s unsupported, skipping", resource_id1)
+        self.list_diagnostic_settings_categories.assert_not_called()
+        self.create_or_update_setting.assert_not_awaited()

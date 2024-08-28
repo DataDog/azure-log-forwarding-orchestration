@@ -1,6 +1,6 @@
 # stdlib
 from asyncio import Lock, create_task, gather
-from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
@@ -69,7 +69,7 @@ from cache.common import (
     get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from tasks.common import wait_for_resource
+from tasks.common import collect, wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
 
@@ -97,10 +97,6 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
         if isinstance(e, RequestTimeout | ServiceResponseTimeoutError):
             return True
     return False
-
-
-async def collect(it: AsyncIterable[T]) -> list[T]:
-    return [item async for item in it]
 
 
 class Resource(Protocol):
