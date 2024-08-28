@@ -405,7 +405,6 @@ class TestScalingTask(TaskTestCase):
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_deleted_resources_are_removed_before_scaling(self, collect_forwarder_metrics: AsyncMock):
-        # TODO: Decide if this should be the expected behavior
         collect_forwarder_metrics.return_value = [
             {
                 "runtime_seconds": 4000,
