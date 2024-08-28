@@ -41,20 +41,7 @@
             },
             "properties": {
                 "accountType": "BlobStorage"
-            },
-            "resources": [
-                {
-                    "name": "[concat(variables('storageAccountName'), '/default/resources-cache')]",
-                    "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
-                    "apiVersion": "2023-01-01",
-                    "dependsOn": [
-                        "[variables('storageAccountName')]"
-                    ],
-                    "properties": {
-                        "publicAccess": "None"
-                    }
-                }
-            ]
+            }
         },
         {
             "name": "resources-task",
