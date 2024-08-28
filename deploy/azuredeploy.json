@@ -107,7 +107,7 @@
             "name": "[concat('resource-task-role-', variables('lfoId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "scope": "[resourceGroup().id]",
+            "scope": "[subscription().id]",
             "properties": {
                 // Monitoring Reader role
                 "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/43d0d8ad-25c7-4714-9337-8ba259a9fe05",
@@ -163,7 +163,7 @@
             "name": "[concat('diagnostic-settings-task-monitor-role-', variables('lfoId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "scope": "[resourceGroup().id]",
+            "scope": "[subscription().id]",
             "properties": {
                 // Monitoring Contributor role
                 "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/749f88d5-cbae-40b8-bcfc-e573ddc772fa",
@@ -175,7 +175,7 @@
             "name": "[concat('diagnostic-settings-task-blob-role-', variables('lfoId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            "scope": "[resourceGroup().id]",
+            "scope": "[subscription().id]",
             "properties": {
                 // Storage Blob Data Contributor role
                 "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/ba92f5b4-2d11-453d-a403-e96b0029c9fe",
