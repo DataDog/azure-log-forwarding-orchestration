@@ -2,7 +2,7 @@
 
 set -euxo pipefail
 
-cd forwarder
+# cd forwarder
 echo "======================================================="
 go version
 echo "======================================================="
@@ -10,6 +10,8 @@ echo "======================================================="
 go mod tidy
 go mod download
 go mod vendor
+
+export TESTCONTAINERS_RYUK_DISABLED=true
 
 : run tests with coverage
 go test -coverprofile=forwarder_coverage.txt -race -json -v ./...
