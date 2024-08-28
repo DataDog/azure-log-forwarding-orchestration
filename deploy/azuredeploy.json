@@ -238,6 +238,18 @@
                 "publicNetworkAccess": "Disabled",
                 "httpsOnly": true
             }
+        },
+        {
+            "name": "[concat('scaling-task-role-', variables('lfoId'))]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            "scope": "[resourceGroup().id]",
+            "properties": {
+                // Contributor role
+                "roleDefinitionId": "/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c",
+                "principalId": "[reference(variables('scalingTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('scalingTaskId')]" ]
         }
     ],
     "outputs": {}
