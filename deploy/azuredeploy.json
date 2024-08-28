@@ -4,9 +4,11 @@
     "parameters": {},
     "functions": [],
     "variables": {
-        "aspName": "datadog-log-forwarding-asp",
+        // "lfoId": "[toLower(substring(subscription().subscriptionId, 24, 12))]",
+        "lfoId": "511c28dcec95",
+        "aspName": "[concat('control-plane-asp-', variables('lfoId'))]",
         "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
-        "storageAccountName": "datadogstorage1000",
+        "storageAccountName": "[concat('lfostorage', variables('lfoId'))]",
         "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
     },
     "resources": [
@@ -44,7 +46,7 @@
             }
         },
         {
-            "name": "resources-task",
+            "name": "[concat('resources-task-', variables('lfoId'))]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
@@ -84,7 +86,47 @@
             }
         },
         {
-            "name": "diagnostic-settings-task",
+            "name": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "AzureWebJobsFeatureFlags",
+                            "value": "EnableWorkerIndexing"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        }
+                    ],
+                    "linuxFxVersion": "Python|3.11"
+                },
+                "publicNetworkAccess": "Disabled",
+                "httpsOnly": true
+            }
+        },
+        {
+            "name": "[concat('scaling-task-', variables('lfoId'))]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
