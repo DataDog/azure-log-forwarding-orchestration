@@ -4,7 +4,6 @@
     "parameters": {},
     "functions": [],
     "variables": {
-        "variable1": "value",
         "lfoId": "[toLower(substring(subscription().subscriptionId, 24, 12))]",
         "aspName": "[concat('control-plane-asp-', variables('lfoId'))]",
         "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
