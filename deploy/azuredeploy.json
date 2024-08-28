@@ -8,7 +8,10 @@
         "aspName": "[concat('control-plane-asp-', variables('lfoId'))]",
         "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
         "storageAccountName": "[concat('lfostorage', variables('lfoId'))]",
-        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "resourceTaskName": "[concat('resources-task-', variables('lfoId'))]",
+        "diagnosticSettingsTaskName": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
+        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]"
     },
     "resources": [
         {
@@ -45,7 +48,7 @@
             }
         },
         {
-            "name": "[concat('resources-task-', variables('lfoId'))]",
+            "name": "[variables('resourceTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
@@ -85,7 +88,7 @@
             }
         },
         {
-            "name": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
+            "name": "[variables('diagnosticSettingsTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
@@ -129,7 +132,7 @@
             }
         },
         {
-            "name": "[concat('scaling-task-', variables('lfoId'))]",
+            "name": "[variables('scalingTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
