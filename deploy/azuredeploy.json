@@ -104,7 +104,7 @@
             }
         },
         {
-            "name": "[concat('resource-task-role-', variables('lfoId'))]",
+            "name": "[guid(variables('resourceTaskId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "scope": "[subscription().id]",
@@ -160,7 +160,7 @@
             }
         },
         {
-            "name": "[concat('diagnostic-settings-task-monitor-role-', variables('lfoId'))]",
+            "name": "[guid('monitor', variables('diagnosticSettingsTaskId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "scope": "[subscription().id]",
@@ -172,7 +172,7 @@
             "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
         },
         {
-            "name": "[concat('diagnostic-settings-task-blob-role-', variables('lfoId'))]",
+            "name": "[guid('storage', variables('diagnosticSettingsTaskId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "scope": "[subscription().id]",
@@ -240,7 +240,7 @@
             }
         },
         {
-            "name": "[concat('scaling-task-role-', variables('lfoId'))]",
+            "name": "[guid(variables('scalingTaskId'))]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
             "scope": "[resourceGroup().id]",
