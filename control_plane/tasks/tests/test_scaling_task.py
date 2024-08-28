@@ -40,11 +40,13 @@ NEW_LOG_FORWARDER_ID = "93a5885365f5"
 
 
 def minutes_ago(minutes: float) -> float:
+    """the unix timestamp for `minutes` ago"""
     return (datetime.now() - timedelta(minutes=minutes)).timestamp()
 
 
 class TestScalingTask(TaskTestCase):
     TASK_NAME = SCALING_TASK_NAME
+    maxDiff = 2000
 
     async def asyncSetUp(self) -> None:
         super().setUp()
@@ -113,7 +115,7 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
 
-        self.assertEqual(self.cache, {SUB_ID1: {}})
+        self.assertEqual(self.cache, {})
 
     async def test_regions_added_and_deleted(self):
         await self.run_scaling_task(
@@ -140,6 +142,38 @@ class TestScalingTask(TaskTestCase):
             }
         }
         self.assertEqual(self.cache, expected_cache)
+
+    async def test_resource_task_deleted_resources_are_deleted(self):
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {
+                    EAST_US: {"resource1"},
+                },
+            },
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
+
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
 
     async def test_log_forwarder_metrics_collected(self):
         current_time = (datetime.now()).timestamp()
@@ -368,6 +402,49 @@ class TestScalingTask(TaskTestCase):
             },
         }
         self.assertEqual(self.cache, expected_cache)
+
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_deleted_resources_are_removed_before_scaling(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime_seconds": 4000,
+                "timestamp": minutes_ago(0.5),
+                "resource_log_volume": {"resource1": 10, "resource2": 10, "resource3": 3000, "resource4": 5000},
+            }
+        ]
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {
+                            "resource1": OLD_LOG_FORWARDER_ID,
+                            "resource2": OLD_LOG_FORWARDER_ID,
+                            "resource3": OLD_LOG_FORWARDER_ID,
+                            "resource4": OLD_LOG_FORWARDER_ID,
+                        },
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_not_awaited()
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                            NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
 
     async def test_old_log_forwarder_metrics_not_collected(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()

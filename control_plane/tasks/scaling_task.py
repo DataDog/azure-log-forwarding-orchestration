@@ -14,7 +14,12 @@ from azure.core.exceptions import HttpResponseError
 from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 
 # project
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
+from cache.assignment_cache import (
+    ASSIGNMENT_CACHE_BLOB,
+    AssignmentCache,
+    RegionAssignmentConfiguration,
+    deserialize_assignment_cache,
+)
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
@@ -23,7 +28,7 @@ from cache.common import (
     write_cache,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, generate_unique_id, now
 from tasks.task import Task
@@ -60,13 +65,42 @@ def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[st
     load_so_far = 0
     first_half: list[str] = []
     second_half: list[str] = []
-    for resource, load in sorted(resource_loads.items(), key=lambda kv: kv[1]):
+
+    def _sort_key(kv: tuple[str, int]) -> tuple[int, str]:
+        """Sort by load, then alphabetically if we have a tie"""
+        return kv[1], kv[0]
+
+    for resource, load in sorted(resource_loads.items(), key=_sort_key):
         load_so_far += load
         if load_so_far <= half_load:
             first_half.append(resource)
         else:
             second_half.append(resource)
     return first_half, second_half
+
+
+def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
+    """Updates the assignment cache based on any deletions in the resource cache"""
+
+    def _prune_region_config(subscription_id: str, region: str) -> RegionAssignmentConfiguration:
+        resources = resource_cache.get(subscription_id, {}).get(region, set())
+        current_region_config = deepcopy(
+            assignment_cache.get(subscription_id, {}).get(
+                region,
+                {"configurations": {}, "resources": {}},  # default empty region config
+            )
+        )
+        current_region_config["resources"] = {
+            resource_id: config_id
+            for resource_id in resources
+            if (config_id := current_region_config["resources"].get(resource_id))
+        }
+        return current_region_config
+
+    return {
+        sub_id: {region: _prune_region_config(sub_id, region) for region in region_resources}
+        for sub_id, region_resources in resource_cache.items()
+    }
 
 
 class ScalingTask(Task):
@@ -88,7 +122,7 @@ class ScalingTask(Task):
             log.warning("Assignment Cache is in an invalid format, task will reset the cache")
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache
-        self.assignment_cache = deepcopy(assignment_cache)
+        self.assignment_cache = prune_assignment_cache(resource_cache, assignment_cache)
 
     def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
         def _done_callback(task: AsyncTask[Any]) -> None:
@@ -102,7 +136,7 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
-        all_subscriptions = set(self.resource_cache.keys()) | set(self.assignment_cache.keys())
+        all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
@@ -167,10 +201,12 @@ class ScalingTask(Task):
         await gather(
             *(
                 client.delete_log_forwarder(forwarder_id)
-                for forwarder_id in self.assignment_cache[subscription_id][region]["configurations"]
+                for forwarder_id in self._assignment_cache_initial_state[subscription_id][region]["configurations"]
             )
         )
-        del self.assignment_cache[subscription_id][region]
+
+        # delete if we haven't already cleaned it up
+        self.assignment_cache.get(subscription_id, {}).pop(region, None)
 
     async def scale_region(
         self,
