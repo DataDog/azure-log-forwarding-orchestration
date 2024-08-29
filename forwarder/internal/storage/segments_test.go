@@ -89,9 +89,6 @@ func TestGetBlobContents(t *testing.T) {
 		ctx := context.Background()
 
 		ctrl := gomock.NewController(t)
-		//handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{firstPage}, nil, getListBlobsFlatResponse)
-
-		//pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
 		mockClient := mocks.NewMockAzureBlobClient(ctrl)
 		mockClient.EXPECT().DownloadBuffer(gomock.Any(), containerName, "blob", gomock.Any(), gomock.Any()).Return(int64(0), nil)

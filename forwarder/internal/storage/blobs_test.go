@@ -47,7 +47,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*container.BlobItem, error) {
 	ctrl := gomock.NewController(t)
 
-	handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
+	handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
 
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
@@ -329,7 +329,7 @@ func TestGetBlobsPerContainer(t *testing.T) {
 			newBlobItem(testString),
 		}
 		ctrl := gomock.NewController(t)
-		handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{firstPage}, nil, getListBlobsFlatResponse)
+		handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{firstPage}, nil, getListBlobsFlatResponse)
 
 		pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 

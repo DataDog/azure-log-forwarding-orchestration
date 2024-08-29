@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -55,4 +56,31 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 
 func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
 	return Iterator[ReturnType, PagerType]{pager: pager, getter: getter, nilValue: nilValue}
+}
+
+var PagingError = errors.New("fetched more items than expected")
+
+func NewPagingHandler[ContentType any, ResponseType any](items []ContentType, fetcherError error, getter func(ContentType) ResponseType) runtime.PagingHandler[ResponseType] {
+	counter := 0
+	return runtime.PagingHandler[ResponseType]{
+		Fetcher: func(ctx context.Context, response *ResponseType) (ResponseType, error) {
+			var containersResponse ResponseType
+			if fetcherError != nil {
+				return containersResponse, fetcherError
+			}
+			if len(items) == 0 {
+				counter++
+				return containersResponse, nil
+			}
+			if counter >= len(items) {
+				return containersResponse, PagingError
+			}
+			containersResponse = getter(items[counter])
+			counter++
+			return containersResponse, nil
+		},
+		More: func(response ResponseType) bool {
+			return counter < len(items)
+		},
+	}
 }
