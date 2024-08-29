@@ -285,6 +285,10 @@
                             },
                             "env": [
                                 {
+                                    "name": "AzureWebJobsStorage",
+                                    "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                                },
+                                {
                                     "name": "DD_API_KEY",
                                     "value": "[parameters('ddApiKey')]"
                                 },
@@ -298,7 +302,8 @@
                 }
             },
             "dependsOn": [
-                "[variables('deployerTaskEnvId')]"
+                "[variables('deployerTaskEnvId')]",
+                "[variables('storageAccountId')]"
             ]
         },
         {
