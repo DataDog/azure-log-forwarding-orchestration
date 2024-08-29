@@ -1,7 +1,20 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
-    "parameters": {},
+    "parameters": {
+        "ddApiKey": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Datadog API Key"
+            }
+        },
+        "ddAppKey": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Datadog App Key"
+            }
+        }
+    },
     "functions": [],
     "variables": {
         "lfoId": "[toLower(substring(subscription().subscriptionId, 24, 12))]",
@@ -167,6 +180,18 @@
                         {
                             "name": "FUNCTIONS_WORKER_RUNTIME",
                             "value": "python"
+                        },
+                        {
+                            "name": "forwarder_image",
+                            "value": "mattlogger.azurecr.io/forwarder:latest"
+                        },
+                        {
+                            "name": "DD_API_KEY",
+                            "value": "[parameters('ddApiKey')]"
+                        },
+                        {
+                            "name": "DD_APP_KEY",
+                            "value": "[parameters('ddAppKey')]"
                         }
                     ],
                     "linuxFxVersion": "Python|3.11"
