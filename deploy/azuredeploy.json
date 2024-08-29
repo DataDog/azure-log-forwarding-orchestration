@@ -1,13 +1,30 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
-    "parameters": {},
+    "parameters": {
+        "ddApiKey": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Datadog API Key"
+            }
+        },
+        "ddAppKey": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Datadog App Key"
+            }
+        }
+    },
     "functions": [],
     "variables": {
-        "aspName": "datadog-log-forwarding-asp",
+        "lfoId": "[toLower(substring(guid('lfo', deployment().name), 24, 12))]",
+        "aspName": "[concat('control-plane-asp-', variables('lfoId'))]",
         "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
-        "storageAccountName": "datadogstorage1000",
-        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+        "storageAccountName": "[concat('lfostorage', variables('lfoId'))]",
+        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "resourceTaskName": "[concat('resources-task-', variables('lfoId'))]",
+        "diagnosticSettingsTaskName": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
+        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]"
     },
     "resources": [
         {
@@ -41,23 +58,10 @@
             },
             "properties": {
                 "accountType": "BlobStorage"
-            },
-            "resources": [
-                {
-                    "name": "[concat(variables('storageAccountName'), '/default/resources-cache')]",
-                    "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
-                    "apiVersion": "2023-01-01",
-                    "dependsOn": [
-                        "[variables('storageAccountName')]"
-                    ],
-                    "properties": {
-                        "publicAccess": "None"
-                    }
-                }
-            ]
+            }
         },
         {
-            "name": "resources-task",
+            "name": "[variables('resourceTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
@@ -97,7 +101,7 @@
             }
         },
         {
-            "name": "diagnostic-settings-task",
+            "name": "[variables('diagnosticSettingsTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
             "location": "[resourceGroup().location]",
@@ -122,12 +126,72 @@
                             "value": "EnableWorkerIndexing"
                         },
                         {
+                            "name": "RESOURCE_GROUP",
+                            "value": "[resourceGroup().name]"
+                        },
+                        {
                             "name": "FUNCTIONS_EXTENSION_VERSION",
                             "value": "~4"
                         },
                         {
                             "name": "FUNCTIONS_WORKER_RUNTIME",
                             "value": "python"
+                        }
+                    ],
+                    "linuxFxVersion": "Python|3.11"
+                },
+                "publicNetworkAccess": "Disabled",
+                "httpsOnly": true
+            }
+        },
+        {
+            "name": "[variables('scalingTaskName')]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "AzureWebJobsFeatureFlags",
+                            "value": "EnableWorkerIndexing"
+                        },
+                        {
+                            "name": "RESOURCE_GROUP",
+                            "value": "[resourceGroup().name]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        },
+                        {
+                            "name": "forwarder_image",
+                            "value": "mattlogger.azurecr.io/forwarder:latest"
+                        },
+                        {
+                            "name": "DD_API_KEY",
+                            "value": "[parameters('ddApiKey')]"
+                        },
+                        {
+                            "name": "DD_APP_KEY",
+                            "value": "[parameters('ddAppKey')]"
                         }
                     ],
                     "linuxFxVersion": "Python|3.11"
