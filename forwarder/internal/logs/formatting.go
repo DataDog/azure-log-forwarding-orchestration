@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"strings"
@@ -87,4 +88,12 @@ func NewLog(logBytes []byte) (*Log, error) {
 	log.Tags = append(log.Tags, getForwarderTags()...)
 
 	return log, nil
+}
+
+func ParseLogs(data []byte, logsChannel chan<- []byte) (err error) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		logsChannel <- []byte(scanner.Text())
+	}
+	return nil
 }
