@@ -17,14 +17,23 @@
     },
     "functions": [],
     "variables": {
+        // resources
         "lfoId": "[toLower(substring(guid('lfo', deployment().name), 24, 12))]",
         "aspName": "[concat('control-plane-asp-', variables('lfoId'))]",
         "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
         "storageAccountName": "[concat('lfostorage', variables('lfoId'))]",
         "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
         "resourceTaskName": "[concat('resources-task-', variables('lfoId'))]",
+        "resourceTaskId": "[resourceId('Microsoft.Web/sites', variables('resourceTaskName'))]",
         "diagnosticSettingsTaskName": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
-        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]"
+        "diagnosticSettingsTaskId": "[resourceId('Microsoft.Web/sites', variables('diagnosticSettingsTaskName'))]",
+        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]",
+        "scalingTaskId": "[resourceId('Microsoft.Web/sites', variables('scalingTaskName'))]",
+        // roles
+        "contributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "monitoringReaderRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
+        "monitoringContributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
+        "storageBlobDataContributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
     },
     "resources": [
         {
@@ -101,6 +110,17 @@
             }
         },
         {
+            "name": "[guid(variables('resourceTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
+            "properties": {
+                "roleDefinitionId": "[variables('monitoringReaderRole')]",
+                "principalId": "[reference(variables('resourceTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('resourceTaskId')]" ]
+        },
+        {
             "name": "[variables('diagnosticSettingsTaskName')]",
             "type": "Microsoft.Web/sites",
             "apiVersion": "2022-09-01",
@@ -143,6 +163,28 @@
                 "publicNetworkAccess": "Disabled",
                 "httpsOnly": true
             }
+        },
+        {
+            "name": "[guid('monitor', variables('diagnosticSettingsTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
+            "properties": {
+                "roleDefinitionId": "[variables('monitoringContributorRole')]",
+                "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
+        },
+        {
+            "name": "[guid('storage', variables('diagnosticSettingsTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
+            "properties": {
+                "roleDefinitionId": "[variables('storageBlobDataContributorRole')]",
+                "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
         },
         {
             "name": "[variables('scalingTaskName')]",
@@ -199,6 +241,17 @@
                 "publicNetworkAccess": "Disabled",
                 "httpsOnly": true
             }
+        },
+        {
+            "name": "[guid(variables('scalingTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // defaults to resource group scope TODO(AZINTS-2745) ensure it remains at the resource group level
+            "properties": {
+                "roleDefinitionId": "[variables('contributorRole')]",
+                "principalId": "[reference(variables('scalingTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('scalingTaskId')]" ]
         }
     ],
     "outputs": {}
