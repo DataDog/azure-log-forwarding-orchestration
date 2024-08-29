@@ -29,6 +29,13 @@
         "diagnosticSettingsTaskId": "[resourceId('Microsoft.Web/sites', variables('diagnosticSettingsTaskName'))]",
         "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]",
         "scalingTaskId": "[resourceId('Microsoft.Web/sites', variables('scalingTaskName'))]",
+        "deployerTaskEnvName": "[concat('deployer-task-env-', variables('lfoId'))]",
+        "deployerTaskEnvId": "[resourceId('Microsoft.App/managedEnvironments', variables('deployerTaskEnvName'))]",
+        "deployerTaskName": "[concat('deployer-task-', variables('lfoId'))]",
+        "deployerTaskId": "[resourceId('Microsoft.App/containerApps', variables('deployerTaskName'))]",
+        // container app images
+        "deployerTaskImage": "mattlogger.azurecr.io/deployer:latest",
+        "forwarderImage": "mattlogger.azurecr.io/forwarder:latest",
         // roles
         "contributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
         "monitoringReaderRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
@@ -225,7 +232,7 @@
                         },
                         {
                             "name": "forwarder_image",
-                            "value": "mattlogger.azurecr.io/forwarder:latest"
+                            "value": "[variables('forwarderImage')]"
                         },
                         {
                             "name": "DD_API_KEY",
@@ -252,7 +259,49 @@
                 "principalId": "[reference(variables('scalingTaskId'), '2022-09-01', 'full').identity.principalId]"
             },
             "dependsOn": [ "[variables('scalingTaskId')]" ]
+        },
+        {
+            "type": "Microsoft.App/managedEnvironments",
+            "apiVersion": "2022-03-01",
+            "name": "[variables('deployerTaskEnvName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.App/containerApps",
+            "apiVersion": "2022-03-01",
+            "name": "[variables('deployerTaskName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "managedEnvironmentId": "[variables('deployerTaskEnvId')]",
+                "template": {
+                    "containers": [
+                        {
+                            "name": "[variables('deployerTaskName')]",
+                            "image": "[variables('deployerTaskImage')]",
+                            "resources": {
+                                "cpu": 0.5,
+                                "memory": "1Gi"
+                            },
+                            "env": [
+                                {
+                                    "name": "DD_API_KEY",
+                                    "value": "[parameters('ddApiKey')]"
+                                },
+                                {
+                                    "name": "DD_APP_KEY",
+                                    "value": "[parameters('ddAppKey')]"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[variables('deployerTaskEnvId')]"
+            ]
         }
+
     ],
     "outputs": {}
 }
