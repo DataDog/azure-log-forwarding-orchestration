@@ -113,7 +113,7 @@
             "name": "[guid(variables('resourceTaskId'), deployment().name)]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            // "scope": "[subscription().id]", this scope should be management group level
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
             "properties": {
                 "roleDefinitionId": "[variables('monitoringReaderRole')]",
                 "principalId": "[reference(variables('resourceTaskId'), '2022-09-01', 'full').identity.principalId]"
@@ -168,7 +168,7 @@
             "name": "[guid('monitor', variables('diagnosticSettingsTaskId'), deployment().name)]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            // "scope": "[subscription().id]", this scope should be management group level
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
             "properties": {
                 "roleDefinitionId": "[variables('monitoringContributorRole')]",
                 "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
@@ -179,7 +179,7 @@
             "name": "[guid('storage', variables('diagnosticSettingsTaskId'), deployment().name)]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            // "scope": "[subscription().id]", this scope should be management group level
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
             "properties": {
                 "roleDefinitionId": "[variables('storageBlobDataContributorRole')]",
                 "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
@@ -246,7 +246,7 @@
             "name": "[guid(variables('scalingTaskId'), deployment().name)]",
             "type": "Microsoft.Authorization/roleAssignments",
             "apiVersion": "2022-04-01",
-            // defaults to resource group scope
+            // defaults to resource group scope TODO(AZINTS-2745) ensure it remains at the resource group level
             "properties": {
                 "roleDefinitionId": "[variables('contributorRole')]",
                 "principalId": "[reference(variables('scalingTaskId'), '2022-09-01', 'full').identity.principalId]"
