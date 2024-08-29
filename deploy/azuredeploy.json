@@ -300,8 +300,18 @@
             "dependsOn": [
                 "[variables('deployerTaskEnvId')]"
             ]
+        },
+        {
+            "name": "[guid(variables('deployerTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // defaults to resource group scope
+            "properties": {
+                "roleDefinitionId": "[variables('contributorRole')]",
+                "principalId": "[reference(variables('deployerTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('deployerTaskId')]" ]
         }
-
     ],
     "outputs": {}
 }
