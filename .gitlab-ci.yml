@@ -17,16 +17,6 @@ ci-build-image:
   tags: ["arch:amd64"]
   script:
     - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
-# ------------- GO CI IMAGE -------------
-ci-build-image-go:
-  image: $DOCKER_IMAGE
-  stage: ci-image
-  rules:
-    - when: manual
-      allow_failure: true
-  tags: ["arch:amd64"]
-  script:
-    - docker buildx build --platform linux/amd64 --tag "$GO_CI_IMAGE" -f "ci/build-image/golang.Dockerfile" . --push
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
@@ -63,9 +53,9 @@ build:
     - ci/scripts/control_plane/build.sh
 # ------------- FORWARDER -------------
 forwarder-tests:
-  image: $GO_CI_IMAGE
+  image: $CI_IMAGE
   stage: test
-  tags: ["runner:docker"]
+  tags: ["arch:amd64"]
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:

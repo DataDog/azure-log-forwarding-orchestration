@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
@@ -117,34 +119,10 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	return client.UploadBlob(ctx, containerName, blobName, buffer)
 }
 
-func downloadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedResponse int64, expectedErr error) error {
-	ctrl := gomock.NewController(t)
-
-	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().DownloadBuffer(gomock.Any(), containerName, blobName, gomock.Any(), gomock.Any()).Return(expectedResponse, expectedErr)
-
-	client := storage.NewClient(mockClient)
-
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-	defer span.Finish()
-
-	blob := storage.Blob{
-		Container: containerName,
-		Item: &container.BlobItem{
-			Name: to.StringPtr(blobName),
-			Properties: &container.BlobProperties{
-				ContentLength: to.Int64Ptr(int64(len(buffer))),
-			},
-		},
-	}
-	_, err := client.DownloadRange(ctx, blob, 0)
-	return err
-}
-
 func TestListBlobs(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns names of containers", func(t *testing.T) {
+	t.Run("returns names of blobs", func(t *testing.T) {
 		t.Parallel() // GIVEN
 		testString := "test"
 		firstPage := []*container.BlobItem{
@@ -284,40 +262,6 @@ func TestUploadBlob(t *testing.T) {
 	})
 }
 
-func TestDownloadRange(t *testing.T) {
-	t.Parallel()
-
-	t.Run("downloads a file successfully", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		containerName := "container"
-		blobName := "blob"
-		buffer := []byte("data")
-
-		// WHEN
-		err := downloadBlob(t, context.Background(), containerName, blobName, buffer, 0, nil)
-
-		// THEN
-		assert.Nil(t, err)
-	})
-
-	t.Run("downloading a file with an error has an error", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		containerName := "container"
-		blobName := "blob"
-		buffer := []byte("data")
-		want := errors.New("someError")
-
-		// WHEN
-		got := downloadBlob(t, context.Background(), containerName, blobName, buffer, 0, want)
-
-		// THEN
-		assert.NotNil(t, got)
-		assert.Contains(t, got.Error(), want.Error())
-	})
-}
-
 func getBlob(creationTime time.Time) storage.Blob {
 	return storage.Blob{
 		Container: "container",
@@ -370,5 +314,50 @@ func TestCurrent(t *testing.T) {
 
 		// THEN
 		assert.False(t, current)
+	})
+}
+
+func TestGetBlobsPerContainer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns blobs", func(t *testing.T) {
+		t.Parallel() // GIVEN
+		containerName := "container"
+		testString := "test"
+		firstPage := []*container.BlobItem{
+			newBlobItem(testString),
+			newBlobItem(testString),
+		}
+		ctrl := gomock.NewController(t)
+		handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{firstPage}, nil, getListBlobsFlatResponse)
+
+		pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
+
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().NewListBlobsFlatPager(containerName, gomock.Any()).Return(pager).MaxTimes(3)
+
+		client := storage.NewClient(mockClient)
+
+		channelSize := 100
+		blobCh := make(chan storage.Blob, channelSize)
+		containerCh := make(chan string, channelSize)
+
+		eg, ctx := errgroup.WithContext(context.Background())
+
+		// WHEN
+		eg.Go(func() error {
+			defer close(containerCh)
+			containerCh <- containerName
+			containerCh <- containerName
+			containerCh <- containerName
+			return nil
+		})
+		eg.Go(func() error {
+			return storage.GetBlobsPerContainer(ctx, client, blobCh, containerCh)
+		})
+		err := eg.Wait()
+
+		// THEN
+		assert.NoError(t, err)
 	})
 }

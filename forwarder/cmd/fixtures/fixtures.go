@@ -65,7 +65,7 @@ func getBlobs(ctx context.Context, client *storage.Client, containerName string)
 }
 
 func getBlobContent(ctx context.Context, client *storage.Client, blob storage.Blob) (*[]byte, error) {
-	segment, err := client.DownloadRange(ctx, blob, 0)
+	segment, err := client.DownloadSegment(ctx, blob, 0)
 	if err != nil {
 		return nil, err
 	}

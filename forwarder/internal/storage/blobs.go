@@ -2,10 +2,13 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
+
+	"google.golang.org/api/iterator"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -20,13 +23,6 @@ type Blob struct {
 	Container string
 }
 
-type BlobSegment struct {
-	Name      string
-	Container string
-	Content   *[]byte
-	Offset    int
-}
-
 func Current(blob Blob, now time.Time) bool {
 	return blob.Item.Properties.CreationTime.After(now.Add(MinusTwoHours))
 }
@@ -36,29 +32,6 @@ func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
 		return nil
 	}
 	return resp.Segment.BlobItems
-}
-
-func (c *Client) DownloadRange(ctx context.Context, blob Blob, offset int) (BlobSegment, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
-	defer span.Finish()
-
-	options := &azblob.DownloadBufferOptions{
-		Range:     azblob.HTTPRange{Offset: int64(offset)},
-		BlockSize: 1024 * 1024,
-	}
-
-	content := make([]byte, int(*blob.Item.Properties.ContentLength)*1024)
-
-	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
-	if err != nil {
-		return BlobSegment{}, fmt.Errorf("failed to download blob: %w", err)
-	}
-	return BlobSegment{
-		Name:      *blob.Item.Name,
-		Container: blob.Container,
-		Content:   &content,
-		Offset:    offset,
-	}, nil
 }
 
 func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[]*container.BlobItem, azblob.ListBlobsFlatResponse] {
@@ -115,4 +88,45 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		return fmt.Errorf("failed to upload blob: %w", err)
 	}
 	return nil
+}
+
+func getBlobs(ctx context.Context, client *Client, containerName string, blobChannel chan<- Blob) error {
+	// Get the blobs from the container
+	iter := client.ListBlobs(ctx, containerName)
+
+	for {
+		blobList, err := iter.Next(ctx)
+
+		if errors.Is(err, iterator.Done) {
+			return nil
+		}
+
+		if err != nil {
+			return fmt.Errorf("getting next page of blobs for %s: %v", containerName, err)
+		}
+
+		if blobList != nil {
+			for _, b := range blobList {
+				if b == nil {
+					continue
+				}
+				blobChannel <- Blob{Item: b, Container: containerName}
+			}
+		}
+	}
+
+}
+
+func GetBlobsPerContainer(ctx context.Context, client *Client, blobCh chan<- Blob, containerCh <-chan string) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobsPerContainer")
+	defer span.Finish()
+	defer close(blobCh)
+	var err error
+	for c := range containerCh {
+		curErr := getBlobs(ctx, client, c, blobCh)
+		if curErr != nil {
+			err = errors.Join(err, curErr)
+		}
+	}
+	return err
 }

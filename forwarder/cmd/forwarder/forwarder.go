@@ -11,10 +11,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/iterator"
-
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
@@ -23,73 +21,6 @@ type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
 	RuntimeSeconds     float64          `json:"runtime_seconds"`
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
-}
-
-func getContainers(ctx context.Context, client *storage.Client, containerNameCh chan<- string) error {
-	// Get the containers from the storage account
-	defer close(containerNameCh)
-	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-
-	for {
-		containerList, err := iter.Next(ctx)
-
-		if errors.Is(err, iterator.Done) {
-			return nil
-		}
-
-		if err != nil {
-			return fmt.Errorf("getting next page of containers: %v", err)
-		}
-
-		if containerList != nil {
-			for _, container := range containerList {
-				if container == nil {
-					continue
-				}
-				containerNameCh <- *container.Name
-			}
-		}
-	}
-}
-
-func getBlobs(ctx context.Context, client *storage.Client, containerName string, blobChannel chan<- storage.Blob) error {
-	// Get the blobs from the container
-	iter := client.ListBlobs(ctx, containerName)
-
-	for {
-		blobList, err := iter.Next(ctx)
-
-		if errors.Is(err, iterator.Done) {
-			return nil
-		}
-
-		if err != nil {
-			return fmt.Errorf("getting next page of blobs for %s: %v", containerName, err)
-		}
-
-		if blobList != nil {
-			for _, blob := range blobList {
-				if blob == nil {
-					continue
-				}
-				blobChannel <- storage.Blob{Item: blob, Container: containerName}
-			}
-		}
-	}
-
-}
-
-func getBlobContents(ctx context.Context, client *storage.Client, blob storage.Blob, blobContentChannel chan<- storage.BlobSegment) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
-	defer span.Finish(tracer.WithError(err))
-
-	current, err := client.DownloadRange(ctx, blob, 0)
-	if err != nil {
-		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
-	}
-
-	blobContentChannel <- current
-	return nil
 }
 
 // This function provides a standardized name for each blob that we can use to read and write blobs
@@ -117,33 +48,16 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 	currNow := now()
 
 	eg.Go(func() error {
-		defer close(blobContentCh)
-		blobsEg, ctx := errgroup.WithContext(ctx)
-		for blob := range blobCh {
-			if !storage.Current(blob, currNow) {
-				continue
-			}
-			log.Printf("Downloading blob %s", *blob.Item.Name)
-			blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh) })
-		}
-		return blobsEg.Wait()
+		return storage.GetBlobContents(ctx, logger, client, blobCh, blobContentCh, currNow)
 	})
 
-	containerNameCh := make(chan string, channelSize)
+	containerCh := make(chan string, channelSize)
 
 	eg.Go(func() error {
-		defer close(blobCh)
-		var err error
-		for container := range containerNameCh {
-			curErr := getBlobs(ctx, client, container, blobCh)
-			if curErr != nil {
-				err = errors.Join(err, curErr)
-			}
-		}
-		return err
+		return storage.GetBlobsPerContainer(ctx, client, blobCh, containerCh)
 	})
 
-	err = getContainers(ctx, client, containerNameCh)
+	err = storage.GetContainers(ctx, client, containerCh)
 
 	err = errors.Join(err, eg.Wait())
 	if err != nil {
