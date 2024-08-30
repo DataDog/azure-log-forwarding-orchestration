@@ -22,8 +22,15 @@ log = getLogger(RESOURCES_TASK_NAME)
 DISALLOWED_REGIONS = {"global"}
 DISALLOWED_RESOURCE_TYPES = {
     # resources without diagnostic settings:
-    "microsoft.compute/snapshots",
     "microsoft.alertsmanagement/prometheusrulegroups",
+    "microsoft.compute/restorepointcollections",
+    "microsoft.compute/snapshots",
+    "microsoft.compute/sshpublickeys",
+    "microsoft.compute/virtualmachines",
+    "microsoft.hybridcompute/machines",
+    "microsoft.insights/datacollectionendpoints",
+    "microsoft.kubernetesconfiguration/privatelinkscopes",
+    "microsoft.managedidentity/userassignedidentities",
 }
 
 
