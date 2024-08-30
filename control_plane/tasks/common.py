@@ -48,7 +48,7 @@ def generate_unique_id() -> str:
     >>> generate_unique_id()
     "c5653797a664"
     """
-    return str(uuid4())[:12]
+    return str(uuid4())[-12:]
 
 
 async def collect(it: AsyncIterable[T]) -> list[T]:
