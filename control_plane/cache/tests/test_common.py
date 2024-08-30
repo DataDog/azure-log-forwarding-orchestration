@@ -8,18 +8,17 @@ from azure.core.exceptions import ResourceNotFoundError
 
 # project
 from cache.common import (
-    STORAGE_ACCOUNT_TYPE,
     STORAGE_CONNECTION_SETTING,
-    LogForwarder,
     MissingConfigOptionError,
-    get_app_service_plan_id,
     get_config_option,
-    get_function_app_id,
+    get_container_app_id,
+    get_managed_env_id,
     get_resource_group_id,
     get_storage_account_id,
     read_cache,
     write_cache,
 )
+from tasks.tests.common import AsyncMockClient
 
 sub1 = "sub1"
 rg1 = "rg1"
@@ -39,16 +38,16 @@ class TestCommon(TestCase):
             get_resource_group_id("sub1", "rg1"),
         )
 
-    def test_get_function_app_id(self):
+    def test_get_container_app_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Web/sites/dd-blob-log-forwarder-config1",
-            get_function_app_id(sub1, rg1, config1),
+            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.App/jobs/dd-log-forwarder-config1",
+            get_container_app_id(sub1, rg1, config1),
         )
 
-    def test_get_app_service_plan_id(self):
+    def test_get_managed_env_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Web/serverfarms/dd-log-forwarder-plan-config1",
-            get_app_service_plan_id(sub1, rg1, config1),
+            "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.App/managedEnvironments/dd-log-forwarder-env-config1",
+            get_managed_env_id(sub1, rg1, config1),
         )
 
     def test_get_storage_account_id(self):
@@ -56,24 +55,6 @@ class TestCommon(TestCase):
             "/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.Storage/storageAccounts/ddlogstorageconfig1",
             get_storage_account_id(sub1, rg1, config1),
         )
-
-    def test_function_app_name(self):
-        self.assertEqual(
-            LogForwarder("12345abcd", STORAGE_ACCOUNT_TYPE).function_app_name, "dd-blob-log-forwarder-12345abcd"
-        )
-        self.assertEqual(LogForwarder("hello", STORAGE_ACCOUNT_TYPE).function_app_name, "dd-blob-log-forwarder-hello")
-
-    def test_app_service_plan_name(self):
-        self.assertEqual(
-            LogForwarder("12345abcd", STORAGE_ACCOUNT_TYPE).app_service_plan_name, "dd-log-forwarder-plan-12345abcd"
-        )
-        self.assertEqual(
-            LogForwarder("hello", STORAGE_ACCOUNT_TYPE).app_service_plan_name, "dd-log-forwarder-plan-hello"
-        )
-
-    def test_storage_account_name(self):
-        self.assertEqual(LogForwarder("12345abcd", STORAGE_ACCOUNT_TYPE).storage_account_name, "ddlogstorage12345abcd")
-        self.assertEqual(LogForwarder("hello", STORAGE_ACCOUNT_TYPE).storage_account_name, "ddlogstoragehello")
 
 
 class TestCacheUtils(IsolatedAsyncioTestCase):
@@ -83,8 +64,8 @@ class TestCacheUtils(IsolatedAsyncioTestCase):
         self.client_class = client_patch.start()
 
         environ[STORAGE_CONNECTION_SETTING] = "connection_string"
-
-        self.client: AsyncMock = await self.client_class.from_connection_string.return_value.__aenter__()
+        self.client = AsyncMockClient()
+        self.client_class.from_connection_string.return_value = self.client
 
     def tearDown(self) -> None:
         del environ[STORAGE_CONNECTION_SETTING]

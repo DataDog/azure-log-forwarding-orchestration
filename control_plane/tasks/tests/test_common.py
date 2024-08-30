@@ -33,10 +33,10 @@ def make_check_resource(tries: int = 0):
 
 
 class TestCommon(IsolatedAsyncioTestCase):
-    async def test_now(self):
+    def test_now(self):
         self.assertRegex(now(), r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}")
 
-    async def test_average(self):
+    def test_average(self):
         self.assertEqual(average(1, 2, 3), 2)
         self.assertEqual(average(), inf)
         self.assertEqual(average(default=-1), -1)

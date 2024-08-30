@@ -20,16 +20,15 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
             sub_id2: {"resource3": "5678"},
         }
         cache_str = dumps(diagnostic_settings_cache)
-        success, cache = deserialize_diagnostic_settings_cache(cache_str)
-        self.assertTrue(success)
+        cache = deserialize_diagnostic_settings_cache(cache_str)
         self.assertEqual(
             cache,
             diagnostic_settings_cache,
         )
 
     def assert_deserialize_failure(self, cache_str: str):
-        success, _ = deserialize_diagnostic_settings_cache(cache_str)
-        self.assertFalse(success)
+        cache = deserialize_diagnostic_settings_cache(cache_str)
+        self.assertIsNone(cache)
 
     def test_invalid_json_is_invalid(self):
         self.assert_deserialize_failure("{invalid_json}")
