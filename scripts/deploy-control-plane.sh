@@ -42,7 +42,7 @@ existing_functions="$(az functionapp list -g $resource_group | jq -r '.[].name')
 echo Done.
 
 echo -n "Checking for a storage account..."
-storage_account=`az storage account list -g $resource_group | jq -r '.[].name' | ( grep lfo || true ) | cut -d$'\n' -f1`
+storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | (grep lfo || true) | cut -d$'\n' -f1)"
 if [[ -z "$storage_account" ]]; then
     echo "Storage account does not exist, creating one..."
     storage_account="lfo$random_id"
@@ -58,7 +58,7 @@ az storage container list --account-name $storage_account --auth-mode login | jq
 echo Done.
 
 echo -n "Checking for an app service plan..."
-app_service_plan=`az functionapp plan list -g $resource_group | jq -r '.[].name' | ( grep ASPlfo || true ) | cut -d$'\n' -f1`
+app_service_plan="$(az functionapp plan list -g $resource_group | jq -r '.[].name' | (grep ASPlfo || true) | cut -d$'\n' -f1)"
 if [[ -z "$app_service_plan" ]]; then
     echo "app service plan does not exist, creating one..."
     app_service_plan="ASPlfo$random_id"
@@ -68,13 +68,17 @@ echo Done.
 
 # ================ creating control plane function apps ================
 
-declare -A task_roles
-task_roles[resources_task]="Monitoring Reader"
-task_roles[diagnostic_settings_task]="Monitoring Contributor"
-task_roles[scaling_task]="Contributor"
+declare -A task_roles=(
+    ["resources_task"]="Monitoring Reader"
+    # TODO: in python, the diagnostic settings task should have
+    # "Monitoring Contributor" and "Storage Blob Data Contributor" roles
+    # bash cant do a dict with list values, so we a more vast permission set
+    ["diagnostic_settings_task"]="Contributor"
+    ["scaling_task"]="Contributor"
+)
 
 get-scope() {
-    if [[ $1 == "Contributor" ]]; then
+    if [[ $1 == "scaling_task" ]]; then
         echo "/subscriptions/$subscription_id/resourceGroups/$resource_group"
     else
         echo "/subscriptions/$subscription_id"
@@ -117,7 +121,6 @@ for task in "${!task_roles[@]}"; do
     }
     echo Done.
 
-
     echo -n Checking role assignment for $function_app_name...
     set +e
     while true; do
@@ -131,8 +134,8 @@ for task in "${!task_roles[@]}"; do
     set -e
     [[ $role_assignments != *"$role"* ]] && {
         echo -n "$role role not found for $task (current roles: {$role_assignments}). Assigning role..."
-        scope=$(get-scope "$role")
-        az role assignment create --assignee $principal_id --role "$role" --scope $scope
+        scope=$(get-scope "$task")
+        az role assignment create --assignee $principal_id --role "$role" --scope $scope >/dev/null
     }
     echo Done.
 
@@ -141,9 +144,20 @@ for task in "${!task_roles[@]}"; do
     rg_setting="$(az functionapp config appsettings list --name $function_app_name --resource-group lfo --query "[?name=='RESOURCE_GROUP']" | jq -r '.[].value')"
     [[ "$rg_setting" != "$resource_group" ]] && {
         echo -n "Setting RESOURCE_GROUP for $function_app_name..."
-        az functionapp config appsettings set --name $function_app_name --resource-group $resource_group --settings RESOURCE_GROUP=$resource_group 2> /dev/null > /dev/null
+        az functionapp config appsettings set --name $function_app_name --resource-group $resource_group --settings RESOURCE_GROUP=$resource_group 2>&1 >/dev/null
     }
     echo Done.
 done
+
+echo -n Checking for the final scaling-task settings...
+settings="$(az functionapp config appsettings list --name scaling-task --resource-group lfo | jq -r '.[].name')"
+
+grep -q "forwarder_image" <<<"$settings" || {
+    echo -n "Setting forwarder_acr_name for scaling-task..."
+    az functionapp config appsettings set --name scaling-task --resource-group lfo --settings \
+        forwarder_image=mattlogger.azurecr.io/forwarder:latest \
+        DD_API_KEY=$DD_API_KEY \
+        DD_APP_KEY=$DD_APP_KEY >/dev/null
+}
 
 echo All Done!

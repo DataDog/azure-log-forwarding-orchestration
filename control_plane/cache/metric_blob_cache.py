@@ -1,9 +1,8 @@
 # stdlib
-from json import JSONDecodeError, loads
 from typing import Any, TypedDict
 
 # 3p
-from jsonschema import ValidationError, validate
+from cache.common import deserialize_cache
 
 
 class MetricBlobEntry(TypedDict, total=True):
@@ -32,12 +31,8 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
 
 
 def deserialize_blob_metric_entry(raw_metric_entry: str, oldest_legal_time: float) -> MetricBlobEntry | None:
-    try:
-        blob_dict: MetricBlobEntry = loads(raw_metric_entry)
-        validate(instance=blob_dict, schema=METRIC_BLOB_SCHEMA)
+    def ensure_valid_timestamp(blob_dict: MetricBlobEntry) -> MetricBlobEntry | None:
         # This is validated previously via the schema so this will always be legal
-        if blob_dict["timestamp"] < oldest_legal_time:
-            return None
-        return blob_dict
-    except (JSONDecodeError, ValidationError):
-        return None
+        return None if blob_dict["timestamp"] < oldest_legal_time else blob_dict
+
+    return deserialize_cache(raw_metric_entry, METRIC_BLOB_SCHEMA, ensure_valid_timestamp)

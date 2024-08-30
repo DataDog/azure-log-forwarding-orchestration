@@ -1,13 +1,46 @@
 {
     "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
     "contentVersion": "1.0.0.0",
-    "parameters": {},
+    "parameters": {
+        "ddApiKey": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Datadog API Key"
+            }
+        },
+        "ddAppKey": {
+            "type": "securestring",
+            "metadata": {
+                "description": "Datadog App Key"
+            }
+        }
+    },
     "functions": [],
     "variables": {
-        "aspName": "datadog-log-forwarding-asp",
+        // resources
+        "lfoId": "[toLower(substring(guid('lfo', deployment().name), 24, 12))]",
+        "aspName": "[concat('control-plane-asp-', variables('lfoId'))]",
         "aspId": "[resourceId('Microsoft.Web/serverfarms', variables('aspName'))]",
-        "storageAccountName": "datadogstorage1000",
-        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+        "storageAccountName": "[concat('lfostorage', variables('lfoId'))]",
+        "storageAccountId": "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]",
+        "resourceTaskName": "[concat('resources-task-', variables('lfoId'))]",
+        "resourceTaskId": "[resourceId('Microsoft.Web/sites', variables('resourceTaskName'))]",
+        "diagnosticSettingsTaskName": "[concat('diagnostic-settings-task-', variables('lfoId'))]",
+        "diagnosticSettingsTaskId": "[resourceId('Microsoft.Web/sites', variables('diagnosticSettingsTaskName'))]",
+        "scalingTaskName": "[concat('scaling-task-', variables('lfoId'))]",
+        "scalingTaskId": "[resourceId('Microsoft.Web/sites', variables('scalingTaskName'))]",
+        "deployerTaskEnvName": "[concat('deployer-task-env-', variables('lfoId'))]",
+        "deployerTaskEnvId": "[resourceId('Microsoft.App/managedEnvironments', variables('deployerTaskEnvName'))]",
+        "deployerTaskName": "[concat('deployer-task-', variables('lfoId'))]",
+        "deployerTaskId": "[resourceId('Microsoft.App/containerApps', variables('deployerTaskName'))]",
+        // container app images
+        "deployerTaskImage": "mattlogger.azurecr.io/deployer:latest",
+        "forwarderImage": "mattlogger.azurecr.io/forwarder:latest",
+        // roles
+        "contributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
+        "monitoringReaderRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
+        "monitoringContributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
+        "storageBlobDataContributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
     },
     "resources": [
         {
@@ -41,100 +74,248 @@
             },
             "properties": {
                 "accountType": "BlobStorage"
+            }
+        },
+        {
+            "name": "[variables('resourceTaskName')]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
             },
-            "resources": [
-                {
-                    "name": "[concat(variables('storageAccountName'), '/default/resources-cache')]",
-                    "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
-                    "apiVersion": "2023-01-01",
-                    "dependsOn": [
-                        "[variables('storageAccountName')]"
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "AzureWebJobsFeatureFlags",
+                            "value": "EnableWorkerIndexing"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        }
                     ],
-                    "properties": {
-                        "publicAccess": "None"
-                    }
+                    "linuxFxVersion": "Python|3.11"
+                },
+                "publicNetworkAccess": "Disabled",
+                "httpsOnly": true
+            }
+        },
+        {
+            "name": "[guid(variables('resourceTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
+            "properties": {
+                "roleDefinitionId": "[variables('monitoringReaderRole')]",
+                "principalId": "[reference(variables('resourceTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('resourceTaskId')]" ]
+        },
+        {
+            "name": "[variables('diagnosticSettingsTaskName')]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "AzureWebJobsFeatureFlags",
+                            "value": "EnableWorkerIndexing"
+                        },
+                        {
+                            "name": "RESOURCE_GROUP",
+                            "value": "[resourceGroup().name]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        }
+                    ],
+                    "linuxFxVersion": "Python|3.11"
+                },
+                "publicNetworkAccess": "Disabled",
+                "httpsOnly": true
+            }
+        },
+        {
+            "name": "[guid('monitor', variables('diagnosticSettingsTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
+            "properties": {
+                "roleDefinitionId": "[variables('monitoringContributorRole')]",
+                "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
+        },
+        {
+            "name": "[guid('storage', variables('diagnosticSettingsTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
+            "properties": {
+                "roleDefinitionId": "[variables('storageBlobDataContributorRole')]",
+                "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
+        },
+        {
+            "name": "[variables('scalingTaskName')]",
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2022-09-01",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[variables('aspId')]",
+                "[variables('storageAccountId')]"
+            ],
+            "properties": {
+                "serverFarmId": "[variables('aspId')]",
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                        },
+                        {
+                            "name": "AzureWebJobsFeatureFlags",
+                            "value": "EnableWorkerIndexing"
+                        },
+                        {
+                            "name": "RESOURCE_GROUP",
+                            "value": "[resourceGroup().name]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~4"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        },
+                        {
+                            "name": "forwarder_image",
+                            "value": "[variables('forwarderImage')]"
+                        },
+                        {
+                            "name": "DD_API_KEY",
+                            "value": "[parameters('ddApiKey')]"
+                        },
+                        {
+                            "name": "DD_APP_KEY",
+                            "value": "[parameters('ddAppKey')]"
+                        }
+                    ],
+                    "linuxFxVersion": "Python|3.11"
+                },
+                "publicNetworkAccess": "Disabled",
+                "httpsOnly": true
+            }
+        },
+        {
+            "name": "[guid(variables('scalingTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // defaults to resource group scope TODO(AZINTS-2745) ensure it remains at the resource group level
+            "properties": {
+                "roleDefinitionId": "[variables('contributorRole')]",
+                "principalId": "[reference(variables('scalingTaskId'), '2022-09-01', 'full').identity.principalId]"
+            },
+            "dependsOn": [ "[variables('scalingTaskId')]" ]
+        },
+        {
+            "type": "Microsoft.App/managedEnvironments",
+            "apiVersion": "2022-03-01",
+            "name": "[variables('deployerTaskEnvName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.App/containerApps",
+            "apiVersion": "2022-03-01",
+            "name": "[variables('deployerTaskName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "managedEnvironmentId": "[variables('deployerTaskEnvId')]",
+                "template": {
+                    "containers": [
+                        {
+                            "name": "[variables('deployerTaskName')]",
+                            "image": "[variables('deployerTaskImage')]",
+                            "resources": {
+                                "cpu": 0.5,
+                                "memory": "1Gi"
+                            },
+                            "env": [
+                                {
+                                    "name": "AzureWebJobsStorage",
+                                    "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
+                                },
+                                {
+                                    "name": "DD_API_KEY",
+                                    "value": "[parameters('ddApiKey')]"
+                                },
+                                {
+                                    "name": "DD_APP_KEY",
+                                    "value": "[parameters('ddAppKey')]"
+                                }
+                            ]
+                        }
+                    ]
                 }
+            },
+            "dependsOn": [
+                "[variables('deployerTaskEnvId')]",
+                "[variables('storageAccountId')]"
             ]
         },
         {
-            "name": "resources-task",
-            "type": "Microsoft.Web/sites",
-            "apiVersion": "2022-09-01",
-            "location": "[resourceGroup().location]",
-            "kind": "functionapp",
-            "identity": {
-                "type": "SystemAssigned"
-            },
-            "dependsOn": [
-                "[variables('aspId')]",
-                "[variables('storageAccountId')]"
-            ],
+            "name": "[guid(variables('deployerTaskId'), deployment().name)]",
+            "type": "Microsoft.Authorization/roleAssignments",
+            "apiVersion": "2022-04-01",
+            // defaults to resource group scope
             "properties": {
-                "serverFarmId": "[variables('aspId')]",
-                "siteConfig": {
-                    "appSettings": [
-                        {
-                            "name": "AzureWebJobsStorage",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
-                        },
-                        {
-                            "name": "AzureWebJobsFeatureFlags",
-                            "value": "EnableWorkerIndexing"
-                        },
-                        {
-                            "name": "FUNCTIONS_EXTENSION_VERSION",
-                            "value": "~4"
-                        },
-                        {
-                            "name": "FUNCTIONS_WORKER_RUNTIME",
-                            "value": "python"
-                        }
-                    ],
-                    "linuxFxVersion": "Python|3.11"
-                },
-                "publicNetworkAccess": "Disabled",
-                "httpsOnly": true
-            }
-        },
-        {
-            "name": "diagnostic-settings-task",
-            "type": "Microsoft.Web/sites",
-            "apiVersion": "2022-09-01",
-            "location": "[resourceGroup().location]",
-            "kind": "functionapp",
-            "identity": {
-                "type": "SystemAssigned"
+                "roleDefinitionId": "[variables('contributorRole')]",
+                "principalId": "[reference(variables('deployerTaskId'), '2022-09-01', 'full').identity.principalId]"
             },
-            "dependsOn": [
-                "[variables('aspId')]",
-                "[variables('storageAccountId')]"
-            ],
-            "properties": {
-                "serverFarmId": "[variables('aspId')]",
-                "siteConfig": {
-                    "appSettings": [
-                        {
-                            "name": "AzureWebJobsStorage",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(variables('storageAccountId'), '2019-06-01').keys[0].value)]"
-                        },
-                        {
-                            "name": "AzureWebJobsFeatureFlags",
-                            "value": "EnableWorkerIndexing"
-                        },
-                        {
-                            "name": "FUNCTIONS_EXTENSION_VERSION",
-                            "value": "~4"
-                        },
-                        {
-                            "name": "FUNCTIONS_WORKER_RUNTIME",
-                            "value": "python"
-                        }
-                    ],
-                    "linuxFxVersion": "Python|3.11"
-                },
-                "publicNetworkAccess": "Disabled",
-                "httpsOnly": true
-            }
+            "dependsOn": [ "[variables('deployerTaskId')]" ]
         }
     ],
     "outputs": {}
