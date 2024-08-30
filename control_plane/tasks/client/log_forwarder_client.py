@@ -182,7 +182,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 ),
                 kind="StorageV2",
                 location=region,
-                public_network_access=PublicNetworkAccess.DISABLED,
+                public_network_access=PublicNetworkAccess.ENABLED,
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
