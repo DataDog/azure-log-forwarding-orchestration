@@ -321,11 +321,11 @@ class ScalingTask(Task):
     ) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
         try:
-            metric_dicts = await client.get_blob_metrics(config_id)
+            metric_lines = await client.get_blob_metrics_lines(config_id)
             forwarder_metrics = [
                 metric_entry
-                for metric_str in metric_dicts
-                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_valid_timestamp))
+                for metric_line in metric_lines
+                if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
             ]
             if len(forwarder_metrics) == 0:
                 log.warning("No valid metrics found for forwarder %s", config_id)

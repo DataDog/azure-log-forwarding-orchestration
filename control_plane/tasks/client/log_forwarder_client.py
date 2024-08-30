@@ -106,6 +106,10 @@ class Resource(Protocol):
 ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
 
 
+def get_datetime_str(time: datetime) -> str:
+    return f"{time:%Y-%m-%d-%H}"
+
+
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.forwarder_image = get_config_option("forwarder_image")
@@ -265,7 +269,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
                                     ),
                                 ),
                                 filters=ManagementPolicyFilter(
-                                    blob_types=["blockBlob", "appendBlob"], prefix_match=["forwarder-metrics/"]
+                                    blob_types=["blockBlob", "appendBlob"],
+                                    prefix_match=[FORWARDER_METRIC_CONTAINER_NAME + "/"],
                                 ),
                             ),
                         )
@@ -327,7 +332,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 raise
             return False
 
-    async def get_blob_metrics(self, config_id: str) -> list[str]:
+    async def get_blob_metrics_lines(self, config_id: str) -> list[str]:
         """
         Returns a list of json decodable strings that represent metrics
         json string takes form of {'Values': [metric_dict]}
@@ -338,30 +343,36 @@ class LogForwarderClient(AbstractAsyncContextManager):
         async with ContainerClient.from_connection_string(
             conn_str, FORWARDER_METRIC_CONTAINER_NAME
         ) as container_client:
-            metrics = []
+            breakpoint()
             current_time: datetime = datetime.now(UTC)
             previous_hour: datetime = current_time - timedelta(hours=1)
-            current_blob_name = f"{self.get_datetime_str(current_time)}.txt"
-            previous_blob_name = f"{self.get_datetime_str(previous_hour)}.txt"
+            current_blob_name = f"{get_datetime_str(current_time)}.json"
+            previous_blob_name = f"{get_datetime_str(previous_hour)}.json"
             results = await gather(
                 *[
                     self.read_blob(container_client, previous_blob_name),
                     self.read_blob(container_client, current_blob_name),
-                ]
+                ],
+                return_exceptions=True,
             )
+            metric_lines: list[str] = []
             for result in results:
-                metrics.extend(result)
-            return metrics
+                if isinstance(result, BaseException):
+                    log.error("Failed to read metrics blob: %s", result)
+                else:
+                    metric_lines.extend(result.splitlines())
+
+            return metric_lines
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def read_blob(self, container_client: ContainerClient, blob_name: str) -> list[str]:
+    async def read_blob(self, container_client: ContainerClient, blob_name: str) -> str:
         try:
             async with container_client.get_blob_client(blob_name) as blob_client:
                 raw_data = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
                 dict_str = await raw_data.readall()
-                return dict_str.decode("utf-8").split("\n")
+                return dict_str.decode("utf-8")
         except ResourceNotFoundError:
-            return []
+            return ""
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
@@ -373,9 +384,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
         )  # type: ignore
         for error in response.get("errors", []):
             log.error(error)
-
-    def get_datetime_str(self, time: datetime) -> str:
-        return f"{time:%Y-%m-%d-%H}"
 
     def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
         return cast(  # annoying hack to get mypy typing to work since the SDK overrides __new__
