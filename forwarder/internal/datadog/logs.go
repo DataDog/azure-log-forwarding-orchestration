@@ -2,6 +2,7 @@ package datadog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -87,15 +88,25 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	return nil
 }
 
-func ProcessLogs(ctx context.Context, datadogClient *Client, logger *log.Entry, logsCh <-chan *logs.Log) (err error) {
+func ProcessLogs(ctx context.Context, datadogClient *Client, volumeMap map[string]int64, logsCh <-chan *logs.Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
-	for logItem := range logsCh {
-		err = datadogClient.SubmitLog(ctx, logItem)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Error submitting log: %v", err))
-			return err
+	for currLog := range logsCh {
+		_, ok := volumeMap[currLog.ResourceId]
+		if !ok {
+			volumeMap[currLog.ResourceId] = 0
+		}
+		volumeMap[currLog.ResourceId]++
+
+		currErr := datadogClient.SubmitLog(ctx, currLog)
+		if currErr != nil {
+			err = errors.Join(err, currErr)
 		}
 	}
-	return datadogClient.Flush(ctx)
+	err = errors.Join(datadogClient.Flush(ctx), err)
+	if err != nil {
+		return fmt.Errorf("error submitting logs: %w", err)
+	}
+
+	return nil
 }

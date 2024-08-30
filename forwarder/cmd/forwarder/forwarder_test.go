@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
@@ -99,7 +101,12 @@ func TestRun(t *testing.T) {
 			return int64(len(validLog)), nil
 		})
 
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+		var uploadedMetrics []byte
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+				uploadedMetrics = append(uploadedMetrics, content...)
+				return azblob.UploadBufferResponse{}, nil
+			})
 
 		data := "\n"
 		stringReader := strings.NewReader(data)
@@ -137,7 +144,18 @@ func TestRun(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
+
+		finalMetrics, err := metrics.FromBytes(uploadedMetrics)
+		assert.NoError(t, err)
+		totalLoad := 0
+		for _, metric := range finalMetrics {
+			for _, value := range metric.ResourceLogVolumes {
+				totalLoad += int(value)
+			}
+		}
+		assert.Equal(t, 2, totalLoad)
 		assert.Len(t, submittedLogs, 2)
+
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, "azure", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")

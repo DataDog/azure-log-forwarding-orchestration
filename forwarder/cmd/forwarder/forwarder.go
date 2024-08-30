@@ -45,18 +45,8 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	resourceVolumes := make(map[string]int64)
 
 	eg.Go(func() error {
-		for currLog := range logCh {
-			_, ok := resourceVolumes[currLog.ResourceId]
-			if !ok {
-				resourceVolumes[currLog.ResourceId] = 0
-			}
-			resourceVolumes[currLog.ResourceId]++
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		return dd.ProcessLogs(egCtx, datadogClient, logger, logCh)
+		logsErr := dd.ProcessLogs(egCtx, datadogClient, resourceVolumes, logCh)
+		return logsErr
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)

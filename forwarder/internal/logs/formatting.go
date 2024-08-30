@@ -100,5 +100,5 @@ func ParseLogs(data []byte, logsChannel chan<- *Log) (err error) {
 		}
 		logsChannel <- log
 	}
-	return nil
+	return err
 }

@@ -19,6 +19,9 @@ func FromBytes(data []byte) ([]MetricEntry, error) {
 	reader := bufio.NewScanner(bytes.NewReader(data))
 	for reader.Scan() {
 		currLine := reader.Text()
+		if currLine == "" {
+			continue
+		}
 		var metric MetricEntry
 		err := json.Unmarshal([]byte(currLine), &metric)
 		if err != nil {
