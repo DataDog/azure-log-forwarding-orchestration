@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,14 +23,6 @@ type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
 	RuntimeSeconds     float64          `json:"runtime_seconds"`
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
-}
-
-func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel chan<- []byte) (err error) {
-	scanner := bufio.NewScanner(bytes.NewReader(*blob.Content))
-	for scanner.Scan() {
-		logsChannel <- []byte(scanner.Text())
-	}
-	return nil
 }
 
 func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
@@ -61,7 +51,7 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 	eg.Go(func() error {
 		defer close(rawLogCh)
 		for blobContent := range blobContentCh {
-			err := getLogsFromBlob(ctx, blobContent, rawLogCh)
+			err := logs.ParseLogs(*blobContent.Content, rawLogCh)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
 				return err
