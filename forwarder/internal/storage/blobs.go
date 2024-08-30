@@ -44,6 +44,22 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[
 	return iter
 }
 
+func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobName string) ([]byte, error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
+	defer span.Finish()
+
+	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create container %s: %w", containerName, err)
+	}
+	buffer, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("error reading existing blob %s: %v", blobName, readErr)
+	}
+
+	return buffer, nil
+}
+
 func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
 	defer span.Finish()
@@ -58,7 +74,7 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	//if yes get it read append
 	//if not just write
 
-	downloadResponse, downErr := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+	buffer, downErr := c.DownloadBlob(ctx, containerName, blobName)
 	//max-age = 2 hours or 7200 seconds
 	cacheControlString := "max-age=7200"
 
@@ -79,11 +95,6 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 
 	if downErr != nil {
 		return fmt.Errorf("error downloading existing blob %s: %v", blobName, downErr)
-	}
-
-	buffer, readErr := io.ReadAll(downloadResponse.Body)
-	if readErr != nil {
-		return fmt.Errorf("error reading existing blob %s: %v", blobName, readErr)
 	}
 
 	buffer = append(buffer, "\n"...)

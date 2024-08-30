@@ -7,6 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
@@ -38,6 +40,11 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 
 	defer datadogClient.Close(ctx)
 
+	cursors, err := cursor.LoadCursors(ctx, storageClient)
+	if err != nil {
+		return fmt.Errorf("error getting cursors: %v", err)
+	}
+
 	channelSize := 1000
 
 	logCh := make(chan *logs.Log, channelSize)
@@ -67,7 +74,7 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	currNow := now()
 
 	eg.Go(func() error {
-		return storage.GetBlobContents(egCtx, logger, storageClient, blobCh, blobContentCh, currNow)
+		return storage.GetBlobContents(egCtx, logger, storageClient, blobCh, blobContentCh, currNow, cursors)
 	})
 
 	containerCh := make(chan string, channelSize)
@@ -80,21 +87,25 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 
 	err = errors.Join(err, eg.Wait())
 
+	cursorErr := cursors.SaveCursors(ctx, storageClient)
+	err = errors.Join(err, cursorErr)
+
 	metricBlob := metrics.MetricEntry{
 		Timestamp:          time.Now().Unix(),
 		RuntimeSeconds:     time.Since(start).Seconds(),
 		ResourceLogVolumes: resourceVolumes,
 	}
 
-	metricBuffer, err := metricBlob.ToBytes()
+	metricBuffer, marshalError := metricBlob.ToBytes()
 
-	if err != nil {
-		logger.Fatalf("error while marshalling metrics: %v", err)
+	if marshalError != nil {
+		logger.Fatalf("error while marshalling metrics: %v", marshalError)
 	}
 
 	blobName := getMetricFileName(time.Now())
 
-	err = storageClient.UploadBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
+	uploadErr := storageClient.UploadBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
+	err = errors.Join(err, uploadErr)
 
 	logger.Info("Finished processing logs")
 	if err != nil {
