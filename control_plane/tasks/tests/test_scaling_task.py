@@ -177,7 +177,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_log_forwarder_metrics_collected(self):
         current_time = (datetime.now()).timestamp()
-        self.client.get_blob_metrics.return_value = [
+        self.client.get_blob_metrics_lines.return_value = [
             dumps(
                 {
                     "timestamp": current_time,
@@ -205,7 +205,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -251,7 +251,7 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarder_collected_with_old_metrics(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
         current_time = (datetime.now()).timestamp()
-        self.client.get_blob_metrics.return_value = [
+        self.client.get_blob_metrics_lines.return_value = [
             dumps(
                 {
                     "timestamp": current_time,
@@ -280,7 +280,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -448,7 +448,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_old_log_forwarder_metrics_not_collected(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
-        self.client.get_blob_metrics.return_value = [
+        self.client.get_blob_metrics_lines.return_value = [
             dumps(
                 {
                     "timestamp": old_time,
@@ -476,7 +476,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.log.warning.assert_called_with("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID)
 
     async def test_background_tasks_awaited(self):
@@ -497,7 +497,7 @@ class TestScalingTask(TaskTestCase):
         self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
 
     async def test_unexpected_failure_skips_cache_write(self):
-        self.client.get_blob_metrics.side_effect = UnexpectedException("unexpected")
+        self.client.get_blob_metrics_lines.side_effect = UnexpectedException("unexpected")
         write_caches = self.patch("ScalingTask.write_caches")
         with self.assertRaises(UnexpectedException):
             await self.run_scaling_task(
