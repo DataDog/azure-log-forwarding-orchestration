@@ -53,7 +53,7 @@ from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
 from datadog_api_client.v2.model.metric_resource import MetricResource
 from datadog_api_client.v2.model.metric_series import MetricSeries
-from tenacity import RetryCallState, retry, stop_after_attempt
+from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
 from cache.common import (
@@ -343,7 +343,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
         async with ContainerClient.from_connection_string(
             conn_str, FORWARDER_METRIC_CONTAINER_NAME
         ) as container_client:
-            breakpoint()
             current_time: datetime = datetime.now(UTC)
             previous_hour: datetime = current_time - timedelta(hours=1)
             current_blob_name = f"{get_datetime_str(current_time)}.json"
@@ -356,11 +355,24 @@ class LogForwarderClient(AbstractAsyncContextManager):
                 return_exceptions=True,
             )
             metric_lines: list[str] = []
-            for result in results:
-                if isinstance(result, BaseException):
-                    log.error("Failed to read metrics blob: %s", result)
-                else:
+            for result, blob in zip(results, [previous_blob_name, current_blob_name], strict=False):
+                if isinstance(result, str):
                     metric_lines.extend(result.splitlines())
+                else:
+                    msg = ""
+                    if isinstance(result, RetryError):
+                        msg = "Max retries attempted, failed due to:\n"
+                        result = result.last_attempt.exception()
+                    if isinstance(result, HttpResponseError):
+                        msg += f"HttpResponseError with Response Code: {result.status_code}\nError: {result.error or result.reason or result.message}"
+                    else:
+                        msg += str(result)
+                    log.error(
+                        "Unable to fetch metrics in %s for forwarder %s:\n%s",
+                        blob,
+                        config_id,
+                        msg,
+                    )
 
             return metric_lines
 

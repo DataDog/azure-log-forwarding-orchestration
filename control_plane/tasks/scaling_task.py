@@ -10,8 +10,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any
 
 # 3p
-from azure.core.exceptions import HttpResponseError
-from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
+from tenacity import retry, retry_if_result, stop_after_attempt
 
 # project
 from cache.assignment_cache import (
@@ -320,28 +319,16 @@ class ScalingTask(Task):
         self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
     ) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
-        try:
-            metric_lines = await client.get_blob_metrics_lines(config_id)
-            forwarder_metrics = [
-                metric_entry
-                for metric_line in metric_lines
-                if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
-            ]
-            if len(forwarder_metrics) == 0:
-                log.warning("No valid metrics found for forwarder %s", config_id)
-            self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
-            return forwarder_metrics
-        except HttpResponseError as e:
-            log.error(
-                "Unable to fetch metrics for forwarder %s.\nResponse Code: %s\nError: %s",
-                config_id,
-                e.status_code,
-                e.error or e.reason or e.message,
-            )
-            return []
-        except RetryError:
-            log.error("Max retries attempted")
-            return []
+        metric_lines = await client.get_blob_metrics_lines(config_id)
+        forwarder_metrics = [
+            metric_entry
+            for metric_line in metric_lines
+            if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
+        ]
+        if len(forwarder_metrics) == 0:
+            log.warning("No valid metrics found for forwarder %s", config_id)
+        self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+        return forwarder_metrics
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
         existing_log_forwarders = await client.list_log_forwarder_ids()
