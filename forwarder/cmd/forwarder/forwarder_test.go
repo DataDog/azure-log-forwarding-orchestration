@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"fmt"
+	"net/http"
 	"testing"
 	"time"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	"go.uber.org/mock/gomock"
 
@@ -97,8 +99,12 @@ func TestRun(t *testing.T) {
 
 		client := storage.NewClient(mockClient)
 
+		var submittedLogs []datadogV2.HTTPLogItem
 		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, nil).MaxTimes(2)
+		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+			submittedLogs = append(submittedLogs, body...)
+			return nil, nil, nil
+		})
 
 		datadogClient := dd.NewClient(mockDDClient)
 
@@ -114,7 +120,10 @@ func TestRun(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
-		assert.Contains(t, buffer.String(), fmt.Sprintf("Downloading blob %s", testString))
-		assert.Contains(t, buffer.String(), "forwarder:lfo")
+		assert.Len(t, submittedLogs, 2)
+		for _, logItem := range submittedLogs {
+			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
+		}
 	})
 }
