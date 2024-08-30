@@ -38,30 +38,18 @@ func Run(ctx context.Context, client *storage.Client, datadogClient *dd.Client, 
 
 	channelSize := 1000
 
-	rawLogCh := make(chan []byte, channelSize)
+	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		for rawLog := range rawLogCh {
-			formattedLog, err := logs.NewLog(rawLog)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
-				return err
-			}
-			err = datadogClient.SubmitLog(ctx, formattedLog)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error submitting log: %v", err))
-				return err
-			}
-		}
-		return datadogClient.Flush(ctx)
+		return dd.ProcessLogs(ctx, datadogClient, logger, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
 
 	eg.Go(func() error {
-		defer close(rawLogCh)
+		defer close(logCh)
 		for blobContent := range blobContentCh {
-			err := logs.ParseLogs(*blobContent.Content, rawLogCh)
+			err := logs.ParseLogs(*blobContent.Content, logCh)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
 				return err

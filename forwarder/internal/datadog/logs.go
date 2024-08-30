@@ -2,9 +2,11 @@ package datadog
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"net/http"
 	"strings"
+
+	log "github.com/sirupsen/logrus"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -85,14 +87,15 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	return nil
 }
 
-func (c *Client) SubmitLogs(ctx context.Context, logs []*logs.Log) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
+func ProcessLogs(ctx context.Context, datadogClient *Client, logger *log.Entry, logsCh <-chan *logs.Log) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
-	for _, log := range logs {
-		err = c.SubmitLog(ctx, log)
+	for logItem := range logsCh {
+		err = datadogClient.SubmitLog(ctx, logItem)
 		if err != nil {
-			break
+			logger.Error(fmt.Sprintf("Error submitting log: %v", err))
+			return err
 		}
 	}
-	return err
+	return datadogClient.Flush(ctx)
 }
