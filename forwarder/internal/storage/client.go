@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -18,14 +20,15 @@ type AzureBlobClient interface {
 	NewListContainersPager(o *azblob.ListContainersOptions) *runtime.Pager[azblob.ListContainersResponse]
 	UploadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)
 	DownloadStream(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error)
+	DownloadBuffer(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.DownloadBufferOptions) (int64, error)
 }
 
 type Client struct {
 	azBlobClient AzureBlobClient
 }
 
-func NewClient(azBlobClient AzureBlobClient) Client {
-	return Client{
+func NewClient(azBlobClient AzureBlobClient) *Client {
+	return &Client{
 		azBlobClient: azBlobClient,
 	}
 }
@@ -45,7 +48,7 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 
 	resp, err := i.pager.NextPage(ctx)
 	if err != nil {
-		return i.nilValue, err
+		return i.nilValue, fmt.Errorf("getting next page: %w", err)
 	}
 
 	return i.getter(resp), nil
@@ -53,4 +56,31 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 
 func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
 	return Iterator[ReturnType, PagerType]{pager: pager, getter: getter, nilValue: nilValue}
+}
+
+var PagingError = errors.New("fetched more items than expected")
+
+func NewPagingHandler[ContentType any, ResponseType any](items []ContentType, fetcherError error, getter func(ContentType) ResponseType) runtime.PagingHandler[ResponseType] {
+	counter := 0
+	return runtime.PagingHandler[ResponseType]{
+		Fetcher: func(ctx context.Context, response *ResponseType) (ResponseType, error) {
+			var containersResponse ResponseType
+			if fetcherError != nil {
+				return containersResponse, fetcherError
+			}
+			if len(items) == 0 {
+				counter++
+				return containersResponse, nil
+			}
+			if counter >= len(items) {
+				return containersResponse, PagingError
+			}
+			containersResponse = getter(items[counter])
+			counter++
+			return containersResponse, nil
+		},
+		More: func(response ResponseType) bool {
+			return counter < len(items)
+		},
+	}
 }
