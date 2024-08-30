@@ -40,7 +40,7 @@
         "contributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b24988ac-6180-42a0-ab88-20f7382dd24c')]",
         "monitoringReaderRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
         "monitoringContributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '749f88d5-cbae-40b8-bcfc-e573ddc772fa')]",
-        "storageBlobDataContributorRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]"
+        "readerAndDataAccessRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'c12c1c16-33a1-487b-954d-41c89c60f349')]"
     },
     "resources": [
         {
@@ -188,7 +188,7 @@
             "apiVersion": "2022-04-01",
             // "scope": "[subscription().id]", TODO(AZINTS-2745) this scope should be management group level
             "properties": {
-                "roleDefinitionId": "[variables('storageBlobDataContributorRole')]",
+                "roleDefinitionId": "[variables('readerAndDataAccessRole')]",
                 "principalId": "[reference(variables('diagnosticSettingsTaskId'), '2022-09-01', 'full').identity.principalId]"
             },
             "dependsOn": [ "[variables('diagnosticSettingsTaskId')]" ]
