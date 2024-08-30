@@ -362,7 +362,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                     msg = ""
                     if isinstance(result, RetryError):
                         msg = "Max retries attempted, failed due to:\n"
-                        result = result.last_attempt.exception()
+                        result = result.last_attempt.exception() or "Unknown"
                     if isinstance(result, HttpResponseError):
                         msg += f"HttpResponseError with Response Code: {result.status_code}\nError: {result.error or result.reason or result.message}"
                     else:
