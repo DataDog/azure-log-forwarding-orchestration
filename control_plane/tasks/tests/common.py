@@ -1,9 +1,12 @@
 # stdlib
 from collections.abc import AsyncIterable, Callable
+from contextlib import suppress
+from dataclasses import dataclass
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
 
+# project
 from cache.common import InvalidCacheError
 
 
@@ -30,13 +33,14 @@ class TaskTestCase(AsyncTestCase):
     def setUp(self) -> None:
         self.credential = self.patch_path("tasks.task.DefaultAzureCredential")
         self.credential.side_effect = AsyncMock
-        self.write_cache: AsyncMock = self.patch("write_cache")
+        with suppress(AttributeError):
+            self.write_cache: AsyncMock = self.patch("write_cache")
 
-    def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], tuple[bool, T]]) -> T:
+    def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], T | None]) -> T:
         self.write_cache.assert_called_with(cache_name, ANY)
         raw_cache = self.write_cache.call_args_list[-1][0][1]
-        success, cache = deserialize_cache(raw_cache)
-        if not success:  # pragma: no cover
+        cache = deserialize_cache(raw_cache)
+        if cache is None:  # pragma: no cover
             # should never happen when tests pass, but it provides a useful error message if they don't
             raise InvalidCacheError("Diagnostic Settings Cache is in an invalid format after the task")
         return cache
@@ -44,4 +48,37 @@ class TaskTestCase(AsyncTestCase):
 
 async def async_generator(*items: T) -> AsyncIterable[T]:
     for x in items:
+        if isinstance(x, Exception):
+            raise x
         yield x
+
+
+class UnexpectedException(Exception):
+    """Testing for exceptions that we havent accounted for"""
+
+    pass
+
+
+def mock(**kwargs: Any) -> Mock:
+    m = Mock()
+    for k, v in kwargs.items():
+        setattr(m, k, v)
+    return m
+
+
+def AsyncMockClient(**kwargs: Any) -> AsyncMock:
+    """An AsyncMock with the context manager methods set up to use as a client"""
+    m = AsyncMock(**kwargs)
+    m.__aenter__.return_value = m
+    m.__aexit__.return_value = None
+    return m
+
+
+@dataclass(frozen=True)
+class AzureModelMatcher:
+    expected: dict[str, Any]
+
+    def __eq__(self, other: Any) -> bool:
+        with suppress(Exception):
+            return other.as_dict() == self.expected
+        return False

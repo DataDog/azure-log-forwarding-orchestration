@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"testing"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
@@ -34,7 +36,7 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 
 func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*service.ContainerItem, error) {
 	ctrl := gomock.NewController(t)
-	handler := newPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
+	handler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
 
 	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
 
@@ -65,6 +67,53 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 		}
 	}
 	return results, nil
+}
+
+func TestGetContainers(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns names of containers", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		channelSize := 100
+		containerCh := make(chan string, channelSize)
+		eg, ctx := errgroup.WithContext(context.Background())
+
+		testString := "test"
+		firstPage := []*service.ContainerItem{
+			newContainerItem(testString),
+			newContainerItem(testString),
+		}
+
+		ctrl := gomock.NewController(t)
+		handler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{firstPage}, nil, getListContainersResponse)
+
+		pager := runtime.NewPager[azblob.ListContainersResponse](handler)
+
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
+
+		client := storage.NewClient(mockClient)
+		var got []string
+
+		// WHEN
+		eg.Go(func() error {
+			for container := range containerCh {
+				got = append(got, container)
+			}
+			return nil
+		})
+		eg.Go(func() error {
+			return storage.GetContainers(ctx, client, containerCh)
+		})
+		err := eg.Wait()
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Len(t, got, 2)
+		assert.Equal(t, testString, got[0])
+		assert.Equal(t, testString, got[1])
+	})
 }
 
 func TestGetContainersMatchingPrefix(t *testing.T) {

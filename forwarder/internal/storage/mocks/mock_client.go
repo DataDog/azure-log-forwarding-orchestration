@@ -41,6 +41,21 @@ func (m *MockAzureBlobClient) EXPECT() *MockAzureBlobClientMockRecorder {
 	return m.recorder
 }
 
+// CreateContainer mocks base method.
+func (m *MockAzureBlobClient) CreateContainer(ctx context.Context, containerName string, o *azblob.CreateContainerOptions) (azblob.CreateContainerResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateContainer", ctx, containerName, o)
+	ret0, _ := ret[0].(azblob.CreateContainerResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateContainer indicates an expected call of CreateContainer.
+func (mr *MockAzureBlobClientMockRecorder) CreateContainer(ctx, containerName, o any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateContainer", reflect.TypeOf((*MockAzureBlobClient)(nil).CreateContainer), ctx, containerName, o)
+}
+
 // DownloadBuffer mocks base method.
 func (m *MockAzureBlobClient) DownloadBuffer(ctx context.Context, containerName, blobName string, buffer []byte, o *azblob.DownloadBufferOptions) (int64, error) {
 	m.ctrl.T.Helper()

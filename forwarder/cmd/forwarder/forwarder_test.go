@@ -1,185 +1,146 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
+	"io/ioutil"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog/mocks"
 	"go.uber.org/mock/gomock"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+	"github.com/Azure/go-autorest/autorest/to"
 	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
+	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog/mocks"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	log "github.com/sirupsen/logrus"
+
 	"github.com/stretchr/testify/assert"
-	testcontainers "github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func uploadBlobs(ctx context.Context, client *storage.Client) (int, error) {
-	fixturesPath, err := storage.GetAzuriteFixturesPath()
-	if err != nil {
-		return 0, err
+var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")
+
+func newContainerItem(name string) *service.ContainerItem {
+	return &service.ContainerItem{
+		Name: to.StringPtr(name),
 	}
-	counter := 0
-	err = filepath.Walk(fixturesPath, func(filePath string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() || strings.Contains(filePath, ".DS_Store") {
-			return nil
-		}
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			return err
-		}
-		reader := bufio.NewScanner(bytes.NewReader(data))
-		for reader.Scan() {
-			_ = reader.Text()
-			counter++
-		}
-		targetPath := filePath[len(fixturesPath):]
-		err = client.UploadBlob(ctx, storage.FunctionAppLogsContainerPrefix, targetPath, data)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return 0, err
+}
+
+func getListContainersResponse(containers []*service.ContainerItem) azblob.ListContainersResponse {
+	return azblob.ListContainersResponse{
+		ListContainersSegmentResponse: service.ListContainersSegmentResponse{
+			ContainerItems: containers,
+		},
 	}
-	return counter, nil
+}
+
+func newBlobItem(name string) *container.BlobItem {
+	now := time.Now()
+	return &container.BlobItem{
+		Name: to.StringPtr(name),
+		Properties: &container.BlobProperties{
+			ContentLength: to.Int64Ptr(int64(len(validLog))),
+			CreationTime:  &now,
+		},
+	}
+}
+
+func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobsFlatResponse {
+	if containers == nil || len(containers) == 0 {
+		return azblob.ListBlobsFlatResponse{}
+	}
+	return azblob.ListBlobsFlatResponse{
+		ListBlobsFlatSegmentResponse: container.ListBlobsFlatSegmentResponse{
+			Segment: &container.BlobFlatListSegment{
+				BlobItems: containers,
+			},
+		},
+	}
 }
 
 func TestRun(t *testing.T) {
-	// Integration test for the storage forwarder
-	// GIVEN
-	ctx := context.WithValue(
-		context.Background(),
-		datadog.ContextAPIKeys,
-		map[string]datadog.APIKey{
-			"apiKeyAuth": {
-				Key: os.Getenv("DD_API_KEY"),
-			},
-			"appKeyAuth": {
-				Key: os.Getenv("DD_APP_KEY"),
-			},
-		},
-	)
-	req := testcontainers.ContainerRequest{
-		Image:        "mcr.microsoft.com/azure-storage/azurite:latest",
-		ExposedPorts: []string{"10000/tcp", "10001/tcp", "10002/tcp"},
-		WaitingFor:   wait.ForLog("Azurite Table service is successfully listening at http://0.0.0.0:10002"),
-	}
-	azurite, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-		Started:          true,
+	t.Parallel()
+
+	t.Run("execute the basic functionality", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testString := "test"
+		containerPage := []*service.ContainerItem{
+			newContainerItem(testString),
+			newContainerItem(testString),
+		}
+		blobPage := []*container.BlobItem{
+			newBlobItem(testString),
+			newBlobItem(testString),
+		}
+
+		ctrl := gomock.NewController(t)
+		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
+
+		containerHandler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
+		containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
+		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
+
+		blobHandler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
+		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
+		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
+
+		mockClient.EXPECT().DownloadBuffer(gomock.Any(), testString, testString, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.DownloadBufferOptions) (int64, error) {
+			copy(buffer, validLog)
+			return int64(len(validLog)), nil
+		})
+
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any())
+
+		data := "\n"
+		stringReader := strings.NewReader(data)
+		reader := ioutil.NopCloser(stringReader)
+
+		var downloadResp azblob.DownloadStreamResponse
+		downloadResp.Body = reader
+		mockClient.EXPECT().DownloadStream(gomock.Any(), "forwarder-metrics", gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			return downloadResp, nil
+		})
+
+		var resp azblob.CreateContainerResponse
+		mockClient.EXPECT().CreateContainer(gomock.Any(), "forwarder-metrics", gomock.Any()).Return(resp, nil)
+
+		client := storage.NewClient(mockClient)
+
+		var submittedLogs []datadogV2.HTTPLogItem
+		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
+		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+			submittedLogs = append(submittedLogs, body...)
+			return nil, nil, nil
+		})
+
+		datadogClient := dd.NewClient(mockDDClient)
+
+		var output []byte
+		buffer := bytes.NewBuffer(output)
+		logger := log.New()
+		logger.SetOutput(buffer)
+
+		ctx := context.Background()
+
+		// WHEN
+		err := Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Len(t, submittedLogs, 2)
+		for _, logItem := range submittedLogs {
+			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
+		}
 	})
-	if err != nil {
-		t.Fatalf("Could not start azurite: %s", err)
-	}
-	defer func() {
-		if err := azurite.Terminate(ctx); err != nil {
-			t.Fatalf("Could not stop azurite: %s", err)
-		}
-	}()
-
-	blobEndpoint, err := azurite.Endpoint(ctx, "10000/tcp")
-	if err != nil {
-		t.Fatalf("Could not get azurite blob endpoint: %s", err)
-	}
-	blobPort := strings.Split(blobEndpoint, ":")[2]
-
-	queueEndpoint, err := azurite.Endpoint(ctx, "10001/tcp")
-	if err != nil {
-		t.Fatalf("Could not get azurite queue endpoint: %s", err)
-	}
-	queuePort := strings.Split(queueEndpoint, ":")[2]
-
-	tableEndpoint, err := azurite.Endpoint(ctx, "10002/tcp")
-	if err != nil {
-		t.Fatalf("Could not get azurite table endpoint: %s", err)
-	}
-	tablePort := strings.Split(tableEndpoint, ":")[2]
-
-	connectionString := fmt.Sprintf("DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:%s/devstoreaccount1;QueueEndpoint=http://127.0.0.1:%s/devstoreaccount1;TableEndpoint=http://127.0.0.1:%s/devstoreaccount1;", blobPort, queuePort, tablePort)
-
-	azBlobClient, err := azblob.NewClientFromConnectionString(connectionString, nil)
-	assert.NoError(t, err)
-
-	client := storage.NewClient(azBlobClient)
-
-	err = client.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix)
-	assert.NoError(t, err)
-
-	err = client.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix)
-	assert.NoError(t, err)
-
-	err = client.CreateContainer(context.Background(), storage.FunctionAppLogsContainerPrefix)
-	assert.NoError(t, err)
-
-	lineCounter, err := uploadBlobs(context.Background(), client)
-	assert.NoError(t, err)
-
-	var output []byte
-	buffer := bytes.NewBuffer(output)
-	logger := log.New()
-	logger.SetOutput(buffer)
-
-	ctrl := gomock.NewController(t)
-	mockClient := mocks.NewMockLogsApiInterface(ctrl)
-	mockClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, nil).MaxTimes(2)
-
-	datadogClient := dd.NewClient(mockClient)
-
-	// WHEN
-	err = Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
-	metricFileName := getMetricFileName(time.Now())
-	var metricsBlob *container.BlobItem
-	resultingBlobs := client.ListBlobs(context.Background(), metrics.MetricsBucket)
-	for {
-		blobList, err := resultingBlobs.Next(context.Background())
-		if err != nil {
-			break
-		}
-		for _, blob := range blobList {
-			if blob == nil {
-				continue
-			}
-			if strings.Contains(*blob.Name, metricFileName) {
-				metricsBlob = blob
-				break
-			}
-		}
-	}
-	blob := storage.Blob{Item: metricsBlob, Container: metrics.MetricsBucket}
-
-	metricsSegment, err := client.DownloadRange(context.Background(), blob, 0)
-	assert.NoError(t, err)
-	metricValues, err := metrics.FromBytes(*metricsSegment.Content)
-	assert.NoError(t, err)
-
-	volume := 0
-	for _, currMetric := range metricValues {
-		for _, count := range currMetric.ResourceLogVolumes {
-			volume += int(count)
-		}
-	}
-
-	// THEN
-	got := string(buffer.Bytes())
-	assert.NoError(t, err)
-	assert.Contains(t, got, "Finished processing logs")
-	assert.Equal(t, lineCounter, volume)
 }

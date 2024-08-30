@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -44,7 +47,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*container.BlobItem, error) {
 	ctrl := gomock.NewController(t)
 
-	handler := newPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
+	handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
 
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
@@ -116,34 +119,10 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	return client.UploadBlob(ctx, containerName, blobName, buffer)
 }
 
-func downloadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedResponse int64, expectedErr error) error {
-	ctrl := gomock.NewController(t)
-
-	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().DownloadBuffer(gomock.Any(), containerName, blobName, gomock.Any(), gomock.Any()).Return(expectedResponse, expectedErr)
-
-	client := storage.NewClient(mockClient)
-
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-	defer span.Finish()
-
-	blob := storage.Blob{
-		Container: containerName,
-		Item: &container.BlobItem{
-			Name: to.StringPtr(blobName),
-			Properties: &container.BlobProperties{
-				ContentLength: to.Int64Ptr(int64(len(buffer))),
-			},
-		},
-	}
-	_, err := client.DownloadRange(ctx, blob, 0)
-	return err
-}
-
 func TestListBlobs(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns names of containers", func(t *testing.T) {
+	t.Run("returns names of blobs", func(t *testing.T) {
 		t.Parallel() // GIVEN
 		testString := "test"
 		firstPage := []*container.BlobItem{
@@ -279,40 +258,106 @@ func TestUploadBlob(t *testing.T) {
 		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 0, 1)
 
 		// THEN
-		assert.EqualError(t, err, downErr.Error())
+		assert.Contains(t, err.Error(), downErr.Error())
 	})
 }
 
-func TestDownloadRange(t *testing.T) {
+func getBlob(creationTime time.Time) storage.Blob {
+	return storage.Blob{
+		Container: "container",
+		Item: &container.BlobItem{
+			Name: to.StringPtr("blob"),
+			Properties: &container.BlobProperties{
+				CreationTime: &creationTime,
+			},
+		},
+	}
+}
+
+func TestCurrent(t *testing.T) {
 	t.Parallel()
 
-	t.Run("downloads a file successfully", func(t *testing.T) {
+	t.Run("now is current", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		containerName := "container"
-		blobName := "blob"
-		buffer := []byte("data")
+		currTime := time.Now()
+		blob := getBlob(currTime)
 
 		// WHEN
-		err := downloadBlob(t, context.Background(), containerName, blobName, buffer, 0, nil)
+		current := storage.Current(blob, currTime)
 
 		// THEN
-		assert.Nil(t, err)
+		assert.True(t, current)
 	})
 
-	t.Run("downloading a file with an error has an error", func(t *testing.T) {
+	t.Run("an hour ago is current", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		containerName := "container"
-		blobName := "blob"
-		buffer := []byte("data")
-		want := errors.New("error")
+		currTime := time.Now()
+		blob := getBlob(currTime.Add(-1 * time.Hour))
 
 		// WHEN
-		got := downloadBlob(t, context.Background(), containerName, blobName, buffer, 0, want)
+		current := storage.Current(blob, currTime)
 
 		// THEN
-		assert.NotNil(t, got)
-		assert.Equal(t, want, got)
+		assert.True(t, current)
+	})
+
+	t.Run("three hours ago is not current", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		currTime := time.Now()
+		blob := getBlob(currTime.Add(-3 * time.Hour))
+
+		// WHEN
+		current := storage.Current(blob, currTime)
+
+		// THEN
+		assert.False(t, current)
+	})
+}
+
+func TestGetBlobsPerContainer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns blobs", func(t *testing.T) {
+		t.Parallel() // GIVEN
+		containerName := "container"
+		testString := "test"
+		firstPage := []*container.BlobItem{
+			newBlobItem(testString),
+			newBlobItem(testString),
+		}
+		ctrl := gomock.NewController(t)
+		handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{firstPage}, nil, getListBlobsFlatResponse)
+
+		pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
+
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().NewListBlobsFlatPager(containerName, gomock.Any()).Return(pager).MaxTimes(3)
+
+		client := storage.NewClient(mockClient)
+
+		channelSize := 100
+		blobCh := make(chan storage.Blob, channelSize)
+		containerCh := make(chan string, channelSize)
+
+		eg, ctx := errgroup.WithContext(context.Background())
+
+		// WHEN
+		eg.Go(func() error {
+			defer close(containerCh)
+			containerCh <- containerName
+			containerCh <- containerName
+			containerCh <- containerName
+			return nil
+		})
+		eg.Go(func() error {
+			return storage.GetBlobsPerContainer(ctx, client, blobCh, containerCh)
+		})
+		err := eg.Wait()
+
+		// THEN
+		assert.NoError(t, err)
 	})
 }

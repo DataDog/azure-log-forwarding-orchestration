@@ -10,7 +10,7 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import read_cache, write_cache
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache, prune_resource_cache
 from tasks.common import now
 from tasks.task import Task
 
@@ -19,11 +19,19 @@ RESOURCES_TASK_NAME = "resources_task"
 log = getLogger(RESOURCES_TASK_NAME)
 
 
+DISALLOWED_REGIONS = {"global"}
+DISALLOWED_RESOURCE_TYPES = {
+    # resources without diagnostic settings:
+    "microsoft.compute/snapshots",
+    "microsoft.alertsmanagement/prometheusrulegroups",
+}
+
+
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
-        success, resource_cache = deserialize_resource_cache(resource_cache_state)
-        if not success:
+        resource_cache = deserialize_resource_cache(resource_cache_state)
+        if resource_cache is None:
             log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}
         self._resource_cache_initial_state = resource_cache
@@ -46,8 +54,9 @@ class ResourcesTask(Task):
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
             async for r in client.resources.list():
-                region = cast(str, r.location)
-                if region == "global":
+                region = cast(str, r.location).lower()
+                resource_type = cast(str, r.type).lower()
+                if region in DISALLOWED_REGIONS or resource_type in DISALLOWED_RESOURCE_TYPES:
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id))
                 resource_count += 1
@@ -55,6 +64,7 @@ class ResourcesTask(Task):
             self.resource_cache[subscription_id] = resources_per_region
 
     async def write_caches(self) -> None:
+        prune_resource_cache(self.resource_cache)
         if self.resource_cache == self._resource_cache_initial_state:
             log.info("Resources have not changed, no update needed")
             return

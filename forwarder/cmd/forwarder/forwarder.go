@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -20,92 +18,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/iterator"
-
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
-
-func getContainers(ctx context.Context, client *storage.Client, containerNameCh chan<- string) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getContainers")
-	defer span.Finish(tracer.WithError(err))
-	defer close(containerNameCh)
-	iter := client.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-
-	for {
-		containerList, err := iter.Next(ctx)
-
-		if errors.Is(err, iterator.Done) {
-			return nil
-		}
-
-		if err != nil {
-			return err
-		}
-
-		if containerList != nil {
-			for _, container := range containerList {
-				if container == nil {
-					continue
-				}
-				containerNameCh <- *container.Name
-			}
-		}
-	}
-}
-
-func getBlobs(ctx context.Context, client *storage.Client, containerName string, blobChannel chan<- storage.Blob) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getLogsFromBlob")
-	defer span.Finish(tracer.WithError(err))
-	iter := client.ListBlobs(ctx, containerName)
-
-	for {
-		blobList, err := iter.Next(ctx)
-
-		if errors.Is(err, iterator.Done) {
-			return nil
-		}
-
-		if err != nil {
-			return err
-		}
-
-		if blobList != nil {
-			for _, blob := range blobList {
-				if blob == nil {
-					continue
-				}
-				blobChannel <- storage.Blob{Item: blob, Container: containerName}
-			}
-		}
-	}
-
-}
-
-func getBlobContents(ctx context.Context, client *storage.Client, blob storage.Blob, blobContentChannel chan<- storage.BlobSegment) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
-	defer span.Finish(tracer.WithError(err))
-
-	current, downloadErr := client.DownloadRange(ctx, blob, 0)
-	if downloadErr != nil {
-		return fmt.Errorf("getBlobContents: %v", downloadErr)
-	}
-
-	blobContentChannel <- current
-	return nil
-}
-
-func getLogsFromBlob(ctx context.Context, blob storage.BlobSegment, logsChannel chan<- []byte) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getLogsFromBlob")
-	defer span.Finish(tracer.WithError(err))
-	scanner := bufio.NewScanner(bytes.NewReader(*blob.Content))
-	for scanner.Scan() {
-		logsChannel <- []byte(scanner.Text())
-	}
-	return nil
-}
 
 func getMetricFileName(now time.Time) string {
 	return now.UTC().Format("2006-01-02-15") + ".json"
@@ -138,32 +55,16 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 		return nil
 	})
 
-	rawLogCh := make(chan []byte, channelSize)
-
 	eg.Go(func() error {
-		defer close(logCh)
-		for rawLog := range rawLogCh {
-			formattedLog, err := logs.NewLog(rawLog)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
-				return err
-			}
-			logCh <- formattedLog
-			err = datadogClient.SubmitLog(egCtx, formattedLog)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error submitting log: %v", err))
-				return err
-			}
-		}
-		return datadogClient.Flush(egCtx)
+		return dd.ProcessLogs(egCtx, datadogClient, logger, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
 
 	eg.Go(func() error {
-		defer close(rawLogCh)
+		defer close(logCh)
 		for blobContent := range blobContentCh {
-			err := getLogsFromBlob(egCtx, blobContent, rawLogCh)
+			err := logs.ParseLogs(*blobContent.Content, logCh)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
 				return err
@@ -173,35 +74,19 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	})
 
 	blobCh := make(chan storage.Blob, channelSize)
+	currNow := now()
 
 	eg.Go(func() error {
-		defer close(blobContentCh)
-		blobsEg, newCtx := errgroup.WithContext(egCtx)
-		for blob := range blobCh {
-			if !storage.Current(blob, now) {
-				continue
-			}
-			log.Printf("Downloading blob %s", *blob.Item.Name)
-			blobsEg.Go(func() error { return getBlobContents(newCtx, storageClient, blob, blobContentCh) })
-		}
-		return blobsEg.Wait()
+		return storage.GetBlobContents(egCtx, logger, storageClient, blobCh, blobContentCh, currNow)
 	})
 
-	containerNameCh := make(chan string, channelSize)
+	containerCh := make(chan string, channelSize)
 
 	eg.Go(func() error {
-		defer close(blobCh)
-		var err error
-		for container := range containerNameCh {
-			curErr := getBlobs(egCtx, storageClient, container, blobCh)
-			if curErr != nil {
-				err = errors.Join(err, curErr)
-			}
-		}
-		return err
+		return storage.GetBlobsPerContainer(egCtx, storageClient, blobCh, containerCh)
 	})
 
-	err = getContainers(ctx, storageClient, containerNameCh)
+	err = storage.GetContainers(ctx, storageClient, containerCh)
 
 	err = errors.Join(err, eg.Wait())
 

@@ -1,10 +1,13 @@
 # stdlib
+from collections.abc import Callable
+from json import JSONDecodeError, loads
 from os import environ
-from typing import Any, Final, Literal, NamedTuple
+from typing import Any, Final, Literal, NamedTuple, TypeVar
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient
+from jsonschema import ValidationError, validate
 
 BLOB_STORAGE_CACHE = "control-plane-cache"
 
@@ -26,36 +29,36 @@ def get_config_option(name: str) -> str:
 EVENT_HUB_TYPE: Final = "eventhub"
 STORAGE_ACCOUNT_TYPE: Final = "storageaccount"
 
-FUNCTION_APP_PREFIX: Final = "dd-blob-log-forwarder-"
-ASP_PREFIX: Final = "dd-log-forwarder-plan-"
+CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
+MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 
 
-def get_function_app_name(config_id: str) -> str:
-    return FUNCTION_APP_PREFIX + config_id
+def get_container_app_name(config_id: str) -> str:
+    return CONTAINER_APP_PREFIX + config_id
 
 
 def get_resource_group_id(subscription_id: str, resource_group: str) -> str:
     return f"/subscriptions/{subscription_id}/resourceGroups/{resource_group}"
 
 
-def get_function_app_id(subscription_id: str, resource_group: str, config_id: str) -> str:
+def get_container_app_id(subscription_id: str, resource_group: str, config_id: str) -> str:
     return (
         get_resource_group_id(subscription_id, resource_group)
-        + "/providers/Microsoft.Web/sites/"
-        + get_function_app_name(config_id)
+        + "/providers/Microsoft.App/jobs/"
+        + get_container_app_name(config_id)
     )
 
 
-def get_app_service_plan_name(config_id: str) -> str:
-    return ASP_PREFIX + config_id
+def get_managed_env_name(config_id: str) -> str:
+    return MANAGED_ENVIRONMENT_PREFIX + config_id
 
 
-def get_app_service_plan_id(subscription_id: str, resource_group: str, config_id: str) -> str:
+def get_managed_env_id(subscription_id: str, resource_group: str, config_id: str) -> str:
     return (
         get_resource_group_id(subscription_id, resource_group)
-        + "/providers/Microsoft.Web/serverfarms/"
-        + get_app_service_plan_name(config_id)
+        + "/providers/Microsoft.App/managedEnvironments/"
+        + get_managed_env_name(config_id)
     )
 
 
@@ -98,18 +101,6 @@ class LogForwarder(NamedTuple):
     config_id: str
     type: LogForwarderType
 
-    @property
-    def function_app_name(self):
-        return get_function_app_name(self.config_id)
-
-    @property
-    def app_service_plan_name(self):
-        return get_app_service_plan_name(self.config_id)
-
-    @property
-    def storage_account_name(self):
-        return get_storage_account_name(self.config_id)
-
 
 class InvalidCacheError(Exception):
     pass
@@ -131,3 +122,17 @@ async def write_cache(blob_name: str, content: str) -> None:
         get_config_option(STORAGE_CONNECTION_SETTING), BLOB_STORAGE_CACHE, blob_name
     ) as blob_client:
         await blob_client.upload_blob(content, overwrite=True)
+
+
+T = TypeVar("T")
+
+
+def deserialize_cache(
+    cache_str: str, schema: dict[str, Any], post_processing: Callable[[T], T | None] = lambda x: x
+) -> T | None:
+    try:
+        cache = loads(cache_str)
+        validate(instance=cache, schema=schema)
+        return post_processing(cache)
+    except (JSONDecodeError, ValidationError):
+        return None

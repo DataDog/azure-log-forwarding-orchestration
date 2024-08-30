@@ -4,17 +4,22 @@ from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine
 from copy import deepcopy
 from datetime import datetime, timedelta
+from itertools import chain
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any
-from uuid import uuid4
 
 # 3p
 from azure.core.exceptions import HttpResponseError
 from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
 
 # project
-from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
+from cache.assignment_cache import (
+    ASSIGNMENT_CACHE_BLOB,
+    AssignmentCache,
+    RegionAssignmentConfiguration,
+    deserialize_assignment_cache,
+)
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
@@ -23,9 +28,9 @@ from cache.common import (
     write_cache,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import average, now
+from tasks.common import average, generate_unique_id, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
@@ -51,30 +56,73 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
     return all(metric["runtime_seconds"] > threshold for metric in metrics)
 
 
-def is_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
+def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
+def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[str], list[str]]:
+    half_load = sum(resource_loads.values()) / 2
+    load_so_far = 0
+    first_half: list[str] = []
+    second_half: list[str] = []
+
+    def _sort_key(kv: tuple[str, int]) -> tuple[int, str]:
+        """Sort by load, then alphabetically if we have a tie"""
+        return kv[1], kv[0]
+
+    for resource, load in sorted(resource_loads.items(), key=_sort_key):
+        load_so_far += load
+        if load_so_far <= half_load:
+            first_half.append(resource)
+        else:
+            second_half.append(resource)
+    return first_half, second_half
+
+
+def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
+    """Updates the assignment cache based on any deletions in the resource cache"""
+
+    def _prune_region_config(subscription_id: str, region: str) -> RegionAssignmentConfiguration:
+        resources = resource_cache.get(subscription_id, {}).get(region, set())
+        current_region_config = deepcopy(
+            assignment_cache.get(subscription_id, {}).get(
+                region,
+                {"configurations": {}, "resources": {}},  # default empty region config
+            )
+        )
+        current_region_config["resources"] = {
+            resource_id: config_id
+            for resource_id in resources
+            if (config_id := current_region_config["resources"].get(resource_id))
+        }
+        return current_region_config
+
+    return {
+        sub_id: {region: _prune_region_config(sub_id, region) for region in region_resources}
+        for sub_id, region_resources in resource_cache.items()
+    }
+
+
 class ScalingTask(Task):
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str, resource_group: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
-        self.resource_group = resource_group
+        self.resource_group = get_config_option("RESOURCE_GROUP")
 
         self.background_tasks: set[AsyncTask[Any]] = set()
 
         # Resource Cache
-        success, resource_cache = deserialize_resource_cache(resource_cache_state)
-        if not success:
+        resource_cache = deserialize_resource_cache(resource_cache_state)
+        if resource_cache is None:
             raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
 
         # Assignment Cache
-        success, assignment_cache = deserialize_assignment_cache(assignment_cache_state)
-        if not success:
+        assignment_cache = deserialize_assignment_cache(assignment_cache_state)
+        if assignment_cache is None:
             log.warning("Assignment Cache is in an invalid format, task will reset the cache")
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache
-        self.assignment_cache = deepcopy(assignment_cache)
+        self.assignment_cache = prune_assignment_cache(resource_cache, assignment_cache)
 
     def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
         def _done_callback(task: AsyncTask[Any]) -> None:
@@ -88,7 +136,7 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
-        all_subscriptions = set(self.resource_cache.keys()) | set(self.assignment_cache.keys())
+        all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
@@ -107,11 +155,13 @@ class ScalingTask(Task):
             if self.background_tasks:
                 await wait(self.background_tasks)
 
+            await self.clean_up_orphaned_forwarders(client, subscription_id)
+
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
         """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
-        config_id = str(uuid4())[-12:]  # take the last section since we are length limited
+        config_id = generate_unique_id()
         try:
             config_type = await client.create_log_forwarder(region, config_id)
             return LogForwarder(config_id, config_type)
@@ -151,10 +201,12 @@ class ScalingTask(Task):
         await gather(
             *(
                 client.delete_log_forwarder(forwarder_id)
-                for forwarder_id in self.assignment_cache[subscription_id][region]["configurations"]
+                for forwarder_id in self._assignment_cache_initial_state[subscription_id][region]["configurations"]
             )
         )
-        del self.assignment_cache[subscription_id][region]
+
+        # delete if we haven't already cleaned it up
+        self.assignment_cache.get(subscription_id, {}).pop(region, None)
 
     async def scale_region(
         self,
@@ -168,6 +220,7 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
+        resources = self.assignment_cache[subscription_id][region]["resources"]
         now_dt = datetime.now()
         oldest_metric_timestamp = (now_dt - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
 
@@ -181,11 +234,19 @@ class ScalingTask(Task):
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
+        def _has_enough_resources_to_scale_up(config_id: str) -> bool:
+            num_resources = list(resources.values()).count(config_id)
+            if num_resources < 2:
+                log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
+                return False
+            return True
+
         oldest_scale_up_timestamp = (now_dt - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
             if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
+            and _has_enough_resources_to_scale_up(config_id)
         ]
         if not forwarders_to_scale_up:
             # TODO (AZINTS-2389) implement scaling down
@@ -199,7 +260,13 @@ class ScalingTask(Task):
             if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
                 continue
-            self.split_forwarder_resources(subscription_id, region, overwhelmed_forwarder_id, new_forwarder)
+            self.split_forwarder_resources(
+                subscription_id,
+                region,
+                overwhelmed_forwarder_id,
+                new_forwarder,
+                forwarder_metrics[overwhelmed_forwarder_id],
+            )
 
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
@@ -208,7 +275,7 @@ class ScalingTask(Task):
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
             self.assignment_cache[subscription_id][region]["resources"]
         )
-        if not new_resources or not forwarder_metrics:
+        if not new_resources or not forwarder_metrics:  # no new resources or no forwarders
             return
 
         # any forwarders without metrics we should not add more resources to, there may be something wrong
@@ -227,23 +294,25 @@ class ScalingTask(Task):
         region: str,
         underscaled_forwarder_id: str,
         new_forwarder: LogForwarder,
+        metrics: list[MetricBlobEntry],
     ) -> None:
         """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
 
         # add new config
         self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
-        # split resources in half
-        assigned_resources = sorted(
-            resource_id
+        # split resources in half by resource load
+        resource_loads = {
+            resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
-        )
-        split_index = len(assigned_resources) // 2
+        }
+        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
+
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
-                **{resource: underscaled_forwarder_id for resource in assigned_resources[:split_index]},
-                **{resource: new_forwarder.config_id for resource in assigned_resources[split_index:]},
+                **{resource: underscaled_forwarder_id for resource in old_forwarder_resources},
+                **{resource: new_forwarder.config_id for resource in new_forwarder_resources},
             }
         )
 
@@ -262,12 +331,38 @@ class ScalingTask(Task):
                 log.warning("No valid metrics found for forwarder %s", config_id)
             self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
             return forwarder_metrics
-        except HttpResponseError:
-            log.exception("Recieved azure HTTP error: ")
+        except HttpResponseError as e:
+            log.error(
+                "Unable to fetch metrics for forwarder %s.\nResponse Code: %s\nError: %s",
+                config_id,
+                e.status_code,
+                e.error or e.reason or e.message,
+            )
             return []
         except RetryError:
             log.error("Max retries attempted")
             return []
+
+    async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
+        existing_log_forwarders = await client.list_log_forwarder_ids()
+        orphaned_forwarders = set(existing_log_forwarders) - set(
+            chain.from_iterable(
+                region_config["configurations"]
+                for region_config in self.assignment_cache.get(subscription_id, {}).values()
+            )
+        )
+        if not orphaned_forwarders:
+            return
+
+        log.info("Cleaning up orphaned forwarders for subscription %s: %s", subscription_id, orphaned_forwarders)
+        await gather(
+            *(
+                # only try once and don't error, if something transiently fails
+                # we can wait til next time, we don't want to spend much time here
+                client.delete_log_forwarder(forwarder_id, raise_error=False, max_attempts=1)
+                for forwarder_id in orphaned_forwarders
+            )
+        )
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:
@@ -280,12 +375,11 @@ class ScalingTask(Task):
 async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    resource_group = get_config_option("RESOURCE_GROUP")
     resources_cache_state, assignment_cache_state = await gather(
         read_cache(RESOURCE_CACHE_BLOB),
         read_cache(ASSIGNMENT_CACHE_BLOB),
     )
-    async with ScalingTask(resources_cache_state, assignment_cache_state, resource_group) as task:
+    async with ScalingTask(resources_cache_state, assignment_cache_state) as task:
         await task.run()
     log.info("Task finished at %s", now())
 
