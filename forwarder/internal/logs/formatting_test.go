@@ -65,7 +65,7 @@ func TestNewLog(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
-		assert.Equal(t, log.Category, "")
+		assert.Equal(t, "", log.Category)
 	})
 
 	t.Run("single character category", func(t *testing.T) {
