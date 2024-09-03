@@ -4,33 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-type Cursor struct {
-	Offset int
-}
-
 type Cursors struct {
-	Cursors map[string]Cursor
+	Cursors map[string]int
 	mu      sync.Mutex
 }
 
 func NewCursors() *Cursors {
 	return &Cursors{
-		Cursors: make(map[string]Cursor),
+		Cursors: make(map[string]int),
 	}
 }
 
-func (c *Cursors) GetCursor(key string) (Cursor, error) {
+func (c *Cursors) GetCursor(key string) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	cursor, ok := c.Cursors[key]
 	if !ok {
-		return Cursor{}, fmt.Errorf("cursor not found for key %s", key)
+		return 0, fmt.Errorf("cursor not found for key %s", key)
 	}
 	return cursor, nil
 }
@@ -38,7 +35,7 @@ func (c *Cursors) GetCursor(key string) (Cursor, error) {
 func (c *Cursors) SetCursor(key string, offset int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Cursors[key] = Cursor{Offset: offset}
+	c.Cursors[key] = offset
 }
 
 const CursorContainer = "datadog-cursors"
@@ -49,6 +46,9 @@ func LoadCursors(ctx context.Context, client *storage.Client) (*Cursors, error) 
 	defer span.Finish()
 	data, err := client.DownloadBlob(ctx, CursorContainer, CursorBlob)
 	if err != nil {
+		if strings.Contains(err.Error(), "The specified container does not exist") {
+			return NewCursors(), nil
+		}
 		return nil, fmt.Errorf("error downloading cursor: %v", err)
 	}
 	var cursors *Cursors

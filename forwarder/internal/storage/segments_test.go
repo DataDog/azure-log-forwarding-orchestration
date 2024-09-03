@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
@@ -105,6 +107,7 @@ func TestGetBlobContents(t *testing.T) {
 		blobContentCh := make(chan storage.BlobSegment, channelSize)
 		eg, ctx := errgroup.WithContext(context.Background())
 		now := time.Now()
+		cursors := cursor.NewCursors()
 
 		// WHEN
 		eg.Go(func() error {
@@ -122,7 +125,7 @@ func TestGetBlobContents(t *testing.T) {
 			return nil
 		})
 		eg.Go(func() error {
-			return storage.GetBlobContents(ctx, log.NewEntry(logger), client, blobCh, blobContentCh, time.Now())
+			return storage.GetBlobContents(ctx, log.NewEntry(logger), client, blobCh, blobContentCh, time.Now(), cursors)
 		})
 		err := eg.Wait()
 

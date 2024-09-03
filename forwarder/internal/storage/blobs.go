@@ -50,7 +50,7 @@ func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobNam
 
 	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create container %s: %w", containerName, err)
+		return nil, fmt.Errorf("failed to download blob %s: %w", blobName, err)
 	}
 	buffer, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {

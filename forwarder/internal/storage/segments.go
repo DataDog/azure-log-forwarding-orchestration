@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
+
+type BlobCursorMap interface {
+	GetCursor(key string) (int, error)
+	SetCursor(key string, offset int)
+}
 
 type BlobSegment struct {
 	Name      string
@@ -43,15 +46,11 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 	}, nil
 }
 
-func getBlobContents(ctx context.Context, client *Client, blob Blob, blobContentChannel chan<- BlobSegment, cursors *cursor.Cursors) (err error) {
+func getBlobContents(ctx context.Context, client *Client, blob Blob, blobContentChannel chan<- BlobSegment, cursors BlobCursorMap) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
 	defer span.Finish(tracer.WithError(err))
 
-	currentCursor, err := cursors.GetCursor(*blob.Item.Name)
-	currentOffset := 0
-	if err == nil {
-		currentOffset = currentCursor.Offset
-	}
+	currentOffset, _ := cursors.GetCursor(*blob.Item.Name)
 	current, err := client.DownloadSegment(ctx, blob, int64(currentOffset))
 	if err != nil {
 		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
@@ -62,7 +61,7 @@ func getBlobContents(ctx context.Context, client *Client, blob Blob, blobContent
 	return nil
 }
 
-func GetBlobContents(ctx context.Context, logger *log.Entry, client *Client, blobCh <-chan Blob, blobContentCh chan<- BlobSegment, now time.Time, cursors *cursor.Cursors) error {
+func GetBlobContents(ctx context.Context, logger *log.Entry, client *Client, blobCh <-chan Blob, blobContentCh chan<- BlobSegment, now time.Time, cursors BlobCursorMap) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobContents")
 	defer span.Finish()
 	defer close(blobContentCh)
