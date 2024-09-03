@@ -48,8 +48,23 @@ func unmarshall(azureLog []byte) (*Log, error) {
 	resourceIdBytes := tempJson["resourceId"]
 	if resourceIdBytes != nil {
 		resourceId = trimQuotes(string(resourceIdBytes))
+		delete(tempJson, "resourceId")
 	}
-	delete(tempJson, "resourceId")
+	if resourceId == "" {
+		resourceIdBytes = tempJson["ResourceId"]
+		if resourceIdBytes != nil {
+			resourceId = trimQuotes(string(resourceIdBytes))
+			delete(tempJson, "ResourceId")
+		}
+	}
+	if resourceId == "" {
+		resourceIdBytes = tempJson["resourceID"]
+		if resourceIdBytes != nil {
+			resourceId = trimQuotes(string(resourceIdBytes))
+			delete(tempJson, "resourceID")
+		}
+
+	}
 
 	logJson, err := json.Marshal(tempJson)
 	if err != nil {
