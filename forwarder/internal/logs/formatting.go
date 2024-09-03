@@ -11,11 +11,11 @@ import (
 )
 
 type Log struct {
-	ByteSize   int             `json:"-"`
-	Json       json.RawMessage `json:"-"`
-	ResourceId string          `json:"resourceId"`
-	Category   string          `json:"category"`
-	Tags       []string        `json:"tags"`
+	ByteSize   int
+	Json       json.RawMessage
+	ResourceId string
+	Category   string
+	Tags       []string
 }
 
 func trimQuotes(s string) string {
