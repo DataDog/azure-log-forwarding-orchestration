@@ -18,6 +18,10 @@ type Log struct {
 }
 
 func trimQuotes(s string) string {
+	// TODO AZINTS-2751 replace with json5 parsing
+	if len(s) < 3 {
+		return s
+	}
 	if s[0] == '"' {
 		s = s[1:]
 	}
