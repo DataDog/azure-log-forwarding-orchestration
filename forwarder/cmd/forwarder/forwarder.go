@@ -32,16 +32,11 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 
 	channelSize := 1000
 
-	rawLogCh := make(chan []byte, channelSize)
+	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		for rawLog := range rawLogCh {
-			formattedLog, err := logs.NewLog(rawLog)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error formatting log: %v", err))
-				return err
-			}
-			logger.Info(fmt.Sprintf("Formatted log with tags: %s", formattedLog.Tags))
+		for currLog := range logCh {
+			logger.Info(fmt.Sprintf("Formatted log with tags: %s", currLog.Tags))
 		}
 		return nil
 	})
@@ -49,9 +44,9 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
 
 	eg.Go(func() error {
-		defer close(rawLogCh)
+		defer close(logCh)
 		for blobContent := range blobContentCh {
-			err := logs.ParseLogs(*blobContent.Content, rawLogCh)
+			err := logs.ParseLogs(*blobContent.Content, logCh)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
 				return err

@@ -133,9 +133,9 @@ func TestParseLogs(t *testing.T) {
 		data = append(data, validLog...)
 
 		eg, _ := errgroup.WithContext(context.Background())
-		var got [][]byte
+		var got []*logs.Log
 
-		logsChannel := make(chan []byte, 100)
+		logsChannel := make(chan *logs.Log, 100)
 
 		// WHEN
 		eg.Go(func() error {
