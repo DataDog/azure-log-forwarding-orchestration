@@ -121,5 +121,8 @@ func ParseLogs(data []byte, logsChannel chan<- *Log) (err error) {
 
 		logsChannel <- currLog
 	}
+	if err != nil {
+		return err
+	}
 	return nil
 }
