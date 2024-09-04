@@ -107,7 +107,12 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	uploadErr := storageClient.AppendBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
 	err = errors.Join(err, uploadErr)
 
-	logger.Info("Finished processing logs")
+	totalLogs := 0
+	for _, v := range resourceVolumes {
+		totalLogs += int(v)
+	}
+
+	logger.Info(fmt.Sprintf("Finished processing %d logs", totalLogs))
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}

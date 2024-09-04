@@ -17,10 +17,11 @@ type BlobCursorMap interface {
 }
 
 type BlobSegment struct {
-	Name      string
-	Container string
-	Content   *[]byte
-	Offset    int64
+	Name          string
+	Container     string
+	Content       *[]byte
+	Offset        int64
+	ContentLength int64
 }
 
 func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (BlobSegment, error) {
@@ -39,10 +40,11 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 		return BlobSegment{}, fmt.Errorf("failed to download blob: %w", err)
 	}
 	return BlobSegment{
-		Name:      *blob.Item.Name,
-		Container: blob.Container,
-		Content:   &content,
-		Offset:    offset,
+		Name:          *blob.Item.Name,
+		Container:     blob.Container,
+		Content:       &content,
+		Offset:        offset,
+		ContentLength: *blob.Item.Properties.ContentLength,
 	}, nil
 }
 
@@ -56,7 +58,7 @@ func getBlobContents(ctx context.Context, client *Client, blob Blob, blobContent
 		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
 	}
 
-	cursors.SetCursor(*blob.Item.Name, int(current.Offset))
+	cursors.SetCursor(current.Name, int(current.ContentLength))
 	blobContentChannel <- current
 	return nil
 }

@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
-
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -77,9 +75,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	defer span.Finish(tracer.WithError(err))
 
 	if len(c.logsBuffer) > 0 {
-		obj, resp, err := c.logsApi.SubmitLog(ctx, c.logsBuffer)
-		log.Printf("Response: %v", resp)
-		log.Println(obj)
+		_, _, err := c.logsApi.SubmitLog(ctx, c.logsBuffer)
 		if err != nil {
 			return err
 		}

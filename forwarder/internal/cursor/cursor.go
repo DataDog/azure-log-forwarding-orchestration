@@ -55,7 +55,7 @@ func LoadCursors(ctx context.Context, client *storage.Client) (*Cursors, error) 
 	defer span.Finish()
 	data, err := client.DownloadBlob(ctx, CursorContainer, CursorBlob)
 	if err != nil {
-		if strings.Contains(err.Error(), "The specified container does not exist") {
+		if strings.Contains(err.Error(), "BlobNotFound") {
 			return NewCursors(nil), nil
 		}
 		return nil, fmt.Errorf("error downloading cursor: %v", err)
