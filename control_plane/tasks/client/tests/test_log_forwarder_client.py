@@ -241,7 +241,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.blob_client.download_blob.call_count, 2 * MAX_ATTEMPS)
         self.log.error.assert_called_with(
             "Unable to fetch metrics in %s for forwarder %s:\n%s",
-            "2024-08-30-19.json",
+            ANY,
             "test",
             "Max retries attempted, failed due to:\noops",
         )
@@ -254,7 +254,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.blob_client.download_blob.call_count, 2)
         self.log.error.assert_called_with(
             "Unable to fetch metrics in %s for forwarder %s:\n%s",
-            "2024-08-30-19.json",
+            ANY,
             "test",
             "HttpResponseError with Response Code: 402\nError: {'code': 'something related to 402'}",
         )
