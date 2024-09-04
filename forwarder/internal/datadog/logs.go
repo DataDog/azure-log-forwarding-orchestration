@@ -2,7 +2,7 @@ package datadog
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -16,7 +16,9 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
-const BufferSize = 100
+// BufferSize is the maximum number of logs per post to Logs API
+// https://docs.datadoghq.com/api/latest/logs/
+const BufferSize = 1000
 
 func NewHTTPLogItem(log *logs.Log) (datadogV2.HTTPLogItem, error) {
 	message, err := log.Json.MarshalJSON()
@@ -87,15 +89,14 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	return nil
 }
 
-func ProcessLogs(ctx context.Context, datadogClient *Client, logger *log.Entry, logsCh <-chan *logs.Log) (err error) {
+func ProcessLogs(ctx context.Context, datadogClient *Client, logsCh <-chan *logs.Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
-		err = datadogClient.SubmitLog(ctx, logItem)
-		if err != nil {
-			logger.Error(fmt.Sprintf("Error submitting log: %v", err))
-			return err
-		}
+		currErr := datadogClient.SubmitLog(ctx, logItem)
+		err = errors.Join(err, currErr)
 	}
-	return datadogClient.Flush(ctx)
+	flushErr := datadogClient.Flush(ctx)
+	err = errors.Join(err, flushErr)
+	return err
 }

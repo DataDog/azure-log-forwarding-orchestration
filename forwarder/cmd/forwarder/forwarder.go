@@ -41,7 +41,7 @@ func Run(ctx context.Context, client *storage.Client, datadogClient *dd.Client, 
 	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		return dd.ProcessLogs(ctx, datadogClient, logger, logCh)
+		return dd.ProcessLogs(ctx, datadogClient, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
