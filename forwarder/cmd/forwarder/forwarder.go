@@ -104,7 +104,7 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 
 	blobName := getMetricFileName(time.Now())
 
-	uploadErr := storageClient.UploadBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
+	uploadErr := storageClient.AppendBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
 	err = errors.Join(err, uploadErr)
 
 	logger.Info("Finished processing logs")

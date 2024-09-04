@@ -107,7 +107,7 @@ func TestGetBlobContents(t *testing.T) {
 		blobContentCh := make(chan storage.BlobSegment, channelSize)
 		eg, ctx := errgroup.WithContext(context.Background())
 		now := time.Now()
-		cursors := cursor.NewCursors()
+		cursors := cursor.NewCursors(nil)
 
 		// WHEN
 		eg.Go(func() error {

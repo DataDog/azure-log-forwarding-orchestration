@@ -84,7 +84,20 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	return results, nil
 }
 
-func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedUpResponse azblob.UploadBufferResponse, expectedUpErr error, expectedDownResponse azblob.DownloadStreamResponse, expectedDownErr error, upCalls int, downCalls int) error {
+func appendBlob(
+	t *testing.T,
+	ctx context.Context,
+	containerName string,
+	blobName string,
+	buffer []byte,
+	expectedUpResponse azblob.UploadBufferResponse,
+	expectedUpErr error,
+	expectedDownResponse azblob.DownloadStreamResponse,
+	expectedDownErr error,
+	upCalls int,
+	downCalls int,
+	createContainerExpected bool,
+) error {
 	ctrl := gomock.NewController(t)
 
 	var newBuf []byte
@@ -108,6 +121,11 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	}
 
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
+
+	if createContainerExpected {
+		createContainerResponse := azblob.CreateContainerResponse{}
+		mockClient.EXPECT().CreateContainer(gomock.Any(), containerName, gomock.Any()).Return(createContainerResponse, nil)
+	}
 	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, newBuf, gomock.Any()).Return(expectedUpResponse, expectedUpErr).Times(upCalls)
 	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr).Times(downCalls)
 
@@ -116,7 +134,7 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
 	defer span.Finish()
 
-	return client.UploadBlob(ctx, containerName, blobName, buffer)
+	return client.AppendBlob(ctx, containerName, blobName, buffer)
 }
 
 func TestListBlobs(t *testing.T) {
@@ -193,7 +211,7 @@ func TestListBlobs(t *testing.T) {
 	})
 }
 
-func TestUploadBlob(t *testing.T) {
+func TestAppendBlob(t *testing.T) {
 	t.Parallel()
 
 	t.Run("uploads a buffer", func(t *testing.T) {
@@ -209,7 +227,7 @@ func TestUploadBlob(t *testing.T) {
 		downResp.Body = stringReadCloser
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, nil, 1, 1)
+		err := appendBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, nil, 1, 1, true)
 
 		// THEN
 		assert.Nil(t, err)
@@ -232,7 +250,7 @@ func TestUploadBlob(t *testing.T) {
 		downErr := runtime.NewResponseErrorWithErrorCode(&resp, "BlobNotFound")
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 1, 1)
+		err := appendBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 1, 1, true)
 
 		// THEN
 		assert.Nil(t, err)
@@ -255,7 +273,7 @@ func TestUploadBlob(t *testing.T) {
 		downErr := runtime.NewResponseErrorWithErrorCode(&resp, "Invalid")
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 0, 1)
+		err := appendBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 0, 1, false)
 
 		// THEN
 		assert.Contains(t, err.Error(), downErr.Error())
