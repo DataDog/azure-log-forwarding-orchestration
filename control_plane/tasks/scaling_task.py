@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Generator
 from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
@@ -59,11 +59,9 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
-def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[str], list[str]]:
+def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
     half_load = sum(resource_loads.values()) / 2
     load_so_far = 0
-    first_half: list[str] = []
-    second_half: list[str] = []
 
     def _sort_key(kv: tuple[str, int]) -> tuple[int, str]:
         """Sort by load, then alphabetically if we have a tie"""
@@ -71,11 +69,8 @@ def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[st
 
     for resource, load in sorted(resource_loads.items(), key=_sort_key):
         load_so_far += load
-        if load_so_far <= half_load:
-            first_half.append(resource)
-        else:
-            second_half.append(resource)
-    return first_half, second_half
+        if load_so_far > half_load:
+            yield resource
 
 
 def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
@@ -306,12 +301,10 @@ class ScalingTask(Task):
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
         }
-        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
 
         self.assignment_cache[subscription_id][region]["resources"].update(
             {
-                **{resource: underscaled_forwarder_id for resource in old_forwarder_resources},
-                **{resource: new_forwarder.config_id for resource in new_forwarder_resources},
+                **{resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)},
             }
         )
 
