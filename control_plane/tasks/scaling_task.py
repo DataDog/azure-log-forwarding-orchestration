@@ -305,9 +305,9 @@ class ScalingTask(Task):
                 for resource, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
                 if config_id == underscaled_forwarder_id
             )
-            split_idx = len(resources) // 2
+            split_index = len(resources) // 2
             self.assignment_cache[subscription_id][region]["resources"].update(
-                {resource: new_forwarder.config_id for resource in resources[split_idx:]}
+                {resource: new_forwarder.config_id for resource in resources[split_index:]}
             )
             return
 
