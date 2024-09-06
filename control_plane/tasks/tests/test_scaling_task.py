@@ -25,7 +25,7 @@ from tasks.scaling_task import (
     SCALING_TASK_NAME,
     ScalingTask,
     is_consistently_over_threshold,
-    partition_resources_by_load,
+    resources_to_move_by_load,
 )
 from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException
 
@@ -729,88 +729,87 @@ class TestScalingTaskHelpers(TestCase):
             )
         )
 
-    def test_partition_resources_by_load_exactly_half_load(self):
+    def test_resources_to_move_by_load_exactly_half_load(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "big_resource": 9001,
-                    "resource1": 500,
-                    "resource2": 1000,
-                    "resource3": 500,
-                    "resource4": 2000,
-                    "resource5": 1,
-                    "resource6": 3000,
-                    "resource7": 2000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "big_resource": 9001,
+                        "resource1": 500,
+                        "resource2": 1000,
+                        "resource3": 500,
+                        "resource4": 2000,
+                        "resource5": 1,
+                        "resource6": 3000,
+                        "resource7": 2000,
+                    }
+                )
             ),
-            (
-                [
-                    "resource5",
-                    "resource1",
-                    "resource3",
-                    "resource2",
-                    "resource4",
-                    "resource7",
-                    "resource6",
-                ],
-                ["big_resource"],
-            ),
+            ["big_resource"],
         )
 
-    def test_partition_resources_by_load_two_resources(self):
+    def test_resources_to_move_by_load_two_resources(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 1,
-                    "resource2": 9000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 1,
+                        "resource2": 9000,
+                    }
+                )
             ),
-            (["resource1"], ["resource2"]),
+            ["resource2"],
         )
 
-    def test_partition_resources_by_load_four_resources(self):
+    def test_resources_to_move_by_load_four_resources(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 4000,
-                    "resource2": 6000,
-                    "resource3": 5000,
-                    "resource4": 7000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 4000,
+                        "resource2": 6000,
+                        "resource3": 5000,
+                        "resource4": 7000,
+                    }
+                )
             ),
-            (["resource1", "resource3"], ["resource2", "resource4"]),
+            ["resource2", "resource4"],
         )
 
-    def test_partition_resources_by_load_three_resources(self):
+    def test_resources_to_move_by_load_three_resources(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 4000,
-                    "resource2": 6000,
-                    "resource3": 5000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 4000,
+                        "resource2": 6000,
+                        "resource3": 5000,
+                    }
+                )
             ),
-            (["resource1"], ["resource3", "resource2"]),
+            ["resource3", "resource2"],
         )
 
-    def test_partition_resources_by_load_all_the_same_load_prefer_second_partition(self):
+    def test_resources_to_move_by_load_all_the_same_load_prefer_second_partition(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 5000,
-                    "resource2": 5000,
-                    "resource3": 5000,
-                    "resource4": 5000,
-                    "resource5": 5000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 5000,
+                        "resource2": 5000,
+                        "resource3": 5000,
+                        "resource4": 5000,
+                        "resource5": 5000,
+                    }
+                )
             ),
-            (["resource1", "resource2"], ["resource3", "resource4", "resource5"]),
+            ["resource3", "resource4", "resource5"],
         )
 
-    def test_partition_resources_by_load_one_resource(self):
+    def test_resources_to_move_by_load_one_resource(self):
         # this isnt a real use case since we only call this function when we have
         # more than one resource, but it is worth adding a unit test regardless
-        self.assertEqual(partition_resources_by_load({"resource1": 5000}), ([], ["resource1"]))
+        self.assertEqual(list(resources_to_move_by_load({"resource1": 5000})), ["resource1"])
 
-    def test_partition_resources_by_load_no_resources(self):
-        self.assertEqual(partition_resources_by_load({}), ([], []))
+    def test_resources_to_move_by_load_no_resources(self):
+        self.assertEqual(list(resources_to_move_by_load({})), [])
