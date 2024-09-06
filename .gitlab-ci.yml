@@ -64,8 +64,8 @@ forwarder-tests:
 forwarder-publish:
   image: $DOCKER_IMAGE
   stage: publish
-  #  tags: ["arch:amd64"]
-  tags: ["runner:docker"]
+  tags: ["arch:amd64"]
+  #  tags: ["runner:docker"]
   #    image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/datastores:$CURRENT_CI_IMAGE
   script:
     - ci/scripts/forwarder/publish.sh
