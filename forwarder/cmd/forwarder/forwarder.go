@@ -98,9 +98,6 @@ func main() {
 			"apiKeyAuth": {
 				Key: os.Getenv("DD_API_KEY"),
 			},
-			"appKeyAuth": {
-				Key: os.Getenv("DD_APP_KEY"),
-			},
 		},
 	)
 	start := time.Now()
