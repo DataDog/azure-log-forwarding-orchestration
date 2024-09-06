@@ -634,6 +634,56 @@ class TestScalingTask(TaskTestCase):
         )
         self.write_cache.assert_not_awaited()
 
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_no_resource_metrics_split_in_half(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime_seconds": 35,
+                "timestamp": minutes_ago(1.5),
+                "resource_log_volume": {},
+            },
+            {
+                "runtime_seconds": 40,
+                "timestamp": minutes_ago(1),
+                "resource_log_volume": {},
+            },
+            {
+                "runtime_seconds": 39.1,
+                "timestamp": minutes_ago(0.5),
+                "resource_log_volume": {},
+            },
+        ]
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_not_awaited()
+
+        expected_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {
+                        "resource1": OLD_LOG_FORWARDER_ID,
+                        "resource2": NEW_LOG_FORWARDER_ID,
+                    },
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            },
+        }
+        self.assertEqual(self.cache, expected_cache)
+
 
 class TestScalingTaskHelpers(TestCase):
     def test_metrics_over_threshold(self):
