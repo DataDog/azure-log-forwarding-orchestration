@@ -295,17 +295,16 @@ class ScalingTask(Task):
         # add new config
         self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
-        # split resources in half by resource load
+        # organize resources by resource load
         resource_loads = {
             resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
         }
 
+        # reassign some resources to the new forwarder
         self.assignment_cache[subscription_id][region]["resources"].update(
-            {
-                **{resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)},
-            }
+            {resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)}
         )
 
     async def collect_forwarder_metrics(
