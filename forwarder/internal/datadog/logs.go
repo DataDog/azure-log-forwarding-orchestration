@@ -53,7 +53,7 @@ func NewClient(logsApi LogsApiInterface) *Client {
 }
 
 func (c *Client) Close(ctx context.Context) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
+	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Close")
 	defer span.Finish(tracer.WithError(err))
 	return c.Flush(ctx)
 }

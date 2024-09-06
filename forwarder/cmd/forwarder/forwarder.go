@@ -127,7 +127,7 @@ func main() {
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf("error creating azure storageClient: %v", err)
+		logger.Fatalf("error creating azure blob client: %v", err)
 		return
 	}
 
