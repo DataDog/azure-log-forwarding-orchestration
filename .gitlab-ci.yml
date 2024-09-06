@@ -6,6 +6,7 @@ stages:
   - ci-image
   - test
   - after-test
+  - publish
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
@@ -60,6 +61,17 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
+forwarder-publish:
+  image: $DOCKER_IMAGE
+  stage: publish
+  #  tags: ["arch:amd64"]
+  tags: ["runner:docker"]
+  #    image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ci/datastores:$CURRENT_CI_IMAGE
+  script:
+    - ci/scripts/forwarder/publish.sh
+#    only:
+#      refs:
+#        - master
 # ------------- CODE COV -------------
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE
