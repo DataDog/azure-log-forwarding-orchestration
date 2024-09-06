@@ -210,7 +210,6 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
-        public_cache: ManifestCache = {}
         private_cache: ManifestCache = {
             "resources": "1",
             "forwarder": "1",
@@ -218,7 +217,7 @@ class TestDeployerTask(TaskTestCase):
             "scaling": "1",
         }
 
-        get_public_manifests.return_value = public_cache
+        get_public_manifests.return_value = None
         get_private_manifests.return_value = private_cache
 
         self.public_client.download_blob.return_value = AsyncMock()
@@ -242,10 +241,9 @@ class TestDeployerTask(TaskTestCase):
             "diagnostic_settings": "1",
             "scaling": "1",
         }
-        private_cache: ManifestCache = {}
 
         get_public_manifests.return_value = public_cache
-        get_private_manifests.return_value = private_cache
+        get_private_manifests.return_value = None
 
         self.public_client.download_blob.return_value = AsyncMock()
         self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
@@ -263,11 +261,8 @@ class TestDeployerTask(TaskTestCase):
         get_public_manifests: AsyncMock = self.patch("DeployerTask.get_public_manifests")
         get_private_manifests: AsyncMock = self.patch("DeployerTask.get_private_manifests")
 
-        public_cache: ManifestCache = {}
-        private_cache: ManifestCache = {}
-
-        get_public_manifests.return_value = public_cache
-        get_private_manifests.return_value = private_cache
+        get_public_manifests.return_value = None
+        get_private_manifests.return_value = None
 
         self.public_client.download_blob.return_value = AsyncMock()
         self.public_client.download_blob.return_value.content_as_bytes.return_value = bytes("test", "utf-8")
@@ -345,7 +340,7 @@ class TestDeployerTask(TaskTestCase):
     async def public_manifest_helper(self) -> ManifestCache:
         return await DeployerTask().get_public_manifests()
 
-    async def private_manifest_helper(self) -> ManifestCache:
+    async def private_manifest_helper(self) -> ManifestCache | None:
         return await DeployerTask().get_private_manifests()
 
     def test_get_public_manifest_normal(self):
@@ -368,7 +363,7 @@ class TestDeployerTask(TaskTestCase):
         self.public_client.download_blob.return_value.content_as_bytes.return_value = MagicMock()
         public_cache: ManifestCache = {
             "resources": "2",
-            "forward": "1",
+            "forwarder": "1",
             "diagnostic_settings": "1",
             "scaling": "1",
         }
@@ -408,7 +403,7 @@ class TestDeployerTask(TaskTestCase):
         read_cache: AsyncMock = self.patch("read_cache")
         private_cache: ManifestCache = {
             "resources": "1",
-            "forward": "1",
+            "forwarder": "1",
             "diagnostic_settings": "1",
             "scaling": "1",
         }

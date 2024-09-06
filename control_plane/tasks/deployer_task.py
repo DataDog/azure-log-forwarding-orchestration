@@ -1,12 +1,11 @@
 # stdlib
 
 from asyncio import gather, run
-from collections.abc import Awaitable, Callable
-from copy import deepcopy
+from collections.abc import Awaitable, Callable, Iterable
 from json import dumps
-from logging import DEBUG, INFO, basicConfig, getLogger
+from logging import INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Self
+from typing import Self, cast
 
 # 3p
 from aiohttp import ClientSession
@@ -25,14 +24,14 @@ from azure.storage.blob.aio import ContainerClient
 from tenacity import RetryError, retry, stop_after_attempt
 
 # project
-from cache.common import STORAGE_CONNECTION_SETTING, get_config_option, read_cache, write_cache
-from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
-from tasks.common import generate_unique_id, wait_for_resource
+from cache.common import STORAGE_CONNECTION_SETTING, InvalidCacheError, get_config_option, read_cache, write_cache
+from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, ManifestKey, deserialize_manifest_cache
+from tasks.common import collect, generate_unique_id, wait_for_resource
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"
 
-DEPLOYER_NAME = "control_plane_deployer"
+DEPLOYER_NAME = "control-plane-asp-9d911a05438d"
 MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
 
@@ -40,28 +39,25 @@ PUBLIC_CONTAINER_URL = "google.com"
 APP_SERVICE_PLAN_PREFIX = "dd-lfo-control"
 
 log = getLogger(DEPLOYER_NAME)
-log.setLevel(DEBUG)
 
 
 class DeployerTask(Task):
     def __init__(self) -> None:
         super().__init__()
-        self.subscription_id = get_config_option("CONTROL_PLANE_SUB_ID")
+        self.subscription_id = get_config_option("SUBSCRIPTION_ID")
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
+        self.control_plane_id = generate_unique_id()
 
-        self.manifest_cache: ManifestCache = {}
-        self.original_manifest_cache: ManifestCache = {}
-        self.public_manifest: ManifestCache = {}
-        self.public_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
+        self.public_manifest_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
-        await self.public_client.__aenter__()
-        await self.rest_client.__aenter__()
-        await self.web_client.__aenter__()
+        await gather(
+            self.public_manifest_client.__aenter__(), self.rest_client.__aenter__(), self.web_client.__aenter__()
+        )
         token = await self.credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
@@ -69,97 +65,93 @@ class DeployerTask(Task):
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
-        await self.public_client.__aexit__(exc_type, exc_val, exc_tb)
-        await self.rest_client.__aexit__(exc_type, exc_val, exc_tb)
-        await self.web_client.__aexit__(exc_type, exc_val, exc_tb)
+        await gather(
+            self.public_manifest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.web_client.__aexit__(exc_type, exc_val, exc_tb),
+        )
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
-        public_manifest: dict[str, str] = {}
-        private_manifest: dict[str, str] = {}
-        public_manifest, private_manifest = await gather(self.get_public_manifests(), self.get_private_manifests())
-        if len(public_manifest) == 0:
-            log.error("Failed to read public manifests, exiting...")
-            return
-        if len(private_manifest) == 0:
-            log.warn("Failed to read private manifests. Manifests may not exist or error may have occured.")
-        self.manifest_cache = deepcopy(private_manifest)
-        self.original_manifest_cache = private_manifest
+        public_manifest, private_manifest, current_components = await gather(
+            self.get_public_manifests(), self.get_private_manifests(), self.get_current_components()
+        )
+        if not private_manifest:
+            log.info("Failed to read private manifest. Deploying all components.")
         self.public_manifest = public_manifest
-        await self.deploy_components(
-            [
-                component
-                for component in public_manifest
-                if public_manifest[component] != private_manifest.get(component)
+        self.private_manifest = private_manifest
+        self.manifest_cache = (
+            private_manifest
+            or {
+                "forwarder": "",
+                "resources": "",
+                "scaling": "",
+                "diagnostic_settings": "",
+            }
+        ).copy()
+
+        await gather(
+            *[
+                self.deploy_component(component)
+                for component in cast(Iterable[ManifestKey], public_manifest)
+                if not private_manifest or public_manifest[component] != private_manifest[component]
             ]
         )
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def get_public_manifests(self) -> ManifestCache:
         try:
-            stream = await self.public_client.download_blob(MANIFEST_CACHE_NAME)
-        except ResourceNotFoundError:
-            return {}
+            stream = await self.public_manifest_client.download_blob(MANIFEST_CACHE_NAME)
+        except ResourceNotFoundError as e:
+            raise InvalidCacheError("Public Manifest not found") from e
         blob_data = await stream.content_as_bytes(max_concurrency=4)
-        return deserialize_manifest_cache(blob_data.decode()) or {}
+        cache_str = blob_data.decode()
+        if not (cache := deserialize_manifest_cache(cache_str)):
+            raise InvalidCacheError(f"Invalid Public Manifest: {cache_str}")
+        return cache
 
-    async def get_private_manifests(self) -> ManifestCache:
+    async def get_private_manifests(self) -> ManifestCache | None:
         try:
             blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_CACHE_NAME)
-        except RetryError:
-            return {}
-        return deserialize_manifest_cache(blob_data) or {}
+        except RetryError as e:
+            log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
+            return None
+        return deserialize_manifest_cache(blob_data)
 
-    async def deploy_components(self, component_names: list[str]) -> None:
-        if len(component_names) == 0:
-            return
-        container_apps: list[str] = []
-        function_apps: list[str] = []
-        for component in component_names:
-            if component == "forwarder":
-                container_apps.append(component)
-            else:
-                function_apps.append(component)
-        await gather(self.deploy_function_apps(function_apps), self.deploy_container_apps(container_apps))
+    async def get_current_components(self) -> list[str]:
+        current_apps, current_service_plans = await gather(
+            collect(self.web_client.web_apps.list_by_resource_group(self.resource_group)),
+            collect(self.web_client.app_service_plans.list_by_resource_group(self.resource_group)),
+        )
+        return [app.name for app in current_apps if app.name.startswith(APP_SERVICE_PLAN_PREFIX)] + [  # type: ignore
+            service_plan.name
+            for service_plan in current_service_plans
+            if service_plan.name.startswith(APP_SERVICE_PLAN_PREFIX)  # type: ignore
+        ]
 
-    async def deploy_function_apps(self, function_app_names: list[str]) -> None:
-        if len(function_app_names) == 0:
-            return
-        try:
-            uuid_str = generate_unique_id()
-            current_service_plans = self.web_client.app_service_plans.list_by_resource_group(self.resource_group)
-            has_deployed = False
-            async for service_plan in current_service_plans:
-                if service_plan.name.startswith(APP_SERVICE_PLAN_PREFIX):  # type: ignore
-                    uuid_str = service_plan.name.removeprefix(APP_SERVICE_PLAN_PREFIX)  # type: ignore
-                    await gather(
-                        *[
-                            self.deploy_function_app(function_app_name, service_plan, uuid_str)
-                            for function_app_name in function_app_names
-                        ]
-                    )
-                    has_deployed = True
-                    break
-            if not has_deployed:
-                service_plan = await wait_for_resource(
-                    *await self.create_log_forwarder_app_service_plan(
-                        self.region, self.generate_app_service_plan_name(uuid_str)
-                    )
-                )
-                await gather(
-                    *[
-                        self.deploy_function_app(function_app_name, service_plan, uuid_str)
-                        for function_app_name in function_app_names
-                    ]
-                )
-        except RetryError:
-            log.error("Error deploying function apps")
+    async def deploy_component(self, component: ManifestKey) -> None:
+        match component:
+            case "forwarder":
+                await self.deploy_log_forwarder_image()
+            case "resources":
+                await self.deploy_resources_task()
+            case "scaling":
+                await self.deploy_scaling_task()
+            case "diagnostic_settings":
+                await self.deploy_diagnostic_settings_task()
+        self.manifest_cache[component] = self.public_manifest[component]
 
-    async def deploy_container_apps(self, container_app_names: list[str]) -> None:
-        if len(container_app_names) == 0:
-            return
-        for container_app in container_app_names:
-            self.manifest_cache[container_app] = self.public_manifest[container_app]
+    async def deploy_log_forwarder_image(self) -> None:
+        pass
+
+    async def deploy_resources_task(self) -> None:
+        pass
+
+    async def deploy_scaling_task(self) -> None:
+        pass
+
+    async def deploy_diagnostic_settings_task(self) -> None:
+        pass
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def deploy_function_app(self, function_app_name: str, service_plan: AppServicePlan, uuid_str: str) -> None:
@@ -180,7 +172,6 @@ class DeployerTask(Task):
             await self.upload_function_app_data(
                 self.get_full_function_app_name(function_app_name, uuid_str), function_app_data
             )
-        self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
 
     async def create_or_update_function_app(
         self, function_app_name: str, uuid_str: str, service_plan: AppServicePlan
@@ -253,12 +244,12 @@ class DeployerTask(Task):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, function_app_name: str) -> bytes:
         blob_name = function_app_name + "_task.zip"
-        stream = await self.public_client.download_blob(blob_name)
+        stream = await self.public_manifest_client.download_blob(blob_name)
         app_data = await stream.content_as_bytes(max_concurrency=4)
         return app_data
 
     async def write_caches(self) -> None:
-        if self.manifest_cache == self.original_manifest_cache:
+        if self.manifest_cache == self.private_manifest:
             return
         await write_cache(MANIFEST_CACHE_NAME, dumps(self.manifest_cache))
 
