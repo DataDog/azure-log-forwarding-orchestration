@@ -295,6 +295,22 @@ class ScalingTask(Task):
         # add new config
         self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
+        if all(not metric["resource_log_volume"] for metric in metrics):
+            log.warning(
+                "Resource log volume metrics missing for forwarder %s, falling back to basic splitting",
+                underscaled_forwarder_id,
+            )
+            resources = sorted(
+                resource
+                for resource, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
+                if config_id == underscaled_forwarder_id
+            )
+            split_index = len(resources) // 2
+            self.assignment_cache[subscription_id][region]["resources"].update(
+                {resource: new_forwarder.config_id for resource in resources[split_index:]}
+            )
+            return
+
         # organize resources by resource load
         resource_loads = {
             resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
