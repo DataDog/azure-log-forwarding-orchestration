@@ -12,6 +12,11 @@ from tasks.tests.common import TaskTestCase, UnexpectedException, async_generato
 AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
 
+resource1 = mock(id="res1", location="region1", type="Microsoft.Compute/virtualMachines")
+resource2 = mock(id="res2", location="region1", type="Microsoft.Network/applicationgateways")
+resource3 = mock(id="res3", location="region2", type="Microsoft.Network/loadBalancers")
+
+
 class TestResourcesTask(TaskTestCase):
     TASK_NAME = RESOURCES_TASK_NAME
 
@@ -43,10 +48,8 @@ class TestResourcesTask(TaskTestCase):
             return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
         )
         self.resource_client_mapping = {
-            "sub1": Mock(
-                return_value=async_generator(mock(id="res1", location="region1"), mock(id="res2", location="region1"))
-            ),
-            "sub2": Mock(return_value=async_generator(mock(id="res3", location="region2"))),
+            "sub1": Mock(return_value=async_generator(resource1, resource2)),
+            "sub2": Mock(return_value=async_generator(resource3)),
         }
 
         async with ResourcesTask("[[[[{{{{{asjdklahjs]]]}}}") as task:
@@ -60,10 +63,8 @@ class TestResourcesTask(TaskTestCase):
             return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
         )
         self.resource_client_mapping = {
-            "sub1": Mock(
-                return_value=async_generator(mock(id="res1", location="region1"), mock(id="res2", location="region1"))
-            ),
-            "sub2": Mock(return_value=async_generator(mock(id="res3", location="region2"))),
+            "sub1": Mock(return_value=async_generator(resource1, resource2)),
+            "sub2": Mock(return_value=async_generator(resource3)),
         }
 
         async with ResourcesTask("") as task:
@@ -77,10 +78,8 @@ class TestResourcesTask(TaskTestCase):
             return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
         )
         self.resource_client_mapping = {
-            "sub1": Mock(
-                return_value=async_generator(mock(id="res1", location="region1"), mock(id="res2", location="region1"))
-            ),
-            "sub2": Mock(return_value=async_generator(mock(id="res3", location="region2"))),
+            "sub1": Mock(return_value=async_generator(resource1, resource2)),
+            "sub2": Mock(return_value=async_generator(resource3)),
         }
         await self.run_resources_task(
             {
@@ -124,9 +123,11 @@ class TestResourcesTask(TaskTestCase):
         )
         self.resource_client_mapping = {
             "sub1": Mock(
-                return_value=async_generator(mock(id="res1", location="global"), mock(id="res2", location="region1"))
+                return_value=async_generator(
+                    mock(id="res1", location="global", type="Microsoft.Compute/virtualMachines"), resource2
+                )
             ),
-            "sub2": Mock(return_value=async_generator(mock(id="res3", location="region2"))),
+            "sub2": Mock(return_value=async_generator(resource3)),
         }
         await self.run_resources_task({})
         self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}})
@@ -139,7 +140,7 @@ class TestResourcesTask(TaskTestCase):
             "sub1": Mock(
                 return_value=async_generator(
                     mock(id="res1", location="region1", type="Microsoft.Compute/Snapshots"),
-                    mock(id="res2", location="region1", type="Microsoft.Compute/VirtualMachines"),
+                    resource2,
                 )
             ),
             "sub2": Mock(

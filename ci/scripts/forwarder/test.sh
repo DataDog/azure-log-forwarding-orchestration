@@ -5,7 +5,7 @@ set -euxo pipefail
 cd forwarder
 
 : run tests with coverage
-go test -coverprofile=forwarder_coverage.txt -race -json -v ./...
+go test -coverprofile=forwarder_coverage.txt -race ./...
 
 : generate coverage report
 gocover-cobertura < forwarder_coverage.txt > forwarder_coverage.xml

@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
@@ -23,10 +25,6 @@ type MetricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-// This function provides a standardized name for each blob that we can use to read and write blobs
-// Return type is a string of the current time in the UTC timezone formatted as YYYY-MM-DD-HH
-// Standardized with the LogForwarderClient class in log_forwarder_client.py in the control plane
-
 func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
@@ -34,11 +32,25 @@ func Run(ctx context.Context, client *storage.Client, logger *log.Entry, now cus
 
 	channelSize := 1000
 
+	logCh := make(chan *logs.Log, channelSize)
+
+	eg.Go(func() error {
+		for currLog := range logCh {
+			logger.Info(fmt.Sprintf("Formatted log with tags: %s", currLog.Tags))
+		}
+		return nil
+	})
+
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
 
 	eg.Go(func() error {
+		defer close(logCh)
 		for blobContent := range blobContentCh {
-			logger.Info(fmt.Sprintf("Downloaded Blob: %s Container: %s, Content: %d", blobContent.Name, blobContent.Container, len(*blobContent.Content)))
+			err := logs.ParseLogs(*blobContent.Content, logCh)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
+				return err
+			}
 		}
 		return nil
 	})
