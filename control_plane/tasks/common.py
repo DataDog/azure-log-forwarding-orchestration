@@ -2,7 +2,7 @@
 from collections.abc import AsyncIterable, Awaitable, Callable
 from datetime import datetime
 from math import inf
-from typing import Any, TypeVar
+from typing import Any, Protocol, TypeVar
 from uuid import uuid4
 
 # 3p
@@ -54,3 +54,9 @@ def generate_unique_id() -> str:
 async def collect(it: AsyncIterable[T]) -> list[T]:
     """Helper for collecting an async iterable, useful for simplifying error handling"""
     return [item async for item in it]
+
+
+class Resource(Protocol):
+    """Azure resource names are a string, useful for type casting"""
+
+    name: str
