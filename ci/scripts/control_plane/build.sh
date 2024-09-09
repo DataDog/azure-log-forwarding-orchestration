@@ -7,6 +7,10 @@ set -euxo pipefail
 [ -d "./dist" ] && rm -rf ./dist
 
 cd ./control_plane
+
+: Install dependencies just in case
+pip install '.[dev]'
+
 tasks="$(python -m tasks)"
 echo Building the following tasks: $tasks
 cd ..
