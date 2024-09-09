@@ -22,7 +22,7 @@ from azure.mgmt.web.v2023_12_01.models import (
     SkuDescription,
 )
 from azure.storage.blob.aio import ContainerClient
-from tenacity import RetryError, retry, stop_after_attempt
+from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
 # project
 from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
@@ -116,13 +116,13 @@ class DeployerTask(Task):
             ]
         )
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
         try:
             stream = await self.public_manifest_client.download_blob(MANIFEST_CACHE_NAME)
         except ResourceNotFoundError as e:
             raise InvalidCacheError("Public Manifest not found") from e
-        blob_data = await stream.content_as_bytes(max_concurrency=4)
+        blob_data = await stream.readall()
         cache_str = blob_data.decode()
         if not (cache := deserialize_manifest_cache(cache_str)):
             raise InvalidCacheError(f"Invalid Public Manifest: {cache_str}")
@@ -172,13 +172,18 @@ class DeployerTask(Task):
         if not function_app:
             log.error(f"Function app for {component} not found, skipping deployment")
             return
-        zip_data = await self.download_function_app_data(component)
-        await self.upload_function_app_data(function_app, zip_data)
+        try:
+            zip_data = await self.download_function_app_data(component)
+            await self.upload_function_app_data(function_app, zip_data)
+        except Exception:
+            log.exception(f"Failed to deploy {component}")
+            return
         self.manifest_cache[component] = self.public_manifest[component]
         log.info(f"Finished deploying {component}")
 
     async def deploy_log_forwarder_image(self) -> None:
-        pass
+        # TODO: Implement this
+        self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     async def create_or_update_function_app(
         self, function_app_name: str, service_plan: AppServicePlan, connection_string: str
