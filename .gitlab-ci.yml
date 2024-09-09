@@ -51,6 +51,12 @@ build:
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/build.sh
+resources-publish:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/control_plane/test.py
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
