@@ -75,8 +75,8 @@ forwarder-replicate:
   stage: publish
   tags: ["arch:amd64"]
   script:
-    - "echo $CI_COMMIT_TAG"
-    - "echo CI_COMMIT_SHORT_SHA"
+    - echo $CI_COMMIT_TAG
+    - echo $CI_COMMIT_SHORT_SHA
 # ------------- CODE COV -------------
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE
