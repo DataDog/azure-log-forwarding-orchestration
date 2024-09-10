@@ -64,7 +64,25 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	currNow := now()
 
 	eg.Go(func() error {
-		return storage.GetBlobContents(ctx, logger, client, blobCh, blobContentCh, currNow)
+		span, ctx := tracer.StartSpanFromContext(ctx, "Run.GetBlobContents")
+		defer span.Finish()
+		defer close(blobContentCh)
+		blobsEg, ctx := errgroup.WithContext(ctx)
+		for blob := range blobCh {
+			if !storage.Current(blob, currNow) {
+				continue
+			}
+			blobsEg.Go(func() error {
+				current, err := client.DownloadSegment(ctx, blob, 0)
+				if err != nil {
+					return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
+				}
+
+				blobContentCh <- current
+				return nil
+			})
+		}
+		return blobsEg.Wait()
 	})
 
 	containerCh := make(chan string, channelSize)
