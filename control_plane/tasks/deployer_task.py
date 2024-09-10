@@ -108,6 +108,8 @@ class DeployerTask(Task):
             }
         ).copy()
 
+        # TODO(AZINTS-2771) implement creating dependency resources when needed
+
         await gather(
             *[
                 self.deploy_component(component, current_components)
@@ -182,7 +184,7 @@ class DeployerTask(Task):
         log.info(f"Finished deploying {component}")
 
     async def deploy_log_forwarder_image(self) -> None:
-        # TODO: Implement this
+        # TODO(AZINTS-2770): Implement this
         self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     async def create_or_update_function_app(
@@ -209,7 +211,7 @@ class DeployerTask(Task):
                 kind="linux",
                 reserved=True,
                 sku=SkuDescription(
-                    # TODO: figure out which SKU we should be using here
+                    # TODO(AZINTS-2646): figure out which SKU we should be using here
                     tier="Basic",
                     name="B1",
                 ),
