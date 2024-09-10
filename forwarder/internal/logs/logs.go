@@ -1,4 +1,4 @@
-package datadog
+package logs
 
 import (
 	"context"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
@@ -20,7 +19,7 @@ import (
 // https://docs.datadoghq.com/api/latest/logs/
 const BufferSize = 1000
 
-func NewHTTPLogItem(log *logs.Log) (datadogV2.HTTPLogItem, error) {
+func NewHTTPLogItem(log *Log) (datadogV2.HTTPLogItem, error) {
 	message, err := log.Json.MarshalJSON()
 	if err != nil {
 		return datadogV2.HTTPLogItem{}, err
@@ -58,7 +57,7 @@ func (c *Client) Close(ctx context.Context) (err error) {
 	return c.Flush(ctx)
 }
 
-func (c *Client) SubmitLog(ctx context.Context, log *logs.Log) (err error) {
+func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
 	defer span.Finish(tracer.WithError(err))
 
@@ -89,7 +88,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	return nil
 }
 
-func ProcessLogs(ctx context.Context, datadogClient *Client, logsCh <-chan *logs.Log) (err error) {
+func ProcessLogs(ctx context.Context, datadogClient *Client, logsCh <-chan *Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {

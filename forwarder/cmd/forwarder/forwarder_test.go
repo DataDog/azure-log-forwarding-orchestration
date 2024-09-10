@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	"go.uber.org/mock/gomock"
@@ -16,8 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/go-autorest/autorest/to"
-	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
-	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog/mocks"
+	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	log "github.com/sirupsen/logrus"
@@ -106,7 +107,7 @@ func TestRun(t *testing.T) {
 			return nil, nil, nil
 		})
 
-		datadogClient := dd.NewClient(mockDDClient)
+		datadogClient := logs.NewClient(mockDDClient)
 
 		var output []byte
 		buffer := bytes.NewBuffer(output)

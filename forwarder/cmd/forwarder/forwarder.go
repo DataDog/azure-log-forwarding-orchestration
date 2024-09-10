@@ -8,7 +8,6 @@ import (
 	"os"
 	"time"
 
-	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
@@ -29,19 +28,19 @@ type MetricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-func Run(ctx context.Context, client *storage.Client, datadogClient *dd.Client, logger *log.Entry, now customtime.Now) (err error) {
+func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	defer datadogClient.Close(ctx)
+	defer logsClient.Close(ctx)
 
 	channelSize := 1000
 
 	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		return dd.ProcessLogs(ctx, datadogClient, logCh)
+		return logs.ProcessLogs(ctx, logsClient, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -135,7 +134,7 @@ func main() {
 
 	logsClient := datadogV2.NewLogsApi(apiClient)
 
-	datadogClient := dd.NewClient(logsClient)
+	datadogClient := logs.NewClient(logsClient)
 
 	runErr := Run(ctx, storageClient, datadogClient, logger, time.Now)
 

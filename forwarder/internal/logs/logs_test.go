@@ -1,13 +1,12 @@
-package datadog_test
+package logs_test
 
 import (
 	"context"
 	"net/http"
 	"testing"
 
-	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
-	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog/mocks"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -34,7 +33,7 @@ func TestProcessLogs(t *testing.T) {
 			return nil, nil, nil
 		})
 
-		datadogClient := dd.NewClient(mockDDClient)
+		datadogClient := logs.NewClient(mockDDClient)
 		defer datadogClient.Close(context.Background())
 
 		eg, egCtx := errgroup.WithContext(context.Background())
@@ -43,7 +42,7 @@ func TestProcessLogs(t *testing.T) {
 
 		// WHEN
 		eg.Go(func() error {
-			return dd.ProcessLogs(egCtx, datadogClient, logsChannel)
+			return logs.ProcessLogs(egCtx, datadogClient, logsChannel)
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
