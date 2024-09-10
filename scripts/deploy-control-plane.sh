@@ -94,7 +94,7 @@ for task in "${!task_roles[@]}"; do
     role="${task_roles[$task]}"
 
     # Create the function app if it doesn't exist
-    [[ "$existing_functions" != *"$function_app_name"* ]] && {
+    grep -q "$function_app_name" <<<"$existing_functions" || {
         echo -n "Function app $function_app_name does not exist, creating one..."
         az functionapp create --resource-group $resource_group --plan $app_service_plan --name $function_app_name --storage-account $storage_account \
             --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux
