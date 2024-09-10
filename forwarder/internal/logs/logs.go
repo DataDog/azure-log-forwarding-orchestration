@@ -19,35 +19,30 @@ import (
 // https://docs.datadoghq.com/api/latest/logs/
 const BufferSize = 1000
 
-func NewHTTPLogItem(log *Log) (datadogV2.HTTPLogItem, error) {
-	message, err := log.Json.MarshalJSON()
-	if err != nil {
-		return datadogV2.HTTPLogItem{}, err
-	}
-
+func newHTTPLogItem(log *Log) (datadogV2.HTTPLogItem, error) {
 	logItem := datadogV2.HTTPLogItem{
 		Ddsource: to.Ptr("azure"),
 		Ddtags:   to.Ptr(strings.Join(log.Tags, ",")),
-		Message:  string(message),
+		Message:  log.Content,
 	}
 	return logItem, nil
 }
 
-// LogsApiInterface wraps around the datadogV2.LogsApi struct
+// HTTPSubmitter wraps around the datadogV2.LogsApi struct
 //
 //go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
-type LogsApiInterface interface {
+type HTTPSubmitter interface {
 	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
 }
 
 type Client struct {
-	logsApi    LogsApiInterface
+	submitter  HTTPSubmitter
 	logsBuffer []datadogV2.HTTPLogItem
 }
 
-func NewClient(logsApi LogsApiInterface) *Client {
+func NewClient(logsApi HTTPSubmitter) *Client {
 	return &Client{
-		logsApi: logsApi,
+		submitter: logsApi,
 	}
 }
 
@@ -61,7 +56,7 @@ func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
 	defer span.Finish(tracer.WithError(err))
 
-	logItem, err := NewHTTPLogItem(log)
+	logItem, err := newHTTPLogItem(log)
 	if err != nil {
 		return err
 	}
@@ -77,7 +72,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	defer span.Finish(tracer.WithError(err))
 
 	if len(c.logsBuffer) > 0 {
-		obj, resp, err := c.logsApi.SubmitLog(ctx, c.logsBuffer)
+		obj, resp, err := c.submitter.SubmitLog(ctx, c.logsBuffer)
 		log.Printf("Response: %v", resp)
 		log.Println(obj)
 		if err != nil {
