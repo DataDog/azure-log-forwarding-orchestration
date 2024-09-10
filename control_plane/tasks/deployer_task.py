@@ -191,7 +191,7 @@ class DeployerTask(Task):
         self, function_app_name: str, service_plan: AppServicePlan, connection_string: str
     ) -> None:
         await wait_for_resource(
-            *await self.create_log_forwarder_function_app(
+            *await self.create_control_plane_function_app(
                 self.region,
                 function_app_name,
                 service_plan.id,  # type: ignore
@@ -200,7 +200,7 @@ class DeployerTask(Task):
         )
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def create_log_forwarder_app_service_plan(
+    async def create_app_service_plan(
         self, region: str, app_service_plan_name: str
     ) -> tuple[AsyncLROPoller[AppServicePlan], Callable[[], Awaitable[AppServicePlan]]]:
         return await self.web_client.app_service_plans.begin_create_or_update(
@@ -219,7 +219,7 @@ class DeployerTask(Task):
         ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def create_log_forwarder_function_app(
+    async def create_control_plane_function_app(
         self, region: str, function_app_name: str, app_service_plan_id: str, connection_string: str
     ) -> tuple[AsyncLROPoller[Site], Callable[[], Awaitable[Site]]]:
         return await self.web_client.web_apps.begin_create_or_update(
