@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"google.golang.org/api/iterator"
+
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
@@ -67,8 +69,37 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 
 	containerCh := make(chan string, channelSize)
 
+	// Get all the blobs in the containers
 	eg.Go(func() error {
-		return storage.GetBlobsPerContainer(ctx, client, blobCh, containerCh)
+		span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobsPerContainer")
+		defer span.Finish()
+		defer close(blobCh)
+		var err error
+		for c := range containerCh {
+			iter := client.ListBlobs(ctx, c)
+
+			for {
+				blobList, curErr := iter.Next(ctx)
+
+				if errors.Is(curErr, iterator.Done) {
+					break
+				}
+
+				if curErr != nil {
+					err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", c, curErr), err)
+				}
+
+				if blobList != nil {
+					for _, b := range blobList {
+						if b == nil {
+							continue
+						}
+						blobCh <- storage.Blob{Item: b, Container: c}
+					}
+				}
+			}
+		}
+		return err
 	})
 
 	err = storage.GetContainers(ctx, client, containerCh)
