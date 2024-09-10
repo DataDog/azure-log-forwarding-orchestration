@@ -71,7 +71,7 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 
 	// Get all the blobs in the containers
 	eg.Go(func() error {
-		span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobsPerContainer")
+		span, ctx := tracer.StartSpanFromContext(ctx, "Run.GetBlobsPerContainer")
 		defer span.Finish()
 		defer close(blobCh)
 		var err error
@@ -102,7 +102,33 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 		return err
 	})
 
-	err = storage.GetContainers(ctx, client, containerCh)
+	// Get all the containers
+	containerSpan, containerCtx := tracer.StartSpanFromContext(ctx, "Run.GetAllContainers")
+	iter := client.GetContainersMatchingPrefix(containerCtx, storage.LogContainerPrefix)
+	for {
+		containerList, currErr := iter.Next(containerCtx)
+
+		if errors.Is(currErr, iterator.Done) {
+			break
+		}
+
+		if err != nil {
+			err = errors.Join(fmt.Errorf("getting next page of containers: %v", currErr), err)
+			continue
+		}
+
+		if containerList != nil {
+			for _, container := range containerList {
+				if container == nil {
+					continue
+				}
+				containerCh <- *container.Name
+			}
+		}
+	}
+
+	close(containerCh)
+	containerSpan.Finish()
 
 	err = errors.Join(err, eg.Wait())
 	if err != nil {
