@@ -10,8 +10,6 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
@@ -19,10 +17,14 @@ import (
 // https://docs.datadoghq.com/api/latest/logs/
 const BufferSize = 1000
 
+func ptr[T any](v T) *T {
+	return &v
+}
+
 func newHTTPLogItem(log *Log) (datadogV2.HTTPLogItem, error) {
 	logItem := datadogV2.HTTPLogItem{
-		Ddsource: to.Ptr("azure"),
-		Ddtags:   to.Ptr(strings.Join(log.Tags, ",")),
+		Ddsource: ptr("azure"),
+		Ddtags:   ptr(strings.Join(log.Tags, ",")),
 		Message:  log.Content,
 	}
 	return logItem, nil
