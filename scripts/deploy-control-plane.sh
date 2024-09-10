@@ -33,7 +33,7 @@ cd ./control_plane
 cache_name=$(python -c "from cache.common import BLOB_STORAGE_CACHE; print(BLOB_STORAGE_CACHE, end='')")
 cd ..
 
-random_id=$((RANDOM % 9000 + 1000))
+random_id="$((RANDOM % 9000 + 1000))$((RANDOM % 9000 + 1000))$((RANDOM % 9000 + 1000))"
 
 # ================ creating dependency resources ================
 
