@@ -5,8 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-
-	log "github.com/sirupsen/logrus"
+	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -30,39 +29,29 @@ func newHTTPLogItem(log *Log) (datadogV2.HTTPLogItem, error) {
 	return logItem, nil
 }
 
-// HTTPSubmitter wraps around the datadogV2.LogsApi struct
+// DatadogLogsSubmitter wraps around the datadogV2.LogsApi struct
 //
 //go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
-type HTTPSubmitter interface {
+type DatadogLogsSubmitter interface {
 	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
 }
 
 type Client struct {
-	submitter  HTTPSubmitter
-	logsBuffer []datadogV2.HTTPLogItem
+	logsSubmitter DatadogLogsSubmitter
+	logsBuffer    []*Log
 }
 
-func NewClient(logsApi HTTPSubmitter) *Client {
+func NewClient(logsApi DatadogLogsSubmitter) *Client {
 	return &Client{
-		submitter: logsApi,
+		logsSubmitter: logsApi,
 	}
-}
-
-func (c *Client) Close(ctx context.Context) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Close")
-	defer span.Finish(tracer.WithError(err))
-	return c.Flush(ctx)
 }
 
 func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
 	defer span.Finish(tracer.WithError(err))
 
-	logItem, err := newHTTPLogItem(log)
-	if err != nil {
-		return err
-	}
-	c.logsBuffer = append(c.logsBuffer, logItem)
+	c.logsBuffer = append(c.logsBuffer, log)
 	if len(c.logsBuffer) >= BufferSize {
 		return c.Flush(ctx)
 	}
@@ -74,15 +63,23 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	defer span.Finish(tracer.WithError(err))
 
 	if len(c.logsBuffer) > 0 {
-		obj, resp, err := c.submitter.SubmitLog(ctx, c.logsBuffer)
-		log.Printf("Response: %v", resp)
-		log.Println(obj)
-		if err != nil {
-			return err
+		logs := make([]datadogV2.HTTPLogItem, 0, len(c.logsBuffer))
+		for _, currLog := range c.logsBuffer {
+			logItem, itemErr := newHTTPLogItem(currLog)
+			if itemErr != nil {
+				err = errors.Join(itemErr, err)
+			}
+			logs = append(logs, logItem)
 		}
-		c.logsBuffer = nil
+		submitCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+		_, _, submitErr := c.logsSubmitter.SubmitLog(submitCtx, logs)
+		if submitErr != nil {
+			err = errors.Join(submitErr, err)
+		}
+		c.logsBuffer = c.logsBuffer[:0]
 	}
-	return nil
+	return err
 }
 
 func ProcessLogs(ctx context.Context, datadogClient *Client, logsCh <-chan *Log) (err error) {

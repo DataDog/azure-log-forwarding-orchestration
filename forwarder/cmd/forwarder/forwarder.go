@@ -33,7 +33,7 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	defer span.Finish(tracer.WithError(err))
 	eg, ctx := errgroup.WithContext(ctx)
 
-	defer logsClient.Close(ctx)
+	defer logsClient.Flush(ctx)
 
 	channelSize := 1000
 
