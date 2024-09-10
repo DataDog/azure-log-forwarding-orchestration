@@ -42,10 +42,10 @@ existing_functions="$(az functionapp list -g $resource_group | jq -r '.[].name')
 echo Done.
 
 echo -n "Checking for a storage account..."
-storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | (grep lfo || true) | cut -d$'\n' -f1)"
+storage_account="$(az storage account list -g $resource_group | jq -r '.[].name' | (grep ddlfocontrol || true) | cut -d$'\n' -f1)"
 if [[ -z "$storage_account" ]]; then
     echo "Storage account does not exist, creating one..."
-    storage_account="lfo$random_id"
+    storage_account="ddlfocontrol$random_id"
     az storage account create --name $storage_account --resource-group $resource_group --location eastus --sku Standard_LRS
 fi
 echo Done.
@@ -58,10 +58,10 @@ az storage container list --account-name $storage_account --auth-mode login | jq
 echo Done.
 
 echo -n "Checking for an app service plan..."
-app_service_plan="$(az functionapp plan list -g $resource_group | jq -r '.[].name' | (grep ASPlfo || true) | cut -d$'\n' -f1)"
+app_service_plan="$(az functionapp plan list -g $resource_group | jq -r '.[].name' | (grep dd-lfo-control- || true) | cut -d$'\n' -f1)"
 if [[ -z "$app_service_plan" ]]; then
     echo "app service plan does not exist, creating one..."
-    app_service_plan="ASPlfo$random_id"
+    app_service_plan="dd-lfo-control-$random_id"
     az functionapp plan create --name $app_service_plan --resource-group $resource_group --location eastus --sku EP1 --is-linux
 fi
 echo Done.
