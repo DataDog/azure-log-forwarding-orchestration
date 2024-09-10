@@ -34,7 +34,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 
 		datadogClient := logs.NewClient(mockDDClient)
-		defer datadogClient.Close(context.Background())
+		defer datadogClient.Flush(context.Background())
 
 		eg, egCtx := errgroup.WithContext(context.Background())
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
@@ -71,9 +70,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 			}
 			logs = append(logs, logItem)
 		}
-		submitCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-		defer cancel()
-		_, _, submitErr := c.logsSubmitter.SubmitLog(submitCtx, logs)
+		_, _, submitErr := c.logsSubmitter.SubmitLog(ctx, logs)
 		if submitErr != nil {
 			err = errors.Join(submitErr, err)
 		}

@@ -205,6 +205,7 @@ func main() {
 	storageClient := storage.NewClient(azBlobClient)
 
 	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	apiClient := datadog.NewAPIClient(datadogConfig)
 
 	logsClient := datadogV2.NewLogsApi(apiClient)
