@@ -69,7 +69,6 @@ forwarder-build:
   stage: build
   tags: ["arch:amd64"]
   script:
-    - cd forwarder
     - ci/scripts/forwarder/publish.sh $BUILD_DOCKER_REGISTRY/lfo/forwarder:v$CI_PIPELINE_ID-$CI_COMMIT_SHORT_SHA
 #  only:
 #    refs:
