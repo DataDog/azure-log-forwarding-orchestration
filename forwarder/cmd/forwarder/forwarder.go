@@ -33,7 +33,7 @@ type MetricEntry struct {
 func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
 
 	defer logsClient.Flush(ctx)
 
@@ -42,7 +42,7 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		return logs.ProcessLogs(ctx, logsClient, logCh)
+		return logs.ProcessLogs(egCtx, logsClient, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -64,16 +64,16 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	currNow := now()
 
 	eg.Go(func() error {
-		span, ctx := tracer.StartSpanFromContext(ctx, "Run.GetBlobContents")
+		span, getBlobsCtx := tracer.StartSpanFromContext(egCtx, "Run.GetBlobContents")
 		defer span.Finish()
 		defer close(blobContentCh)
-		blobsEg, ctx := errgroup.WithContext(ctx)
+		blobsEg, segmentCtx := errgroup.WithContext(getBlobsCtx)
 		for blob := range blobCh {
 			if !storage.Current(blob, currNow) {
 				continue
 			}
 			blobsEg.Go(func() error {
-				current, err := client.DownloadSegment(ctx, blob, 0)
+				current, err := client.DownloadSegment(segmentCtx, blob, 0)
 				if err != nil {
 					return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
 				}
@@ -89,22 +89,22 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 
 	// Get all the blobs in the containers
 	eg.Go(func() error {
-		span, ctx := tracer.StartSpanFromContext(ctx, "Run.GetBlobsPerContainer")
+		span, blobCtx := tracer.StartSpanFromContext(egCtx, "Run.GetBlobsPerContainer")
 		defer span.Finish()
 		defer close(blobCh)
 		var err error
 		for c := range containerCh {
-			iter := client.ListBlobs(ctx, c)
+			iter := client.ListBlobs(blobCtx, c)
 
 			for {
-				blobList, curErr := iter.Next(ctx)
+				blobList, currErr := iter.Next(blobCtx)
 
-				if errors.Is(curErr, iterator.Done) {
+				if errors.Is(currErr, iterator.Done) {
 					break
 				}
 
-				if curErr != nil {
-					err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", c, curErr), err)
+				if currErr != nil {
+					err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", c, currErr), err)
 				}
 
 				if blobList != nil {
