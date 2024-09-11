@@ -1,9 +1,12 @@
 variables:
+  BUILD_DOCKER_REGISTRY: registry.ddbuild.io
+  TARGET_DOCKER_REGISTRY: datadoghq.azurecr.io
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
 stages:
   - ci-image
+  - build
   - publish
   - test
   - after-test
@@ -61,23 +64,52 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-publish:
+forwarder-build:
   image: $DOCKER_IMAGE
-  stage: publish
+  stage: build
   tags: ["arch:amd64"]
   script:
-    - ci/scripts/forwarder/publish.sh
-  only:
-    refs:
-      - main
-forwarder-replicate:
-  image: $DOCKER_IMAGE
+    - cd forwarder
+    - ci/scripts/forwarder/publish.sh $BUILD_DOCKER_REGISTRY/lfo/forwarder:v$CI_PIPELINE_ID-$CI_COMMIT_SHORT_SHA
+#  only:
+#    refs:
+#      - main
+
+#forwarder-replicate:
+#  image: $DOCKER_IMAGE
+#  stage: publish
+#  tags: ["arch:amd64"]
+#  script:
+#    - echo $CI_COMMIT_SHORT_SHA
+#    - echo $CI_PIPELINE_ID
+publish-public-tag:
   stage: publish
-  tags: ["arch:amd64"]
-  script:
-    - echo $CI_COMMIT_TAG
-    - echo $CI_COMMIT_SHORT_SHA
-    - echo $CI_PIPELINE_ID
+  #  rules:
+  #    - if: $CI_COMMIT_TAG
+  #      when: manual
+  #    - when: never
+  needs:
+    - forwarder-build
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $BUILD_DOCKER_REGISTRY/lfo/forwarder:v$CI_PIPELINE_ID-$CI_COMMIT_SHORT_SHA
+    IMG_DESTINATIONS: $TARGET_DOCKER_REGISTRY/lfo/forwarder:v$CI_PIPELINE_ID-$CI_COMMIT_SHORT_SHA
+    IMG_SIGNING: "false"
+publish_public_latest:
+  stage: publish
+  needs:
+    - forwarder-build
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $BUILD_DOCKER_REGISTRY/lfo/forwarder:v$CI_PIPELINE_ID-$CI_COMMIT_SHORT_SHA
+    IMG_DESTINATIONS: $TARGET_DOCKER_REGISTRY/lfo/forwarder:latest
+    IMG_SIGNING: "false"
 # ------------- CODE COV -------------
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE
