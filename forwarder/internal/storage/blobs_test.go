@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
@@ -314,50 +312,5 @@ func TestCurrent(t *testing.T) {
 
 		// THEN
 		assert.False(t, current)
-	})
-}
-
-func TestGetBlobsPerContainer(t *testing.T) {
-	t.Parallel()
-
-	t.Run("returns blobs", func(t *testing.T) {
-		t.Parallel() // GIVEN
-		containerName := "container"
-		testString := "test"
-		firstPage := []*container.BlobItem{
-			newBlobItem(testString),
-			newBlobItem(testString),
-		}
-		ctrl := gomock.NewController(t)
-		handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{firstPage}, nil, getListBlobsFlatResponse)
-
-		pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
-
-		mockClient := mocks.NewMockAzureBlobClient(ctrl)
-		mockClient.EXPECT().NewListBlobsFlatPager(containerName, gomock.Any()).Return(pager).MaxTimes(3)
-
-		client := storage.NewClient(mockClient)
-
-		channelSize := 100
-		blobCh := make(chan storage.Blob, channelSize)
-		containerCh := make(chan string, channelSize)
-
-		eg, ctx := errgroup.WithContext(context.Background())
-
-		// WHEN
-		eg.Go(func() error {
-			defer close(containerCh)
-			containerCh <- containerName
-			containerCh <- containerName
-			containerCh <- containerName
-			return nil
-		})
-		eg.Go(func() error {
-			return storage.GetBlobsPerContainer(ctx, client, blobCh, containerCh)
-		})
-		err := eg.Wait()
-
-		// THEN
-		assert.NoError(t, err)
 	})
 }

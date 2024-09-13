@@ -2,13 +2,10 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"strings"
 	"time"
-
-	"google.golang.org/api/iterator"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -94,45 +91,4 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		return fmt.Errorf("failed to upload blob %s: %w", blobName, err)
 	}
 	return nil
-}
-
-func getBlobs(ctx context.Context, client *Client, containerName string, blobChannel chan<- Blob) error {
-	// Get the blobs from the container
-	iter := client.ListBlobs(ctx, containerName)
-
-	for {
-		blobList, err := iter.Next(ctx)
-
-		if errors.Is(err, iterator.Done) {
-			return nil
-		}
-
-		if err != nil {
-			return fmt.Errorf("getting next page of blobs for %s: %v", containerName, err)
-		}
-
-		if blobList != nil {
-			for _, b := range blobList {
-				if b == nil {
-					continue
-				}
-				blobChannel <- Blob{Item: b, Container: containerName}
-			}
-		}
-	}
-
-}
-
-func GetBlobsPerContainer(ctx context.Context, client *Client, blobCh chan<- Blob, containerCh <-chan string) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobsPerContainer")
-	defer span.Finish()
-	defer close(blobCh)
-	var err error
-	for c := range containerCh {
-		curErr := getBlobs(ctx, client, c, blobCh)
-		if curErr != nil {
-			err = errors.Join(err, curErr)
-		}
-	}
-	return err
 }
