@@ -44,7 +44,16 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 	resourceVolumes := make(map[string]int64)
 
 	eg.Go(func() error {
-		return logs.ProcessLogs(egCtx, logsClient, logCh)
+		span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
+		defer span.Finish(tracer.WithError(err))
+		for logItem := range logCh {
+			resourceVolumes[logItem.ResourceId]++
+			currErr := logsClient.SubmitLog(ctx, logItem)
+			err = errors.Join(err, currErr)
+		}
+		flushErr := logsClient.Flush(ctx)
+		err = errors.Join(err, flushErr)
+		return err
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -167,7 +176,11 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 
 	err = storageClient.UploadBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
 
-	logger.Info("Finished processing logs")
+	logCount := 0
+	for _, v := range resourceVolumes {
+		logCount += int(v)
+	}
+	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
