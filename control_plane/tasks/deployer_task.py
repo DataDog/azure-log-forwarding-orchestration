@@ -209,7 +209,7 @@ class DeployerTask(Task):
             AppServicePlan(
                 location=region,
                 kind="linux",
-                reserved=True,
+                reserved=True,  # TODO(AZINTS-2646): figure out if this is what we want
                 sku=SkuDescription(
                     # TODO(AZINTS-2646): figure out which SKU we should be using here
                     tier="Basic",
