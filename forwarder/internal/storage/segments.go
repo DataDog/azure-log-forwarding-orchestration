@@ -3,11 +3,8 @@ package storage
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	log "github.com/sirupsen/logrus"
-	"golang.org/x/sync/errgroup"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
@@ -48,32 +45,33 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 	}, nil
 }
 
-func getBlobContents(ctx context.Context, client *Client, blob Blob, blobContentChannel chan<- BlobSegment, cursors BlobCursorMap) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
-	defer span.Finish(tracer.WithError(err))
-
-	currentOffset, _ := cursors.GetCursor(*blob.Item.Name)
-	current, err := client.DownloadSegment(ctx, blob, int64(currentOffset))
-	if err != nil {
-		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
-	}
-
-	cursors.SetCursor(current.Name, int(current.ContentLength))
-	blobContentChannel <- current
-	return nil
-}
-
-func GetBlobContents(ctx context.Context, logger *log.Entry, client *Client, blobCh <-chan Blob, blobContentCh chan<- BlobSegment, now time.Time, cursors BlobCursorMap) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobContents")
-	defer span.Finish()
-	defer close(blobContentCh)
-	blobsEg, ctx := errgroup.WithContext(ctx)
-	for blob := range blobCh {
-		if !Current(blob, now) {
-			continue
-		}
-		logger.Printf("Downloading blob %s", *blob.Item.Name)
-		blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh, cursors) })
-	}
-	return blobsEg.Wait()
-}
+//
+//func getBlobContents(ctx context.Context, client *Client, blob Blob, blobContentChannel chan<- BlobSegment, cursors BlobCursorMap) (err error) {
+//	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.getBlobContents")
+//	defer span.Finish(tracer.WithError(err))
+//
+//	currentOffset, _ := cursors.GetCursor(*blob.Item.Name)
+//	current, err := client.DownloadSegment(ctx, blob, int64(currentOffset))
+//	if err != nil {
+//		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
+//	}
+//
+//	cursors.SetCursor(current.Name, int(current.ContentLength))
+//	blobContentChannel <- current
+//	return nil
+//}
+//
+//func GetBlobContents(ctx context.Context, logger *log.Entry, client *Client, blobCh <-chan Blob, blobContentCh chan<- BlobSegment, now time.Time, cursors BlobCursorMap) error {
+//	span, ctx := tracer.StartSpanFromContext(ctx, "storage.GetBlobContents")
+//	defer span.Finish()
+//	defer close(blobContentCh)
+//	blobsEg, ctx := errgroup.WithContext(ctx)
+//	for blob := range blobCh {
+//		if !Current(blob, now) {
+//			continue
+//		}
+//		logger.Printf("Downloading blob %s", *blob.Item.Name)
+//		blobsEg.Go(func() error { return getBlobContents(ctx, client, blob, blobContentCh, cursors) })
+//	}
+//	return blobsEg.Wait()
+//}

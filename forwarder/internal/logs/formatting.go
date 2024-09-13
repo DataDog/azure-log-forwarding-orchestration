@@ -12,13 +12,17 @@ import (
 
 type Log struct {
 	ByteSize   int
-	Json       json.RawMessage
+	Content    string
 	ResourceId string
 	Category   string
 	Tags       []string
 }
 
 func trimQuotes(s string) string {
+	// TODO AZINTS-2751 replace with json5 parsing
+	if len(s) < 2 {
+		return s
+	}
 	if s[0] == '"' {
 		s = s[1:]
 	}
@@ -45,8 +49,23 @@ func unmarshall(azureLog []byte) (*Log, error) {
 	resourceIdBytes := tempJson["resourceId"]
 	if resourceIdBytes != nil {
 		resourceId = trimQuotes(string(resourceIdBytes))
+		delete(tempJson, "resourceId")
 	}
-	delete(tempJson, "resourceId")
+	if resourceId == "" {
+		resourceIdBytes = tempJson["ResourceId"]
+		if resourceIdBytes != nil {
+			resourceId = trimQuotes(string(resourceIdBytes))
+			delete(tempJson, "ResourceId")
+		}
+	}
+	if resourceId == "" {
+		resourceIdBytes = tempJson["resourceID"]
+		if resourceIdBytes != nil {
+			resourceId = trimQuotes(string(resourceIdBytes))
+			delete(tempJson, "resourceID")
+		}
+
+	}
 
 	logJson, err := json.Marshal(tempJson)
 	if err != nil {
@@ -56,7 +75,7 @@ func unmarshall(azureLog []byte) (*Log, error) {
 		ByteSize:   len(azureLog),
 		Category:   category,
 		ResourceId: resourceId,
-		Json:       logJson,
+		Content:    string(logJson),
 	}, err
 }
 
@@ -94,11 +113,13 @@ func NewLog(logBytes []byte) (*Log, error) {
 func ParseLogs(data []byte, logsChannel chan<- *Log) (err error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
-		log, currErr := NewLog(scanner.Bytes())
+		currLog, currErr := NewLog([]byte(scanner.Text()))
 		if currErr != nil {
 			err = errors.Join(err, currErr)
+			continue
 		}
-		logsChannel <- log
+
+		logsChannel <- currLog
 	}
 	return err
 }

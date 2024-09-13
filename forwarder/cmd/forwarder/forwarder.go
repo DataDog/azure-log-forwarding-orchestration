@@ -11,7 +11,8 @@ import (
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
-	dd "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/datadog"
+	"google.golang.org/api/iterator"
+
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
@@ -30,15 +31,13 @@ func getMetricFileName(now time.Time) string {
 	return now.UTC().Format("2006-01-02-15") + ".json"
 }
 
-func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.Client, logger *log.Entry, now customtime.Now) (err error) {
+func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
-
 	start := time.Now()
-
 	eg, egCtx := errgroup.WithContext(ctx)
 
-	defer datadogClient.Close(ctx)
+	defer logsClient.Flush(ctx)
 
 	cursors, err := cursor.LoadCursors(ctx, storageClient)
 	if err != nil {
@@ -52,8 +51,16 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	resourceVolumes := make(map[string]int64)
 
 	eg.Go(func() error {
-		logsErr := dd.ProcessLogs(egCtx, datadogClient, resourceVolumes, logCh)
-		return logsErr
+		span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
+		defer span.Finish(tracer.WithError(err))
+		for logItem := range logCh {
+			resourceVolumes[logItem.ResourceId]++
+			currErr := logsClient.SubmitLog(ctx, logItem)
+			err = errors.Join(err, currErr)
+		}
+		flushErr := logsClient.Flush(ctx)
+		err = errors.Join(err, flushErr)
+		return err
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -74,16 +81,95 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	currNow := now()
 
 	eg.Go(func() error {
-		return storage.GetBlobContents(egCtx, logger, storageClient, blobCh, blobContentCh, currNow, cursors)
+		span, getBlobsCtx := tracer.StartSpanFromContext(egCtx, "Run.GetBlobContents")
+		defer span.Finish()
+		defer close(blobContentCh)
+		blobsEg, segmentCtx := errgroup.WithContext(getBlobsCtx)
+		for blob := range blobCh {
+			if !storage.Current(blob, currNow) {
+				continue
+			}
+			blobsEg.Go(func() error {
+				currentOffset, _ := cursors.GetCursor(*blob.Item.Name)
+				current, err := storageClient.DownloadSegment(segmentCtx, blob, int64(currentOffset))
+				if err != nil {
+					return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
+				}
+
+				cursors.SetCursor(current.Name, int(current.ContentLength))
+				if err != nil {
+					return fmt.Errorf("failed to download range for %s: %v", *blob.Item.Name, err)
+				}
+
+				blobContentCh <- current
+				return nil
+			})
+		}
+		return blobsEg.Wait()
 	})
 
 	containerCh := make(chan string, channelSize)
 
+	// Get all the blobs in the containers
 	eg.Go(func() error {
-		return storage.GetBlobsPerContainer(egCtx, storageClient, blobCh, containerCh)
+		span, blobCtx := tracer.StartSpanFromContext(egCtx, "Run.GetBlobsPerContainer")
+		defer span.Finish()
+		defer close(blobCh)
+		var err error
+		for c := range containerCh {
+			iter := storageClient.ListBlobs(blobCtx, c)
+
+			for {
+				blobList, currErr := iter.Next(blobCtx)
+
+				if errors.Is(currErr, iterator.Done) {
+					break
+				}
+
+				if currErr != nil {
+					err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", c, currErr), err)
+				}
+
+				if blobList != nil {
+					for _, b := range blobList {
+						if b == nil {
+							continue
+						}
+						blobCh <- storage.Blob{Item: b, Container: c}
+					}
+				}
+			}
+		}
+		return err
 	})
 
-	err = storage.GetContainers(ctx, storageClient, containerCh)
+	// Get all the containers
+	containerSpan, containerCtx := tracer.StartSpanFromContext(ctx, "Run.GetAllContainers")
+	iter := storageClient.GetContainersMatchingPrefix(containerCtx, storage.LogContainerPrefix)
+	for {
+		containerList, currErr := iter.Next(containerCtx)
+
+		if errors.Is(currErr, iterator.Done) {
+			break
+		}
+
+		if err != nil {
+			err = errors.Join(fmt.Errorf("getting next page of containers: %v", currErr), err)
+			continue
+		}
+
+		if containerList != nil {
+			for _, container := range containerList {
+				if container == nil {
+					continue
+				}
+				containerCh <- *container.Name
+			}
+		}
+	}
+
+	close(containerCh)
+	containerSpan.Finish()
 
 	err = errors.Join(err, eg.Wait())
 
@@ -107,12 +193,12 @@ func Run(ctx context.Context, storageClient *storage.Client, datadogClient *dd.C
 	uploadErr := storageClient.AppendBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
 	err = errors.Join(err, uploadErr)
 
-	totalLogs := 0
+	logCount := 0
 	for _, v := range resourceVolumes {
-		totalLogs += int(v)
+		logCount += int(v)
 	}
+	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
 
-	logger.Info(fmt.Sprintf("Finished processing %d logs", totalLogs))
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
@@ -133,9 +219,6 @@ func main() {
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {
 				Key: os.Getenv("DD_API_KEY"),
-			},
-			"appKeyAuth": {
-				Key: os.Getenv("DD_APP_KEY"),
 			},
 		},
 	)
@@ -163,18 +246,19 @@ func main() {
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf("error creating azure storageClient: %v", err)
+		logger.Fatalf("error creating azure blob client: %v", err)
 		return
 	}
 
 	storageClient := storage.NewClient(azBlobClient)
 
 	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	apiClient := datadog.NewAPIClient(datadogConfig)
 
 	logsClient := datadogV2.NewLogsApi(apiClient)
 
-	datadogClient := dd.NewClient(logsClient)
+	datadogClient := logs.NewClient(logsClient)
 
 	err = Run(ctx, storageClient, datadogClient, logger, time.Now)
 
