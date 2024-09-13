@@ -174,7 +174,7 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 
 	blobName := getMetricFileName(time.Now())
 
-	err = storageClient.UploadBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
+	err = storageClient.UploadBlob(ctx, metrics.MetricsContainer, blobName, metricBuffer)
 
 	logCount := 0
 	for _, v := range resourceVolumes {
