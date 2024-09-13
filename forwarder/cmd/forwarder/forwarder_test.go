@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
@@ -103,24 +105,39 @@ func TestRun(t *testing.T) {
 		})
 
 		var uploadedMetrics []byte
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), "forwarder-metrics", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				uploadedMetrics = append(uploadedMetrics, content...)
 				return azblob.UploadBufferResponse{}, nil
 			})
 
-		data := "\n"
-		stringReader := strings.NewReader(data)
-		reader := ioutil.NopCloser(stringReader)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), cursor.CursorContainer, gomock.Any(), gomock.Any(), gomock.Any())
 
-		var downloadResp azblob.DownloadStreamResponse
-		downloadResp.Body = reader
+		metricsData := "\n"
+		metricsReader := strings.NewReader(metricsData)
+		metricsCloser := ioutil.NopCloser(metricsReader)
+
+		var metricsResp azblob.DownloadStreamResponse
+		metricsResp.Body = metricsCloser
 		mockClient.EXPECT().DownloadStream(gomock.Any(), "forwarder-metrics", gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-			return downloadResp, nil
+			return metricsResp, nil
+		})
+
+		rawCursors := cursor.NewCursors(nil)
+		cursorData, err := rawCursors.GetRawCursors()
+		assert.NoError(t, err)
+		cursorReader := strings.NewReader(string(cursorData))
+		cursorCloser := ioutil.NopCloser(cursorReader)
+
+		var cursorResp azblob.DownloadStreamResponse
+		cursorResp.Body = cursorCloser
+		mockClient.EXPECT().DownloadStream(gomock.Any(), cursor.CursorContainer, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			return cursorResp, nil
 		})
 
 		var resp azblob.CreateContainerResponse
 		mockClient.EXPECT().CreateContainer(gomock.Any(), "forwarder-metrics", gomock.Any()).Return(resp, nil)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), cursor.CursorContainer, gomock.Any()).Return(resp, nil)
 
 		client := storage.NewClient(mockClient)
 
@@ -141,7 +158,7 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err := Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
+		err = Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)

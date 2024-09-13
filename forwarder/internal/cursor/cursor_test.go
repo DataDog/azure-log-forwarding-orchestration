@@ -55,7 +55,7 @@ func TestLoadCursors(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		response := azblob.DownloadStreamResponse{}
-		respErr := errors.New("The specified container does not exist uh oh")
+		respErr := errors.New("BlobNotFound the specified container does not exist uh oh")
 
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockAzureBlobClient(ctrl)
