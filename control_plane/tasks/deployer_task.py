@@ -1,47 +1,80 @@
 # stdlib
 
 from asyncio import gather, run
-from copy import deepcopy
+from collections.abc import Awaitable, Callable, Iterable
 from json import dumps
-from logging import DEBUG, INFO, basicConfig, getLogger
+from logging import INFO, basicConfig, getLogger
 from types import TracebackType
-from typing import Self
+from typing import NamedTuple, Self, cast
 
 # 3p
 from aiohttp import ClientSession
 from azure.core.exceptions import ResourceNotFoundError
+from azure.core.polling import AsyncLROPoller
+from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
+from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
+from azure.mgmt.web.v2023_12_01.models import (
+    AppServicePlan,
+    ManagedServiceIdentity,
+    NameValuePair,
+    Site,
+    SiteConfig,
+    SkuDescription,
+)
 from azure.storage.blob.aio import ContainerClient
-from tenacity import RetryError, retry, stop_after_attempt
+from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
 # project
-from cache.common import read_cache, write_cache
-from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
+from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
+from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, ManifestKey, deserialize_manifest_cache
+from tasks.client.log_forwarder_client import Resource
+from tasks.common import collect, generate_unique_id, wait_for_resource
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"
 
-DEPLOYER_NAME = "control_plane_deployer"
+CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX = "dd-lfo-control-"
+CONTROL_PLANE_STORAGE_PREFIX = "ddlfocontrol"
+SCALING_TASK_PREFIX = "scaling-task-"
+RESOURCES_TASK_PREFIX = "resource-task-"
+DIAGNOSTIC_SETTINGS_TASK_PREFIX = "diagnostic-settings-task-"
+
+
 MAX_ATTEMPTS = 5
+MAX_WAIT_TIME = 30
 
 PUBLIC_CONTAINER_URL = "google.com"
 
-log = getLogger(DEPLOYER_NAME)
-log.setLevel(DEBUG)
+log = getLogger(DEPLOYER_TASK_NAME)
+
+
+class ControlPlaneResources(NamedTuple):
+    app_service_plans: set[str]
+    storage_accounts: set[str]
+    function_apps: set[str]
 
 
 class DeployerTask(Task):
     def __init__(self) -> None:
-        self.manifest_cache: ManifestCache = {}
-        self.original_manifest_cache: ManifestCache = {}
-        self.public_manifest: ManifestCache = {}
-        self.public_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
-        self.rest_client = ClientSession()
         super().__init__()
+        self.subscription_id = get_config_option("SUBSCRIPTION_ID")
+        self.resource_group = get_config_option("RESOURCE_GROUP")
+        self.region = get_config_option("REGION")
+        self.control_plane_id = generate_unique_id()
+
+        self.public_manifest_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
+        self.rest_client = ClientSession()
+        self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
+        self.storage_client = StorageManagementClient(self.credential, self.subscription_id)
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
-        await self.public_client.__aenter__()
-        await self.rest_client.__aenter__()
+        await gather(
+            self.public_manifest_client.__aenter__(),
+            self.rest_client.__aenter__(),
+            self.web_client.__aenter__(),
+            self.storage_client.__aenter__(),
+        )
         token = await self.credential.get_token("https://management.azure.com/.default")
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
@@ -49,95 +82,182 @@ class DeployerTask(Task):
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
-        await self.public_client.__aexit__(exc_type, exc_val, exc_tb)
-        await self.rest_client.__aexit__(exc_type, exc_val, exc_tb)
+        await gather(
+            self.public_manifest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.web_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
+        )
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
-        public_manifest: dict[str, str] = {}
-        private_manifest: dict[str, str] = {}
-        public_manifest, private_manifest = await gather(self.get_public_manifests(), self.get_private_manifests())
-        if len(public_manifest) == 0:
-            log.error("Failed to read public manifests, exiting...")
-            return
-        if len(private_manifest) == 0:
-            log.warn("Failed to read private manifests. Manifests may not exist or error may have occured.")
-        self.manifest_cache = deepcopy(private_manifest)
-        self.original_manifest_cache = private_manifest
+        public_manifest, private_manifest, current_components = await gather(
+            self.get_public_manifests(), self.get_private_manifests(), self.get_current_components()
+        )
+        if not private_manifest:
+            log.info("Failed to read private manifest. Deploying all components.")
         self.public_manifest = public_manifest
-        await self.deploy_components(
-            [
-                component
-                for component in public_manifest
-                if public_manifest[component] != private_manifest.get(component)
+        self.private_manifest = private_manifest
+        self.manifest_cache = (
+            private_manifest
+            or {
+                "forwarder": "",
+                "resources": "",
+                "scaling": "",
+                "diagnostic_settings": "",
+            }
+        ).copy()
+
+        # TODO(AZINTS-2771) implement creating dependency resources when needed
+
+        await gather(
+            *[
+                self.deploy_component(component, current_components)
+                for component in cast(Iterable[ManifestKey], public_manifest)
+                if not private_manifest or public_manifest[component] != private_manifest[component]
             ]
         )
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
         try:
-            stream = await self.public_client.download_blob(MANIFEST_CACHE_NAME)
-        except ResourceNotFoundError:
-            return {}
-        blob_data = await stream.content_as_bytes(max_concurrency=4)
-        return deserialize_manifest_cache(blob_data.decode()) or {}
+            stream = await self.public_manifest_client.download_blob(MANIFEST_CACHE_NAME)
+        except ResourceNotFoundError as e:
+            raise InvalidCacheError("Public Manifest not found") from e
+        blob_data = await stream.readall()
+        cache_str = blob_data.decode()
+        if not (cache := deserialize_manifest_cache(cache_str)):
+            raise InvalidCacheError(f"Invalid Public Manifest: {cache_str}")
+        return cache
 
-    async def get_private_manifests(self) -> ManifestCache:
+    async def get_private_manifests(self) -> ManifestCache | None:
         try:
             blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_CACHE_NAME)
-        except RetryError:
-            return {}
-        return deserialize_manifest_cache(blob_data) or {}
+        except RetryError as e:
+            log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
+            return None
+        return deserialize_manifest_cache(blob_data)
 
-    async def deploy_components(self, component_names: list[str]) -> None:
-        if len(component_names) == 0:
+    async def get_current_components(self) -> ControlPlaneResources:
+        current_apps, current_service_plans, storage_accounts = await gather(
+            collect(self.web_client.web_apps.list_by_resource_group(self.resource_group)),
+            collect(self.web_client.app_service_plans.list_by_resource_group(self.resource_group)),
+            collect(self.storage_client.storage_accounts.list_by_resource_group(self.resource_group)),
+        )
+        return ControlPlaneResources(
+            app_service_plans={
+                app.name
+                for app in cast(list[Resource], current_service_plans)
+                if app.name.startswith(CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX)
+            },
+            storage_accounts={
+                storage.name
+                for storage in cast(list[Resource], storage_accounts)
+                if storage.name.startswith(CONTROL_PLANE_STORAGE_PREFIX)
+            },
+            function_apps={
+                task.name
+                for task in cast(list[Resource], current_apps)
+                if any(
+                    task.name.startswith(prefix)
+                    for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX)
+                )
+            },
+        )
+
+    async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
+        log.info(f"Deploying {component}")
+        if component == "forwarder":
+            return await self.deploy_log_forwarder_image()
+        task_prefix = component.replace("_", "-") + "-"
+        function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
+        if not function_app:
+            log.error(f"Function app for {component} not found, skipping deployment")
             return
-        container_apps: list[str] = []
-        function_apps: list[str] = []
-        for component in component_names:
-            if component == "forwarder":
-                container_apps.append(component)
-            else:
-                function_apps.append(component)
-        await gather(self.deploy_function_apps(function_apps), self.deploy_container_apps(container_apps))
-
-    async def deploy_function_apps(self, function_app_names: list[str]) -> None:
-        if len(function_app_names) == 0:
-            return
-        await gather(*[self.deploy_function_app(function_app_name) for function_app_name in function_app_names])
-
-    async def deploy_container_apps(self, container_app_names: list[str]) -> None:
-        if len(container_app_names) == 0:
-            return
-        for container_app in container_app_names:
-            self.manifest_cache[container_app] = self.public_manifest[container_app]
-
-    async def deploy_function_app(self, function_app_name: str) -> None:
         try:
-            function_app_data = await self.download_function_app_data(function_app_name)
-            await self.upload_function_app_data(function_app_name, function_app_data)
-        except RetryError:
-            log.error(f"Failed to deploy {function_app_name} task.")
+            zip_data = await self.download_function_app_data(component)
+            await self.upload_function_app_data(function_app, zip_data)
+        except Exception:
+            log.exception(f"Failed to deploy {component}")
             return
-        self.manifest_cache[function_app_name] = self.public_manifest[function_app_name]
+        self.manifest_cache[component] = self.public_manifest[component]
+        log.info(f"Finished deploying {component}")
+
+    async def deploy_log_forwarder_image(self) -> None:
+        # TODO(AZINTS-2770): Implement this
+        self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
+
+    async def create_or_update_function_app(
+        self, function_app_name: str, service_plan: AppServicePlan, connection_string: str
+    ) -> None:
+        await wait_for_resource(
+            *await self.create_control_plane_function_app(
+                self.region,
+                function_app_name,
+                service_plan.id,  # type: ignore
+                connection_string,
+            )
+        )
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def create_app_service_plan(
+        self, region: str, app_service_plan_name: str
+    ) -> tuple[AsyncLROPoller[AppServicePlan], Callable[[], Awaitable[AppServicePlan]]]:
+        return await self.web_client.app_service_plans.begin_create_or_update(
+            self.resource_group,
+            app_service_plan_name,
+            AppServicePlan(
+                location=region,
+                kind="linux",
+                reserved=True,  # TODO(AZINTS-2646): figure out if this is what we want
+                sku=SkuDescription(
+                    # TODO(AZINTS-2646): figure out which SKU we should be using here
+                    tier="Basic",
+                    name="B1",
+                ),
+            ),
+        ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def create_control_plane_function_app(
+        self, region: str, function_app_name: str, app_service_plan_id: str, connection_string: str
+    ) -> tuple[AsyncLROPoller[Site], Callable[[], Awaitable[Site]]]:
+        return await self.web_client.web_apps.begin_create_or_update(
+            self.resource_group,
+            function_app_name,
+            Site(
+                location=region,
+                kind="functionapp",
+                identity=ManagedServiceIdentity(type="SystemAssigned"),
+                server_farm_id=app_service_plan_id,
+                https_only=True,
+                site_config=SiteConfig(
+                    app_settings=[
+                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="python"),
+                        NameValuePair(name="AzureWebJobsStorage", value=connection_string),
+                        NameValuePair(name="FUNCTIONS_EXTENSION_VERSION", value="~4"),
+                    ]
+                ),
+            ),
+        ), lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
         resp = await self.rest_client.post(
-            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",  # TODO [AZINTS-2705] Figure out how to get the right name here
+            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
             data=function_app_data,
         )
         resp.raise_for_status()
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def download_function_app_data(self, function_app_name: str) -> bytes:
-        blob_name = function_app_name + "_task.zip"
-        stream = await self.public_client.download_blob(blob_name)
-        app_data = await stream.content_as_bytes(max_concurrency=4)
+    async def download_function_app_data(self, component: str) -> bytes:
+        blob_name = component + ".zip"
+        stream = await self.public_manifest_client.download_blob(blob_name)
+        app_data = await stream.readall()
         return app_data
 
     async def write_caches(self) -> None:
-        if self.manifest_cache == self.original_manifest_cache:
+        if self.manifest_cache == self.private_manifest:
             return
         await write_cache(MANIFEST_CACHE_NAME, dumps(self.manifest_cache))
 
