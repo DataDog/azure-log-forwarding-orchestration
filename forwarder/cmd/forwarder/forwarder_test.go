@@ -105,7 +105,7 @@ func TestRun(t *testing.T) {
 		})
 
 		var uploadedMetrics []byte
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), "forwarder-metrics", gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), metrics.MetricsContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				uploadedMetrics = append(uploadedMetrics, content...)
 				return azblob.UploadBufferResponse{}, nil
@@ -136,7 +136,7 @@ func TestRun(t *testing.T) {
 		})
 
 		var resp azblob.CreateContainerResponse
-		mockClient.EXPECT().CreateContainer(gomock.Any(), "forwarder-metrics", gomock.Any()).Return(resp, nil)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), metrics.MetricsContainer, gomock.Any()).Return(resp, nil)
 		mockClient.EXPECT().CreateContainer(gomock.Any(), cursor.CursorContainer, gomock.Any()).Return(resp, nil)
 
 		client := storage.NewClient(mockClient)

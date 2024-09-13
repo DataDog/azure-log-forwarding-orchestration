@@ -190,7 +190,7 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 
 	blobName := getMetricFileName(time.Now())
 
-	uploadErr := storageClient.AppendBlob(ctx, metrics.MetricsBucket, blobName, metricBuffer)
+	uploadErr := storageClient.AppendBlob(ctx, metrics.MetricsContainer, blobName, metricBuffer)
 	err = errors.Join(err, uploadErr)
 
 	logCount := 0
