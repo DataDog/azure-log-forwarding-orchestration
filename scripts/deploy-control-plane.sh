@@ -62,7 +62,7 @@ app_service_plan="$(az functionapp plan list -g $resource_group | jq -r '.[].nam
 if [[ -z "$app_service_plan" ]]; then
     echo "app service plan does not exist, creating one..."
     app_service_plan="dd-lfo-control-$random_id"
-    az functionapp plan create --name $app_service_plan --resource-group $resource_group --location eastus --sku EP1 --is-linux
+    az functionapp plan create --name $app_service_plan --resource-group $resource_group --location eastus --sku B1 --is-linux
 fi
 echo Done.
 
