@@ -19,13 +19,13 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
-func newHTTPLogItem(log *Log) (datadogV2.HTTPLogItem, error) {
+func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	logItem := datadogV2.HTTPLogItem{
 		Ddsource: ptr("azure"),
 		Ddtags:   ptr(strings.Join(log.Tags, ",")),
 		Message:  log.Content,
 	}
-	return logItem, nil
+	return logItem
 }
 
 // DatadogLogsSubmitter wraps around the datadogV2.LogsApi struct
@@ -64,16 +64,9 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	if len(c.logsBuffer) > 0 {
 		logs := make([]datadogV2.HTTPLogItem, 0, len(c.logsBuffer))
 		for _, currLog := range c.logsBuffer {
-			logItem, itemErr := newHTTPLogItem(currLog)
-			if itemErr != nil {
-				err = errors.Join(itemErr, err)
-			}
-			logs = append(logs, logItem)
+			logs = append(logs, newHTTPLogItem(currLog))
 		}
-		_, _, submitErr := c.logsSubmitter.SubmitLog(ctx, logs)
-		if submitErr != nil {
-			err = errors.Join(submitErr, err)
-		}
+		_, _, err = c.logsSubmitter.SubmitLog(ctx, logs)
 		c.logsBuffer = c.logsBuffer[:0]
 	}
 	return err
