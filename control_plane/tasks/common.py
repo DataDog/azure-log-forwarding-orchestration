@@ -1,5 +1,5 @@
 # stdlib
-from collections.abc import AsyncIterable, Awaitable, Callable
+from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from datetime import datetime
 from math import inf
 from typing import Any, Protocol, TypeVar
@@ -54,6 +54,11 @@ def generate_unique_id() -> str:
 async def collect(it: AsyncIterable[T]) -> list[T]:
     """Helper for collecting an async iterable, useful for simplifying error handling"""
     return [item async for item in it]
+
+
+def chunks(lst: list[T], n: int) -> Iterable[tuple[T, ...]]:
+    """Yield successive n-sized chunks from lst. If the last chunk is smaller than n, it will be dropped"""
+    return zip(*(lst[i::n] for i in range(n)), strict=False)
 
 
 class Resource(Protocol):

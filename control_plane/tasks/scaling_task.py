@@ -29,7 +29,7 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import average, generate_unique_id, now
+from tasks.common import average, chunks, generate_unique_id, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
@@ -48,8 +48,14 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
     return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
 
 
-def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
-    return False  # TODO (AZINTS-2684) implement proper threshold checking
+def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
+    metrics = list(filter(lambda metric: metric["timestamp"] > oldest_timestamp, metrics))
+
+    # if we have no valid metrics, we can't determine if we are over the threshold
+    if not metrics:
+        return False
+
+    return all(metric["runtime_seconds"] > threshold for metric in metrics)
 
 
 def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
@@ -228,7 +234,9 @@ class ScalingTask(Task):
         if did_scale:
             return
 
-        # TODO(AZINTS-2389): Scale down forwarders
+        await self.scale_down_forwarders(
+            client, region_config, num_resources_by_forwarder, forwarder_metrics, oldest_scale_timestamp
+        )
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]
@@ -355,6 +363,46 @@ class ScalingTask(Task):
         region_config["resources"].update(
             {resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)}
         )
+
+    async def scale_down_forwarders(
+        self,
+        client: LogForwarderClient,
+        region_config: RegionAssignmentConfiguration,
+        num_resources_by_forwarder: dict[str, int],
+        forwarder_metrics: dict[str, list[MetricBlobEntry]],
+        oldest_scale_timestamp: float,
+    ):
+        forwarders_to_collapse = sorted(
+            [
+                config_id
+                for config_id, metrics in forwarder_metrics.items()
+                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS, oldest_scale_timestamp)
+                and num_resources_by_forwarder[config_id] > 0
+            ]
+        )
+        forwarders_to_delete = [
+            config_id for config_id, num_resources in num_resources_by_forwarder.items() if num_resources == 0
+        ]
+
+        await gather(
+            *(
+                self.collapse_forwarders(region_config, config_1, config_2)
+                for config_1, config_2 in chunks(forwarders_to_collapse, 2)
+            ),
+            *(client.delete_log_forwarder(forwarder_id) for forwarder_id in forwarders_to_delete),
+        )
+
+    async def collapse_forwarders(
+        self, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
+    ) -> None:
+        """Collapses two forwarders into one, moving resources from config_2 to config_1"""
+        resources_to_move = {
+            resource_id: config_1
+            for resource_id, config_id in region_config["resources"].items()
+            if config_id == config_2
+        }
+        region_config["resources"].update(resources_to_move)
+        region_config["configurations"].pop(config_2, None)
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
         existing_log_forwarders = await client.list_log_forwarder_ids()
