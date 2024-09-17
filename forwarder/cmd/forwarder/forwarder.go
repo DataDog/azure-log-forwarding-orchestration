@@ -35,7 +35,13 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	defer span.Finish(tracer.WithError(err))
 	eg, egCtx := errgroup.WithContext(ctx)
 
-	defer logsClient.Flush(ctx)
+	defer func() {
+		flushErr := logsClient.Flush(ctx)
+		if flushErr != nil {
+			logger.Error(fmt.Sprintf("Error flushing logs: %v", flushErr))
+			err = errors.Join(err, flushErr)
+		}
+	}()
 
 	channelSize := 1000
 
