@@ -3,7 +3,7 @@
 # stdlib
 from concurrent.futures import ThreadPoolExecutor
 from os import listdir
-from logging import getLogger, basicConfig, INFO
+from logging import WARNING, getLogger, basicConfig, INFO
 
 # 3p
 from azure.identity import DefaultAzureCredential
@@ -12,8 +12,9 @@ from azure.storage.blob import ContainerClient
 ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 TASKS_CONTAINER = "tasks"
 
-log = getLogger(__name__)
 basicConfig(level=INFO)
+log = getLogger(__name__)
+getLogger("azure").setLevel(WARNING)
 
 log.info("Reading zip files from dist/")
 zips: dict[str, bytes] = {}
