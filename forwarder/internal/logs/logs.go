@@ -2,7 +2,6 @@ package logs
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 	"sync"
@@ -51,9 +50,6 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 }
 
 func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.SubmitLog")
-	defer span.Finish(tracer.WithError(err))
-
 	c.mu.Lock()
 	c.logsBuffer = append(c.logsBuffer, log)
 	c.mu.Unlock()
@@ -79,17 +75,5 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	}
 	c.mu.Unlock()
 
-	return err
-}
-
-func ProcessLogs(ctx context.Context, datadogClient *Client, logsCh <-chan *Log) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
-	defer span.Finish(tracer.WithError(err))
-	for logItem := range logsCh {
-		currErr := datadogClient.SubmitLog(ctx, logItem)
-		err = errors.Join(err, currErr)
-	}
-	flushErr := datadogClient.Flush(ctx)
-	err = errors.Join(err, flushErr)
 	return err
 }

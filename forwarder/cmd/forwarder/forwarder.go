@@ -30,6 +30,18 @@ type MetricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
+func ProcessLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
+	defer span.Finish(tracer.WithError(err))
+	for logItem := range logsCh {
+		currErr := logsClient.SubmitLog(ctx, logItem)
+		err = errors.Join(err, currErr)
+	}
+	flushErr := logsClient.Flush(ctx)
+	err = errors.Join(err, flushErr)
+	return err
+}
+
 func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
@@ -48,7 +60,7 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		return logs.ProcessLogs(egCtx, logsClient, logCh)
+		return ProcessLogs(egCtx, logsClient, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
@@ -214,11 +226,11 @@ func main() {
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	apiClient := datadog.NewAPIClient(datadogConfig)
 
-	logsClient := datadogV2.NewLogsApi(apiClient)
+	logsApiClient := datadogV2.NewLogsApi(apiClient)
 
-	datadogClient := logs.NewClient(logsClient)
+	logsClient := logs.NewClient(logsApiClient)
 
-	runErr := Run(ctx, storageClient, datadogClient, logger, time.Now)
+	runErr := Run(ctx, storageClient, logsClient, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
