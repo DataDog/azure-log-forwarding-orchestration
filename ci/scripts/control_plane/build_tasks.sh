@@ -42,4 +42,4 @@ for task in $tasks; do
     echo "Built $task"
 done
 
-ls -R dist
+echo Done Building!

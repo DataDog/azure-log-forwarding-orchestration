@@ -4,8 +4,8 @@ variables:
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
 stages:
   - ci-image
-  - after-test
   - test
+  - after-test
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
