@@ -87,6 +87,8 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 		defer close(blobContentCh)
 		blobsEg, segmentCtx := errgroup.WithContext(getBlobsCtx)
 		for blob := range blobCh {
+			// Skip blobs that are not recent
+			// Blobs may have old data that we don't want to process
 			if !storage.Current(blob, currNow) {
 				continue
 			}
