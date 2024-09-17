@@ -50,7 +50,22 @@ build:
   stage: after-test
   tags: ["arch:amd64"]
   script:
-    - ci/scripts/control_plane/build.sh
+    - ci/scripts/control_plane/build_tasks.sh
+  only:
+    refs:
+      - main
+publish-deployer:
+  image: $DOCKER_IMAGE
+  stage: publish
+  rules:
+    - when: manual
+      allow_failure: true
+  tags: ["arch:amd64"]
+  script:
+    - docker buildx build --platform=linux/amd64 --tag mattlogger.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+  only:
+    refs:
+      - main
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
