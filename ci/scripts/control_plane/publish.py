@@ -13,7 +13,7 @@ ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 TASKS_CONTAINER = "tasks"
 
 basicConfig(level=INFO)
-log = getLogger(__name__)
+log = getLogger("publish")
 getLogger("azure").setLevel(WARNING)
 
 log.info("Reading zip files from dist/")
