@@ -26,7 +26,13 @@ from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_
 
 # project
 from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
-from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, ManifestKey, deserialize_manifest_cache
+from cache.manifest_cache import (
+    MANIFEST_FILE_NAME,
+    PUBLIC_CONTAINER_URL,
+    ManifestCache,
+    ManifestKey,
+    deserialize_manifest_cache,
+)
 from tasks.client.log_forwarder_client import Resource
 from tasks.common import collect, generate_unique_id, wait_for_resource
 from tasks.task import Task
@@ -43,7 +49,6 @@ DIAGNOSTIC_SETTINGS_TASK_PREFIX = "diagnostic-settings-task-"
 MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
 
-PUBLIC_CONTAINER_URL = "google.com"
 
 log = getLogger(DEPLOYER_TASK_NAME)
 
@@ -121,7 +126,7 @@ class DeployerTask(Task):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
         try:
-            stream = await self.public_manifest_client.download_blob(MANIFEST_CACHE_NAME)
+            stream = await self.public_manifest_client.download_blob(MANIFEST_FILE_NAME)
         except ResourceNotFoundError as e:
             raise InvalidCacheError("Public Manifest not found") from e
         blob_data = await stream.readall()
@@ -132,7 +137,7 @@ class DeployerTask(Task):
 
     async def get_private_manifests(self) -> ManifestCache | None:
         try:
-            blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_CACHE_NAME)
+            blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_FILE_NAME)
         except RetryError as e:
             log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
             return None
@@ -259,7 +264,7 @@ class DeployerTask(Task):
     async def write_caches(self) -> None:
         if self.manifest_cache == self.private_manifest:
             return
-        await write_cache(MANIFEST_CACHE_NAME, dumps(self.manifest_cache))
+        await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
 
 
 async def main():
