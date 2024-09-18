@@ -27,6 +27,7 @@ from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_
 # project
 from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.manifest_cache import (
+    KEY_TO_ZIP,
     MANIFEST_FILE_NAME,
     PUBLIC_CONTAINER_URL,
     ManifestCache,
@@ -256,7 +257,7 @@ class DeployerTask(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, component: str) -> bytes:
-        blob_name = component + ".zip"
+        blob_name = KEY_TO_ZIP[component]
         stream = await self.public_manifest_client.download_blob(blob_name)
         app_data = await stream.readall()
         return app_data
