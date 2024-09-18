@@ -41,7 +41,7 @@ hashes: ManifestCache = {
 }
 
 log.info(
-    "Uploading the following zip files to %s/%s\n%s",
+    "Uploading the following zip files to %s/%s:\n%s",
     PUBLIC_CONTAINER_URL,
     TASKS_CONTAINER,
     "\n".join(zips.keys()),
