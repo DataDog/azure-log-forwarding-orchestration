@@ -109,7 +109,7 @@ func TestRun(t *testing.T) {
 			return nil, nil, nil
 		})
 
-		datadogClient := logs.NewClient(mockDDClient)
+		logClient := logs.NewClient(mockDDClient)
 
 		var output []byte
 		buffer := bytes.NewBuffer(output)
@@ -119,7 +119,7 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err := Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now, 10)
+		err := Run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)

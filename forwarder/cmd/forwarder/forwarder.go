@@ -120,25 +120,27 @@ func ProcessLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	return err
 }
 
-func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, logger *log.Entry, now customtime.Now, goroutineCount int) (err error) {
+func Run(ctx context.Context, client *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 
 	defer func() {
-		flushErr := logsClient.Flush(ctx)
-		if flushErr != nil {
-			logger.Error(fmt.Sprintf("Error flushing logs: %v", flushErr))
-			err = errors.Join(err, flushErr)
+		for _, logsClient := range logsClients {
+			flushErr := logsClient.Flush(ctx)
+			if flushErr != nil {
+				logger.Error(fmt.Sprintf("Error flushing logs: %v", flushErr))
+				err = errors.Join(err, flushErr)
+			}
 		}
 	}()
 
-	channelSize := goroutineCount * 10
+	channelSize := len(logsClients) * 10
 
 	logCh := make(chan *logs.Log, channelSize)
 
 	// Spawn log processing goroutines
 	logsEg, logsCtx := errgroup.WithContext(ctx)
-	for range goroutineCount {
+	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
 			return ProcessLogs(logsCtx, logsClient, logCh)
 		})
@@ -213,6 +215,15 @@ func main() {
 
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
+	goroutineString := os.Getenv("NUM_GOROUTINES")
+	if goroutineString == "" {
+		goroutineString = "10"
+	}
+	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
+	if err != nil {
+		logger.Fatalf("error parsing MAX_GOROUTINES: %v", err)
+	}
+
 	// Initialize storage client
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
@@ -227,19 +238,13 @@ func main() {
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	apiClient := datadog.NewAPIClient(datadogConfig)
 	logsApiClient := datadogV2.NewLogsApi(apiClient)
-	logsClient := logs.NewClient(logsApiClient)
 
-	goroutineString := os.Getenv("NUM_GOROUTINES")
-	if goroutineString == "" {
-		goroutineString = "10"
+	var logsClients []*logs.Client
+	for range goroutineAmount {
+		logsClients = append(logsClients, logs.NewClient(logsApiClient))
 	}
 
-	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
-	if err != nil {
-		logger.Fatalf("error parsing MAX_GOROUTINES: %v", err)
-	}
-
-	runErr := Run(ctx, storageClient, logsClient, logger, time.Now, int(goroutineAmount))
+	runErr := Run(ctx, storageClient, logsClients, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
