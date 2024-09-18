@@ -119,7 +119,7 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err := Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
+		err := Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now, 10)
 
 		// THEN
 		assert.NoError(t, err)
@@ -164,7 +164,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			return logs.ParseLogs(data, logsChannel)
+			return ParseLogs(data, logsChannel)
 		})
 		err := eg.Wait()
 
@@ -175,5 +175,40 @@ func TestProcessLogs(t *testing.T) {
 			assert.Equal(t, "azure", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
+	})
+}
+
+func TestParseLogs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates a Log from raw log", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		var data []byte
+		data = append(data, validLog...)
+		data = append(data, validLog...)
+		data = append(data, validLog...)
+
+		eg, _ := errgroup.WithContext(context.Background())
+		var got []*logs.Log
+
+		logsChannel := make(chan *logs.Log, 100)
+
+		// WHEN
+		eg.Go(func() error {
+			for log := range logsChannel {
+				got = append(got, log)
+			}
+			return nil
+		})
+		eg.Go(func() error {
+			defer close(logsChannel)
+			return ParseLogs(data, logsChannel)
+		})
+		err := eg.Wait()
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Len(t, got, 3)
 	})
 }
