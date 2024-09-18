@@ -34,5 +34,16 @@ MANIFEST_SCHEMA: dict[str, Any] = {
 MANIFEST_CACHE_NAME = "manifest.json"
 
 
+PUBLIC_CONTAINER_URL = "https://ddazurelfo.blob.core.windows.net"
+TASKS_CONTAINER = "tasks"
+
+RESOURCES_TASK_ZIP = "resources_task.zip"
+SCALING_TASK_ZIP = "scaling_task.zip"
+DIAGNOSTIC_SETTINGS_TASK_ZIP = "diagnostic_settings_task.zip"
+MANIFEST_FILE_NAME = "manifest.json"
+
+ALL_ZIPS = [RESOURCES_TASK_ZIP, SCALING_TASK_ZIP, DIAGNOSTIC_SETTINGS_TASK_ZIP]
+
+
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
     return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA)
