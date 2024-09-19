@@ -119,7 +119,7 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err := Run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
+		err := run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)
@@ -164,7 +164,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			return ParseLogs(data, logsChannel)
+			return parseLogs(data, logsChannel)
 		})
 		err := eg.Wait()
 
@@ -203,7 +203,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			return ParseLogs(data, logsChannel)
+			return parseLogs(data, logsChannel)
 		})
 		err := eg.Wait()
 

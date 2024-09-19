@@ -27,13 +27,13 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-type MetricEntry struct {
+type metricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
 	RuntimeSeconds     float64          `json:"runtime_seconds"`
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-func GetBlobs(ctx context.Context, client *storage.Client, container string) (blobs []storage.Blob, err error) {
+func getBlobs(ctx context.Context, client *storage.Client, container string) (blobs []storage.Blob, err error) {
 	iter := client.ListBlobs(ctx, container)
 
 	for {
@@ -60,7 +60,7 @@ func GetBlobs(ctx context.Context, client *storage.Client, container string) (bl
 	return blobs, err
 }
 
-func GetContainers(ctx context.Context, storageClient *storage.Client) (containers []string, err error) {
+func getContainers(ctx context.Context, storageClient *storage.Client) (containers []string, err error) {
 	iter := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 	for {
 		containerList, currErr := iter.Next(ctx)
@@ -86,16 +86,16 @@ func GetContainers(ctx context.Context, storageClient *storage.Client) (containe
 	return containers, err
 }
 
-func GetLogs(ctx context.Context, client *storage.Client, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
+func getLogs(ctx context.Context, client *storage.Client, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
 	content, err := client.DownloadSegment(ctx, blob, 0)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
 	}
 
-	return ParseLogs(*content.Content, logsChannel)
+	return parseLogs(*content.Content, logsChannel)
 }
 
-func ParseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
+func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	for scanner.Scan() {
 		currLog, currErr := logs.NewLog([]byte(scanner.Text()))
@@ -121,7 +121,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	return err
 }
 
-func Run(ctx context.Context, client *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
+func run(ctx context.Context, client *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 
@@ -148,13 +148,13 @@ func Run(ctx context.Context, client *storage.Client, logsClients []*logs.Client
 	}
 
 	// Get all the containers
-	containers, containerErr := GetContainers(ctx, client)
+	containers, containerErr := getContainers(ctx, client)
 	err = errors.Join(err, containerErr)
 
 	// Get all the blobs
 	var blobs []storage.Blob
 	for _, c := range containers {
-		blobsPerContainer, blobsErr := GetBlobs(ctx, client, c)
+		blobsPerContainer, blobsErr := getBlobs(ctx, client, c)
 		err = errors.Join(err, blobsErr)
 		blobs = append(blobs, blobsPerContainer...)
 	}
@@ -169,7 +169,7 @@ func Run(ctx context.Context, client *storage.Client, logsClients []*logs.Client
 			continue
 		}
 		downloadEg.Go(func() error {
-			return GetLogs(segmentCtx, client, blob, logCh)
+			return getLogs(segmentCtx, client, blob, logCh)
 		})
 	}
 	err = errors.Join(err, downloadEg.Wait())
@@ -245,11 +245,11 @@ func main() {
 		logsClients = append(logsClients, logs.NewClient(logsApiClient))
 	}
 
-	runErr := Run(ctx, storageClient, logsClients, logger, time.Now)
+	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int32)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
-	metricBlob := MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
+	metricBlob := metricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
 
