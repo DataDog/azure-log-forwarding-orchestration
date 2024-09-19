@@ -45,7 +45,9 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 
 	eg.Go(func() error {
 		span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
-		defer span.Finish(tracer.WithError(err))
+		defer func(span ddtrace.Span, err error) {
+		 	span.Finish(tracer.WithError(err))
+		}(span, err)
 		for logItem := range logCh {
 			resourceVolumes[logItem.ResourceId]++
 			currErr := logsClient.SubmitLog(ctx, logItem)
