@@ -33,7 +33,10 @@ type metricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-func getBlobs(ctx context.Context, client *storage.Client, container string) (blobs []storage.Blob, err error) {
+func getBlobs(ctx context.Context, client *storage.Client, container string) ([]storage.Blob, error) {
+	var blobs []storage.Blob
+	var err error
+
 	iter := client.ListBlobs(ctx, container)
 
 	for {
@@ -60,7 +63,9 @@ func getBlobs(ctx context.Context, client *storage.Client, container string) (bl
 	return blobs, err
 }
 
-func getContainers(ctx context.Context, storageClient *storage.Client) (containers []string, err error) {
+func getContainers(ctx context.Context, storageClient *storage.Client) ([]string, error) {
+	var containers []string
+	var err error
 	iter := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 	for {
 		containerList, currErr := iter.Next(ctx)
