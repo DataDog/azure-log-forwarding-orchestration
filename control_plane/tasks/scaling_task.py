@@ -386,23 +386,30 @@ class ScalingTask(Task):
 
         await gather(
             *(
-                self.collapse_forwarders(region_config, config_1, config_2)
+                self.collapse_forwarders(client, region_config, config_1, config_2)
                 for config_1, config_2 in chunks(forwarders_to_collapse, 2)
             ),
-            *(client.delete_log_forwarder(forwarder_id) for forwarder_id in forwarders_to_delete),
+            *(self.delete_log_forwarder(client, region_config, config_id) for config_id in forwarders_to_delete),
         )
 
     async def collapse_forwarders(
-        self, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
+        self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
     ) -> None:
         """Collapses two forwarders into one, moving resources from config_2 to config_1"""
+        await self.delete_log_forwarder(client, region_config, config_2)
         resources_to_move = {
             resource_id: config_1
             for resource_id, config_id in region_config["resources"].items()
             if config_id == config_2
         }
         region_config["resources"].update(resources_to_move)
-        region_config["configurations"].pop(config_2, None)
+
+    async def delete_log_forwarder(
+        self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_id: str
+    ) -> None:
+        """Deletes a forwarder and removes it from the configurations"""
+        await client.delete_log_forwarder(config_id)
+        region_config["configurations"].pop(config_id, None)
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
         existing_log_forwarders = await client.list_log_forwarder_ids()

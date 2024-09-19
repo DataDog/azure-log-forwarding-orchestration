@@ -695,7 +695,13 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    async def test_forwarder_without_resources_is_cleaned_up(self):
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_forwarder_without_resources_is_cleaned_up(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.side_effect = lambda _c, config_id, _t: {
+            OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
+            NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource4": 4000}),
+        }.get(config_id, [])
+
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
             assignment_cache_state={
