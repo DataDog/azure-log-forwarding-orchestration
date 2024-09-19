@@ -33,11 +33,11 @@ type metricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-func getBlobs(ctx context.Context, client *storage.Client, container string) ([]storage.Blob, error) {
+func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
 	var err error
 
-	iter := client.ListBlobs(ctx, container)
+	iter := storageClient.ListBlobs(ctx, container)
 
 	for {
 		blobList, currErr := iter.Next(ctx)
@@ -91,8 +91,8 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 	return containers, err
 }
 
-func getLogs(ctx context.Context, client *storage.Client, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	content, err := client.DownloadSegment(ctx, blob, 0)
+func getLogs(ctx context.Context, storageClient *storage.Client, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
+	content, err := storageClient.DownloadSegment(ctx, blob, 0)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
 	}
@@ -126,7 +126,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	return err
 }
 
-func run(ctx context.Context, client *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
+func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 
@@ -140,7 +140,7 @@ func run(ctx context.Context, client *storage.Client, logsClients []*logs.Client
 		}
 	}()
 
-	channelSize := len(logsClients) * 10
+	channelSize := len(logsClients)
 
 	logCh := make(chan *logs.Log, channelSize)
 
@@ -153,13 +153,13 @@ func run(ctx context.Context, client *storage.Client, logsClients []*logs.Client
 	}
 
 	// Get all the containers
-	containers, containerErr := getContainers(ctx, client)
+	containers, containerErr := getContainers(ctx, storageClient)
 	err = errors.Join(err, containerErr)
 
 	// Get all the blobs
 	var blobs []storage.Blob
 	for _, c := range containers {
-		blobsPerContainer, blobsErr := getBlobs(ctx, client, c)
+		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
 		err = errors.Join(err, blobsErr)
 		blobs = append(blobs, blobsPerContainer...)
 	}
@@ -174,7 +174,7 @@ func run(ctx context.Context, client *storage.Client, logsClients []*logs.Client
 			continue
 		}
 		downloadEg.Go(func() error {
-			return getLogs(segmentCtx, client, blob, logCh)
+			return getLogs(segmentCtx, storageClient, blob, logCh)
 		})
 	}
 	err = errors.Join(err, downloadEg.Wait())
