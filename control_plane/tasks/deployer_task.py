@@ -27,8 +27,10 @@ from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_
 # project
 from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.manifest_cache import (
+    KEY_TO_ZIP,
     MANIFEST_FILE_NAME,
-    PUBLIC_CONTAINER_URL,
+    PUBLIC_STORAGE_ACCOUNT_URL,
+    TASKS_CONTAINER,
     ManifestCache,
     ManifestKey,
     deserialize_manifest_cache,
@@ -66,8 +68,7 @@ class DeployerTask(Task):
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
         self.control_plane_id = generate_unique_id()
-
-        self.public_manifest_client = ContainerClient.from_container_url(PUBLIC_CONTAINER_URL)
+        self.public_storage_client = ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER, self.credential)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
         self.storage_client = StorageManagementClient(self.credential, self.subscription_id)
@@ -75,7 +76,7 @@ class DeployerTask(Task):
     async def __aenter__(self) -> Self:
         await super().__aenter__()
         await gather(
-            self.public_manifest_client.__aenter__(),
+            self.public_storage_client.__aenter__(),
             self.rest_client.__aenter__(),
             self.web_client.__aenter__(),
             self.storage_client.__aenter__(),
@@ -88,7 +89,7 @@ class DeployerTask(Task):
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         await gather(
-            self.public_manifest_client.__aexit__(exc_type, exc_val, exc_tb),
+            self.public_storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
@@ -126,7 +127,7 @@ class DeployerTask(Task):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
         try:
-            stream = await self.public_manifest_client.download_blob(MANIFEST_FILE_NAME)
+            stream = await self.public_storage_client.download_blob(MANIFEST_FILE_NAME)
         except ResourceNotFoundError as e:
             raise InvalidCacheError("Public Manifest not found") from e
         blob_data = await stream.readall()
@@ -256,8 +257,8 @@ class DeployerTask(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, component: str) -> bytes:
-        blob_name = component + ".zip"
-        stream = await self.public_manifest_client.download_blob(blob_name)
+        blob_name = KEY_TO_ZIP[component]
+        stream = await self.public_storage_client.download_blob(blob_name)
         app_data = await stream.readall()
         return app_data
 
