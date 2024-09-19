@@ -6,7 +6,6 @@ stages:
   - ci-image
   - test
   - after-test
-  - publish
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
@@ -45,18 +44,24 @@ type-check:
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/type-check.sh
-build:
+build-and-publish-tasks:
   image: $CI_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
+  dependencies:
+    - forwarder-tests
+    - control-plane-tests
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
     - ci/scripts/control_plane/build_tasks.sh
+    - ci/scripts/control_plane/publish.py
   only:
     refs:
       - main
 publish-deployer:
   image: $DOCKER_IMAGE
-  stage: publish
+  stage: after-test
   rules:
     - when: manual
       allow_failure: true
@@ -78,7 +83,7 @@ forwarder-tests:
       - ci/forwarder_coverage.md
 forwarder-publish:
   image: $DOCKER_IMAGE
-  stage: publish
+  stage: after-test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/forwarder/publish.sh

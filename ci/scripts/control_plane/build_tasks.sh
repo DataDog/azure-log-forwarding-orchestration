@@ -38,8 +38,8 @@ for task in $tasks; do
     cp ./control_plane/config/host.json ./dist/$task/host.json
 
     : zip it up for zipdeploy
-    zip ./dist/$task.zip ./dist/$task/*
+    zip -r ./dist/$task.zip ./dist/$task/*
     echo "Built $task"
 done
 
-ls -R dist
+: ======================= Done Building =======================
