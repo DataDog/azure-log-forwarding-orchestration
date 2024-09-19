@@ -118,8 +118,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self.configuration = Configuration()
         self.configuration.request_timeout = CLIENT_MAX_SECONDS
-        self.api_client = AsyncApiClient(self.configuration)
-        self.api_instance = MetricsApi(self.api_client)
+        self._datadog_client = AsyncApiClient(self.configuration)
+        self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
 
@@ -127,7 +127,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
-            self.api_client.__aenter__(),
+            self._datadog_client.__aenter__(),
         )
         return self
 
@@ -137,7 +137,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.api_client.__aexit__(exc_type, exc_val, exc_tb),
+            self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     def log_and_raise_errors(self, message: str, *maybe_errors: Any) -> None:
@@ -387,7 +387,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         if not metrics or not environ.get("SHOULD_SUBMIT_METRICS", False):
             return
 
-        response: IntakePayloadAccepted = await self.api_instance.submit_metrics(
+        response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(
             body=self.create_metric_payload(metrics, log_forwarder_id)
         )  # type: ignore
         for error in response.get("errors", []):
