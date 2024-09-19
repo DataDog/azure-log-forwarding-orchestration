@@ -170,7 +170,7 @@ class TestDeployerTask(TaskTestCase):
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         def _download_blob(item: str):
-            if item == "diagnostic_settings.zip":
+            if item == "diagnostic_settings_task.zip":
                 raise HttpResponseError()
             return DEFAULT
 
@@ -193,13 +193,13 @@ class TestDeployerTask(TaskTestCase):
             [
                 call("manifest.json"),
                 call().readall(),
-                call("resources.zip"),
+                call("resources_task.zip"),
                 call().readall(),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
             ],
         )
 
