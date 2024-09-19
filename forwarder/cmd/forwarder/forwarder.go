@@ -47,13 +47,14 @@ func GetBlobs(ctx context.Context, client *storage.Client, container string) (bl
 			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", container, currErr), err)
 		}
 
-		if blobList != nil {
-			for _, b := range blobList {
-				if b == nil {
-					continue
-				}
-				blobs = append(blobs, storage.Blob{Item: b, Container: container})
+		if blobList == nil {
+			continue
+		}
+		for _, b := range blobList {
+			if b == nil {
+				continue
 			}
+			blobs = append(blobs, storage.Blob{Item: b, Container: container})
 		}
 	}
 	return blobs, err
