@@ -119,7 +119,7 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err := Run(ctx, client, []logs.Client{logClient}, log.NewEntry(logger), time.Now)
+		err := Run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)

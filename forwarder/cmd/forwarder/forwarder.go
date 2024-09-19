@@ -108,7 +108,7 @@ func ParseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	return err
 }
 
-func ProcessLogs(ctx context.Context, logsClient logs.Client, logsCh <-chan *logs.Log) (err error) {
+func ProcessLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
@@ -120,7 +120,7 @@ func ProcessLogs(ctx context.Context, logsClient logs.Client, logsCh <-chan *log
 	return err
 }
 
-func Run(ctx context.Context, client *storage.Client, logsClients []logs.Client, logger *log.Entry, now customtime.Now) (err error) {
+func Run(ctx context.Context, client *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
 	defer span.Finish(tracer.WithError(err))
 
@@ -239,7 +239,7 @@ func main() {
 	apiClient := datadog.NewAPIClient(datadogConfig)
 	logsApiClient := datadogV2.NewLogsApi(apiClient)
 
-	var logsClients []logs.Client
+	var logsClients []*logs.Client
 	for range goroutineAmount {
 		logsClients = append(logsClients, logs.NewClient(logsApiClient))
 	}

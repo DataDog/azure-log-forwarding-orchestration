@@ -41,13 +41,13 @@ type Client struct {
 	logsBuffer    []*Log
 }
 
-func NewClient(logsApi DatadogLogsSubmitter) Client {
-	return Client{
+func NewClient(logsApi DatadogLogsSubmitter) *Client {
+	return &Client{
 		logsSubmitter: logsApi,
 	}
 }
 
-func (c Client) SubmitLog(ctx context.Context, log *Log) (err error) {
+func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
 	//c.logsBuffer = append(c.logsBuffer, log)
 	newBuffer := append(c.logsBuffer, log)
 	c.logsBuffer = newBuffer
@@ -58,7 +58,7 @@ func (c Client) SubmitLog(ctx context.Context, log *Log) (err error) {
 	return nil
 }
 
-func (c Client) Flush(ctx context.Context) (err error) {
+func (c *Client) Flush(ctx context.Context) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Flush")
 	defer span.Finish(tracer.WithError(err))
 
