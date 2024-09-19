@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	"google.golang.org/api/iterator"
@@ -140,11 +142,38 @@ func getLogVolume(volumeCh <-chan string) map[string]int64 {
 	return resourceVolumes
 }
 
+func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, startTime time.Time) (int, error) {
+	metricBlob := metrics.MetricEntry{
+		Timestamp:          time.Now().Unix(),
+		RuntimeSeconds:     time.Since(startTime).Seconds(),
+		ResourceLogVolumes: resourceVolumes,
+	}
+
+	metricBuffer, err := metricBlob.ToBytes()
+
+	if err != nil {
+		return 0, fmt.Errorf("error while marshalling metrics: %v", err)
+	}
+
+	blobName := getMetricFileName(time.Now())
+
+	err = storageClient.UploadBlob(ctx, metrics.MetricsContainer, blobName, metricBuffer)
+
+	logCount := 0
+	for _, v := range resourceVolumes {
+		logCount += int(v)
+	}
+
+	return logCount, nil
+}
+
 func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	start := now()
 
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
-	defer span.Finish(tracer.WithError(err))
+	defer func(span ddtrace.Span, err error) {
+		span.Finish(tracer.WithError(err))
+	}(span, err)
 
 	defer func() {
 		for _, logsClient := range logsClients {
@@ -201,36 +230,19 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 			return getLogs(segmentCtx, storageClient, blob, logCh)
 		})
 	}
+
+	// Wait for all the goroutines to finish
 	err = errors.Join(err, downloadEg.Wait())
 	close(logCh)
-
 	err = errors.Join(err, logsEg.Wait())
-
 	close(volumeCh)
 	err = errors.Join(err, logVolumeEg.Wait())
 
-	metricBlob := metrics.MetricEntry{
-		Timestamp:          time.Now().Unix(),
-		RuntimeSeconds:     time.Since(start).Seconds(),
-		ResourceLogVolumes: resourceVolumes,
-	}
-
-	metricBuffer, err := metricBlob.ToBytes()
-
-	blobName := getMetricFileName(time.Now())
-
-	err = storageClient.UploadBlob(ctx, metrics.MetricsContainer, blobName, metricBuffer)
-
-	logCount := 0
-	for _, v := range resourceVolumes {
-		logCount += int(v)
-	}
+	// Write forwarder metrics
+	logCount, metricErr := writeMetrics(ctx, storageClient, resourceVolumes, start)
+	err = errors.Join(err, metricErr)
 
 	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
-	if err != nil {
-		return fmt.Errorf("run: %v", err)
-	}
-
 	return err
 }
 
