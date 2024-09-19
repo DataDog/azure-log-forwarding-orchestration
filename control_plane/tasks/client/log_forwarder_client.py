@@ -109,8 +109,8 @@ def get_datetime_str(time: datetime) -> str:
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.forwarder_image = get_config_option("forwarder_image")
-        self.DD_API_KEY = get_config_option("DD_API_KEY")
-        self.DD_APP_KEY = get_config_option("DD_APP_KEY")
+        self.dd_api_key = get_config_option("DD_API_KEY")
+        self.should_submit_metrics = bool("DD_APP_KEY" in environ and environ.get("SHOULD_SUBMIT_METRICS", False))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self._credential = credential
@@ -222,8 +222,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                             resources=ContainerResources(cpu=0.5, memory="1Gi"),
                             env=[
                                 EnvironmentVar(name="AzureWebJobsStorage", value=connection_string),
-                                EnvironmentVar(name="DD_API_KEY", value=self.DD_API_KEY),
-                                EnvironmentVar(name="DD_APP_KEY", value=self.DD_APP_KEY),
+                                EnvironmentVar(name="DD_API_KEY", value=self.dd_api_key),
                             ],
                         )
                     ],
@@ -384,7 +383,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
-        if not metrics or not environ.get("SHOULD_SUBMIT_METRICS", False):
+        if not self.should_submit_metrics or not metrics:
             return
 
         response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(
