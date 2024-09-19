@@ -9,7 +9,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.core.polling import AsyncLROPoller
 
 # project
-from tasks.common import average, now, wait_for_resource
+from tasks.common import average, generate_unique_id, now, wait_for_resource
 
 
 class MockPoller(AsyncLROPoller):
@@ -50,3 +50,7 @@ class TestCommon(IsolatedAsyncioTestCase):
     async def test_wait_for_resource_3_tries(self):
         res = await wait_for_resource(MockPoller(), make_check_resource(tries=3))
         self.assertEqual(res, "result")
+
+    def test_generate_unique_id(self):
+        for _ in range(10):  # test multiple times to ensure
+            self.assertRegex(generate_unique_id(), r"[0-9a-f]{12}")

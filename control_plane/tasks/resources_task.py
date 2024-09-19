@@ -12,6 +12,7 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 from cache.common import read_cache, write_cache
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache, prune_resource_cache
 from tasks.common import now
+from tasks.constants import ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
@@ -20,11 +21,6 @@ log = getLogger(RESOURCES_TASK_NAME)
 
 
 DISALLOWED_REGIONS = {"global"}
-DISALLOWED_RESOURCE_TYPES = {
-    # resources without diagnostic settings:
-    "microsoft.compute/snapshots",
-    "microsoft.alertsmanagement/prometheusrulegroups",
-}
 
 
 class ResourcesTask(Task):
@@ -56,7 +52,7 @@ class ResourcesTask(Task):
             async for r in client.resources.list():
                 region = cast(str, r.location).lower()
                 resource_type = cast(str, r.type).lower()
-                if region in DISALLOWED_REGIONS or resource_type in DISALLOWED_RESOURCE_TYPES:
+                if region in DISALLOWED_REGIONS or resource_type not in ALLOWED_RESOURCE_TYPES:
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id))
                 resource_count += 1

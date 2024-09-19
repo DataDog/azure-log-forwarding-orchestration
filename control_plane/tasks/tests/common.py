@@ -27,8 +27,8 @@ T = TypeVar("T")
 class TaskTestCase(AsyncTestCase):
     TASK_NAME: str = NotImplemented
 
-    def patch(self, obj: str):
-        return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}")
+    def patch(self, obj: str, **kwargs: Any):
+        return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}", **kwargs)
 
     def setUp(self) -> None:
         self.credential = self.patch_path("tasks.task.DefaultAzureCredential")

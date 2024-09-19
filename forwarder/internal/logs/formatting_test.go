@@ -1,10 +1,7 @@
 package logs_test
 
 import (
-	"context"
 	"testing"
-
-	"golang.org/x/sync/errgroup"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/stretchr/testify/assert"
@@ -118,40 +115,5 @@ func TestNewLog(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Contains(t, log.ResourceId, "FORWARDER-INTEGRATION-TESTING")
-	})
-}
-
-func TestParseLogs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("creates a Log from raw log", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		var data []byte
-		data = append(data, validLog...)
-		data = append(data, validLog...)
-		data = append(data, validLog...)
-
-		eg, _ := errgroup.WithContext(context.Background())
-		var got []*logs.Log
-
-		logsChannel := make(chan *logs.Log, 100)
-
-		// WHEN
-		eg.Go(func() error {
-			for log := range logsChannel {
-				got = append(got, log)
-			}
-			return nil
-		})
-		eg.Go(func() error {
-			defer close(logsChannel)
-			return logs.ParseLogs(data, logsChannel)
-		})
-		err := eg.Wait()
-
-		// THEN
-		assert.NoError(t, err)
-		assert.Len(t, got, 3)
 	})
 }

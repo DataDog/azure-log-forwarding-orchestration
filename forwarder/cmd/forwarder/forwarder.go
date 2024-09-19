@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
@@ -29,118 +33,53 @@ func getMetricFileName(now time.Time) string {
 	return now.UTC().Format("2006-01-02-15") + ".json"
 }
 
-func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client, logger *log.Entry, now customtime.Now) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
-	defer span.Finish(tracer.WithError(err))
-	start := time.Now()
-	eg, egCtx := errgroup.WithContext(ctx)
+type metricEntry struct {
+	Timestamp          int64            `json:"timestamp"`
+	RuntimeSeconds     float64          `json:"runtime_seconds"`
+	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
+}
 
-	defer logsClient.Flush(ctx)
+func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
+	var blobs []storage.Blob
+	var err error
 
-	channelSize := 1000
-
-	logCh := make(chan *logs.Log, channelSize)
-
-	resourceVolumes := make(map[string]int64)
-
-	eg.Go(func() error {
-		span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
-		defer span.Finish(tracer.WithError(err))
-		for logItem := range logCh {
-			resourceVolumes[logItem.ResourceId]++
-			currErr := logsClient.SubmitLog(ctx, logItem)
-			err = errors.Join(err, currErr)
-		}
-		flushErr := logsClient.Flush(ctx)
-		err = errors.Join(err, flushErr)
-		return err
-	})
-
-	blobContentCh := make(chan storage.BlobSegment, channelSize)
-
-	eg.Go(func() error {
-		defer close(logCh)
-		for blobContent := range blobContentCh {
-			err := logs.ParseLogs(*blobContent.Content, logCh)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Error getting logs from blob: %v", err))
-				return err
-			}
-		}
-		return nil
-	})
-
-	blobCh := make(chan storage.Blob, channelSize)
-	currNow := now()
-
-	eg.Go(func() error {
-		span, getBlobsCtx := tracer.StartSpanFromContext(egCtx, "Run.GetBlobContents")
-		defer span.Finish()
-		defer close(blobContentCh)
-		blobsEg, segmentCtx := errgroup.WithContext(getBlobsCtx)
-		for blob := range blobCh {
-			if !storage.Current(blob, currNow) {
-				continue
-			}
-			blobsEg.Go(func() error {
-				current, err := storageClient.DownloadSegment(segmentCtx, blob, 0)
-				if err != nil {
-					return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
-				}
-
-				blobContentCh <- current
-				return nil
-			})
-		}
-		return blobsEg.Wait()
-	})
-
-	containerCh := make(chan string, channelSize)
-
-	// Get all the blobs in the containers
-	eg.Go(func() error {
-		span, blobCtx := tracer.StartSpanFromContext(egCtx, "Run.GetBlobsPerContainer")
-		defer span.Finish()
-		defer close(blobCh)
-		var err error
-		for c := range containerCh {
-			iter := storageClient.ListBlobs(blobCtx, c)
-
-			for {
-				blobList, currErr := iter.Next(blobCtx)
-
-				if errors.Is(currErr, iterator.Done) {
-					break
-				}
-
-				if currErr != nil {
-					err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", c, currErr), err)
-				}
-
-				if blobList != nil {
-					for _, b := range blobList {
-						if b == nil {
-							continue
-						}
-						blobCh <- storage.Blob{Item: b, Container: c}
-					}
-				}
-			}
-		}
-		return err
-	})
-
-	// Get all the containers
-	containerSpan, containerCtx := tracer.StartSpanFromContext(ctx, "Run.GetAllContainers")
-	iter := storageClient.GetContainersMatchingPrefix(containerCtx, storage.LogContainerPrefix)
+	iter := storageClient.ListBlobs(ctx, container)
 	for {
-		containerList, currErr := iter.Next(containerCtx)
+		blobList, currErr := iter.Next(ctx)
 
 		if errors.Is(currErr, iterator.Done) {
 			break
 		}
 
-		if err != nil {
+		if currErr != nil {
+			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", container, currErr), err)
+		}
+
+		if blobList == nil {
+			continue
+		}
+		for _, b := range blobList {
+			if b == nil {
+				continue
+			}
+			blobs = append(blobs, storage.Blob{Item: b, Container: container})
+		}
+	}
+	return blobs, err
+}
+
+func getContainers(ctx context.Context, storageClient *storage.Client) ([]string, error) {
+	var containers []string
+	var err error
+	iter := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
+	for {
+		containerList, currErr := iter.Next(ctx)
+
+		if errors.Is(currErr, iterator.Done) {
+			break
+		}
+
+		if currErr != nil {
 			err = errors.Join(fmt.Errorf("getting next page of containers: %v", currErr), err)
 			continue
 		}
@@ -150,15 +89,125 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 				if container == nil {
 					continue
 				}
-				containerCh <- *container.Name
+				containers = append(containers, *container.Name)
 			}
 		}
 	}
+	return containers, err
+}
 
-	close(containerCh)
-	containerSpan.Finish()
+func getLogs(ctx context.Context, storageClient *storage.Client, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
+	content, err := storageClient.DownloadSegment(ctx, blob, 0)
+	if err != nil {
+		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
+	}
 
-	err = errors.Join(err, eg.Wait())
+	return parseLogs(*content.Content, logsChannel)
+}
+
+func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
+	scanner := bufio.NewScanner(bytes.NewReader(data))
+	for scanner.Scan() {
+		currLog, currErr := logs.NewLog([]byte(scanner.Text()))
+		if currErr != nil {
+			err = errors.Join(err, currErr)
+			continue
+		}
+
+		logsChannel <- currLog
+	}
+	return err
+}
+
+func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log, volumeCh chan<- string) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
+	defer span.Finish(tracer.WithError(err))
+	for logItem := range logsCh {
+		volumeCh <- logItem.ResourceId
+		currErr := logsClient.SubmitLog(ctx, logItem)
+		err = errors.Join(err, currErr)
+	}
+	flushErr := logsClient.Flush(ctx)
+	err = errors.Join(err, flushErr)
+	return err
+}
+
+func getLogVolume(volumeCh <-chan string) map[string]int64 {
+	var resourceVolumes = make(map[string]int64)
+	for volume := range volumeCh {
+		resourceVolumes[volume]++
+	}
+	return resourceVolumes
+}
+
+func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
+	start := now()
+
+	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
+	defer span.Finish(tracer.WithError(err))
+
+	defer func() {
+		for _, logsClient := range logsClients {
+			flushErr := logsClient.Flush(ctx)
+			if flushErr != nil {
+				logger.Error(fmt.Sprintf("Error flushing logs: %v", flushErr))
+				err = errors.Join(err, flushErr)
+			}
+		}
+	}()
+
+	channelSize := len(logsClients)
+	var resourceVolumes map[string]int64
+	logCh := make(chan *logs.Log, channelSize)
+	volumeCh := make(chan string, channelSize)
+
+	// Spawn log volume processing goroutine
+	logVolumeEg, _ := errgroup.WithContext(ctx)
+	logVolumeEg.Go(func() error {
+		resourceVolumes = getLogVolume(volumeCh)
+		return nil
+	})
+
+	// Spawn log processing goroutines
+	logsEg, logsCtx := errgroup.WithContext(ctx)
+	for _, logsClient := range logsClients {
+		logsEg.Go(func() error {
+			return processLogs(logsCtx, logsClient, logCh, volumeCh)
+		})
+	}
+
+	// Get all the containers
+	containers, containerErr := getContainers(ctx, storageClient)
+	err = errors.Join(err, containerErr)
+
+	// Get all the blobs
+	var blobs []storage.Blob
+	for _, c := range containers {
+		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
+		err = errors.Join(err, blobsErr)
+		blobs = append(blobs, blobsPerContainer...)
+	}
+
+	// Per blob spawn goroutine to download and transform
+	currNow := now()
+	downloadEg, segmentCtx := errgroup.WithContext(ctx)
+	for _, blob := range blobs {
+		// Skip blobs that are not recent
+		// Blobs may have old data that we don't want to process
+		if !storage.Current(blob, currNow) {
+			continue
+		}
+		downloadEg.Go(func() error {
+			return getLogs(segmentCtx, storageClient, blob, logCh)
+		})
+	}
+	err = errors.Join(err, downloadEg.Wait())
+	close(logCh)
+
+	err = errors.Join(err, logsEg.Wait())
+
+	close(volumeCh)
+	err = errors.Join(err, logVolumeEg.Wait())
 
 	metricBlob := metrics.MetricEntry{
 		Timestamp:          time.Now().Unix(),
@@ -168,10 +217,6 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 
 	metricBuffer, err := metricBlob.ToBytes()
 
-	if err != nil {
-		logger.Fatalf("error while marshalling metrics: %v", err)
-	}
-
 	blobName := getMetricFileName(time.Now())
 
 	err = storageClient.UploadBlob(ctx, metrics.MetricsContainer, blobName, metricBuffer)
@@ -180,18 +225,18 @@ func Run(ctx context.Context, storageClient *storage.Client, logsClient *logs.Cl
 	for _, v := range resourceVolumes {
 		logCount += int(v)
 	}
+
 	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
 	if err != nil {
 		return fmt.Errorf("run: %v", err)
 	}
 
-	return nil
+	return err
 }
 
 func main() {
 	tracer.Start()
 	defer tracer.Stop()
-	// Start a root span.
 	var err error
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
 	defer span.Finish(tracer.WithError(err))
@@ -205,7 +250,6 @@ func main() {
 		},
 	)
 	start := time.Now()
-	// use JSONFormatter
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.WithFields(log.Fields{"service": "forwarder"})
 
@@ -220,29 +264,59 @@ func main() {
 		profiler.WithAPIKey(""),
 	)
 	if err != nil {
-		logger.Fatal(err)
+		logger.Warning(err)
 	}
 	defer profiler.Stop()
 
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
+
+	goroutineString := os.Getenv("NUM_GOROUTINES")
+	if goroutineString == "" {
+		goroutineString = "10"
+	}
+	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
+	if err != nil {
+		logger.Fatalf("error parsing MAX_GOROUTINES: %v", err)
+	}
+
+	// Initialize storage client
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
 		logger.Fatalf("error creating azure blob client: %v", err)
 		return
 	}
-
 	storageClient := storage.NewClient(azBlobClient)
 
+	// Initialize log submission client
 	datadogConfig := datadog.NewConfiguration()
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	apiClient := datadog.NewAPIClient(datadogConfig)
+	logsApiClient := datadogV2.NewLogsApi(apiClient)
 
-	logsClient := datadogV2.NewLogsApi(apiClient)
+	var logsClients []*logs.Client
+	for range goroutineAmount {
+		logsClients = append(logsClients, logs.NewClient(logsApiClient))
+	}
 
-	datadogClient := logs.NewClient(logsClient)
+	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
-	err = Run(ctx, storageClient, datadogClient, logger, time.Now)
+	resourceVolumeMap := make(map[string]int32)
+	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
+	metricBlob := metricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
+
+	metricBuffer, err := json.Marshal(metricBlob)
+
+	if err != nil {
+		logger.Fatalf("error while marshalling metrics: %v", err)
+	}
+
+	dateString := time.Now().UTC().Format("2006-01-02-15")
+	blobName := dateString + ".txt"
+
+	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
+
+	err = errors.Join(runErr, err)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

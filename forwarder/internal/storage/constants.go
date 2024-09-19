@@ -3,3 +3,5 @@ package storage
 const LogContainerPrefix = "insights-logs-"
 
 const FunctionAppLogsContainerPrefix = "insights-logs-functionapplogs"
+
+const ForwarderContainer = "dd-forwarder"
