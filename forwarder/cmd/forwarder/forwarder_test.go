@@ -160,7 +160,7 @@ func TestProcessLogs(t *testing.T) {
 
 		// WHEN
 		eg.Go(func() error {
-			return ProcessLogs(egCtx, datadogClient, logsChannel)
+			return processLogs(egCtx, datadogClient, logsChannel)
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)

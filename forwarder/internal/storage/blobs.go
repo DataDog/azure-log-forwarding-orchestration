@@ -77,7 +77,6 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 		return readErr
 	}
 
-	buffer = append(buffer, "\n"...)
 	buffer = append(buffer, content...)
 
 	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)

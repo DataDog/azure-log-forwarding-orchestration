@@ -36,6 +36,7 @@ type DatadogLogsSubmitter interface {
 
 // Client is a client for submitting logs to Datadog
 // It buffers logs and sends them in batches to the Datadog API
+// Client is not thread safe
 type Client struct {
 	logsSubmitter DatadogLogsSubmitter
 	logsBuffer    []*Log

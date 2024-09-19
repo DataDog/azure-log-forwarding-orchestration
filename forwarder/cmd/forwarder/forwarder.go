@@ -109,7 +109,7 @@ func ParseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	return err
 }
 
-func ProcessLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
@@ -143,7 +143,7 @@ func Run(ctx context.Context, client *storage.Client, logsClients []*logs.Client
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return ProcessLogs(logsCtx, logsClient, logCh)
+			return processLogs(logsCtx, logsClient, logCh)
 		})
 	}
 
