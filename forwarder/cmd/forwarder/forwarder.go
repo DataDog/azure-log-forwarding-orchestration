@@ -30,7 +30,7 @@ type MetricEntry struct {
 	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
 }
 
-func ProcessLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
@@ -60,7 +60,7 @@ func Run(ctx context.Context, client *storage.Client, logsClient *logs.Client, l
 	logCh := make(chan *logs.Log, channelSize)
 
 	eg.Go(func() error {
-		return ProcessLogs(egCtx, logsClient, logCh)
+		return processLogs(egCtx, logsClient, logCh)
 	})
 
 	blobContentCh := make(chan storage.BlobSegment, channelSize)
