@@ -48,9 +48,7 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 }
 
 func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
-	//c.logsBuffer = append(c.logsBuffer, log)
-	newBuffer := append(c.logsBuffer, log)
-	c.logsBuffer = newBuffer
+	c.logsBuffer = append(c.logsBuffer, log)
 
 	if len(c.logsBuffer) >= BufferSize {
 		return c.Flush(ctx)
