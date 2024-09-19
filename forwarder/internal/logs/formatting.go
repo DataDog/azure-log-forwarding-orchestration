@@ -12,7 +12,7 @@ import (
 
 type Log struct {
 	ByteSize   int
-	Json       json.RawMessage
+	Content    string
 	ResourceId string
 	Category   string
 	Tags       []string
@@ -75,7 +75,7 @@ func unmarshall(azureLog []byte) (*Log, error) {
 		ByteSize:   len(azureLog),
 		Category:   category,
 		ResourceId: resourceId,
-		Json:       logJson,
+		Content:    string(logJson),
 	}, err
 }
 
