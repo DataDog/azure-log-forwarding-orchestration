@@ -55,7 +55,7 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
     if not metrics:
         return False
 
-    return all(metric["runtime_seconds"] > threshold for metric in metrics)
+    return all(metric["runtime_seconds"] < threshold for metric in metrics)
 
 
 def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
