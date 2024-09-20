@@ -121,11 +121,11 @@ func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	return err
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log, volumeCh chan<- string) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
-		volumeCh <- logItem.ResourceId
+		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.SubmitLog(ctx, logItem)
 		err = errors.Join(err, currErr)
 	}
@@ -134,9 +134,9 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	return err
 }
 
-func getLogVolume(volumeCh <-chan string) map[string]int64 {
+func getLogVolume(resourceIdCh <-chan string) map[string]int64 {
 	var resourceVolumes = make(map[string]int64)
-	for volume := range volumeCh {
+	for volume := range resourceIdCh {
 		resourceVolumes[volume]++
 	}
 	return resourceVolumes
@@ -188,12 +188,12 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	channelSize := len(logsClients)
 	var resourceVolumes map[string]int64
 	logCh := make(chan *logs.Log, channelSize)
-	volumeCh := make(chan string, channelSize)
+	resourceIdCh := make(chan string, channelSize)
 
 	// Spawn log volume processing goroutine
 	logVolumeEg, _ := errgroup.WithContext(ctx)
 	logVolumeEg.Go(func() error {
-		resourceVolumes = getLogVolume(volumeCh)
+		resourceVolumes = getLogVolume(resourceIdCh)
 		return nil
 	})
 
@@ -201,7 +201,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logCh, volumeCh)
+			return processLogs(logsCtx, logsClient, logCh, resourceIdCh)
 		})
 	}
 
@@ -235,7 +235,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	err = errors.Join(err, downloadEg.Wait())
 	close(logCh)
 	err = errors.Join(err, logsEg.Wait())
-	close(volumeCh)
+	close(resourceIdCh)
 	err = errors.Join(err, logVolumeEg.Wait())
 
 	// Write forwarder metrics
