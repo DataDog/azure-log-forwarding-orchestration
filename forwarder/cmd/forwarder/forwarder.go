@@ -31,16 +31,6 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-func getMetricFileName(now time.Time) string {
-	return now.UTC().Format("2006-01-02-15") + ".json"
-}
-
-type metricEntry struct {
-	Timestamp          int64            `json:"timestamp"`
-	RuntimeSeconds     float64          `json:"runtime_seconds"`
-	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
-}
-
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
 	var err error
@@ -155,7 +145,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 		return 0, fmt.Errorf("error while marshalling metrics: %v", err)
 	}
 
-	blobName := getMetricFileName(time.Now())
+	blobName := metrics.GetMetricFileName(time.Now())
 
 	err = storageClient.UploadBlob(ctx, metrics.MetricsContainer, blobName, metricBuffer)
 
@@ -313,9 +303,9 @@ func main() {
 
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
-	resourceVolumeMap := make(map[string]int32)
+	resourceVolumeMap := make(map[string]int64)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
-	metricBlob := metricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
+	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
 
