@@ -32,7 +32,7 @@ class TestDeployerTask(TaskTestCase):
         self.patch("generate_unique_id").return_value = "8191de530fe7"
 
         self.public_client = AsyncMockClient()
-        self.patch("ContainerClient").from_container_url.return_value = self.public_client
+        self.patch("ContainerClient").return_value = self.public_client
         self.read_private_cache = self.patch("read_cache")
         self.rest_client = AsyncMockClient()
         self.rest_client.post.return_value = MagicMock()
@@ -55,7 +55,7 @@ class TestDeployerTask(TaskTestCase):
             *(Mock(name=app) for app in function_apps)
         )
 
-    async def run_resources_task(self):
+    async def run_deployer_task(self):
         async with DeployerTask() as task:
             await task.run()
 
@@ -76,7 +76,7 @@ class TestDeployerTask(TaskTestCase):
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         self.write_cache.assert_not_awaited()
 
@@ -98,7 +98,7 @@ class TestDeployerTask(TaskTestCase):
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         public_cache_str = dumps(public_cache)
 
@@ -122,7 +122,7 @@ class TestDeployerTask(TaskTestCase):
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         public_cache_str = dumps(public_cache)
 
@@ -146,7 +146,7 @@ class TestDeployerTask(TaskTestCase):
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         public_cache_str = dumps(public_cache)
 
@@ -170,13 +170,13 @@ class TestDeployerTask(TaskTestCase):
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         def _download_blob(item: str):
-            if item == "diagnostic_settings.zip":
+            if item == "diagnostic_settings_task.zip":
                 raise HttpResponseError()
             return DEFAULT
 
         self.public_client.download_blob.side_effect = _download_blob
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         public_cache_str = dumps(
             {
@@ -193,13 +193,13 @@ class TestDeployerTask(TaskTestCase):
             [
                 call("manifest.json"),
                 call().readall(),
-                call("resources.zip"),
+                call("resources_task.zip"),
                 call().readall(),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
-                call("diagnostic_settings.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
             ],
         )
 
@@ -216,7 +216,7 @@ class TestDeployerTask(TaskTestCase):
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         with self.assertRaises(InvalidCacheError) as ctx:
-            await self.run_resources_task()
+            await self.run_deployer_task()
 
         self.write_cache.assert_not_awaited()
         self.public_client.download_blob.assert_awaited_once_with("manifest.json")
@@ -233,7 +233,7 @@ class TestDeployerTask(TaskTestCase):
         self.read_private_cache.return_value = ""
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         public_cache_str = dumps(public_cache)
 
@@ -245,7 +245,7 @@ class TestDeployerTask(TaskTestCase):
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         with self.assertRaises(InvalidCacheError) as ctx:
-            await self.run_resources_task()
+            await self.run_deployer_task()
 
         self.write_cache.assert_not_awaited()
         self.public_client.download_blob.assert_awaited_once_with("manifest.json")
@@ -262,7 +262,7 @@ class TestDeployerTask(TaskTestCase):
         self.read_private_cache.side_effect = HttpResponseError
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         public_cache_str = dumps(public_cache)
 
@@ -287,7 +287,7 @@ class TestDeployerTask(TaskTestCase):
         self.rest_client.post.return_value.raise_for_status.side_effect = ClientError
         self.set_current_function_apps(ALL_FUNCTIONS)
 
-        await self.run_resources_task()
+        await self.run_deployer_task()
 
         self.write_cache.assert_not_awaited()
         self.assertEqual(self.rest_client.post.await_count, 5)
