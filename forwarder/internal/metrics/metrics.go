@@ -8,8 +8,6 @@ import (
 	"time"
 )
 
-const MetricsContainer = "forwarder-metrics"
-
 type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
 	RuntimeSeconds     float64          `json:"runtime_seconds"`

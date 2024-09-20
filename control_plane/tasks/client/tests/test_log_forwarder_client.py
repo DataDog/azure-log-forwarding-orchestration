@@ -461,7 +461,7 @@ class TestLogForwarderClient(AsyncTestCase):
             await client.create_log_forwarder_containers(storage_account_name)
 
         self.client.storage_client.blob_containers.create.assert_awaited_once_with(
-            rg1, storage_account_name, "forwarder-metrics", ANY
+            rg1, storage_account_name, "dd-forwarder", ANY
         )
 
     async def test_storage_management_policy_creation(self):
@@ -486,7 +486,7 @@ class TestLogForwarderClient(AsyncTestCase):
                                         "snapshot": {"delete": {"days_after_creation_greater_than": 14}},
                                     },
                                     "filters": {
-                                        "prefix_match": ["forwarder-metrics/"],
+                                        "prefix_match": ["dd-forwarder/"],
                                         "blob_types": ["blockBlob", "appendBlob"],
                                     },
                                 },
