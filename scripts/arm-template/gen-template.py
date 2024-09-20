@@ -29,9 +29,9 @@ with open(TEMPLATE_PATH) as template:
 for resource in template_json["resources"]:
     if resource["name"] == "controlPlaneResourceGroup":
         resource["location"] = "[deployment().location]"
-        resource["dependsOn"] = (
+        resource["dependsOn"] = [
             "[subscriptionResourceId('Microsoft.Resources/deployments', 'createControlPlaneResourceGroup')]"
-        )
+        ]
         break
 
 # write the template
