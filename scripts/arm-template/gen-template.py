@@ -22,13 +22,10 @@ with open(TEMPLATE_PATH) as template:
     template_json = json.load(template)
 
 # fix the template
-# this is a workaround for a bug in bicep where you can't add `location` to a submodule,
-# even though the control plane subdeployment needs a location specified.
-# Additionally, the control plane subdeployment needs to depend on the parent deployment properly,
+# this is a workaround for a bug in bicep where the control plane subdeployment needs to depend on the parent deployment properly,
 # which because this is a management group template, the deployment is not within a subscription, even though bicep assumes it is
 for resource in template_json["resources"]:
     if resource["name"] == "controlPlaneResourceGroup":
-        resource["location"] = "[deployment().location]"
         resource["dependsOn"] = [
             "[subscriptionResourceId('Microsoft.Resources/deployments', 'createControlPlaneResourceGroup')]"
         ]
