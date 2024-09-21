@@ -141,6 +141,16 @@ resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
   }
   properties: {
     managedEnvironmentId: deployerTaskEnv.id
+    configuration: {
+      secrets: [
+        {
+          name: 'connection-string'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
+        }
+        { name: 'dd-api-key', value: datadogApiKey }
+        { name: 'dd-app-key', value: datadogApplicationKey }
+      ]
+    }
     template: {
       containers: [
         {
@@ -151,19 +161,27 @@ resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
             memory: '1Gi'
           }
           env: [
-            {
-              name: 'AzureWebJobsStorage'
-              value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
-            }
+            { name: 'AzureWebJobsStorage', secretRef: 'connection-string' }
             { name: 'SUBSCRIPTION_ID', value: controlPlaneSubscriptionId }
             { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
             { name: 'REGION', value: controlPlaneLocation }
-            { name: 'DD_API_KEY', value: datadogApiKey }
-            { name: 'DD_APP_KEY', value: datadogApplicationKey }
+            { name: 'DD_API_KEY', secretRef: 'dd-api-key' }
+            { name: 'DD_APP_KEY', secretRef: 'dd-app-key' }
             { name: 'DD_SITE', value: datadogSite }
           ]
         }
       ]
+      scale: {
+        rules: [
+          {
+            name: 'cron-rule'
+            custom: {
+              type: 'cron'
+              metadata: { schedule: '*/30 * * * *' }
+            }
+          }
+        ]
+      }
     }
   }
 }
