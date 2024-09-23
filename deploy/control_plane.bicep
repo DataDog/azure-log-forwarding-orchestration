@@ -145,8 +145,6 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
       triggerType: 'Schedule'
       scheduleTriggerConfig: {
         cronExpression: '*/30 * * * *'
-        replicaCompletionCount: 1
-        parallelism: 1
       }
       replicaRetryLimit: 1
       replicaTimeout: 1800
