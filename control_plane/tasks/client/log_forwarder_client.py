@@ -73,6 +73,9 @@ from tasks.common import Resource, collect, wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
+DD_SITE_SETTING = "DD_SITE"
+DD_API_KEY_SETTING = "DD_API_KEY"
+
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
@@ -109,7 +112,8 @@ def get_datetime_str(time: datetime) -> str:
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.forwarder_image = get_config_option("forwarder_image")
-        self.dd_api_key = get_config_option("DD_API_KEY")
+        self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
+        self.dd_site = get_config_option(DD_SITE_SETTING)
         self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
@@ -219,7 +223,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
                             resources=ContainerResources(cpu=0.5, memory="1Gi"),
                             env=[
                                 EnvironmentVar(name="AzureWebJobsStorage", value=connection_string),
-                                EnvironmentVar(name="DD_API_KEY", value=self.dd_api_key),
+                                EnvironmentVar(name=DD_API_KEY_SETTING, value=self.dd_api_key),
+                                EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
                             ],
                         )
                     ],
