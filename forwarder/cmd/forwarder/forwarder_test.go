@@ -9,6 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
@@ -107,22 +110,37 @@ func TestRun(t *testing.T) {
 		var uploadedMetrics []byte
 		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
-				uploadedMetrics = append(uploadedMetrics, content...)
+				if strings.Contains(blobName, "metrics") {
+					uploadedMetrics = append(uploadedMetrics, content...)
+				}
 				return azblob.UploadBufferResponse{}, nil
-			})
+			}).Times(2)
 
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any())
+		//mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any())
 
 		reader := ioutil.NopCloser(strings.NewReader("\n"))
 
 		var downloadResp azblob.DownloadStreamResponse
 		downloadResp.Body = reader
+
+		rawCursors := cursor.NewCursors(nil)
+		cursorData, cursorError := rawCursors.GetRawCursors()
+		require.NoError(t, cursorError)
+		cursorReader := strings.NewReader(string(cursorData))
+		cursorCloser := ioutil.NopCloser(cursorReader)
+
+		var cursorResp azblob.DownloadStreamResponse
+		cursorResp.Body = cursorCloser
+
 		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			if blobName == cursor.BlobName {
+				return cursorResp, nil
+			}
 			return downloadResp, nil
 		})
 
 		var resp azblob.CreateContainerResponse
-		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).Times(2)
 
 		client := storage.NewClient(mockClient)
 
