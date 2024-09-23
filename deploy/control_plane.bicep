@@ -162,6 +162,10 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
         {
           name: deployerTaskName
           image: deployerTaskImage
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
           env: [
             { name: 'AzureWebJobsStorage', secretRef: 'connection-string' }
             { name: 'SUBSCRIPTION_ID', value: controlPlaneSubscriptionId }
@@ -171,10 +175,6 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'DD_APP_KEY', secretRef: 'dd-app-key' }
             { name: 'DD_SITE', value: datadogSite }
           ]
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
         }
       ]
     }
