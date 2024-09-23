@@ -135,14 +135,30 @@ resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2022-03-01' = {
 
 var deployerTaskName = 'deployer-task-${lfoId}'
 
-resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
+resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
   name: deployerTaskName
   location: controlPlaneLocation
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
-    managedEnvironmentId: deployerTaskEnv.id
+    environmentId: deployerTaskEnv.id
+    configuration: {
+      triggerType: 'Schedule'
+      scheduleTriggerConfig: {
+        cronExpression: '*/30 * * * *'
+      }
+      replicaRetryLimit: 1
+      replicaTimeout: 1800
+      secrets: [
+        {
+          name: 'connection-string'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
+        }
+        { name: 'dd-api-key', value: datadogApiKey }
+        { name: 'dd-app-key', value: datadogApplicationKey }
+      ]
+    }
     template: {
       containers: [
         {
@@ -153,15 +169,12 @@ resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
             memory: '1Gi'
           }
           env: [
-            {
-              name: 'AzureWebJobsStorage'
-              value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
-            }
+            { name: 'AzureWebJobsStorage', secretRef: 'connection-string' }
             { name: 'SUBSCRIPTION_ID', value: controlPlaneSubscriptionId }
             { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
             { name: 'REGION', value: controlPlaneLocation }
-            { name: 'DD_API_KEY', value: datadogApiKey }
-            { name: 'DD_APP_KEY', value: datadogApplicationKey }
+            { name: 'DD_API_KEY', secretRef: 'dd-api-key' }
+            { name: 'DD_APP_KEY', secretRef: 'dd-app-key' }
             { name: 'DD_SITE', value: datadogSite }
           ]
         }

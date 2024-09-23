@@ -8,4 +8,4 @@ COPY ./pyproject.toml ./pyproject.toml
 # Download dependencies
 RUN  python3.11 -m pip install .
 
-CMD ["python3.11 -m tasks.deployer_task"]
+CMD ["python3.11", "-m", "tasks.deployer_task"]
