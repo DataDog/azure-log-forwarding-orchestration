@@ -133,15 +133,23 @@ resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2022-03-01' = {
 
 var deployerTaskName = 'deployer-task-${lfoId}'
 
-resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
+resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
   name: deployerTaskName
   location: controlPlaneLocation
   identity: {
     type: 'SystemAssigned'
   }
   properties: {
-    managedEnvironmentId: deployerTaskEnv.id
+    environmentId: deployerTaskEnv.id
     configuration: {
+      triggerType: 'Schedule'
+      scheduleTriggerConfig: {
+        cronExpression: '*/30 * * * *'
+        replicaCompletionCount: 1
+        parallelism: 1
+      }
+      replicaRetryLimit: 1
+      replicaTimeout: 1800
       secrets: [
         {
           name: 'connection-string'
@@ -156,10 +164,6 @@ resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
         {
           name: deployerTaskName
           image: deployerTaskImage
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
           env: [
             { name: 'AzureWebJobsStorage', secretRef: 'connection-string' }
             { name: 'SUBSCRIPTION_ID', value: controlPlaneSubscriptionId }
@@ -169,19 +173,12 @@ resource deployerTask 'Microsoft.App/containerApps@2022-03-01' = {
             { name: 'DD_APP_KEY', secretRef: 'dd-app-key' }
             { name: 'DD_SITE', value: datadogSite }
           ]
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
         }
       ]
-      scale: {
-        rules: [
-          {
-            name: 'cron-rule'
-            custom: {
-              type: 'cron'
-              metadata: { schedule: '*/30 * * * *' }
-            }
-          }
-        ]
-      }
     }
   }
 }
