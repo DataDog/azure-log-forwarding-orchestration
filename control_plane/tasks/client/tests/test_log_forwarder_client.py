@@ -57,9 +57,8 @@ class MockedLogForwarderClient(LogForwarderClient):
 
     container_apps_client: AsyncMock
     storage_client: AsyncMock
-    monitor_client: AsyncMock
-    api_client: AsyncMock
-    api_instance: AsyncMock
+    _datadog_client: AsyncMock
+    metrics_client: AsyncMock
 
 
 class TestLogForwarderClient(AsyncTestCase):
@@ -78,9 +77,8 @@ class TestLogForwarderClient(AsyncTestCase):
         await self.client.__aexit__(None, None, None)
         self.client.container_apps_client = AsyncMock()
         self.client.storage_client = AsyncMock()
-        self.client.monitor_client = AsyncMock()
-        self.client.api_client = AsyncMock()
-        self.client.api_instance = AsyncMock()
+        self.client._datadog_client = AsyncMock()
+        self.client.metrics_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
 
@@ -273,7 +271,7 @@ class TestLogForwarderClient(AsyncTestCase):
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
-        self.client.api_instance.submit_metrics.return_value = {}
+        self.client.metrics_client.submit_metrics.return_value = {}
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -301,7 +299,7 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
 
-        self.client.api_instance.submit_metrics.assert_called_once_with(body=sample_body)
+        self.client.metrics_client.submit_metrics.assert_called_once_with(body=sample_body)
 
     async def test_submit_metrics_retries(self):
         environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
@@ -317,8 +315,8 @@ class TestLogForwarderClient(AsyncTestCase):
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
-        self.client.api_instance.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
-        self.client.api_instance.submit_metrics.return_value = {}
+        self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
+        self.client.metrics_client.submit_metrics.return_value = {}
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -346,8 +344,8 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
 
-        self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
-        self.assertEqual(self.client.api_instance.submit_metrics.call_count, 3)
+        self.client.metrics_client.submit_metrics.assert_called_with(body=sample_body)
+        self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 3)
 
     async def test_submit_metrics_max_retries(self):
         environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
@@ -363,7 +361,7 @@ class TestLogForwarderClient(AsyncTestCase):
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
-        self.client.api_instance.submit_metrics.side_effect = RequestTimeout()
+        self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -391,8 +389,8 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-        self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
-        self.assertEqual(self.client.api_instance.submit_metrics.call_count, MAX_ATTEMPS)
+        self.client.metrics_client.submit_metrics.assert_called_with(body=sample_body)
+        self.assertEqual(self.client.metrics_client.submit_metrics.call_count, MAX_ATTEMPS)
 
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
@@ -410,8 +408,8 @@ class TestLogForwarderClient(AsyncTestCase):
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
             },
         ]
-        self.client.api_instance.submit_metrics.side_effect = FakeHttpError(404)
-        self.client.api_instance.submit_metrics.return_value = {}
+        self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
+        self.client.metrics_client.submit_metrics.return_value = {}
         sample_body = MetricPayload(
             series=[
                 MetricSeries(
@@ -439,12 +437,12 @@ class TestLogForwarderClient(AsyncTestCase):
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
                 await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-        self.client.api_instance.submit_metrics.assert_called_with(body=sample_body)
-        self.assertEqual(self.client.api_instance.submit_metrics.call_count, 1)
+        self.client.metrics_client.submit_metrics.assert_called_with(body=sample_body)
+        self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 1)
 
     async def test_submit_metrics_errors_logged(self):
         environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
-        self.client.api_instance.submit_metrics.return_value = {
+        self.client.metrics_client.submit_metrics.return_value = {
             "errors": [
                 "oops something went wrong",
             ]

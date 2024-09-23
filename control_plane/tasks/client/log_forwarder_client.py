@@ -113,12 +113,9 @@ class LogForwarderClient(AbstractAsyncContextManager):
         self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
-        self._credential = credential
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
-        self.configuration = Configuration()
-        self.configuration.request_timeout = CLIENT_MAX_SECONDS
-        self._datadog_client = AsyncApiClient(self.configuration)
+        self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
         self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
