@@ -110,7 +110,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.forwarder_image = get_config_option("forwarder_image")
         self.dd_api_key = get_config_option("DD_API_KEY")
-        self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS", False))
+        self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self._credential = credential
