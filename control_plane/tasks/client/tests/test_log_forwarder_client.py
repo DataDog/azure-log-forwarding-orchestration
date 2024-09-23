@@ -68,6 +68,7 @@ class TestLogForwarderClient(AsyncTestCase):
         environ["AzureWebJobsStorage"] = "..."
         environ["DD_API_KEY"] = "123123"
         environ["DD_APP_KEY"] = "456456"
+        environ["DD_SITE"] = "datadoghq.com"
         environ["SHOULD_SUBMIT_METRICS"] = ""
         environ["forwarder_image"] = "ddlfo.azurecr.io/blobforwarder:latest"
 
