@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"time"
 )
-
-const MetricsContainer = "forwarder-metrics"
 
 type MetricEntry struct {
 	Timestamp          int64            `json:"timestamp"`
@@ -39,4 +39,8 @@ func (m MetricEntry) ToBytes() ([]byte, error) {
 		return nil, err
 	}
 	return append(data, '\n'), nil
+}
+
+func GetMetricFileName(now time.Time) string {
+	return fmt.Sprintf("metrics_%s.json", now.UTC().Format("2006-01-02-15"))
 }

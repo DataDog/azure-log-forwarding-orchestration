@@ -7,6 +7,10 @@ set -euxo pipefail
 [ -d "./dist" ] && rm -rf ./dist
 
 cd ./control_plane
+
+: Install dependencies just in case
+pip install '.[dev]'
+
 tasks="$(python -m tasks)"
 echo Building the following tasks: $tasks
 cd ..
@@ -34,8 +38,8 @@ for task in $tasks; do
     cp ./control_plane/config/host.json ./dist/$task/host.json
 
     : zip it up for zipdeploy
-    zip ./dist/$task.zip ./dist/$task/*
+    zip -r ./dist/$task.zip ./dist/$task/*
     echo "Built $task"
 done
 
-ls -R dist
+: ======================= Done Building =======================

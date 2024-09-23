@@ -25,7 +25,7 @@ from tasks.scaling_task import (
     SCALING_TASK_NAME,
     ScalingTask,
     is_consistently_over_threshold,
-    partition_resources_by_load,
+    resources_to_move_by_load,
 )
 from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException
 
@@ -177,7 +177,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_log_forwarder_metrics_collected(self):
         current_time = (datetime.now()).timestamp()
-        self.client.get_blob_metrics.return_value = [
+        self.client.get_blob_metrics_lines.return_value = [
             dumps(
                 {
                     "timestamp": current_time,
@@ -205,7 +205,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -251,7 +251,7 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarder_collected_with_old_metrics(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
         current_time = (datetime.now()).timestamp()
-        self.client.get_blob_metrics.return_value = [
+        self.client.get_blob_metrics_lines.return_value = [
             dumps(
                 {
                     "timestamp": current_time,
@@ -280,7 +280,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -448,7 +448,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_old_log_forwarder_metrics_not_collected(self):
         old_time = (datetime.now() - timedelta(minutes=(METRIC_COLLECTION_PERIOD_MINUTES + 1))).timestamp()
-        self.client.get_blob_metrics.return_value = [
+        self.client.get_blob_metrics_lines.return_value = [
             dumps(
                 {
                     "timestamp": old_time,
@@ -476,7 +476,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
         self.log.warning.assert_called_with("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID)
 
     async def test_background_tasks_awaited(self):
@@ -497,7 +497,7 @@ class TestScalingTask(TaskTestCase):
         self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
 
     async def test_unexpected_failure_skips_cache_write(self):
-        self.client.get_blob_metrics.side_effect = UnexpectedException("unexpected")
+        self.client.get_blob_metrics_lines.side_effect = UnexpectedException("unexpected")
         write_caches = self.patch("ScalingTask.write_caches")
         with self.assertRaises(UnexpectedException):
             await self.run_scaling_task(
@@ -634,6 +634,56 @@ class TestScalingTask(TaskTestCase):
         )
         self.write_cache.assert_not_awaited()
 
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_no_resource_metrics_split_in_half(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.return_value = [
+            {
+                "runtime_seconds": 35,
+                "timestamp": minutes_ago(1.5),
+                "resource_log_volume": {},
+            },
+            {
+                "runtime_seconds": 40,
+                "timestamp": minutes_ago(1),
+                "resource_log_volume": {},
+            },
+            {
+                "runtime_seconds": 39.1,
+                "timestamp": minutes_ago(0.5),
+                "resource_log_volume": {},
+            },
+        ]
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_not_awaited()
+
+        expected_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {
+                        "resource1": OLD_LOG_FORWARDER_ID,
+                        "resource2": NEW_LOG_FORWARDER_ID,
+                    },
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            },
+        }
+        self.assertEqual(self.cache, expected_cache)
+
 
 class TestScalingTaskHelpers(TestCase):
     def test_metrics_over_threshold(self):
@@ -729,88 +779,87 @@ class TestScalingTaskHelpers(TestCase):
             )
         )
 
-    def test_partition_resources_by_load_exactly_half_load(self):
+    def test_resources_to_move_by_load_exactly_half_load(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "big_resource": 9001,
-                    "resource1": 500,
-                    "resource2": 1000,
-                    "resource3": 500,
-                    "resource4": 2000,
-                    "resource5": 1,
-                    "resource6": 3000,
-                    "resource7": 2000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "big_resource": 9001,
+                        "resource1": 500,
+                        "resource2": 1000,
+                        "resource3": 500,
+                        "resource4": 2000,
+                        "resource5": 1,
+                        "resource6": 3000,
+                        "resource7": 2000,
+                    }
+                )
             ),
-            (
-                [
-                    "resource5",
-                    "resource1",
-                    "resource3",
-                    "resource2",
-                    "resource4",
-                    "resource7",
-                    "resource6",
-                ],
-                ["big_resource"],
-            ),
+            ["big_resource"],
         )
 
-    def test_partition_resources_by_load_two_resources(self):
+    def test_resources_to_move_by_load_two_resources(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 1,
-                    "resource2": 9000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 1,
+                        "resource2": 9000,
+                    }
+                )
             ),
-            (["resource1"], ["resource2"]),
+            ["resource2"],
         )
 
-    def test_partition_resources_by_load_four_resources(self):
+    def test_resources_to_move_by_load_four_resources(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 4000,
-                    "resource2": 6000,
-                    "resource3": 5000,
-                    "resource4": 7000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 4000,
+                        "resource2": 6000,
+                        "resource3": 5000,
+                        "resource4": 7000,
+                    }
+                )
             ),
-            (["resource1", "resource3"], ["resource2", "resource4"]),
+            ["resource2", "resource4"],
         )
 
-    def test_partition_resources_by_load_three_resources(self):
+    def test_resources_to_move_by_load_three_resources(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 4000,
-                    "resource2": 6000,
-                    "resource3": 5000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 4000,
+                        "resource2": 6000,
+                        "resource3": 5000,
+                    }
+                )
             ),
-            (["resource1"], ["resource3", "resource2"]),
+            ["resource3", "resource2"],
         )
 
-    def test_partition_resources_by_load_all_the_same_load_prefer_second_partition(self):
+    def test_resources_to_move_by_load_all_the_same_load_prefer_second_partition(self):
         self.assertEqual(
-            partition_resources_by_load(
-                {
-                    "resource1": 5000,
-                    "resource2": 5000,
-                    "resource3": 5000,
-                    "resource4": 5000,
-                    "resource5": 5000,
-                }
+            list(
+                resources_to_move_by_load(
+                    {
+                        "resource1": 5000,
+                        "resource2": 5000,
+                        "resource3": 5000,
+                        "resource4": 5000,
+                        "resource5": 5000,
+                    }
+                )
             ),
-            (["resource1", "resource2"], ["resource3", "resource4", "resource5"]),
+            ["resource3", "resource4", "resource5"],
         )
 
-    def test_partition_resources_by_load_one_resource(self):
+    def test_resources_to_move_by_load_one_resource(self):
         # this isnt a real use case since we only call this function when we have
         # more than one resource, but it is worth adding a unit test regardless
-        self.assertEqual(partition_resources_by_load({"resource1": 5000}), ([], ["resource1"]))
+        self.assertEqual(list(resources_to_move_by_load({"resource1": 5000})), ["resource1"])
 
-    def test_partition_resources_by_load_no_resources(self):
-        self.assertEqual(partition_resources_by_load({}), ([], []))
+    def test_resources_to_move_by_load_no_resources(self):
+        self.assertEqual(list(resources_to_move_by_load({})), [])

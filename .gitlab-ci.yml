@@ -44,12 +44,31 @@ type-check:
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/type-check.sh
-build:
+build-and-publish-tasks:
   image: $CI_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
+  dependencies:
+    - forwarder-tests
+    - control-plane-tests
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ci/scripts/control_plane/build.sh
+    - ci/scripts/control_plane/build_tasks.sh
+    - ci/scripts/control_plane/publish.py
+  only:
+    refs:
+      - main
+publish-deployer:
+  image: $DOCKER_IMAGE
+  stage: after-test
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+      allow_failure: true
+  tags: ["arch:amd64"]
+  script:
+    - docker buildx build --platform=linux/amd64 --tag mattlogger.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
@@ -60,6 +79,15 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
+forwarder-publish:
+  image: $DOCKER_IMAGE
+  stage: after-test
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/forwarder/publish.sh
+  only:
+    refs:
+      - main
 # ------------- CODE COV -------------
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE

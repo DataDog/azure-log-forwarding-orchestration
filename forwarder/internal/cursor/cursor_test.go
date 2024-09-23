@@ -36,7 +36,7 @@ func TestLoadCursors(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockAzureBlobClient(ctrl)
-		mockClient.EXPECT().DownloadStream(gomock.Any(), cursor.CursorContainer, cursor.CursorBlob, nil).Return(response, nil)
+		mockClient.EXPECT().DownloadStream(gomock.Any(), cursor.CursorContainer, cursor.BlobName, nil).Return(response, nil)
 
 		client := storage.NewClient(mockClient)
 
@@ -59,7 +59,7 @@ func TestLoadCursors(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockAzureBlobClient(ctrl)
-		mockClient.EXPECT().DownloadStream(gomock.Any(), cursor.CursorContainer, cursor.CursorBlob, nil).Return(response, respErr)
+		mockClient.EXPECT().DownloadStream(gomock.Any(), cursor.CursorContainer, cursor.BlobName, nil).Return(response, respErr)
 
 		client := storage.NewClient(mockClient)
 
@@ -89,7 +89,7 @@ func TestSaveCursors(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockAzureBlobClient(ctrl)
 		mockClient.EXPECT().CreateContainer(gomock.Any(), cursor.CursorContainer, nil).Return(createContainerResponse, nil)
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), cursor.CursorContainer, cursor.CursorBlob, gomock.Any(), gomock.Any()).Return(response, nil)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), cursor.CursorContainer, cursor.BlobName, gomock.Any(), gomock.Any()).Return(response, nil)
 
 		client := storage.NewClient(mockClient)
 

@@ -112,7 +112,6 @@ func appendBlob(
 		stringReadCloser := io.NopCloser(stringReader)
 		expectedDownResponse.Body = stringReadCloser
 
-		originalBuf = append(originalBuf, "\n"...)
 		newBuf = append(originalBuf, buffer...)
 	} else {
 		newBuf = buffer

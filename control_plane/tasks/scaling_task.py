@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Generator
 from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
@@ -10,8 +10,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any
 
 # 3p
-from azure.core.exceptions import HttpResponseError
-from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
+from tenacity import retry, retry_if_result, stop_after_attempt
 
 # project
 from cache.assignment_cache import (
@@ -60,11 +59,9 @@ def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: f
     return False  # TODO (AZINTS-2684) implement proper threshold checking
 
 
-def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[str], list[str]]:
+def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
     half_load = sum(resource_loads.values()) / 2
     load_so_far = 0
-    first_half: list[str] = []
-    second_half: list[str] = []
 
     def _sort_key(kv: tuple[str, int]) -> tuple[int, str]:
         """Sort by load, then alphabetically if we have a tie"""
@@ -72,11 +69,8 @@ def partition_resources_by_load(resource_loads: dict[str, int]) -> tuple[list[st
 
     for resource, load in sorted(resource_loads.items(), key=_sort_key):
         load_so_far += load
-        if load_so_far <= half_load:
-            first_half.append(resource)
-        else:
-            second_half.append(resource)
-    return first_half, second_half
+        if load_so_far > half_load:
+            yield resource
 
 
 def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
@@ -301,47 +295,48 @@ class ScalingTask(Task):
         # add new config
         self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
 
-        # split resources in half by resource load
+        if all(not metric["resource_log_volume"] for metric in metrics):
+            log.warning(
+                "Resource log volume metrics missing for forwarder %s, falling back to basic splitting",
+                underscaled_forwarder_id,
+            )
+            resources = sorted(
+                resource
+                for resource, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
+                if config_id == underscaled_forwarder_id
+            )
+            split_index = len(resources) // 2
+            self.assignment_cache[subscription_id][region]["resources"].update(
+                {resource: new_forwarder.config_id for resource in resources[split_index:]}
+            )
+            return
+
+        # organize resources by resource load
         resource_loads = {
             resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
             for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
             if config_id == underscaled_forwarder_id
         }
-        old_forwarder_resources, new_forwarder_resources = partition_resources_by_load(resource_loads)
 
+        # reassign some resources to the new forwarder
         self.assignment_cache[subscription_id][region]["resources"].update(
-            {
-                **{resource: underscaled_forwarder_id for resource in old_forwarder_resources},
-                **{resource: new_forwarder.config_id for resource in new_forwarder_resources},
-            }
+            {resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)}
         )
 
     async def collect_forwarder_metrics(
         self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
     ) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
-        try:
-            metric_dicts = await client.get_blob_metrics(config_id)
-            forwarder_metrics = [
-                metric_entry
-                for metric_str in metric_dicts
-                if (metric_entry := deserialize_blob_metric_entry(metric_str, oldest_valid_timestamp))
-            ]
-            if len(forwarder_metrics) == 0:
-                log.warning("No valid metrics found for forwarder %s", config_id)
-            self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
-            return forwarder_metrics
-        except HttpResponseError as e:
-            log.error(
-                "Unable to fetch metrics for forwarder %s.\nResponse Code: %s\nError: %s",
-                config_id,
-                e.status_code,
-                e.error or e.reason or e.message,
-            )
-            return []
-        except RetryError:
-            log.error("Max retries attempted")
-            return []
+        metric_lines = await client.get_blob_metrics_lines(config_id)
+        forwarder_metrics = [
+            metric_entry
+            for metric_line in metric_lines
+            if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
+        ]
+        if len(forwarder_metrics) == 0:
+            log.warning("No valid metrics found for forwarder %s", config_id)
+        self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+        return forwarder_metrics
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
         existing_log_forwarders = await client.list_log_forwarder_ids()

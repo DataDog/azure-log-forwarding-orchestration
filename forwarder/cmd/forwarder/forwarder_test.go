@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
-
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -105,39 +105,24 @@ func TestRun(t *testing.T) {
 		})
 
 		var uploadedMetrics []byte
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), metrics.MetricsContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				uploadedMetrics = append(uploadedMetrics, content...)
 				return azblob.UploadBufferResponse{}, nil
 			})
 
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), cursor.CursorContainer, gomock.Any(), gomock.Any(), gomock.Any())
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any())
 
-		metricsData := "\n"
-		metricsReader := strings.NewReader(metricsData)
-		metricsCloser := ioutil.NopCloser(metricsReader)
+		reader := ioutil.NopCloser(strings.NewReader("\n"))
 
-		var metricsResp azblob.DownloadStreamResponse
-		metricsResp.Body = metricsCloser
-		mockClient.EXPECT().DownloadStream(gomock.Any(), "forwarder-metrics", gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-			return metricsResp, nil
-		})
-
-		rawCursors := cursor.NewCursors(nil)
-		cursorData, err := rawCursors.GetRawCursors()
-		assert.NoError(t, err)
-		cursorReader := strings.NewReader(string(cursorData))
-		cursorCloser := ioutil.NopCloser(cursorReader)
-
-		var cursorResp azblob.DownloadStreamResponse
-		cursorResp.Body = cursorCloser
-		mockClient.EXPECT().DownloadStream(gomock.Any(), cursor.CursorContainer, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-			return cursorResp, nil
+		var downloadResp azblob.DownloadStreamResponse
+		downloadResp.Body = reader
+		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			return downloadResp, nil
 		})
 
 		var resp azblob.CreateContainerResponse
-		mockClient.EXPECT().CreateContainer(gomock.Any(), metrics.MetricsContainer, gomock.Any()).Return(resp, nil)
-		mockClient.EXPECT().CreateContainer(gomock.Any(), cursor.CursorContainer, gomock.Any()).Return(resp, nil)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil)
 
 		client := storage.NewClient(mockClient)
 
@@ -148,7 +133,7 @@ func TestRun(t *testing.T) {
 			return nil, nil, nil
 		})
 
-		datadogClient := logs.NewClient(mockDDClient)
+		logClient := logs.NewClient(mockDDClient)
 
 		var output []byte
 		buffer := bytes.NewBuffer(output)
@@ -158,7 +143,7 @@ func TestRun(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err = Run(ctx, client, datadogClient, log.NewEntry(logger), time.Now)
+		err := run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)
@@ -178,5 +163,89 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, "azure", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
+	})
+}
+
+func TestProcessLogs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("submits logs to dd", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		validLog := []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")
+		var data []byte
+		data = append(data, validLog...)
+		data = append(data, validLog...)
+		data = append(data, validLog...)
+
+		ctrl := gomock.NewController(t)
+		var submittedLogs []datadogV2.HTTPLogItem
+		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
+		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+			submittedLogs = append(submittedLogs, body...)
+			return nil, nil, nil
+		})
+
+		datadogClient := logs.NewClient(mockDDClient)
+		defer datadogClient.Flush(context.Background())
+
+		eg, egCtx := errgroup.WithContext(context.Background())
+
+		logsChannel := make(chan *logs.Log, 100)
+		volumeChannel := make(chan string, 100)
+
+		// WHEN
+		eg.Go(func() error {
+			defer close(volumeChannel)
+			return processLogs(egCtx, datadogClient, logsChannel, volumeChannel)
+		})
+		eg.Go(func() error {
+			defer close(logsChannel)
+			return parseLogs(data, logsChannel)
+		})
+		err := eg.Wait()
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Len(t, submittedLogs, 3)
+		for _, logItem := range submittedLogs {
+			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
+		}
+	})
+}
+
+func TestParseLogs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("creates a Log from raw log", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		var data []byte
+		data = append(data, validLog...)
+		data = append(data, validLog...)
+		data = append(data, validLog...)
+
+		eg, _ := errgroup.WithContext(context.Background())
+		var got []*logs.Log
+
+		logsChannel := make(chan *logs.Log, 100)
+
+		// WHEN
+		eg.Go(func() error {
+			for log := range logsChannel {
+				got = append(got, log)
+			}
+			return nil
+		})
+		eg.Go(func() error {
+			defer close(logsChannel)
+			return parseLogs(data, logsChannel)
+		})
+		err := eg.Wait()
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Len(t, got, 3)
 	})
 }

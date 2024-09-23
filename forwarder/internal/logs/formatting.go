@@ -1,10 +1,8 @@
 package logs
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
-	"errors"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -108,18 +106,4 @@ func NewLog(logBytes []byte) (*Log, error) {
 	log.Tags = append(log.Tags, getForwarderTags()...)
 
 	return log, nil
-}
-
-func ParseLogs(data []byte, logsChannel chan<- *Log) (err error) {
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		currLog, currErr := NewLog([]byte(scanner.Text()))
-		if currErr != nil {
-			err = errors.Join(err, currErr)
-			continue
-		}
-
-		logsChannel <- currLog
-	}
-	return err
 }
