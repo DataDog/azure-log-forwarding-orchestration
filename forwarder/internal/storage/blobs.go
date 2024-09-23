@@ -45,6 +45,12 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
 	defer span.Finish()
 
+	// create container if needed
+	err := c.CreateContainer(ctx, containerName)
+	if err != nil {
+		return fmt.Errorf("error creating container %s: %v", containerName, err)
+	}
+
 	//see if there is an existing blob
 	//if yes get it read append
 	//if not just write
@@ -69,19 +75,19 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	}
 
 	if downErr != nil {
-		return fmt.Errorf("failed to download blob: %w", downErr)
+		return fmt.Errorf("error downloading existing blob %s: %v", blobName, downErr)
 	}
 
 	buffer, readErr := io.ReadAll(downloadResponse.Body)
 	if readErr != nil {
-		return readErr
+		return fmt.Errorf("error reading existing blob %s: %v", blobName, readErr)
 	}
 
 	buffer = append(buffer, content...)
 
-	_, err := c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
+	_, err = c.azBlobClient.UploadBuffer(ctx, containerName, blobName, buffer, &uploadOptions)
 	if err != nil {
-		return fmt.Errorf("failed to upload blob: %w", err)
+		return fmt.Errorf("failed to upload blob %s: %w", blobName, err)
 	}
 	return nil
 }

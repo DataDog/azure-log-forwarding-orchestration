@@ -105,6 +105,7 @@ func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobNam
 	}
 
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
+	mockClient.EXPECT().CreateContainer(gomock.Any(), containerName, gomock.Any()).Return(azblob.CreateContainerResponse{}, nil)
 	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, newBuf, gomock.Any()).Return(expectedUpResponse, expectedUpErr).Times(upCalls)
 	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr).Times(downCalls)
 

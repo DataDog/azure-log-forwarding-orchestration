@@ -11,6 +11,10 @@ import (
 	"strconv"
 	"time"
 
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
+
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
+
 	"google.golang.org/api/iterator"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -27,18 +31,11 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 )
 
-type metricEntry struct {
-	Timestamp          int64            `json:"timestamp"`
-	RuntimeSeconds     float64          `json:"runtime_seconds"`
-	ResourceLogVolumes map[string]int32 `json:"resource_log_volume"`
-}
-
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
 	var err error
 
 	iter := storageClient.ListBlobs(ctx, container)
-
 	for {
 		blobList, currErr := iter.Next(ctx)
 
@@ -114,10 +111,11 @@ func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	return err
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
+		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.SubmitLog(ctx, logItem)
 		err = errors.Join(err, currErr)
 	}
@@ -126,9 +124,46 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	return err
 }
 
+func getLogVolume(resourceIdCh <-chan string) map[string]int64 {
+	var resourceVolumes = make(map[string]int64)
+	for volume := range resourceIdCh {
+		resourceVolumes[volume]++
+	}
+	return resourceVolumes
+}
+
+func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, startTime time.Time) (int, error) {
+	metricBlob := metrics.MetricEntry{
+		Timestamp:          time.Now().Unix(),
+		RuntimeSeconds:     time.Since(startTime).Seconds(),
+		ResourceLogVolumes: resourceVolumes,
+	}
+
+	metricBuffer, err := metricBlob.ToBytes()
+
+	if err != nil {
+		return 0, fmt.Errorf("error while marshalling metrics: %v", err)
+	}
+
+	blobName := metrics.GetMetricFileName(time.Now())
+
+	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
+
+	logCount := 0
+	for _, v := range resourceVolumes {
+		logCount += int(v)
+	}
+
+	return logCount, nil
+}
+
 func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
+	start := now()
+
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
-	defer span.Finish(tracer.WithError(err))
+	defer func(span ddtrace.Span, err error) {
+		span.Finish(tracer.WithError(err))
+	}(span, err)
 
 	defer func() {
 		for _, logsClient := range logsClients {
@@ -141,14 +176,22 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	}()
 
 	channelSize := len(logsClients)
-
+	var resourceVolumes map[string]int64
 	logCh := make(chan *logs.Log, channelSize)
+	resourceIdCh := make(chan string, channelSize)
+
+	// Spawn log volume processing goroutine
+	logVolumeEg, _ := errgroup.WithContext(ctx)
+	logVolumeEg.Go(func() error {
+		resourceVolumes = getLogVolume(resourceIdCh)
+		return nil
+	})
 
 	// Spawn log processing goroutines
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logCh)
+			return processLogs(logsCtx, logsClient, logCh, resourceIdCh)
 		})
 	}
 
@@ -177,11 +220,19 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 			return getLogs(segmentCtx, storageClient, blob, logCh)
 		})
 	}
+
+	// Wait for all the goroutines to finish
 	err = errors.Join(err, downloadEg.Wait())
 	close(logCh)
-
 	err = errors.Join(err, logsEg.Wait())
-	logger.Info("Finished processing logs")
+	close(resourceIdCh)
+	err = errors.Join(err, logVolumeEg.Wait())
+
+	// Write forwarder metrics
+	logCount, metricErr := writeMetrics(ctx, storageClient, resourceVolumes, start)
+	err = errors.Join(err, metricErr)
+
+	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
 	return err
 }
 
@@ -252,9 +303,9 @@ func main() {
 
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
-	resourceVolumeMap := make(map[string]int32)
+	resourceVolumeMap := make(map[string]int64)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
-	metricBlob := metricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
+	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
 
 	metricBuffer, err := json.Marshal(metricBlob)
 

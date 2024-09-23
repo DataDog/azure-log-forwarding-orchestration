@@ -71,7 +71,7 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.common import Resource, collect, wait_for_resource
 
-FORWARDER_METRIC_CONTAINER_NAME = "forwarder-metrics"
+FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
@@ -341,8 +341,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
         ) as container_client:
             current_time: datetime = datetime.now(UTC)
             previous_hour: datetime = current_time - timedelta(hours=1)
-            current_blob_name = f"{get_datetime_str(current_time)}.json"
-            previous_blob_name = f"{get_datetime_str(previous_hour)}.json"
+            current_blob_name = f"metrics_{get_datetime_str(current_time)}.json"
+            previous_blob_name = f"metrics_{get_datetime_str(previous_hour)}.json"
             results = await gather(
                 *[
                     self.read_blob(container_client, previous_blob_name),

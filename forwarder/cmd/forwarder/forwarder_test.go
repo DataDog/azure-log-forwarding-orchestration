@@ -3,10 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
+	"io/ioutil"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
@@ -17,7 +22,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/go-autorest/autorest/to"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
@@ -100,6 +104,26 @@ func TestRun(t *testing.T) {
 			return int64(len(validLog)), nil
 		})
 
+		var uploadedMetrics []byte
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+				uploadedMetrics = append(uploadedMetrics, content...)
+				return azblob.UploadBufferResponse{}, nil
+			})
+
+		data := "\n"
+		stringReader := strings.NewReader(data)
+		reader := ioutil.NopCloser(stringReader)
+
+		var downloadResp azblob.DownloadStreamResponse
+		downloadResp.Body = reader
+		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			return downloadResp, nil
+		})
+
+		var resp azblob.CreateContainerResponse
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil)
+
 		client := storage.NewClient(mockClient)
 
 		var submittedLogs []datadogV2.HTTPLogItem
@@ -123,7 +147,18 @@ func TestRun(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
+
+		finalMetrics, err := metrics.FromBytes(uploadedMetrics)
+		assert.NoError(t, err)
+		totalLoad := 0
+		for _, metric := range finalMetrics {
+			for _, value := range metric.ResourceLogVolumes {
+				totalLoad += int(value)
+			}
+		}
+		assert.Equal(t, 2, totalLoad)
 		assert.Len(t, submittedLogs, 2)
+
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, "azure", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
@@ -157,10 +192,12 @@ func TestProcessLogs(t *testing.T) {
 		eg, egCtx := errgroup.WithContext(context.Background())
 
 		logsChannel := make(chan *logs.Log, 100)
+		volumeChannel := make(chan string, 100)
 
 		// WHEN
 		eg.Go(func() error {
-			return processLogs(egCtx, datadogClient, logsChannel)
+			defer close(volumeChannel)
+			return processLogs(egCtx, datadogClient, logsChannel, volumeChannel)
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
