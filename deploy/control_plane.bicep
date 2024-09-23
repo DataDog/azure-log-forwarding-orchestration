@@ -15,7 +15,9 @@ param datadogApplicationKey string
 @description('Datadog Site')
 param datadogSite string
 
-var lfoId = toLower(substring(guid('lfo', deployment().name), 24, 12))
+param _now string = utcNow()
+
+var lfoId = toLower(substring(guid('lfo', deployment().name, _now), 24, 12))
 
 var deployerTaskImage = 'mattlogger.azurecr.io/deployer:latest'
 var forwarderImage = 'mattlogger.azurecr.io/forwarder:latest'
