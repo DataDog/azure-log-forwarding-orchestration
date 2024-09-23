@@ -258,7 +258,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
 
     async def test_submit_metrics_normal_execution(self):
-        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        self.client.should_submit_metrics = True
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -302,7 +302,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client.submit_metrics.assert_called_once_with(body=sample_body)
 
     async def test_submit_metrics_retries(self):
-        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        self.client.should_submit_metrics = True
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -348,7 +348,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 3)
 
     async def test_submit_metrics_max_retries(self):
-        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        self.client.should_submit_metrics = True
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -395,7 +395,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
-        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        self.client.should_submit_metrics = True
         sample_metric_entry_list: list[MetricBlobEntry] = [
             {
                 "timestamp": 1723040910,
@@ -441,7 +441,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 1)
 
     async def test_submit_metrics_errors_logged(self):
-        environ.update({"DD_API_KEY": "test", "SHOULD_SUBMIT_METRICS": "1"})
+        self.client.should_submit_metrics = True
         self.client.metrics_client.submit_metrics.return_value = {
             "errors": [
                 "oops something went wrong",
