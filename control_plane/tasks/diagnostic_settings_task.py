@@ -45,9 +45,9 @@ def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) 
     # no test coverage because we don't have event hub support yet
     return (
         get_resource_group_id(sub_id, resource_group)
-        + "/providers/Microsoft.EventHub/namespaces/"
+        + "/providers/microsoft.eventhub/namespaces/"
         + get_event_hub_namespace(config_id)
-        + "/authorizationrules/RootManageSharedAccessKey"
+        + "/authorizationrules/rootmanagesharedaccesskey"
     )
 
 
@@ -127,23 +127,25 @@ class DiagnosticSettingsTask(Task):
         try:
             current_diagnostic_settings = await collect(client.diagnostic_settings.list(resource_id))
         except HttpResponseError as e:
-            if e.error and e.error.code == "ResourceTypeNotSupported":
+            if e.error and e.error.code and e.error.code.casefold() == "resourcetypenotsupported":
                 log.warning("Resource type for %s unsupported, skipping", resource_id)
                 return
             log.exception("Failed to get diagnostic settings for resource %s", resource_id)
             return
 
-        assigned_setting_name = get_diagnostic_setting_name(assigned_config.id)
-        assigned_storage_account = get_storage_account_id(sub_id, self.resource_group, assigned_config.id).lower()
-
         current_settings_by_name = {
             setting_name: ds
             for ds in current_diagnostic_settings
-            if (setting_name := cast(str, ds.name).lower()).startswith(DIAGNOSTIC_SETTING_PREFIX)
+            if (setting_name := cast(str, ds.name).casefold()).startswith(DIAGNOSTIC_SETTING_PREFIX)
         }
-        assigned_setting = current_settings_by_name.pop(assigned_setting_name, None)
+        assigned_setting = current_settings_by_name.pop(get_diagnostic_setting_name(assigned_config.id), None)
 
-        if assigned_setting and assigned_setting.storage_account_id != assigned_storage_account:
+        if (
+            assigned_setting
+            and assigned_setting.storage_account_id
+            and assigned_setting.storage_account_id.casefold()
+            != get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
+        ):
             await self.set_diagnostic_setting(
                 client,
                 sub_id,

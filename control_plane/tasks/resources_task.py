@@ -39,7 +39,7 @@ class ResourcesTask(Task):
         async with SubscriptionClient(self.credential) as subscription_client:
             await gather(
                 *[
-                    self.process_subscription(cast(str, sub.subscription_id))
+                    self.process_subscription(cast(str, sub.subscription_id).casefold())
                     async for sub in subscription_client.subscriptions.list()
                 ]
             )
@@ -50,11 +50,11 @@ class ResourcesTask(Task):
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
             async for r in client.resources.list():
-                region = cast(str, r.location).lower()
-                resource_type = cast(str, r.type).lower()
+                region = cast(str, r.location).casefold()
+                resource_type = cast(str, r.type).casefold()
                 if region in DISALLOWED_REGIONS or resource_type not in ALLOWED_RESOURCE_TYPES:
                     continue
-                resources_per_region.setdefault(region, set()).add(cast(str, r.id))
+                resources_per_region.setdefault(region, set()).add(cast(str, r.id).casefold())
                 resource_count += 1
             log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
             self.resource_cache[subscription_id] = resources_per_region
