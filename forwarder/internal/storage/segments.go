@@ -16,7 +16,7 @@ import (
 type BlobSegment struct {
 	Name          string
 	Container     string
-	Content       *[]byte
+	Content       []byte
 	Offset        int64
 	ContentLength int64
 }
@@ -40,7 +40,7 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 	return BlobSegment{
 		Name:          *blob.Item.Name,
 		Container:     blob.Container,
-		Content:       &content,
+		Content:       content,
 		Offset:        offset,
 		ContentLength: *blob.Item.Properties.ContentLength,
 	}, nil

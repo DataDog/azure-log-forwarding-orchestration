@@ -99,7 +99,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 
 	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
 
-	return parseLogs(*content.Content, logsChannel)
+	return parseLogs(content.Content, logsChannel)
 }
 
 func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
