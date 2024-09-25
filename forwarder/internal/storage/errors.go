@@ -9,5 +9,5 @@ type NotFoundError struct {
 
 // Error returns what item was not found
 func (e *NotFoundError) Error() string {
-	return fmt.Sprintf("%s not found", e.Item)
+e.Item + " not found"
 }
