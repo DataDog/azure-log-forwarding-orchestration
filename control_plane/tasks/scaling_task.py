@@ -33,9 +33,8 @@ from tasks.common import average, generate_unique_id, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
-SCALING_TASK_PERIOD_MINUTES = 5
 
-METRIC_COLLECTION_PERIOD_MINUTES = 30
+METRIC_COLLECTION_PERIOD_MINUTES = 5
 
 SCALE_UP_EXECUTION_SECONDS = 25
 SCALE_DOWN_EXECUTION_SECONDS = 3
@@ -44,10 +43,8 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 
-def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
+def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
     """Check if the runtime is consistently over the threshold for the given duration"""
-    metrics = list(filter(lambda metric: metric["timestamp"] > oldest_timestamp, metrics))
-
     # if we have no valid metrics, we can't determine if we are over the threshold
     if not metrics:
         return False
@@ -228,10 +225,8 @@ class ScalingTask(Task):
             return
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
-
-        oldest_scale_timestamp = (self.now - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
         did_scale = await self.scale_up_forwarders(
-            client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics, oldest_scale_timestamp
+            client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics
         )
         # if we don't scale up, we can check for scaling down
         if did_scale:
@@ -297,7 +292,6 @@ class ScalingTask(Task):
         region: str,
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
-        oldest_scale_timestamp: float,
     ):
         def _has_enough_resources_to_scale_up(config_id: str) -> bool:
             if num_resources_by_forwarder[config_id] < 2:
@@ -308,7 +302,7 @@ class ScalingTask(Task):
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
-            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_timestamp)
+            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS)
             and _has_enough_resources_to_scale_up(config_id)
         ]
 
