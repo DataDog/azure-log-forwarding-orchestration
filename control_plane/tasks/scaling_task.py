@@ -48,9 +48,7 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
     return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
 
 
-def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
-    metrics = list(filter(lambda metric: metric["timestamp"] > oldest_timestamp, metrics))
-
+def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
     # if we have no valid metrics, we can't determine if we are over the threshold
     if not metrics:
         return False
@@ -234,9 +232,7 @@ class ScalingTask(Task):
         if did_scale:
             return
 
-        await self.scale_down_forwarders(
-            client, region_config, num_resources_by_forwarder, forwarder_metrics, oldest_scale_timestamp
-        )
+        await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]
@@ -370,13 +366,12 @@ class ScalingTask(Task):
         region_config: RegionAssignmentConfiguration,
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
-        oldest_scale_timestamp: float,
     ):
         forwarders_to_collapse = sorted(
             [
                 config_id
                 for config_id, metrics in forwarder_metrics.items()
-                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS, oldest_scale_timestamp)
+                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS)
                 and num_resources_by_forwarder[config_id] > 0
             ]
         )
