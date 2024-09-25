@@ -181,7 +181,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	}()
 
 	// Download cursors
-	cursors, err := cursor.LoadCursors(ctx, storageClient)
+	cursors, err := cursor.LoadCursors(ctx, storageClient, logger)
 	if err != nil {
 		return err
 	}

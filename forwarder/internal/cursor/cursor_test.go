@@ -3,9 +3,12 @@ package cursor_test
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
+	"net/http"
 	"testing"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -40,8 +43,13 @@ func TestLoadCursors(t *testing.T) {
 
 		client := storage.NewClient(mockClient)
 
+		var output []byte
+		buffer := bytes.NewBuffer(output)
+		logger := log.New()
+		logger.SetOutput(buffer)
+
 		// WHEN
-		got, err := cursor.LoadCursors(context.Background(), client)
+		got, err := cursor.LoadCursors(context.Background(), client, log.NewEntry(logger))
 
 		// THEN
 		assert.NoError(t, err)
@@ -54,17 +62,24 @@ func TestLoadCursors(t *testing.T) {
 	t.Run("gives new cursors when file cannot be found", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		response := azblob.DownloadStreamResponse{}
-		respErr := errors.New("BlobNotFound the specified container does not exist uh oh")
-
 		ctrl := gomock.NewController(t)
 		mockClient := mocks.NewMockAzureBlobClient(ctrl)
-		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, cursor.BlobName, nil).Return(response, respErr)
+		resp := http.Response{
+			Body:       io.NopCloser(bytes.NewBufferString("test")),
+			StatusCode: 404,
+		}
+		respErr := runtime.NewResponseErrorWithErrorCode(&resp, "BlobNotFound")
+		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, cursor.BlobName, nil).Return(azblob.DownloadStreamResponse{}, respErr)
 
 		client := storage.NewClient(mockClient)
 
+		var output []byte
+		buffer := bytes.NewBuffer(output)
+		logger := log.New()
+		logger.SetOutput(buffer)
+
 		// WHEN
-		got, err := cursor.LoadCursors(context.Background(), client)
+		got, err := cursor.LoadCursors(context.Background(), client, log.NewEntry(logger))
 
 		// THEN
 		assert.NoError(t, err)

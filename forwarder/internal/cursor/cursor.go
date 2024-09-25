@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
@@ -43,7 +45,7 @@ func (c *Cursors) SetCursor(key string, offset int64) {
 
 const BlobName = "cursors.json"
 
-func LoadCursors(ctx context.Context, client *storage.Client) (*Cursors, error) {
+func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry) (*Cursors, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetCursors")
 	defer span.Finish()
 	data, err := client.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
@@ -58,10 +60,10 @@ func LoadCursors(ctx context.Context, client *storage.Client) (*Cursors, error) 
 	var cursorMap map[string]int64
 	err = json.Unmarshal(data, &cursorMap)
 	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal: %v", err)
+		logger.Errorf("could not unmarshal log cursors: %v", err)
+		return NewCursors(nil), nil
 	}
-	cursors := NewCursors(cursorMap)
-	return cursors, nil
+	return NewCursors(cursorMap), nil
 }
 
 func (c *Cursors) GetRawCursors() ([]byte, error) {
