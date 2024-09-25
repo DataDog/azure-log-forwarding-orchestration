@@ -49,11 +49,8 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
 
 
 def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
-    # if we have no valid metrics, we can't determine if we are over the threshold
-    if not metrics:
-        return False
-
-    return all(metric["runtime_seconds"] < threshold for metric in metrics)
+    """Check if the runtime is consistently under the threshold for the given duration"""
+    return bool(metrics and all(metric["runtime_seconds"] < threshold for metric in metrics))
 
 
 def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
