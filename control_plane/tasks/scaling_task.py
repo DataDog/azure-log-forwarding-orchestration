@@ -376,13 +376,17 @@ class ScalingTask(Task):
             config_id for config_id, num_resources in num_resources_by_forwarder.items() if num_resources == 0
         ]
 
-        await gather(
+        maybe_errors = await gather(
             *(
                 self.collapse_forwarders(client, region_config, config_1, config_2)
                 for config_1, config_2 in chunks(forwarders_to_collapse, 2)
             ),
             *(self.delete_log_forwarder(client, region_config, config_id) for config_id in forwarders_to_delete),
+            return_exceptions=True,
         )
+        for maybe_error in maybe_errors:
+            if isinstance(maybe_error, Exception):
+                log.error("Error during scaling down", exc_info=maybe_error)
 
     async def collapse_forwarders(
         self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
