@@ -277,10 +277,13 @@ class ScalingTask(Task):
         if not new_resources:
             return
 
-        # any forwarders without metrics we should not add more resources to, there may be something wrong
-        least_busy_forwarder_id, _ = min(
-            forwarder_metrics.items(),
-            key=lambda metrics_by_id: average(*(metric["runtime_seconds"] for metric in metrics_by_id[1])),
+        least_busy_forwarder_id = min(
+            # any forwarders without metrics we should not add more resources to, there may be something wrong:
+            filter(lambda forwarder_id: forwarder_metrics[forwarder_id], forwarder_metrics),
+            # find forwarder with the min average runtime
+            key=lambda forwarder_id: average(
+                *(metric["runtime_seconds"] for metric in forwarder_metrics[forwarder_id])
+            ),
         )
 
         self.assignment_cache[subscription_id][region]["resources"].update(
