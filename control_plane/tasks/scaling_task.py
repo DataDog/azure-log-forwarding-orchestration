@@ -223,6 +223,10 @@ class ScalingTask(Task):
 
         forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
 
+        if not any(forwarder_metrics.values()):
+            log.warning("No valid metrics found for forwarders in region %s", region)
+            return
+
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
 
         oldest_scale_timestamp = (self.now - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
@@ -270,7 +274,7 @@ class ScalingTask(Task):
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
             self.assignment_cache[subscription_id][region]["resources"]
         )
-        if not new_resources or not forwarder_metrics:  # no new resources or no forwarders
+        if not new_resources:
             return
 
         # any forwarders without metrics we should not add more resources to, there may be something wrong
