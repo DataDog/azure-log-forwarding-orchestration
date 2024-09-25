@@ -28,6 +28,7 @@ class TestResourcesTask(TaskTestCase):
 
         def create_resource_client(_: Any, sub_id: str):
             c = MagicMock()
+            assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             c.__aenter__.return_value.resources.list = self.resource_client_mapping[sub_id]
             return c
 
@@ -163,3 +164,37 @@ class TestResourcesTask(TaskTestCase):
                 }
             )
         write_caches.assert_not_awaited()
+
+    async def test_case_insensitive_matching(self):
+        self.sub_client.subscriptions.list = Mock(
+            return_value=async_generator(Mock(subscription_id="Sub1"), Mock(subscription_id="sub2"))
+        )
+        self.resource_client_mapping = {
+            "sub1": Mock(
+                return_value=async_generator(
+                    mock(id="rEs1", location="Region1", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="RES2", location="REGION1", type="Microsoft.Compute/virtualMachines"),
+                )
+            ),
+            "sub2": Mock(
+                return_value=async_generator(
+                    mock(id="reß3", location="regIon2", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="Res4", location="reGION2", type="Microsoft.Compute/virtualMachines"),
+                )
+            ),
+        }
+
+        await self.run_resources_task(
+            {
+                "sub1": {"region1": {"res1", "res2"}},
+                "sub2": {"region2": {"ress3"}},
+            }
+        )
+
+        self.assertEqual(
+            self.cache,
+            {
+                "sub1": {"region1": {"res1", "res2"}},
+                "sub2": {"region2": {"ress3", "res4"}},
+            },
+        )

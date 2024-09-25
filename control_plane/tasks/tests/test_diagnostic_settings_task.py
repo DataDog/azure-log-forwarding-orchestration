@@ -22,7 +22,7 @@ from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator,
 sub_id1: Final = "sub1"
 region1: Final = "region1"
 config_id1: Final = "bc666ef914ec"
-resource_id1: Final = "/subscriptions/1/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+resource_id1: Final = "/subscriptions/1/resourcegroups/rg1/providers/microsoft.compute/virtualmachines/vm1"
 storage_account1: Final = "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1"
 
 
@@ -79,7 +79,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             AzureModelMatcher(
                 {
                     "logs": [{"category": "cool_logs", "enabled": True}],
-                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                    "storage_account_id": "/subscriptions/sub1/resourcegroups/lfo/providers/microsoft.storage/storageaccounts/ddlogstoragebc666ef914ec",
                 }
             ),
         )
@@ -130,7 +130,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             AzureModelMatcher(
                 {
                     "logs": [{"category": "cool_logs", "enabled": True}],
-                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                    "storage_account_id": "/subscriptions/sub1/resourcegroups/lfo/providers/microsoft.storage/storageaccounts/ddlogstoragebc666ef914ec",
                 }
             ),
         )
@@ -163,7 +163,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             AzureModelMatcher(
                 {
                     "logs": [{"category": "cool_logs", "enabled": True}],
-                    "storage_account_id": "/subscriptions/sub1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/ddlogstoragebc666ef914ec",
+                    "storage_account_id": "/subscriptions/sub1/resourcegroups/lfo/providers/microsoft.storage/storageaccounts/ddlogstoragebc666ef914ec",
                 }
             ),
         )
