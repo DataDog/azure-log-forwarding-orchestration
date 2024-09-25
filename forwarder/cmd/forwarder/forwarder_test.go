@@ -121,7 +121,7 @@ func TestRun(t *testing.T) {
 		downloadResp.Body = reader
 
 		rawCursors := cursor.NewCursors(nil)
-		cursorData, cursorError := rawCursors.GetRawCursors()
+		cursorData, cursorError := rawCursors.Bytes()
 		require.NoError(t, cursorError)
 		cursorReader := strings.NewReader(string(cursorData))
 		cursorCloser := ioutil.NopCloser(cursorReader)

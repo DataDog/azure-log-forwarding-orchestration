@@ -32,7 +32,7 @@ func TestLoadCursors(t *testing.T) {
 		testValue := int64(300)
 		cursors := cursor.NewCursors(nil)
 		cursors.SetCursor(testKey, testValue)
-		data, err := cursors.GetRawCursors()
+		data, err := cursors.Bytes()
 		reader := io.NopCloser(bytes.NewReader(data))
 		response := azblob.DownloadStreamResponse{
 			DownloadResponse: blob.DownloadResponse{

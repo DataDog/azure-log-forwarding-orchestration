@@ -71,8 +71,8 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 	return NewCursors(cursorMap), nil
 }
 
-// GetRawCursors returns the a []byte representation of the cursors.
-func (c *Cursors) GetRawCursors() ([]byte, error) {
+// Bytes returns the a []byte representation of the cursors.
+func (c *Cursors) Bytes() ([]byte, error) {
 	cursorMap := make(map[string]int64)
 	c.Range(func(key, value interface{}) bool {
 		cursorMap[key.(string)] = value.(int64)
@@ -85,7 +85,7 @@ func (c *Cursors) GetRawCursors() ([]byte, error) {
 func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.SaveCursors")
 	defer span.Finish()
-	data, err := c.GetRawCursors()
+	data, err := c.Bytes()
 	if err != nil {
 		return fmt.Errorf("error marshalling cursors: %v", err)
 	}
