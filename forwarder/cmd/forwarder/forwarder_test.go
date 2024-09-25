@@ -116,8 +116,6 @@ func TestRun(t *testing.T) {
 				return azblob.UploadBufferResponse{}, nil
 			}).Times(2)
 
-		//mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any())
-
 		reader := ioutil.NopCloser(strings.NewReader("\n"))
 
 		var downloadResp azblob.DownloadStreamResponse

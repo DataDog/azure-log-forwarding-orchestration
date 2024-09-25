@@ -11,40 +11,37 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+//type Cursors sync.Map
+
 type Cursors struct {
-	cursors map[string]int64
-	mu      sync.Mutex
+	sync.Map
+	Length int
 }
 
 func NewCursors(data map[string]int64) *Cursors {
 	if data == nil {
 		data = make(map[string]int64)
 	}
-	return &Cursors{
-		cursors: data,
+	length := 0
+	cursors := &Cursors{}
+	for key, value := range data {
+		cursors.SetCursor(key, value)
+		length += 1
 	}
+	cursors.Length = length
+	return cursors
 }
 
-func (c *Cursors) Length() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.cursors)
-}
-
-func (c *Cursors) GetCursor(key string) (int64, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	cursor, ok := c.cursors[key]
-	if !ok {
-		return 0, fmt.Errorf("cursor not found for key %s", key)
+func (c *Cursors) GetCursor(key string) (int64, bool) {
+	value, found := c.Load(key)
+	if !found {
+		return 0, false
 	}
-	return cursor, nil
+	return value.(int64), true
 }
 
 func (c *Cursors) SetCursor(key string, offset int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cursors[key] = offset
+	c.Store(key, offset)
 }
 
 const BlobName = "cursors.json"
@@ -69,7 +66,12 @@ func LoadCursors(ctx context.Context, client *storage.Client) (*Cursors, error) 
 }
 
 func (c *Cursors) GetRawCursors() ([]byte, error) {
-	return json.Marshal(c.cursors)
+	cursorMap := make(map[string]int64)
+	c.Range(func(key, value interface{}) bool {
+		cursorMap[key.(string)] = value.(int64)
+		return true
+	})
+	return json.Marshal(cursorMap)
 }
 
 func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error {
