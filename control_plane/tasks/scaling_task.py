@@ -45,11 +45,7 @@ log.setLevel(DEBUG)
 
 def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
     """Check if the runtime is consistently over the threshold for the given duration"""
-    # if we have no valid metrics, we can't determine if we are over the threshold
-    if not metrics:
-        return False
-
-    return all(metric["runtime_seconds"] > threshold for metric in metrics)
+    return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
 
 
 def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
