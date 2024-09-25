@@ -69,7 +69,6 @@ func TestLoadCursors(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.NotNil(t, got)
-		assert.Equal(t, 0, got.Length)
 	})
 }
 

@@ -3,8 +3,8 @@ package cursor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
@@ -22,13 +22,10 @@ func NewCursors(data map[string]int64) *Cursors {
 	if data == nil {
 		data = make(map[string]int64)
 	}
-	length := 0
 	cursors := &Cursors{}
 	for key, value := range data {
 		cursors.SetCursor(key, value)
-		length += 1
 	}
-	cursors.Length = length
 	return cursors
 }
 
@@ -51,8 +48,10 @@ func LoadCursors(ctx context.Context, client *storage.Client) (*Cursors, error) 
 	defer span.Finish()
 	data, err := client.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
 	if err != nil {
-		if strings.Contains(err.Error(), "BlobNotFound") {
+		var notFoundError *storage.NotFoundError
+		if errors.As(err, &notFoundError) {
 			return NewCursors(nil), nil
+
 		}
 		return nil, fmt.Errorf("error downloading cursor: %v", err)
 	}

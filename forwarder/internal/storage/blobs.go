@@ -2,10 +2,12 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
@@ -46,6 +48,10 @@ func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobNam
 	defer span.Finish()
 
 	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+		return nil, &NotFoundError{}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to download blob %s: %w", blobName, err)
 	}
@@ -94,8 +100,8 @@ func (c *Client) AppendBlob(ctx context.Context, containerName string, blobName 
 
 	buffer, downErr := c.DownloadBlob(ctx, containerName, blobName)
 
-	if downErr != nil && strings.Contains(downErr.Error(), "ERROR CODE: BlobNotFound") {
-		// Create new file when not found
+	var notFoundErr *NotFoundError
+	if errors.As(downErr, &notFoundErr) {
 		return c.UploadBlob(ctx, containerName, blobName, content)
 	}
 
