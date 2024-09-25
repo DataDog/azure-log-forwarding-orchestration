@@ -218,7 +218,7 @@ class TestScalingTask(TaskTestCase):
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
                 "resource_log_volume": {"resource1": 4000, "resource2": 6000},
             }
-            for i in range(60)
+            for i in range(6)
         ]
 
         await self.run_scaling_task(
@@ -477,7 +477,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
-        self.log.warning.assert_called_with("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID)
+        self.log.warning.assert_called_with("No valid metrics found for forwarders in region %s", EAST_US)
 
     async def test_background_tasks_awaited(self):
         m = Mock()
@@ -691,11 +691,6 @@ class TestScalingTaskHelpers(TestCase):
             is_consistently_over_threshold(
                 metrics=[
                     {
-                        "runtime_seconds": 19,
-                        "timestamp": minutes_ago(5.5),
-                        "resource_log_volume": {"resource1": 4000, "resource2": 6000},
-                    },
-                    {
                         "runtime_seconds": 24,
                         "timestamp": minutes_ago(4),
                         "resource_log_volume": {"resource1": 4200, "resource2": 6100},
@@ -707,28 +702,11 @@ class TestScalingTaskHelpers(TestCase):
                     },
                 ],
                 threshold=20,
-                oldest_timestamp=minutes_ago(5),
             )
         )
 
     def test_no_metrics_not_over_threshold(self):
-        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0, oldest_timestamp=minutes_ago(5)))
-
-    def test_old_metrics_not_over_threshold(self):
-        self.assertFalse(
-            is_consistently_over_threshold(
-                metrics=[
-                    {
-                        "runtime_seconds": 100,
-                        "timestamp": minutes_ago(i),
-                        "resource_log_volume": {"resource2": 100000},
-                    }
-                    for i in range(3, 6)
-                ],
-                threshold=0,
-                oldest_timestamp=minutes_ago(2),
-            )
-        )
+        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0))
 
     def test_metrics_partially_over_threshold(self):
         self.assertFalse(
@@ -751,7 +729,6 @@ class TestScalingTaskHelpers(TestCase):
                     },
                 ],
                 threshold=25,
-                oldest_timestamp=minutes_ago(5),
             )
         )
 
@@ -762,7 +739,6 @@ class TestScalingTaskHelpers(TestCase):
                     {"runtime_seconds": 26, "timestamp": minutes_ago(3), "resource_log_volume": {"resource1": 5670}},
                 ],
                 threshold=25,
-                oldest_timestamp=minutes_ago(5),
             )
         )
 
@@ -775,7 +751,6 @@ class TestScalingTaskHelpers(TestCase):
                     {"runtime_seconds": 25, "timestamp": minutes_ago(3), "resource_log_volume": {"resource1": 5600}},
                 ],
                 threshold=25,
-                oldest_timestamp=minutes_ago(5),
             )
         )
 
