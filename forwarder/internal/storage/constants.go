@@ -1,7 +1,7 @@
 package storage
 
+// LogContainerPrefix is the prefix for the log container
 const LogContainerPrefix = "insights-logs-"
 
-const FunctionAppLogsContainerPrefix = "insights-logs-functionapplogs"
-
+// ForwarderContainer is the container name for the forwarder
 const ForwarderContainer = "dd-forwarder"

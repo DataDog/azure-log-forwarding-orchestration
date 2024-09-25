@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// GetContainersMatchingPrefix returns an iterator over containers with a given prefix
 func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) Iterator[[]*service.ContainerItem, service.ListContainersResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
@@ -24,7 +25,7 @@ func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string)
 	return iter
 }
 
-// Creates a container with the given name
+// CreateContainer a container with the given name
 // if container already exists, no error is returned
 func (c *Client) CreateContainer(ctx context.Context, containerName string) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.CreateContainer")

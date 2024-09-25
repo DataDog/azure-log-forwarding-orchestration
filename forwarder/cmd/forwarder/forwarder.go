@@ -121,7 +121,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
-		currErr := logsClient.SubmitLog(ctx, logItem)
+		currErr := logsClient.AddLog(ctx, logItem)
 		err = errors.Join(err, currErr)
 	}
 	flushErr := logsClient.Flush(ctx)

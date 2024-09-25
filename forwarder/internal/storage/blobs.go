@@ -18,15 +18,18 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-const MinusTwoHours = -2 * time.Hour
+// LookBackPeriod defines the period of time from now that we would look back for logs
+const LookBackPeriod = -2 * time.Hour
 
+// Blob represents a blob in a container.
 type Blob struct {
 	Item      *container.BlobItem
 	Container string
 }
 
+// Current returns true if the blob was created within the look back period
 func Current(blob Blob, now time.Time) bool {
-	return blob.Item.Properties.CreationTime.After(now.Add(MinusTwoHours))
+	return blob.Item.Properties.CreationTime.After(now.Add(LookBackPeriod))
 }
 
 func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
@@ -36,6 +39,7 @@ func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
 	return resp.Segment.BlobItems
 }
 
+// ListBlobs returns an iterator over the blobs in a container.
 func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[]*container.BlobItem, azblob.ListBlobsFlatResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
@@ -46,6 +50,7 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[
 	return iter
 }
 
+// DownloadBlob downloads a blob from a container.
 func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobName string) ([]byte, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()
@@ -53,7 +58,9 @@ func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobNam
 	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == 404 {
-		return nil, &NotFoundError{}
+		return nil, &NotFoundError{
+			Item: blobName,
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to download blob %s: %w", blobName, err)
@@ -76,6 +83,7 @@ func getUploadBufferOptions() *azblob.UploadBufferOptions {
 	}
 }
 
+// UploadBlob uploads a blob to a container.
 func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
 	defer span.Finish()
@@ -93,6 +101,7 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	return nil
 }
 
+// AppendBlob appends content to an existing blob in a container or creates a new one if it doesn't exist.
 func (c *Client) AppendBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.AppendBlob")
 	defer span.Finish()

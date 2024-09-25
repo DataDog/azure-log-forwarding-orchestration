@@ -12,11 +12,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-type BlobCursorMap interface {
-	GetCursor(key string) (int, error)
-	SetCursor(key string, offset int)
-}
-
+// BlobSegment represents a segment of a blob that could be partial or full
 type BlobSegment struct {
 	Name          string
 	Container     string
@@ -25,6 +21,7 @@ type BlobSegment struct {
 	ContentLength int64
 }
 
+// DownloadSegment downloads a segment of a blob starting from an offset
 func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (BlobSegment, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()

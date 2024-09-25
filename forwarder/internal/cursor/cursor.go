@@ -16,13 +16,14 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
-//type Cursors sync.Map
+const BlobName = "cursors.json"
 
 type Cursors struct {
 	sync.Map
 	Length int
 }
 
+// NewCursors creates a new Cursors object with the given data.
 func NewCursors(data map[string]int64) *Cursors {
 	if data == nil {
 		data = make(map[string]int64)
@@ -34,6 +35,7 @@ func NewCursors(data map[string]int64) *Cursors {
 	return cursors
 }
 
+// GetCursor returns the cursor for the given key.
 func (c *Cursors) GetCursor(key string) (int64, bool) {
 	value, found := c.Load(key)
 	if !found {
@@ -42,12 +44,12 @@ func (c *Cursors) GetCursor(key string) (int64, bool) {
 	return value.(int64), true
 }
 
+// SetCursor sets the cursor for the given key.
 func (c *Cursors) SetCursor(key string, offset int64) {
 	c.Store(key, offset)
 }
 
-const BlobName = "cursors.json"
-
+// LoadCursors loads the cursors from the storage client.
 func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry) (*Cursors, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetCursors")
 	defer span.Finish()
@@ -58,7 +60,7 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 			return NewCursors(nil), nil
 
 		}
-		return nil, fmt.Errorf("error downloading cursor: %v", err)
+		return nil, fmt.Errorf("failed to download cursor: %v", err)
 	}
 	var cursorMap map[string]int64
 	err = json.Unmarshal(data, &cursorMap)
@@ -69,6 +71,7 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 	return NewCursors(cursorMap), nil
 }
 
+// GetRawCursors returns the a []byte representation of the cursors.
 func (c *Cursors) GetRawCursors() ([]byte, error) {
 	cursorMap := make(map[string]int64)
 	c.Range(func(key, value interface{}) bool {
@@ -78,6 +81,7 @@ func (c *Cursors) GetRawCursors() ([]byte, error) {
 	return json.Marshal(cursorMap)
 }
 
+// SaveCursors saves the cursors to storage
 func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.SaveCursors")
 	defer span.Finish()
