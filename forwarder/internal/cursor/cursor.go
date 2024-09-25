@@ -60,7 +60,7 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 			return NewCursors(nil), nil
 
 		}
-		return nil, fmt.Errorf("failed to download cursor: %v", err)
+		return nil, fmt.Errorf("failed to download cursor: %w", err)
 	}
 	var cursorMap map[string]int64
 	err = json.Unmarshal(data, &cursorMap)
@@ -87,7 +87,11 @@ func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error
 	defer span.Finish()
 	data, err := c.Bytes()
 	if err != nil {
-		return fmt.Errorf("error marshalling cursors: %v", err)
+		return fmt.Errorf("error marshalling cursors: %w", err)
 	}
-	return client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
+	err = client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
+	if err != nil {
+		return fmt.Errorf("uploading cursors failed: %w", err)
+	}
+	return nil
 }

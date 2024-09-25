@@ -46,7 +46,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 		}
 
 		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", container, currErr), err)
+			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %w", container, currErr), err)
 		}
 
 		if blobList == nil {
@@ -74,7 +74,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 		}
 
 		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of containers: %v", currErr), err)
+			err = errors.Join(fmt.Errorf("getting next page of containers: %w", currErr), err)
 			continue
 		}
 
@@ -94,7 +94,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	currentOffset, _ := cursors.GetCursor(*blob.Item.Name)
 	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
 	if err != nil {
-		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
+		return fmt.Errorf("download range for %s: %w", *blob.Item.Name, err)
 	}
 
 	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
@@ -147,7 +147,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	metricBuffer, err := metricBlob.ToBytes()
 
 	if err != nil {
-		return 0, fmt.Errorf("error while marshalling metrics: %v", err)
+		return 0, fmt.Errorf("error while marshalling metrics: %w", err)
 	}
 
 	blobName := metrics.GetMetricFileName(time.Now())
@@ -321,15 +321,13 @@ func main() {
 	resourceVolumeMap := make(map[string]int64)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
 	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
-
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
 		logger.Fatalf("error while marshalling metrics: %v", err)
 	}
 
-	dateString := time.Now().UTC().Format("2006-01-02-15")
-	blobName := dateString + ".txt"
+	blobName := metrics.GetMetricFileName(time.Now())
 
 	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
 

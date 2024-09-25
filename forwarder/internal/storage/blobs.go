@@ -67,7 +67,7 @@ func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobNam
 	}
 	buffer, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
-		return nil, fmt.Errorf("error reading existing blob %s: %v", blobName, readErr)
+		return nil, fmt.Errorf("error reading existing blob %s: %w", blobName, readErr)
 	}
 
 	return buffer, nil
@@ -91,7 +91,7 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 	// create container if needed
 	err := c.CreateContainer(ctx, containerName)
 	if err != nil {
-		return fmt.Errorf("error creating container %s: %v", containerName, err)
+		return fmt.Errorf("error creating container %s: %w", containerName, err)
 	}
 
 	_, err = c.azBlobClient.UploadBuffer(ctx, containerName, blobName, content, getUploadBufferOptions())
@@ -118,7 +118,7 @@ func (c *Client) AppendBlob(ctx context.Context, containerName string, blobName 
 	}
 
 	if downErr != nil {
-		return fmt.Errorf("error downloading existing blob %s: %v", blobName, downErr)
+		return fmt.Errorf("error downloading existing blob %s: %w", blobName, downErr)
 	}
 
 	buffer = append(buffer, "\n"...)
