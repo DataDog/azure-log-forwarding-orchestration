@@ -1,13 +1,14 @@
 package logs
 
 import (
+	// stdlib
 	"context"
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
+	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // BufferSize is the maximum number of logs per post to Logs API

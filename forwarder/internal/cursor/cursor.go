@@ -1,16 +1,19 @@
 package cursor
 
 import (
+	// stdlib
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 
+	// 3p
 	log "github.com/sirupsen/logrus"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
 //type Cursors sync.Map

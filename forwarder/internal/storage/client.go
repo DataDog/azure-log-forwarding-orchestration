@@ -1,13 +1,17 @@
 package storage
 
 import (
+	// stdlib
 	"context"
 	"errors"
 	"fmt"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"google.golang.org/api/iterator"
+
+	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 

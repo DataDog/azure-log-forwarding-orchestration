@@ -1,6 +1,7 @@
 package main
 
 import (
+	// stdlib
 	"bytes"
 	"context"
 	"io/ioutil"
@@ -9,30 +10,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
-	"github.com/stretchr/testify/require"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	"golang.org/x/sync/errgroup"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
-
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-
-	"go.uber.org/mock/gomock"
-
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/go-autorest/autorest/to"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+	"golang.org/x/sync/errgroup"
+
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
-	log "github.com/sirupsen/logrus"
-
-	"github.com/stretchr/testify/assert"
 )
 
 var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")

@@ -1,13 +1,16 @@
 package storage
 
 import (
+	// stdlib
 	"context"
 	"errors"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+
+	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	// stdlib
 	"bufio"
 	"bytes"
 	"context"
@@ -11,26 +12,25 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
-
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
-
-	"google.golang.org/api/iterator"
-
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
-
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/iterator"
+
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {

@@ -1,6 +1,7 @@
 package storage_test
 
 import (
+	// stdlib
 	"bytes"
 	"context"
 	"errors"
@@ -11,16 +12,21 @@ import (
 	"testing"
 	"time"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/api/iterator"
+
+	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
 func newBlobItem(name string) *container.BlobItem {

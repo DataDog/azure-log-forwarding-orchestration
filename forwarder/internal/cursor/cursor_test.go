@@ -1,22 +1,25 @@
 package cursor_test
 
 import (
+	// stdlib
 	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"testing"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	log "github.com/sirupsen/logrus"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	log "github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/mock/gomock"
+
+	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 )
 
 func TestLoadCursors(t *testing.T) {

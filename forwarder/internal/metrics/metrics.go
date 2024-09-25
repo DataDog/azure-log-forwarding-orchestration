@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	// stdlib
 	"bufio"
 	"bytes"
 	"encoding/json"
