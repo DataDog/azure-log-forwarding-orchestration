@@ -242,6 +242,8 @@ func main() {
 	var err error
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
 	defer span.Finish(tracer.WithError(err))
+
+	// Set Datadog API Key
 	ctx = context.WithValue(
 		ctx,
 		datadog.ContextAPIKeys,
@@ -251,6 +253,18 @@ func main() {
 			},
 		},
 	)
+
+	// Set Datadog site
+	ddSite := os.Getenv("DD_SITE")
+	if ddSite == "" {
+		ddSite = "datadoghq.com"
+	}
+	ctx = context.WithValue(ctx,
+		datadog.ContextServerVariables,
+		map[string]string{
+			"site": ddSite,
+		})
+
 	start := time.Now()
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.WithFields(log.Fields{"service": "forwarder"})
