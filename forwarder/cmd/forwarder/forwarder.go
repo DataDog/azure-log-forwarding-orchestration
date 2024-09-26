@@ -174,7 +174,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 		for _, logsClient := range logsClients {
 			flushErr := logsClient.Flush(ctx)
 			if flushErr != nil {
-				logger.Error(fmt.Sprintf("Error flushing logs: %w", flushErr))
+				logger.Error(fmt.Errorf("error flushing logs: %w", flushErr))
 				err = errors.Join(err, flushErr)
 			}
 		}
