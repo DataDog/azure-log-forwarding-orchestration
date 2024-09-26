@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
-from collections.abc import Coroutine, Generator
+from collections.abc import Coroutine, Generator, Iterable
 from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
@@ -33,9 +33,8 @@ from tasks.common import average, generate_unique_id, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
-SCALING_TASK_PERIOD_MINUTES = 5
 
-METRIC_COLLECTION_PERIOD_MINUTES = 30
+METRIC_COLLECTION_PERIOD_MINUTES = 5
 
 SCALE_UP_EXECUTION_SECONDS = 25
 SCALE_DOWN_EXECUTION_SECONDS = 3
@@ -44,15 +43,9 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 
-def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, oldest_timestamp: float) -> bool:
+def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
     """Check if the runtime is consistently over the threshold for the given duration"""
-    metrics = list(filter(lambda metric: metric["timestamp"] > oldest_timestamp, metrics))
-
-    # if we have no valid metrics, we can't determine if we are over the threshold
-    if not metrics:
-        return False
-
-    return all(metric["runtime_seconds"] > threshold for metric in metrics)
+    return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
 
 
 def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, since: datetime) -> bool:
@@ -103,6 +96,7 @@ class ScalingTask(Task):
         self.resource_group = get_config_option("RESOURCE_GROUP")
 
         self.background_tasks: set[AsyncTask[Any]] = set()
+        self.now = datetime.now()
 
         # Resource Cache
         resource_cache = deserialize_resource_cache(resource_cache_state)
@@ -213,115 +207,41 @@ class ScalingTask(Task):
         Additionally assigns new resources to the least busy forwarder
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
-        log_forwarders = self.assignment_cache[subscription_id][region]["configurations"]
-        resources = self.assignment_cache[subscription_id][region]["resources"]
-        now_dt = datetime.now()
-        oldest_metric_timestamp = (now_dt - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
+        region_config = self.assignment_cache[subscription_id][region]
 
+        config_ids = list(region_config["resources"].values())
+        num_resources_by_forwarder = {
+            config_id: config_ids.count(config_id) for config_id in region_config["configurations"]
+        }
+
+        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
+
+        if not any(forwarder_metrics.values()):
+            log.warning("No valid metrics found for forwarders in region %s", region)
+            return
+
+        self.onboard_new_resources(subscription_id, region, forwarder_metrics)
+        did_scale = await self.scale_up_forwarders(
+            client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics
+        )
+        # if we don't scale up, we can check for scaling down
+        if did_scale:
+            return
+
+        # TODO(AZINTS-2389): Scale down forwarders
+
+    async def collect_region_forwarder_metrics(
+        self, client: LogForwarderClient, log_forwarders: Iterable[str]
+    ) -> dict[str, list[MetricBlobEntry]]:
+        """Collects metrics for all forwarders in a region and returns them as a dictionary by config_id"""
+        oldest_metric_timestamp = (self.now - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
         metrics = await gather(
             *(
                 self.collect_forwarder_metrics(client, config_id, oldest_metric_timestamp)
                 for config_id in log_forwarders
             )
         )
-        forwarder_metrics = dict(zip(log_forwarders, metrics, strict=False))
-
-        self.onboard_new_resources(subscription_id, region, forwarder_metrics)
-
-        def _has_enough_resources_to_scale_up(config_id: str) -> bool:
-            num_resources = list(resources.values()).count(config_id)
-            if num_resources < 2:
-                log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
-                return False
-            return True
-
-        oldest_scale_up_timestamp = (now_dt - timedelta(minutes=SCALING_TASK_PERIOD_MINUTES)).timestamp()
-        forwarders_to_scale_up = [
-            config_id
-            for config_id, metrics in forwarder_metrics.items()
-            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, oldest_scale_up_timestamp)
-            and _has_enough_resources_to_scale_up(config_id)
-        ]
-        if not forwarders_to_scale_up:
-            # TODO (AZINTS-2389) implement scaling down
-            # if we don't scale up and are good to scale down
-            return
-
-        # create a second forwarder for each forwarder that needs to scale up
-        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
-
-        for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
-            if not new_forwarder:
-                log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
-                continue
-            self.split_forwarder_resources(
-                subscription_id,
-                region,
-                overwhelmed_forwarder_id,
-                new_forwarder,
-                forwarder_metrics[overwhelmed_forwarder_id],
-            )
-
-    def onboard_new_resources(
-        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
-    ) -> None:
-        """Assigns new resources to the least busy forwarder in the region"""
-        new_resources = set(self.resource_cache[subscription_id][region]) - set(
-            self.assignment_cache[subscription_id][region]["resources"]
-        )
-        if not new_resources or not forwarder_metrics:  # no new resources or no forwarders
-            return
-
-        # any forwarders without metrics we should not add more resources to, there may be something wrong
-        least_busy_forwarder_id, _ = min(
-            forwarder_metrics.items(),
-            key=lambda metrics_by_id: average(*(metric["runtime_seconds"] for metric in metrics_by_id[1])),
-        )
-
-        self.assignment_cache[subscription_id][region]["resources"].update(
-            {resource: least_busy_forwarder_id for resource in new_resources}
-        )
-
-    def split_forwarder_resources(
-        self,
-        subscription_id: str,
-        region: str,
-        underscaled_forwarder_id: str,
-        new_forwarder: LogForwarder,
-        metrics: list[MetricBlobEntry],
-    ) -> None:
-        """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
-
-        # add new config
-        self.assignment_cache[subscription_id][region]["configurations"][new_forwarder.config_id] = new_forwarder.type
-
-        if all(not metric["resource_log_volume"] for metric in metrics):
-            log.warning(
-                "Resource log volume metrics missing for forwarder %s, falling back to basic splitting",
-                underscaled_forwarder_id,
-            )
-            resources = sorted(
-                resource
-                for resource, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
-                if config_id == underscaled_forwarder_id
-            )
-            split_index = len(resources) // 2
-            self.assignment_cache[subscription_id][region]["resources"].update(
-                {resource: new_forwarder.config_id for resource in resources[split_index:]}
-            )
-            return
-
-        # organize resources by resource load
-        resource_loads = {
-            resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
-            for resource_id, config_id in self.assignment_cache[subscription_id][region]["resources"].items()
-            if config_id == underscaled_forwarder_id
-        }
-
-        # reassign some resources to the new forwarder
-        self.assignment_cache[subscription_id][region]["resources"].update(
-            {resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)}
-        )
+        return dict(zip(log_forwarders, metrics, strict=False))
 
     async def collect_forwarder_metrics(
         self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
@@ -333,10 +253,108 @@ class ScalingTask(Task):
             for metric_line in metric_lines
             if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
         ]
-        if len(forwarder_metrics) == 0:
+        if not forwarder_metrics:
             log.warning("No valid metrics found for forwarder %s", config_id)
         self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
         return forwarder_metrics
+
+    def onboard_new_resources(
+        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
+    ) -> None:
+        """Assigns new resources to the least busy forwarder in the region"""
+        new_resources = set(self.resource_cache[subscription_id][region]) - set(
+            self.assignment_cache[subscription_id][region]["resources"]
+        )
+        if not new_resources:
+            return
+
+        least_busy_forwarder_id = min(
+            # any forwarders without metrics we should not add more resources to, there may be something wrong:
+            filter(lambda forwarder_id: forwarder_metrics[forwarder_id], forwarder_metrics),
+            # find forwarder with the min average runtime
+            key=lambda forwarder_id: average(
+                *(metric["runtime_seconds"] for metric in forwarder_metrics[forwarder_id])
+            ),
+        )
+
+        self.assignment_cache[subscription_id][region]["resources"].update(
+            {resource: least_busy_forwarder_id for resource in new_resources}
+        )
+
+    async def scale_up_forwarders(
+        self,
+        client: LogForwarderClient,
+        subscription_id: str,
+        region: str,
+        num_resources_by_forwarder: dict[str, int],
+        forwarder_metrics: dict[str, list[MetricBlobEntry]],
+    ):
+        def _has_enough_resources_to_scale_up(config_id: str) -> bool:
+            if num_resources_by_forwarder[config_id] < 2:
+                log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
+                return False
+            return True
+
+        forwarders_to_scale_up = [
+            config_id
+            for config_id, metrics in forwarder_metrics.items()
+            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS)
+            and _has_enough_resources_to_scale_up(config_id)
+        ]
+
+        # create a second forwarder for each forwarder that needs to scale up
+        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
+
+        for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
+            if not new_forwarder:
+                log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
+                continue
+            self.split_forwarder_resources(
+                self.assignment_cache[subscription_id][region],
+                overwhelmed_forwarder_id,
+                new_forwarder,
+                forwarder_metrics[overwhelmed_forwarder_id],
+            )
+
+    def split_forwarder_resources(
+        self,
+        region_config: RegionAssignmentConfiguration,
+        underscaled_forwarder_id: str,
+        new_forwarder: LogForwarder,
+        metrics: list[MetricBlobEntry],
+    ) -> None:
+        """Splits the resources of an underscaled forwarder between itself and a new forwarder"""
+
+        # add new config
+        region_config["configurations"][new_forwarder.config_id] = new_forwarder.type
+
+        if all(not metric["resource_log_volume"] for metric in metrics):
+            log.warning(
+                "Resource log volume metrics missing for forwarder %s, falling back to basic splitting",
+                underscaled_forwarder_id,
+            )
+            resources = sorted(
+                resource
+                for resource, config_id in region_config["resources"].items()
+                if config_id == underscaled_forwarder_id
+            )
+            split_index = len(resources) // 2
+            region_config["resources"].update(
+                {resource: new_forwarder.config_id for resource in resources[split_index:]}
+            )
+            return
+
+        # organize resources by resource load
+        resource_loads = {
+            resource_id: sum(map(lambda m: m["resource_log_volume"].get(resource_id, 0), metrics))
+            for resource_id, config_id in region_config["resources"].items()
+            if config_id == underscaled_forwarder_id
+        }
+
+        # reassign some resources to the new forwarder
+        region_config["resources"].update(
+            {resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)}
+        )
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
         existing_log_forwarders = await client.list_log_forwarder_ids()
