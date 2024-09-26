@@ -65,7 +65,7 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 	var cursorMap map[string]int64
 	err = json.Unmarshal(data, &cursorMap)
 	if err != nil {
-		logger.Errorf("could not unmarshal log cursors: %w", err)
+		logger.Errorf(fmt.Errorf("could not unmarshal log cursors: %w", err).Error())
 		return NewCursors(nil), nil
 	}
 	return NewCursors(cursorMap), nil
