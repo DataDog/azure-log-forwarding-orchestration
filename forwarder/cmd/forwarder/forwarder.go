@@ -91,7 +91,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset, _ := cursors.GetCursor(*blob.Item.Name)
+	currentOffset := cursors.GetCursor(*blob.Item.Name)
 	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %w", *blob.Item.Name, err)

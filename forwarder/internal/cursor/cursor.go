@@ -35,13 +35,13 @@ func NewCursors(data map[string]int64) *Cursors {
 	return cursors
 }
 
-// GetCursor returns the cursor for the given key.
-func (c *Cursors) GetCursor(key string) (int64, bool) {
+// GetCursor returns the cursor for the given key or 0 if it does not exist.
+func (c *Cursors) GetCursor(key string) int64 {
 	value, found := c.Load(key)
 	if !found {
-		return 0, false
+		return 0
 	}
-	return value.(int64), true
+	return value.(int64)
 }
 
 // SetCursor sets the cursor for the given key.

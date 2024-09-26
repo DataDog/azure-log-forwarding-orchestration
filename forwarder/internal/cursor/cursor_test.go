@@ -57,8 +57,7 @@ func TestLoadCursors(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.NotNil(t, got)
-		gotValue, found := got.GetCursor(testKey)
-		assert.True(t, found)
+		gotValue := got.GetCursor(testKey)
 		assert.Equal(t, testValue, gotValue)
 	})
 
