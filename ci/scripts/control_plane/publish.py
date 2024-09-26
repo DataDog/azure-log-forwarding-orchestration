@@ -17,7 +17,7 @@ from cache.manifest_cache import (
     SCALING_TASK_ZIP,
     DIAGNOSTIC_SETTINGS_TASK_ZIP,
     MANIFEST_FILE_NAME,
-    PUBLIC_CONTAINER_URL,
+    PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
 )
 
@@ -42,14 +42,14 @@ hashes: ManifestCache = {
 
 log.info(
     "Uploading the following zip files to %s/%s:\n%s",
-    PUBLIC_CONTAINER_URL,
+    PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
     "\n".join(zips),
 )
 
 with (
     DefaultAzureCredential() as cred,
-    ContainerClient(PUBLIC_CONTAINER_URL, TASKS_CONTAINER, cred) as client,
+    ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER, cred) as client,
     ThreadPoolExecutor() as executor,
 ):
     if not client.exists():
@@ -70,4 +70,6 @@ with (
     if exceptions:
         raise SystemExit(1)
 
-log.info("Done uploading zip files to %s/%s", PUBLIC_CONTAINER_URL, TASKS_CONTAINER)
+log.info(
+    "Done uploading zip files to %s/%s", PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER
+)
