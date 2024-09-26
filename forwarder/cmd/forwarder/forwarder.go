@@ -174,7 +174,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 		for _, logsClient := range logsClients {
 			flushErr := logsClient.Flush(ctx)
 			if flushErr != nil {
-				logger.Error(fmt.Sprintf("Error flushing logs: %v", flushErr))
+				logger.Error(fmt.Sprintf("Error flushing logs: %w", flushErr))
 				err = errors.Join(err, flushErr)
 			}
 		}
@@ -293,14 +293,14 @@ func main() {
 	}
 	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
 	if err != nil {
-		logger.Fatalf("error parsing MAX_GOROUTINES: %v", err)
+		logger.Fatalf(fmt.Errorf("error parsing MAX_GOROUTINES: %w", err).Error())
 	}
 
 	// Initialize storage client
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf("error creating azure blob client: %v", err)
+		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
 		return
 	}
 	storageClient := storage.NewClient(azBlobClient)
@@ -324,7 +324,7 @@ func main() {
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
-		logger.Fatalf("error while marshalling metrics: %v", err)
+		logger.Fatalf(fmt.Errorf("error while marshalling metrics: %w", err).Error())
 	}
 
 	blobName := metrics.GetMetricFileName(time.Now())
@@ -336,6 +336,6 @@ func main() {
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 	if err != nil {
-		logger.Fatalf("error while running: %v", err)
+		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
 	}
 }
