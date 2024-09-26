@@ -79,15 +79,48 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-publish:
+forwarder-push:
   image: $DOCKER_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
   script:
-    - ci/scripts/forwarder/publish.sh
+    - ci/scripts/forwarder/build_and_push.sh
   only:
     refs:
       - main
+      -
+publish_public_tag_forwarder:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+    - when: never
+  needs:
+    - forwarder-push
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $BUILD_DOCKER_REGISTRY/$PROJECTNAME:$CI_COMMIT_TAG-amd64,$BUILD_DOCKER_REGISTRY/$PROJECTNAME:$CI_COMMIT_TAG-arm64
+    IMG_DESTINATIONS: $PROJECTNAME:$CI_COMMIT_TAG
+    IMG_SIGNING: "false"
+publish_public_latest_forwarder:
+  stage: release
+  rules:
+    - if: $CI_COMMIT_TAG
+      when: manual
+    - when: never
+  needs:
+    - forwarder-push
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $BUILD_DOCKER_REGISTRY/$PROJECTNAME:$CI_COMMIT_TAG-amd64,$BUILD_DOCKER_REGISTRY/$PROJECTNAME:$CI_COMMIT_TAG-arm64
+    IMG_DESTINATIONS: $PROJECTNAME:latest
+    IMG_SIGNING: "false"
 # ------------- CODE COV -------------
 forwarder-coverage-comment:
   image: $PR_COMMENTER_IMAGE
