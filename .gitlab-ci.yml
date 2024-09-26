@@ -96,7 +96,7 @@ publish_public_tag_forwarder:
       when: manual
     - when: never
   needs:
-    - build
+    - forwarder-build
   trigger:
     project: DataDog/public-images
     branch: main
@@ -113,7 +113,7 @@ publish_public_latest_forwarder:
     #    - when: never
     - when: manual
   needs:
-    - build
+    - forwarder-build
   trigger:
     project: DataDog/public-images
     branch: main
