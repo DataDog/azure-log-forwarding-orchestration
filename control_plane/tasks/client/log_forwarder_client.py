@@ -23,6 +23,7 @@ from azure.mgmt.appcontainers.models import (
     JobConfigurationScheduleTriggerConfig,
     JobTemplate,
     ManagedEnvironment,
+    Secret,
 )
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
@@ -75,6 +76,9 @@ FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
 DD_SITE_SETTING = "DD_SITE"
 DD_API_KEY_SETTING = "DD_API_KEY"
+
+DD_API_KEY_SECRET = "dd-api-key"
+CONNECTION_STRING_SECRET = "connection-string"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
@@ -214,6 +218,10 @@ class LogForwarderClient(AbstractAsyncContextManager):
                     schedule_trigger_config=JobConfigurationScheduleTriggerConfig(cron_expression="* * * * *"),
                     replica_timeout=1800,  # 30 minutes
                     replica_retry_limit=1,
+                    secrets=[
+                        Secret(name=DD_API_KEY_SECRET, value=self.dd_api_key),
+                        Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
+                    ],
                 ),
                 template=JobTemplate(
                     containers=[
@@ -222,8 +230,8 @@ class LogForwarderClient(AbstractAsyncContextManager):
                             image=self.forwarder_image,
                             resources=ContainerResources(cpu=0.5, memory="1Gi"),
                             env=[
-                                EnvironmentVar(name="AzureWebJobsStorage", value=connection_string),
-                                EnvironmentVar(name=DD_API_KEY_SETTING, value=self.dd_api_key),
+                                EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
+                                EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
                                 EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
                             ],
                         )
