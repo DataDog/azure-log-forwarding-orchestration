@@ -48,7 +48,7 @@ func (m *MockLogsApiInterface) SubmitLog(ctx context.Context, body []datadogV2.H
 	for _, a := range o {
 		varargs = append(varargs, a)
 	}
-	ret := m.ctrl.Call(m, "SubmitLog", varargs...)
+	ret := m.ctrl.Call(m, "AddLog", varargs...)
 	ret0, _ := ret[0].(any)
 	ret1, _ := ret[1].(*http.Response)
 	ret2, _ := ret[2].(error)
@@ -59,5 +59,5 @@ func (m *MockLogsApiInterface) SubmitLog(ctx context.Context, body []datadogV2.H
 func (mr *MockLogsApiInterfaceMockRecorder) SubmitLog(ctx, body any, o ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{ctx, body}, o...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitLog", reflect.TypeOf((*MockLogsApiInterface)(nil).SubmitLog), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLog", reflect.TypeOf((*MockLogsApiInterface)(nil).SubmitLog), varargs...)
 }

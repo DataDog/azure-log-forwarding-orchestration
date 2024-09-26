@@ -1,6 +1,7 @@
 package main
 
 import (
+	// stdlib
 	"bufio"
 	"bytes"
 	"context"
@@ -11,24 +12,25 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
-
-	"google.golang.org/api/iterator"
-
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
-
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/api/iterator"
+
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
@@ -44,7 +46,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 		}
 
 		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %v", container, currErr), err)
+			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %w", container, currErr), err)
 		}
 
 		if blobList == nil {
@@ -72,7 +74,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 		}
 
 		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of containers: %v", currErr), err)
+			err = errors.Join(fmt.Errorf("getting next page of containers: %w", currErr), err)
 			continue
 		}
 
@@ -88,13 +90,16 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 	return containers, err
 }
 
-func getLogs(ctx context.Context, storageClient *storage.Client, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	content, err := storageClient.DownloadSegment(ctx, blob, 0)
+func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
+	currentOffset := cursors.GetCursor(*blob.Item.Name)
+	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
 	if err != nil {
-		return fmt.Errorf("download range for %s: %v", *blob.Item.Name, err)
+		return fmt.Errorf("download range for %s: %w", *blob.Item.Name, err)
 	}
 
-	return parseLogs(*content.Content, logsChannel)
+	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
+
+	return parseLogs(content.Content, logsChannel)
 }
 
 func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
@@ -116,7 +121,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *lo
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
-		currErr := logsClient.SubmitLog(ctx, logItem)
+		currErr := logsClient.AddLog(ctx, logItem)
 		err = errors.Join(err, currErr)
 	}
 	flushErr := logsClient.Flush(ctx)
@@ -142,7 +147,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	metricBuffer, err := metricBlob.ToBytes()
 
 	if err != nil {
-		return 0, fmt.Errorf("error while marshalling metrics: %v", err)
+		return 0, fmt.Errorf("error while marshalling metrics: %w", err)
 	}
 
 	blobName := metrics.GetMetricFileName(time.Now())
@@ -169,11 +174,17 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 		for _, logsClient := range logsClients {
 			flushErr := logsClient.Flush(ctx)
 			if flushErr != nil {
-				logger.Error(fmt.Sprintf("Error flushing logs: %v", flushErr))
+				logger.Error(fmt.Errorf("error flushing logs: %w", flushErr))
 				err = errors.Join(err, flushErr)
 			}
 		}
 	}()
+
+	// Download cursors
+	cursors, err := cursor.LoadCursors(ctx, storageClient, logger)
+	if err != nil {
+		return err
+	}
 
 	channelSize := len(logsClients)
 	var resourceVolumes map[string]int64
@@ -217,7 +228,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 			continue
 		}
 		downloadEg.Go(func() error {
-			return getLogs(segmentCtx, storageClient, blob, logCh)
+			return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
 		})
 	}
 
@@ -227,6 +238,10 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	err = errors.Join(err, logsEg.Wait())
 	close(resourceIdCh)
 	err = errors.Join(err, logVolumeEg.Wait())
+
+	// Save cursors
+	cursorErr := cursors.SaveCursors(ctx, storageClient)
+	err = errors.Join(err, cursorErr)
 
 	// Write forwarder metrics
 	logCount, metricErr := writeMetrics(ctx, storageClient, resourceVolumes, start)
@@ -292,14 +307,14 @@ func main() {
 	}
 	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
 	if err != nil {
-		logger.Fatalf("error parsing MAX_GOROUTINES: %v", err)
+		logger.Fatalf(fmt.Errorf("error parsing MAX_GOROUTINES: %w", err).Error())
 	}
 
 	// Initialize storage client
 	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf("error creating azure blob client: %v", err)
+		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
 		return
 	}
 	storageClient := storage.NewClient(azBlobClient)
@@ -320,15 +335,13 @@ func main() {
 	resourceVolumeMap := make(map[string]int64)
 	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
 	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
-
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
-		logger.Fatalf("error while marshalling metrics: %v", err)
+		logger.Fatalf(fmt.Errorf("error while marshalling metrics: %w", err).Error())
 	}
 
-	dateString := time.Now().UTC().Format("2006-01-02-15")
-	blobName := dateString + ".txt"
+	blobName := metrics.GetMetricFileName(time.Now())
 
 	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
 
@@ -337,6 +350,6 @@ func main() {
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 	if err != nil {
-		logger.Fatalf("error while running: %v", err)
+		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
 	}
 }

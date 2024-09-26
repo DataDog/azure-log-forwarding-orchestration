@@ -1,13 +1,14 @@
 package logs
 
 import (
+	// stdlib
 	"context"
 	"net/http"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
+	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
 // BufferSize is the maximum number of logs per post to Logs API
@@ -42,13 +43,15 @@ type Client struct {
 	logsBuffer    []*Log
 }
 
+// NewClient creates a new Client
 func NewClient(logsApi DatadogLogsSubmitter) *Client {
 	return &Client{
 		logsSubmitter: logsApi,
 	}
 }
 
-func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
+// AddLog adds a log to the buffer for future submission
+func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
 	c.logsBuffer = append(c.logsBuffer, log)
 
 	if len(c.logsBuffer) >= BufferSize {
@@ -57,6 +60,7 @@ func (c *Client) SubmitLog(ctx context.Context, log *Log) (err error) {
 	return nil
 }
 
+// Flush sends all buffered logs to the Datadog API
 func (c *Client) Flush(ctx context.Context) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Flush")
 	defer span.Finish(tracer.WithError(err))

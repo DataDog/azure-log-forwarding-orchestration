@@ -1,17 +1,23 @@
 package storage_test
 
 import (
+	// stdlib
 	"context"
 	"errors"
 	"testing"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
+
+	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
 func downloadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedResponse int64, expectedErr error) error {

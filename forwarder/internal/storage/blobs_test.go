@@ -1,6 +1,7 @@
 package storage_test
 
 import (
+	// stdlib
 	"bytes"
 	"context"
 	"errors"
@@ -11,16 +12,21 @@ import (
 	"testing"
 	"time"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/go-autorest/autorest/to"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/api/iterator"
+
+	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
 func newBlobItem(name string) *container.BlobItem {
@@ -80,41 +86,6 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 
 	}
 	return results, nil
-}
-
-func uploadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedUpResponse azblob.UploadBufferResponse, expectedUpErr error, expectedDownResponse azblob.DownloadStreamResponse, expectedDownErr error, upCalls int, downCalls int) error {
-	ctrl := gomock.NewController(t)
-
-	var newBuf []byte
-
-	if expectedDownErr == nil {
-		originalBuf, err := io.ReadAll(expectedDownResponse.Body)
-		if err != nil {
-			return err
-		}
-
-		//the body is empty after reading, thus we need to repopulate
-		bodyString := string(originalBuf[:])
-		stringReader := strings.NewReader(bodyString)
-		stringReadCloser := io.NopCloser(stringReader)
-		expectedDownResponse.Body = stringReadCloser
-
-		newBuf = append(originalBuf, buffer...)
-	} else {
-		newBuf = buffer
-	}
-
-	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().CreateContainer(gomock.Any(), containerName, gomock.Any()).Return(azblob.CreateContainerResponse{}, nil)
-	mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, newBuf, gomock.Any()).Return(expectedUpResponse, expectedUpErr).Times(upCalls)
-	mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(expectedDownResponse, expectedDownErr).Times(downCalls)
-
-	client := storage.NewClient(mockClient)
-
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-	defer span.Finish()
-
-	return client.UploadBlob(ctx, containerName, blobName, buffer)
 }
 
 func TestListBlobs(t *testing.T) {
@@ -191,23 +162,34 @@ func TestListBlobs(t *testing.T) {
 	})
 }
 
-func TestUploadBlob(t *testing.T) {
+func TestAppendBlob(t *testing.T) {
 	t.Parallel()
 
 	t.Run("uploads a buffer", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
+		ctrl := gomock.NewController(t)
+
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		client := storage.NewClient(mockClient)
+
 		containerName := "container"
 		blobName := "blob"
 		buffer := []byte("data")
-		expectedUpResponse := azblob.UploadBufferResponse{}
-		stringReader := strings.NewReader("shiny!")
+		oldBuffer := []byte("shiny!")
+		stringReader := strings.NewReader(string(oldBuffer))
 		stringReadCloser := io.NopCloser(stringReader)
 		downResp := azblob.DownloadStreamResponse{}
 		downResp.Body = stringReadCloser
+		expectedBuffer := append(oldBuffer, []byte("\n")...)
+		expectedBuffer = append(expectedBuffer, buffer...)
+
+		mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(downResp, nil)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), containerName, gomock.Any()).Return(azblob.CreateContainerResponse{}, nil)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, expectedBuffer, gomock.Any()).Return(azblob.UploadBufferResponse{}, nil)
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, nil, 1, 1)
+		err := client.AppendBlob(context.Background(), containerName, blobName, buffer)
 
 		// THEN
 		assert.Nil(t, err)
@@ -216,44 +198,52 @@ func TestUploadBlob(t *testing.T) {
 	t.Run("uploads a buffer when there is no previous buffer", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
+		ctrl := gomock.NewController(t)
+
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		client := storage.NewClient(mockClient)
+
 		containerName := "container"
 		blobName := "blob"
 		buffer := []byte("data")
-		expectedUpResponse := azblob.UploadBufferResponse{}
-		stringReader := strings.NewReader("shiny!")
-		stringReadCloser := io.NopCloser(stringReader)
 		downResp := azblob.DownloadStreamResponse{}
-		downResp.Body = stringReadCloser
 		resp := http.Response{
-			Body: io.NopCloser(bytes.NewBufferString("test")),
+			Body:       io.NopCloser(bytes.NewBufferString("test")),
+			StatusCode: 404,
 		}
 		downErr := runtime.NewResponseErrorWithErrorCode(&resp, "BlobNotFound")
 
+		mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(downResp, downErr)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), containerName, gomock.Any()).Return(azblob.CreateContainerResponse{}, nil)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), containerName, blobName, buffer, gomock.Any()).Return(azblob.UploadBufferResponse{}, nil)
+
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 1, 1)
+		err := client.AppendBlob(context.Background(), containerName, blobName, buffer)
 
 		// THEN
 		assert.Nil(t, err)
 	})
 
-	t.Run("uploads a buffer when there is an non BlobNotFound error", func(t *testing.T) {
+	t.Run("does not upload a buffer when there is an non BlobNotFound error", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
+		ctrl := gomock.NewController(t)
+
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		client := storage.NewClient(mockClient)
+
 		containerName := "container"
 		blobName := "blob"
 		buffer := []byte("data")
-		expectedUpResponse := azblob.UploadBufferResponse{}
-		stringReader := strings.NewReader("shiny!")
-		stringReadCloser := io.NopCloser(stringReader)
 		downResp := azblob.DownloadStreamResponse{}
-		downResp.Body = stringReadCloser
 		resp := http.Response{
 			Body: io.NopCloser(bytes.NewBufferString("test")),
 		}
 		downErr := runtime.NewResponseErrorWithErrorCode(&resp, "Invalid")
+		mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(downResp, downErr)
 
 		// WHEN
-		err := uploadBlob(t, context.Background(), containerName, blobName, buffer, expectedUpResponse, nil, downResp, downErr, 0, 1)
+		err := client.AppendBlob(context.Background(), containerName, blobName, buffer)
 
 		// THEN
 		assert.Contains(t, err.Error(), downErr.Error())

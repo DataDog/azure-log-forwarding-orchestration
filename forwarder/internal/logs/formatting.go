@@ -1,10 +1,12 @@
 package logs
 
 import (
+	// stdlib
 	"bytes"
 	"encoding/json"
 	"strings"
 
+	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
 
@@ -91,6 +93,7 @@ func getForwarderTags() []string {
 	return []string{"forwarder:lfo"}
 }
 
+// NewLog creates a new Log from the given log bytes
 func NewLog(logBytes []byte) (*Log, error) {
 	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
 	log, err := unmarshall(logBytes)
