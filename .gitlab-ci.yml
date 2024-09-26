@@ -80,9 +80,9 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-push:
+forwarder-build:
   image: $DOCKER_IMAGE
-  stage: after-test
+  stage: build
   tags: ["arch:amd64"]
   script:
     - ci/scripts/forwarder/build_and_push.sh
@@ -96,7 +96,7 @@ publish_public_tag_forwarder:
       when: manual
     - when: never
   needs:
-    - after-test
+    - build
   trigger:
     project: DataDog/public-images
     branch: main
@@ -113,7 +113,7 @@ publish_public_latest_forwarder:
     #    - when: never
     - when: manual
   needs:
-    - after-test
+    - build
   trigger:
     project: DataDog/public-images
     branch: main
