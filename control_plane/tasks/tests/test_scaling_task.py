@@ -44,6 +44,17 @@ def minutes_ago(minutes: float) -> float:
     return (datetime.now() - timedelta(minutes=minutes)).timestamp()
 
 
+def generate_metrics(runtime: float, resource_log_volume: dict[str, int]) -> list[MetricBlobEntry]:
+    return [
+        {
+            "runtime_seconds": runtime,
+            "timestamp": minutes_ago((i * 0.5) + 0.5),
+            "resource_log_volume": resource_log_volume.copy(),
+        }
+        for i in range(3)
+    ]
+
+
 class TestScalingTask(TaskTestCase):
     TASK_NAME = SCALING_TASK_NAME
     maxDiff = 2000
@@ -683,6 +694,88 @@ class TestScalingTask(TaskTestCase):
             },
         }
         self.assertEqual(self.cache, expected_cache)
+
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_forwarder_without_resources_is_cleaned_up(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.side_effect = lambda _c, config_id, _t: {
+            OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
+            NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource4": 4000}),
+        }.get(config_id, [])
+
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                            NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_awaited_once_with(NEW_LOG_FORWARDER_ID)
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                }
+            },
+        )
+
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_forwarders_are_coalesced(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.side_effect = lambda _c, config_id, _t: {
+            OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
+            NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource4": 4000}),
+        }.get(config_id, [])
+
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {
+                            "resource1": OLD_LOG_FORWARDER_ID,
+                            "resource2": OLD_LOG_FORWARDER_ID,
+                            "resource3": OLD_LOG_FORWARDER_ID,
+                            "resource4": NEW_LOG_FORWARDER_ID,
+                        },
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                            NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_awaited_once_with(NEW_LOG_FORWARDER_ID)
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {
+                            "resource1": OLD_LOG_FORWARDER_ID,
+                            "resource2": OLD_LOG_FORWARDER_ID,
+                            "resource3": OLD_LOG_FORWARDER_ID,
+                            "resource4": OLD_LOG_FORWARDER_ID,
+                        },
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                }
+            },
+        )
 
 
 class TestScalingTaskHelpers(TestCase):
