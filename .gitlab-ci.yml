@@ -104,4 +104,4 @@ make-container-public:
   stage: after-test
   tags: ["arch:amd64"]
   script:
-    - ci/scripts/make-container-public.sh
+    - source /venv/bin/activate; python ci/scripts/make-container-public.py
