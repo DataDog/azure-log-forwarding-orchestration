@@ -105,3 +105,5 @@ make-container-public:
   tags: ["arch:amd64"]
   script:
     - source /venv/bin/activate; python ci/scripts/make-container-public.py
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
