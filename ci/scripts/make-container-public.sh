@@ -6,6 +6,8 @@ set -euxo pipefail
 
 pip install azure-cli
 
+az login -i
+
 connection=$(az storage account show-connection-string \
     --resource-group azints-us3-prod-dog \
     --name ddazurelfo \
