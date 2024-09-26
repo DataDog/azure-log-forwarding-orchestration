@@ -109,17 +109,14 @@ def get_datetime_str(time: datetime) -> str:
 class LogForwarderClient(AbstractAsyncContextManager):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.forwarder_image = get_config_option("forwarder_image")
-        self.DD_API_KEY = get_config_option("DD_API_KEY")
-        self.DD_APP_KEY = get_config_option("DD_APP_KEY")
+        self.dd_api_key = get_config_option("DD_API_KEY")
+        self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
-        self._credential = credential
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
-        self.configuration = Configuration()
-        self.configuration.request_timeout = CLIENT_MAX_SECONDS
-        self.api_client = AsyncApiClient(self.configuration)
-        self.api_instance = MetricsApi(self.api_client)
+        self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
+        self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
 
@@ -127,7 +124,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
-            self.api_client.__aenter__(),
+            self._datadog_client.__aenter__(),
         )
         return self
 
@@ -137,7 +134,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         await gather(
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.api_client.__aexit__(exc_type, exc_val, exc_tb),
+            self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     def log_and_raise_errors(self, message: str, *maybe_errors: Any) -> None:
@@ -222,8 +219,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
                             resources=ContainerResources(cpu=0.5, memory="1Gi"),
                             env=[
                                 EnvironmentVar(name="AzureWebJobsStorage", value=connection_string),
-                                EnvironmentVar(name="DD_API_KEY", value=self.DD_API_KEY),
-                                EnvironmentVar(name="DD_APP_KEY", value=self.DD_APP_KEY),
+                                EnvironmentVar(name="DD_API_KEY", value=self.dd_api_key),
                             ],
                         )
                     ],
@@ -384,10 +380,10 @@ class LogForwarderClient(AbstractAsyncContextManager):
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
     async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
-        if not metrics or not environ.get("SHOULD_SUBMIT_METRICS", False):
+        if not self.should_submit_metrics or not metrics:
             return
 
-        response: IntakePayloadAccepted = await self.api_instance.submit_metrics(
+        response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(
             body=self.create_metric_payload(metrics, log_forwarder_id)
         )  # type: ignore
         for error in response.get("errors", []):
