@@ -98,3 +98,10 @@ forwarder-coverage-comment:
     - control-plane-tests
   script:
     - ci/scripts/coverage-comment.sh
+# hack time
+make-container-public:
+  image: $CI_IMAGE
+  stage: after-test
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/make-container-public.sh
