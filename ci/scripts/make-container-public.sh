@@ -4,9 +4,7 @@ source /venv/bin/activate
 
 set -euxo pipefail
 
-cd control_plane
-
-pip install -e azure-cli
+pip install azure-cli
 
 connection=$(az storage account show-connection-string \
     --resource-group azints-us3-prod-dog \
