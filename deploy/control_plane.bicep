@@ -91,7 +91,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
       ])
       linuxFxVersion: 'Python|3.11'
     }
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     httpsOnly: true
   }
   dependsOn: [fileServices]
@@ -113,7 +113,7 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
       ])
       linuxFxVersion: 'Python|3.11'
     }
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     httpsOnly: true
   }
   dependsOn: [fileServices]
@@ -140,7 +140,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
       ])
       linuxFxVersion: 'Python|3.11'
     }
-    publicNetworkAccess: 'Disabled'
+    publicNetworkAccess: 'Enabled'
     httpsOnly: true
   }
   dependsOn: [fileServices]
