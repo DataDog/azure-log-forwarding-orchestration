@@ -48,9 +48,6 @@ build-and-publish-tasks:
   image: $CI_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
-  dependencies:
-    - forwarder-tests
-    - control-plane-tests
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
