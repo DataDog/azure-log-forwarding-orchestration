@@ -33,7 +33,7 @@ MANIFEST_SCHEMA: dict[str, Any] = {
 MANIFEST_CACHE_NAME = "manifest.json"
 
 
-PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
+PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfodemo.blob.core.windows.net"
 TASKS_CONTAINER = "lfo"
 
 RESOURCES_TASK_ZIP = "resources_task.zip"
