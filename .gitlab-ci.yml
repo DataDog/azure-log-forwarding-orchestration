@@ -121,7 +121,7 @@ publish_public_latest_forwarder:
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/lfo-forwarder:$IMAGE_TAG
+    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:$IMAGE_TAG
     IMG_DESTINATIONS: forwarder:latest
     IMG_SIGNING: "false"
 # ------------- CODE COV -------------
