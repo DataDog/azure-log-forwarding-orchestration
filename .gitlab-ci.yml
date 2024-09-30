@@ -53,9 +53,9 @@ build-and-publish-tasks:
   script:
     - ci/scripts/control_plane/build_tasks.sh
     - ci/scripts/control_plane/publish.py
-#  only:
-#    refs:
-#      - main
+  only:
+    refs:
+      - main
 publish-deployer:
   image: $DOCKER_IMAGE
   stage: after-test
