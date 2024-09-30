@@ -2,7 +2,7 @@ variables:
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
-  REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/azure/
+  REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo/
 stages:
   - ci-image
   - test
@@ -86,7 +86,7 @@ forwarder-build:
   stage: build
   tags: ["arch:amd64"]
   script:
-    - ci/scripts/forwarder/build_and_push.sh registry.ddbuild.io/azure/lfo-forwarder:$CI_COMMIT_TAG
+    - ci/scripts/forwarder/build_and_push.sh
 #  only:
 #    refs:
 #      - main
