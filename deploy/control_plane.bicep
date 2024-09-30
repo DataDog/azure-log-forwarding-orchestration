@@ -43,6 +43,18 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   sku: { name: 'Standard_LRS' }
 }
 
+resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
+  name: 'default'
+  parent: storageAccount
+  properties: {}
+}
+
+resource cacheContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  name: 'control-plane-cache'
+  parent: blobServices
+  properties: {}
+}
+
 resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
   name: 'resources-task-${lfoId}'
   location: controlPlaneLocation
