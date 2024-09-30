@@ -68,7 +68,7 @@ class DeployerTask(Task):
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
         self.control_plane_id = generate_unique_id()
-        self.public_storage_client = ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER, self.credential)
+        self.public_storage_client = ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
         self.storage_client = StorageManagementClient(self.credential, self.subscription_id)
