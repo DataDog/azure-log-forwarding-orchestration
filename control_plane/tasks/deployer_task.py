@@ -179,10 +179,12 @@ class DeployerTask(Task):
         log.info(f"Deploying {component}")
         if component == "forwarder":
             return await self.deploy_log_forwarder_image()
-        task_prefix = component.replace("_", "-") + "-"
+        task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
         if not function_app:
-            log.error(f"Function app for {component} not found, skipping deployment")
+            log.error(
+                f"Function app for {component} not found in {current_components.function_apps}, skipping deployment"
+            )
             return
         try:
             zip_data = await self.download_function_app_data(component)
