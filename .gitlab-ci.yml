@@ -2,7 +2,7 @@ variables:
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
-  REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo/
+  REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo
   IMAGE_TAG: v$CI_PIPELINE_IID
 stages:
   - ci-image
