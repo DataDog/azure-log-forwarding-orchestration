@@ -44,7 +44,7 @@ DEPLOYER_TASK_NAME = "deployer_task"
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_PREFIX = "ddlfocontrol"
 SCALING_TASK_PREFIX = "scaling-task-"
-RESOURCES_TASK_PREFIX = "resource-task-"
+RESOURCES_TASK_PREFIX = "resources-task-"
 DIAGNOSTIC_SETTINGS_TASK_PREFIX = "diagnostic-settings-task-"
 
 
