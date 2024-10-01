@@ -94,18 +94,18 @@ forwarder-tag-build:
   image: $DOCKER_IMAGE
   stage: build
   tags: ["arch:amd64"]
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v.*/'
-      when: manual
-    - when: never
+  #  rules:
+  #    - if: '$CI_COMMIT_TAG =~ /^v.*/'
+  #      when: manual
+  #    - when: never
   script:
-    - ci/scripts/forwarder/build_and_push.sh ${CI_COMMIT_TAG}
+    - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 publish_public_tag_forwarder:
   stage: release
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v.*/'
-      when: manual
-    - when: never
+  #  rules:
+  #    - if: '$CI_COMMIT_TAG =~ /^v.*/'
+  #      when: manual
+  #    - when: never
   needs:
     - forwarder-build
   trigger:
@@ -113,24 +113,8 @@ publish_public_tag_forwarder:
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:${CI_COMMIT_TAG}
-    IMG_DESTINATIONS: forwarder:${CI_COMMIT_TAG}
-    IMG_SIGNING: "false"
-publish_public_latest_forwarder:
-  stage: release
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v.*/'
-      when: manual
-    - when: never
-  needs:
-    - forwarder-build
-  trigger:
-    project: DataDog/public-images
-    branch: main
-    strategy: depend
-  variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:${CI_COMMIT_TAG}
-    IMG_DESTINATIONS: forwarder:latest
+    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
 # ------------- CODE COV -------------
 coverage-comment:
