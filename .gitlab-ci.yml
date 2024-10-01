@@ -87,7 +87,7 @@ forwarder-build:
   stage: build
   tags: ["arch:amd64"]
   script:
-    - ci/scripts/forwarder/build_and_push.sh $IMAGE_TAG
+    - ci/scripts/forwarder/build_and_push.sh ${IMAGE_TAG}
 #  only:
 #    refs:
 #      - main
@@ -104,8 +104,8 @@ publish_public_tag_forwarder:
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:$IMAGE_TAG
-    IMG_DESTINATIONS: forwarder:$IMAGE_TAG
+    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:${IMAGE_TAG}
+    IMG_DESTINATIONS: forwarder:${IMAGE_TAG}
     IMG_SIGNING: "false"
 publish_public_latest_forwarder:
   stage: release
@@ -121,7 +121,7 @@ publish_public_latest_forwarder:
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:$IMAGE_TAG
+    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:${IMAGE_TAG}
     IMG_DESTINATIONS: forwarder:latest
     IMG_SIGNING: "false"
 # ------------- CODE COV -------------
