@@ -142,7 +142,7 @@ func TestRun(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		var submittedLogs []datadogV2.HTTPLogItem
-		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
+		mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
 		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
 			submittedLogs = append(submittedLogs, body...)
 			return nil, nil, nil
@@ -195,7 +195,7 @@ func TestProcessLogs(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 		var submittedLogs []datadogV2.HTTPLogItem
-		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
+		mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
 		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
 			submittedLogs = append(submittedLogs, body...)
 			return nil, nil, nil
