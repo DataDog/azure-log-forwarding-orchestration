@@ -33,6 +33,10 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
+// maxBufferSize is the maximum buffer to use for scanning logs
+// logs greater than this buffer will be dropped
+const maxBufferSize = int(^uint(0) >> 1)
+
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
 	var err error
@@ -104,6 +108,11 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 
 func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	scanner := bufio.NewScanner(bytes.NewReader(data))
+
+	// set buffer size so we can process logs bigger than 65kb
+	buffer := make([]byte, 0)
+	scanner.Buffer(buffer, maxBufferSize)
+
 	for scanner.Scan() {
 		currLog, currErr := logs.NewLog([]byte(scanner.Text()))
 		if currErr != nil {
@@ -116,12 +125,16 @@ func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	return err
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.AddLog(ctx, logItem)
+		var invalidLogError logs.InvalidLogError
+		if errors.As(currErr, &invalidLogError) {
+			logger.Warning(invalidLogError.Error())
+		}
 		err = errors.Join(err, currErr)
 	}
 	flushErr := logsClient.Flush(ctx)
@@ -202,7 +215,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logCh, resourceIdCh)
+			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh)
 		})
 	}
 

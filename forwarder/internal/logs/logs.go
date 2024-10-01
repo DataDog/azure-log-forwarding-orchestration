@@ -1,8 +1,13 @@
 package logs
 
 import (
+	"bytes"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+
 	// stdlib
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,6 +15,53 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
+
+type Log struct {
+	ByteSize   int
+	Content    string
+	ResourceId string
+	Category   string
+	Tags       []string
+}
+
+func (l *Log) Valid() bool {
+	return l.ByteSize < MaxPayloadSize
+}
+
+// NewLog creates a new Log from the given log bytes
+func NewLog(logBytes []byte) (*Log, error) {
+	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
+	log, err := unmarshall(logBytes)
+	if err != nil {
+		return nil, err
+	}
+	parsedId, err := arm.ParseResourceID(log.ResourceId)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Tags = getResourceIdTags(parsedId)
+	log.Tags = append(log.Tags, getForwarderTags()...)
+
+	return log, nil
+}
+
+// InvalidLogError represents an error for when a log is not valid
+type InvalidLogError struct {
+	Message string
+}
+
+// Error returns a string representation of the InvalidLogError
+func (e InvalidLogError) Error() string {
+	runes := []rune(e.Message)
+	var message string
+	if len(runes) > 100 {
+		message = string(runes[:100])
+	} else {
+		message = e.Message
+	}
+	return fmt.Sprintf("invalid log: %s", message)
+}
 
 // bufferSize is the maximum number of logs per post to Logs API
 // https://docs.datadoghq.com/api/latest/logs/
@@ -57,6 +109,11 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 
 // AddLog adds a log to the buffer for future submission
 func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
+	if !log.Valid() {
+		return InvalidLogError{
+			Message: "cannot submit log: " + log.Content,
+		}
+	}
 	if c.shouldFlush(log) {
 		err = c.Flush(ctx)
 	}
@@ -87,6 +144,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	return err
 }
 
+// shouldFlush checks if adding the current log to the buffer would result in an invalid payload
 func (c *Client) shouldFlush(log *Log) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.ByteSize >= MaxPayloadSize
 }
