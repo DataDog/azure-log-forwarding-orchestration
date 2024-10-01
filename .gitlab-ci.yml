@@ -100,14 +100,14 @@ forwarder-tag-build:
   #    - when: never
   script:
     - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-publish_public_tag_forwarder:
+publish_forwarder:
   stage: release
   #  rules:
   #    - if: '$CI_COMMIT_TAG =~ /^v.*/'
   #      when: manual
   #    - when: never
   needs:
-    - forwarder-build
+    - forwarder-tag-build
   trigger:
     project: DataDog/public-images
     branch: main
