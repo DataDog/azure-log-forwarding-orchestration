@@ -187,7 +187,9 @@ class DeployerTask(Task):
             )
             return
         try:
+            log.info(f"Downloading function app data for {component}")
             zip_data = await self.download_function_app_data(component)
+            log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
         except Exception:
             log.exception(f"Failed to deploy {component}")
