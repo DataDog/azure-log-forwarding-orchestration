@@ -104,7 +104,7 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
 	if !log.IsValid() {
 		return InvalidLogError{
-			Log: *log,
+			log: *log,
 		}
 	}
 	if c.shouldFlush(log) {

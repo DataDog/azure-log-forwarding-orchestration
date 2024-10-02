@@ -264,6 +264,8 @@ func TestProcessLogs(t *testing.T) {
 		logger.SetOutput(buffer)
 
 		var invalidLogError logs.InvalidLogError
+		parsedLog, err := logs.NewLog(invalidLog)
+		require.NoError(t, err)
 
 		// WHEN
 		eg.Go(func() error {
@@ -275,10 +277,10 @@ func TestProcessLogs(t *testing.T) {
 			return parseLogs(invalidLog, logsCh)
 		})
 
-		err := eg.Wait()
+		err = eg.Wait()
 
 		// THEN
-		assert.GreaterOrEqual(t, len(invalidLog), maxBufferSize)
+		assert.False(t, parsedLog.IsValid())
 		assert.ErrorAs(t, err, &invalidLogError)
 		assert.Contains(t, string(buffer.Bytes()), "invalid log")
 	})
