@@ -7,8 +7,7 @@ stages:
   - ci-image
   - test
   - after-test
-  - build
-  - release
+  - build-and-release
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
@@ -49,7 +48,7 @@ type-check:
     - ci/scripts/control_plane/type-check.sh
 build-and-publish-tasks:
   image: $CI_IMAGE
-  stage: build
+  stage: build-and-release
   tags: ["arch:amd64"]
   dependencies:
     - forwarder-tests
@@ -64,7 +63,7 @@ build-and-publish-tasks:
       - main
 build-deployer:
   image: $DOCKER_IMAGE
-  stage: build
+  stage: build-and-release
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -81,33 +80,31 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-build:
+forwarder-build-latest:
   image: $DOCKER_IMAGE
-  stage: build
+  stage: build-and-release
   tags: ["arch:amd64"]
   only:
     refs:
       - main
   script:
-    - ci/scripts/forwarder/build_and_push.sh prerelease
-forwarder-tag-build:
+    - ci/scripts/forwarder/build_and_push.sh latest
+forwarder-build-tagged:
   image: $DOCKER_IMAGE
-  stage: build
+  stage: build-and-release
   tags: ["arch:amd64"]
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v.*/'
-      when: manual
-    - when: never
+  only:
+    refs:
+      - main
   script:
     - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-publish_forwarder:
-  stage: release
+forwarder-publish:
+  stage: build-and-release
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v.*/'
+    - if: $CI_COMMIT_BRANCH == "main"
       when: manual
-    - when: never
   needs:
-    - forwarder-tag-build
+    - forwarder-build-tagged
   trigger:
     project: DataDog/public-images
     branch: main
