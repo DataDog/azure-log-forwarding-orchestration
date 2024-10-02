@@ -33,8 +33,9 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
-// maxBufferSize is the maximum buffer to use for scanning logs
-// logs greater than this buffer will be dropped
+// maxBufferSize is the maximum buffer to use for scanning logs.
+// Logs greater than this buffer will be dropped by bufio.Scanner.
+// The buffer is defaulted to the maximum value of an integer.
 const maxBufferSize = int(^uint(0) >> 1)
 
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {

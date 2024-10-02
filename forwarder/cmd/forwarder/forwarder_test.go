@@ -278,6 +278,7 @@ func TestProcessLogs(t *testing.T) {
 		err := eg.Wait()
 
 		// THEN
+		assert.GreaterOrEqual(t, len(invalidLog), maxBufferSize)
 		assert.ErrorAs(t, err, &invalidLogError)
 		assert.Contains(t, string(buffer.Bytes()), "invalid log")
 	})
