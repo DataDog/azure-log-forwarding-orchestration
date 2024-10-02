@@ -24,8 +24,7 @@ for task in $tasks; do
         --output-file ./dist/$task/$task/task.py
 
     : requirements.txt
-    # TODO(AZINTS-2728): This is a hack to get the dependencies for the task. We should ideally only pull in the dependencies for the task
-    python -c "import tomllib; print('\n'.join(tomllib.load(open('./control_plane/pyproject.toml','rb'))['project']['dependencies']))" \
+    python -c "import tomllib; project = tomllib.load(open('./control_plane/pyproject.toml','rb'))['project']; print('\n'.join(project['dependencies'] + project['optional-dependencies']['$task']))" \
         > ./dist/$task/requirements.txt
 
     : entrypoint
