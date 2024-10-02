@@ -51,7 +51,7 @@ def partition_resources(
     function_apps: list[Resource] = []
     everything_else: list[Resource] = []
     for resource in resources:
-        if resource.type.lower() == "microsoft.web/sites":  # type: ignore
+        if resource.type.lower() == "microsoft.app/jobs":  # type: ignore
             function_apps.append(resource)
         else:
             everything_else.append(resource)
@@ -65,9 +65,9 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
         log.info(f"Would delete {resource.id}")
         return
     log.info(f"Deleting... {resource.id}")
-    if resource.type.lower() == "microsoft.app/jobs":
+    if resource.type.lower() == "microsoft.app/jobs":  # type: ignore
         api_version = "2024-03-01"
-    elif resource.type.lower() == "microsoft.app/managedenvironments":
+    elif resource.type.lower() == "microsoft.app/managedenvironments":  # type: ignore
         api_version = "2022-03-01"
     else:
         api_version = "2024-01-01"
@@ -87,7 +87,7 @@ async def main():
         cred, sub_id
     ) as client:
         resources = client.resources.list()
-        function_apps, everything_else = partition_resources(
+        jobs, everything_else = partition_resources(
             [
                 resource
                 async for resource in resources
@@ -96,9 +96,9 @@ async def main():
         )
 
         # delete any function apps before we delete the rest to avoid conflicts
-        for i in range(0, len(function_apps), BATCH_SIZE):
+        for i in range(0, len(jobs), BATCH_SIZE):
             await gather(
-                *[delete_resource(client, r) for r in function_apps[i : i + BATCH_SIZE]]
+                *[delete_resource(client, r) for r in jobs[i : i + BATCH_SIZE]]
             )
 
         for i in range(0, len(everything_else), BATCH_SIZE):
