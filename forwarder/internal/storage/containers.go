@@ -15,13 +15,13 @@ import (
 )
 
 // GetContainersMatchingPrefix returns an iterator over containers with a given prefix
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) Iterator[[]*service.ContainerItem, service.ListContainersResponse] {
+func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) Iterator[*service.ContainerItem, service.ListContainersResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
 	iter := NewIterator(containerPager, func(resp service.ListContainersResponse) []*service.ContainerItem {
 		return resp.ContainerItems
-	}, make([]*service.ContainerItem, 0))
+	}, &service.ContainerItem{})
 	return iter
 }
 

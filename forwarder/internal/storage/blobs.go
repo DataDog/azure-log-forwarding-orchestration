@@ -40,7 +40,7 @@ func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
 }
 
 // ListBlobs returns an iterator over the blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[]*container.BlobItem, azblob.ListBlobsFlatResponse] {
+func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[*container.BlobItem, azblob.ListBlobsFlatResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{

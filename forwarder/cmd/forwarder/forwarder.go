@@ -39,7 +39,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 
 	iter := storageClient.ListBlobs(ctx, container)
 	for {
-		blobList, currErr := iter.Next(ctx)
+		blob, currErr := iter.Next(ctx)
 
 		if errors.Is(currErr, iterator.Done) {
 			break
@@ -49,15 +49,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %w", container, currErr), err)
 		}
 
-		if blobList == nil {
-			continue
-		}
-		for _, b := range blobList {
-			if b == nil {
-				continue
-			}
-			blobs = append(blobs, storage.Blob{Item: b, Container: container})
-		}
+		blobs = append(blobs, storage.Blob{Item: blob, Container: container})
 	}
 	return blobs, err
 }
@@ -67,7 +59,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 	var err error
 	iter := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 	for {
-		containerList, currErr := iter.Next(ctx)
+		container, currErr := iter.Next(ctx)
 
 		if errors.Is(currErr, iterator.Done) {
 			break
@@ -78,14 +70,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 			continue
 		}
 
-		if containerList != nil {
-			for _, container := range containerList {
-				if container == nil {
-					continue
-				}
-				containers = append(containers, *container.Name)
-			}
-		}
+		containers = append(containers, *container.Name)
 	}
 	return containers, err
 }

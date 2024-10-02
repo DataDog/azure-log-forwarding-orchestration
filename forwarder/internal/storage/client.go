@@ -42,30 +42,65 @@ func NewClient(azBlobClient AzureBlobClient) *Client {
 
 // Iterator is a generic iterator for paginated responses containing lists.
 type Iterator[ReturnType any, PagerType any] struct {
-	pager    *runtime.Pager[PagerType]
-	getter   func(PagerType) ReturnType
-	nilValue ReturnType
+	azurePager    *runtime.Pager[PagerType]
+	internalPager Pager[ReturnType]
+	getter        func(PagerType) []ReturnType
+	nilValue      ReturnType
+}
+
+type Pager[ReturnType any] struct {
+	page      []ReturnType
+	nextIndex int
+}
+
+func (p *Pager[ReturnType]) More() bool {
+	return p.nextIndex < len(p.page)
+}
+
+func (p *Pager[ReturnType]) Next() ReturnType {
+	currItem := p.page[p.nextIndex]
+	p.nextIndex += 1
+	return currItem
+}
+
+func NewPager[ReturnType any](page []ReturnType) Pager[ReturnType] {
+	return Pager[ReturnType]{
+		page: page,
+	}
 }
 
 // Next returns the next item in the iterator.
 func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnType, err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Iterator.Next")
 	defer span.Finish(tracer.WithError(err))
-	if !i.pager.More() {
-		return i.nilValue, iterator.Done
+	if !i.internalPager.More() {
+		err = i.getNextPage(ctx)
+		if err != nil {
+			return i.nilValue, err
+		}
 	}
 
-	resp, err := i.pager.NextPage(ctx)
+	return i.internalPager.Next(), nil
+}
+
+func (i *Iterator[ReturnType, PagerType]) getNextPage(ctx context.Context) error {
+	if !i.azurePager.More() {
+		return iterator.Done
+	}
+
+	resp, err := i.azurePager.NextPage(ctx)
 	if err != nil {
-		return i.nilValue, fmt.Errorf("getting next page: %w", err)
+		return fmt.Errorf("getting next page: %w", err)
 	}
 
-	return i.getter(resp), nil
+	page := i.getter(resp)
+	i.internalPager = NewPager(page)
+	return nil
 }
 
 // NewIterator creates a new iterator.
-func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
-	return Iterator[ReturnType, PagerType]{pager: pager, getter: getter, nilValue: nilValue}
+func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) []ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
+	return Iterator[ReturnType, PagerType]{azurePager: pager, getter: getter, nilValue: nilValue}
 }
 
 // PagingError is returned when more items are fetched than expected.
