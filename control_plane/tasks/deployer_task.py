@@ -61,6 +61,10 @@ class ControlPlaneResources(NamedTuple):
     function_apps: set[str]
 
 
+class DeployError(Exception):
+    pass
+
+
 class DeployerTask(Task):
     def __init__(self) -> None:
         super().__init__()
@@ -253,7 +257,9 @@ class DeployerTask(Task):
             f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
             data=function_app_data,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            content = (await resp.content.read()).decode()
+            raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, component: str) -> bytes:

@@ -3,7 +3,6 @@ from json import dumps
 from unittest.mock import DEFAULT, MagicMock, Mock, call
 
 # 3p
-from aiohttp import ClientError
 from azure.core.exceptions import HttpResponseError
 
 # project
@@ -284,7 +283,7 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
-        self.rest_client.post.return_value.raise_for_status.side_effect = ClientError
+        self.rest_client.post.return_value.ok = False
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
