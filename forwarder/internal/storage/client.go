@@ -81,6 +81,9 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 		if err != nil {
 			return i.nilValue, err
 		}
+		if !i.internalPager.More() {
+			return i.nilValue, Done
+		}
 	}
 
 	return i.internalPager.Next(), nil
