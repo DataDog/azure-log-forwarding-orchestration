@@ -64,7 +64,7 @@ func TestValid(t *testing.T) {
 		require.NoError(t, err)
 
 		// WHEN
-		got := l.Valid()
+		got := l.IsValid()
 
 		// THEN
 		assert.True(t, got)
@@ -82,7 +82,7 @@ func TestValid(t *testing.T) {
 		require.NoError(t, err)
 
 		// WHEN
-		got := l.Valid()
+		got := l.IsValid()
 
 		// THEN
 		assert.False(t, got)

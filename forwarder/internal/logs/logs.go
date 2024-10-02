@@ -24,7 +24,7 @@ type Log struct {
 	Tags       []string
 }
 
-func (l *Log) Valid() bool {
+func (l *Log) IsValid() bool {
 	return l.ByteSize < MaxPayloadSize
 }
 
@@ -109,7 +109,7 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 
 // AddLog adds a log to the buffer for future submission
 func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
-	if !log.Valid() {
+	if !log.IsValid() {
 		return InvalidLogError{
 			Message: "cannot submit log: " + log.Content,
 		}
