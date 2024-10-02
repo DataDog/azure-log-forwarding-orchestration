@@ -19,7 +19,6 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"google.golang.org/api/iterator"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -67,23 +66,16 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 
 	var results []*container.BlobItem
 	for {
-		blobList, err := it.Next(ctx)
+		blob, err := it.Next(ctx)
 
-		if errors.Is(err, iterator.Done) {
+		if errors.Is(err, storage.Done) {
 			break
 		}
 
 		if err != nil {
 			return nil, err
 		}
-
-		for _, blob := range blobList {
-			if blob == nil {
-				continue
-			}
-			results = append(results, blob)
-		}
-
+		results = append(results, blob)
 	}
 	return results, nil
 }

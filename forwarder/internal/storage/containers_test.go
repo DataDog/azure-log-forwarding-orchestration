@@ -14,7 +14,6 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"google.golang.org/api/iterator"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -60,15 +59,13 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 		return nil, fmt.Errorf("error getting next container: %w", err)
 	}
 	for ; v != nil; v, err = it.Next(ctx) {
-		if err != nil && err.Error() == iterator.Done.Error() {
+		if errors.Is(err, storage.Done) {
 			break
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error getting next container: %w", err)
 		}
-		for _, container := range v {
-			results = append(results, container)
-		}
+		results = append(results, v)
 	}
 	return results, nil
 }

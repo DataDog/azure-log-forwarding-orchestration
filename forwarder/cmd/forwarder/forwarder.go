@@ -16,7 +16,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/iterator"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -41,7 +40,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 	for {
 		blob, currErr := iter.Next(ctx)
 
-		if errors.Is(currErr, iterator.Done) {
+		if errors.Is(currErr, storage.Done) {
 			break
 		}
 
@@ -61,7 +60,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 	for {
 		container, currErr := iter.Next(ctx)
 
-		if errors.Is(currErr, iterator.Done) {
+		if errors.Is(currErr, storage.Done) {
 			break
 		}
 

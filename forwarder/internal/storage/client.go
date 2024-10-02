@@ -9,7 +9,6 @@ import (
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"google.golang.org/api/iterator"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -39,6 +38,10 @@ func NewClient(azBlobClient AzureBlobClient) *Client {
 		azBlobClient: azBlobClient,
 	}
 }
+
+// Done is returned by Iterator's Next method when the iteration is
+// complete; when there are no more items to return.
+var Done = errors.New("no more items in iterator")
 
 // Iterator is a generic iterator for paginated responses containing lists.
 type Iterator[ReturnType any, PagerType any] struct {
@@ -85,7 +88,7 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 
 func (i *Iterator[ReturnType, PagerType]) getNextPage(ctx context.Context) error {
 	if !i.azurePager.More() {
-		return iterator.Done
+		return Done
 	}
 
 	resp, err := i.azurePager.NextPage(ctx)
