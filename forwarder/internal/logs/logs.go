@@ -1,15 +1,15 @@
 package logs
 
 import (
-	"bytes"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-
 	// stdlib
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
 	"strings"
+
+	// 3p
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
