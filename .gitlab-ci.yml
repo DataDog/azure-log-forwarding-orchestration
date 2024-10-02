@@ -61,7 +61,16 @@ build-and-publish-tasks:
   only:
     refs:
       - main
-build-deployer:
+deployer-build-latest:
+  image: $DOCKER_IMAGE
+  stage: build-and-release
+  only:
+    refs:
+      - main
+  tags: ["arch:amd64"]
+  script:
+    - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build-and-release
   rules:
@@ -69,7 +78,23 @@ build-deployer:
       when: manual
   tags: ["arch:amd64"]
   script:
-    - docker buildx build --platform=linux/amd64 --tag mattlogger.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
+deployer-publish:
+  stage: build-and-release
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - forwarder-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
