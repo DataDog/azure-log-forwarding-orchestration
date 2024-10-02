@@ -48,19 +48,12 @@ func NewLog(logBytes []byte) (*Log, error) {
 
 // InvalidLogError represents an error for when a log is not valid
 type InvalidLogError struct {
-	Message string
+	log Log
 }
 
 // Error returns a string representation of the InvalidLogError
 func (e InvalidLogError) Error() string {
-	runes := []rune(e.Message)
-	var message string
-	if len(runes) > 100 {
-		message = string(runes[:100])
-	} else {
-		message = e.Message
-	}
-	return fmt.Sprintf("invalid log: %s", message)
+	return fmt.Sprintf("invalid log from %s", e.log.ResourceId)
 }
 
 // bufferSize is the maximum number of logs per post to Logs API
@@ -111,7 +104,7 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
 	if !log.IsValid() {
 		return InvalidLogError{
-			Message: "cannot submit log: " + log.Content,
+			Log: *log,
 		}
 	}
 	if c.shouldFlush(log) {
