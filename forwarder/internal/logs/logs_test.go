@@ -1,16 +1,19 @@
 package logs_test
 
 import (
+	// stdlib
 	"context"
 	"errors"
 	"testing"
 
+	// 3p
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
+	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/mock/gomock"
 )
 
 func getLogWithContent(content string) []byte {
