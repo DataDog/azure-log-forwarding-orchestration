@@ -38,7 +38,9 @@ for task in $tasks; do
     cp ./control_plane/config/host.json ./dist/$task/host.json
 
     : zip it up for zipdeploy
-    zip -r ./dist/$task.zip ./dist/$task/*
+    cd ./dist/$task
+    zip -r ../$task.zip *
+    cd -
     echo "Built $task"
 done
 
