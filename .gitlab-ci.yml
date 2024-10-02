@@ -2,10 +2,12 @@ variables:
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
+  REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo
 stages:
   - ci-image
   - test
   - after-test
+  - build-and-release
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
@@ -46,7 +48,7 @@ type-check:
     - ci/scripts/control_plane/type-check.sh
 build-and-publish-tasks:
   image: $CI_IMAGE
-  stage: after-test
+  stage: build-and-release
   tags: ["arch:amd64"]
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
@@ -56,13 +58,12 @@ build-and-publish-tasks:
   only:
     refs:
       - main
-publish-deployer:
+build-deployer:
   image: $DOCKER_IMAGE
-  stage: after-test
+  stage: build-and-release
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
-      allow_failure: true
   tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --tag mattlogger.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
@@ -76,17 +77,42 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-publish:
+forwarder-build-latest:
   image: $DOCKER_IMAGE
-  stage: after-test
+  stage: build-and-release
   tags: ["arch:amd64"]
-  script:
-    - ci/scripts/forwarder/publish.sh
   only:
     refs:
       - main
+  script:
+    - ci/scripts/forwarder/build_and_push.sh latest
+forwarder-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build-and-release
+  tags: ["arch:amd64"]
+  only:
+    refs:
+      - main
+  script:
+    - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+forwarder-publish:
+  stage: build-and-release
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - forwarder-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
 # ------------- CODE COV -------------
-forwarder-coverage-comment:
+coverage-comment:
   image: $PR_COMMENTER_IMAGE
   stage: after-test
   tags: ["arch:amd64"]
