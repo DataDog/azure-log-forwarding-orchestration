@@ -61,6 +61,10 @@ class ControlPlaneResources(NamedTuple):
     function_apps: set[str]
 
 
+class DeployError(Exception):
+    pass
+
+
 class DeployerTask(Task):
     def __init__(self) -> None:
         super().__init__()
@@ -255,7 +259,7 @@ class DeployerTask(Task):
         )
         if not resp.ok:
             content = (await resp.content.read()).decode()
-            raise Exception(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
+            raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, component: str) -> bytes:
