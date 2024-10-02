@@ -65,13 +65,16 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
         log.info(f"Would delete {resource.id}")
         return
     log.info(f"Deleting... {resource.id}")
+    if resource.type.lower() == "microsoft.app/jobs":
+        api_version = "2024-03-01"
+    elif resource.type.lower() == "microsoft.app/managedenvironments":
+        api_version = "2022-03-01"
+    else:
+        api_version = "2024-01-01"
+
     future = await client.resources.begin_delete_by_id(
         resource.id,  # type: ignore
-        api_version=(
-            "2024-01-01"
-            if resource.type.lower() == "microsoft.storage/storageaccounts"  # type: ignore
-            else "2022-03-01"
-        ),
+        api_version=api_version,
     )
     await future.result()
     log.info(f"Deleted {resource.id} ✅")
