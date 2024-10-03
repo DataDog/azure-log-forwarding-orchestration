@@ -90,6 +90,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
     publicNetworkAccess: 'Disabled'
     httpsOnly: true
   }
+  dependsOn: [fileServices]
 }
 var diagnosticSettingsTaskName = 'diagnostic-settings-task-${lfoId}'
 resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
@@ -111,6 +112,7 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
     publicNetworkAccess: 'Disabled'
     httpsOnly: true
   }
+  dependsOn: [fileServices]
 }
 
 var scalingTaskName = 'scaling-task-${lfoId}'
@@ -137,6 +139,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
     publicNetworkAccess: 'Disabled'
     httpsOnly: true
   }
+  dependsOn: [fileServices]
 }
 
 resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2022-03-01' = {
