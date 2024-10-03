@@ -44,7 +44,7 @@ DEPLOYER_TASK_NAME = "deployer_task"
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_PREFIX = "ddlfocontrol"
 SCALING_TASK_PREFIX = "scaling-task-"
-RESOURCES_TASK_PREFIX = "resource-task-"
+RESOURCES_TASK_PREFIX = "resources-task-"
 DIAGNOSTIC_SETTINGS_TASK_PREFIX = "diagnostic-settings-task-"
 
 
@@ -179,13 +179,17 @@ class DeployerTask(Task):
         log.info(f"Deploying {component}")
         if component == "forwarder":
             return await self.deploy_log_forwarder_image()
-        task_prefix = component.replace("_", "-") + "-"
+        task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
         if not function_app:
-            log.error(f"Function app for {component} not found, skipping deployment")
+            log.error(
+                f"Function app for {component} not found in {current_components.function_apps}, skipping deployment"
+            )
             return
         try:
+            log.info(f"Downloading function app data for {component}")
             zip_data = await self.download_function_app_data(component)
+            log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
         except Exception:
             log.exception(f"Failed to deploy {component}")
