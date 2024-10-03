@@ -8,8 +8,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -18,6 +16,9 @@ import (
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 )
 
 // LookBackPeriod defines the period of time from now that we would look back for logs

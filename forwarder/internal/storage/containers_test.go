@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -21,6 +19,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )

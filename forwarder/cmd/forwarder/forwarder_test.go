@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -28,6 +26,7 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"

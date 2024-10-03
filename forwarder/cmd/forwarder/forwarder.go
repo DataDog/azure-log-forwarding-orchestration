@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
@@ -27,6 +25,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
