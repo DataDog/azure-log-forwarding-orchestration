@@ -69,7 +69,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 			continue
 		}
 
-		containers = append(containers, *container.Name)
+		containers = append(containers, container.Name)
 	}
 	return containers, err
 }

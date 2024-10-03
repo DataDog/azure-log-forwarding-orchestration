@@ -8,12 +8,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"

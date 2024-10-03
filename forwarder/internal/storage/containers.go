@@ -14,14 +14,23 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// GetContainersMatchingPrefix returns an iterator over containers with a given prefix
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) Iterator[*service.ContainerItem, service.ListContainersResponse] {
+// Container represents a container in a Storage Account.
+type Container struct {
+	Name string
+}
+
+// GetContainersMatchingPrefix returns an iterator over containers with a given prefix.
+func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) Iterator[*Container, service.ListContainersResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
-	iter := NewIterator(containerPager, func(resp service.ListContainersResponse) []*service.ContainerItem {
-		return resp.ContainerItems
-	}, &service.ContainerItem{})
+	iter := NewIterator(containerPager, func(resp service.ListContainersResponse) []*Container {
+		var containers []*Container
+		for _, item := range resp.ContainerItems {
+			containers = append(containers, &Container{Name: *item.Name})
+		}
+		return containers
+	}, nil)
 	return iter
 }
 
