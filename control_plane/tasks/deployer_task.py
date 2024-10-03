@@ -258,7 +258,7 @@ class DeployerTask(Task):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
         resp = await self.rest_client.post(
-            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
+            f"https://{function_app_name}.scm.azurewebsites.net/api/zipdeploy",
             data=function_app_data,
         )
         if not resp.ok:
