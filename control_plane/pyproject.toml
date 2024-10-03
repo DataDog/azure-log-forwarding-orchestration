@@ -6,6 +6,7 @@ readme = "README.md"
 
 # common dependencies
 dependencies = [
+    "aiohttp==3.9.5",
     "azure-identity==1.15.0",
     "azure-storage-blob==12.20.0",
     "jsonschema==4.21.1",
@@ -22,7 +23,6 @@ scaling_task = [
     "tenacity==8.5.0",
 ]
 deployer = [
-    "aiohttp==3.9.5",
     "azure-mgmt-web==7.3.0",
     "azure-mgmt-storage==21.2.1",
     "tenacity==8.5.0",
