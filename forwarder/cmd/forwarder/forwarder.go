@@ -34,46 +34,22 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
-func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]*storage.Blob, error) {
-	var blobs []*storage.Blob
-	var err error
-
-	iter := storageClient.ListBlobs(ctx, container)
-	for {
-		blob, currErr := iter.Next(ctx)
-
-		if errors.Is(currErr, collections.Done) {
-			break
-		}
-
-		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %w", container, currErr), err)
-		}
-
-		blobs = append(blobs, blob)
+func getBlobs(ctx context.Context, storageClient *storage.Client, container *storage.Container) ([]*storage.Blob, error) {
+	it := storageClient.ListBlobs(ctx, container.Name)
+	results, err := collections.Collect(ctx, it)
+	if err != nil {
+		return nil, err
 	}
-	return blobs, err
+	return results, nil
 }
 
-func getContainers(ctx context.Context, storageClient *storage.Client) ([]string, error) {
-	var containers []string
-	var err error
-	iter := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-	for {
-		container, currErr := iter.Next(ctx)
-
-		if errors.Is(currErr, collections.Done) {
-			break
-		}
-
-		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of containers: %w", currErr), err)
-			continue
-		}
-
-		containers = append(containers, container.Name)
+func getContainers(ctx context.Context, storageClient *storage.Client) ([]*storage.Container, error) {
+	it := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
+	results, err := collections.Collect(ctx, it)
+	if err != nil {
+		return nil, err
 	}
-	return containers, err
+	return results, nil
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
