@@ -64,7 +64,7 @@ def chunks(lst: list[T], n: int) -> Iterable[tuple[T, ...]]:
     return zip(*(lst[i::n] for i in range(n)), strict=False)
 
 
-def log_errors(message: str, *maybe_errors: Any, reraise=False) -> list[Exception]:
+def log_errors(message: str, *maybe_errors: object | Exception, reraise=False) -> list[Exception]:
     """Log and return any errors in `maybe_errors`.
     If reraise is True, the first error will be raised"""
     errors = [e for e in maybe_errors if isinstance(e, Exception)]
