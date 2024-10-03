@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from itertools import chain
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
-from typing import Any
+from typing import Any, cast
 
 # 3p
 from tenacity import retry, retry_if_result, stop_after_attempt
@@ -29,7 +29,7 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import average, chunks, generate_unique_id, now
+from tasks.common import average, chunks, generate_unique_id, log_errors, now
 from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
@@ -168,7 +168,10 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         """Creates a log forwarder for the given subscription and region and assigns resources to it.
-        Only done the first time we discover a new region."""
+        Only done the first time we discover a new region.
+
+        Will never raise an exception.
+        """
         log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
         log_forwarder = await self.create_log_forwarder(client, region)
         if log_forwarder is None:
@@ -187,15 +190,17 @@ class ScalingTask(Task):
     ) -> None:
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
         log.info("Deleting log forwarder for subscription %s in region %s", subscription_id, region)
-        await gather(
+        maybe_errors = await gather(
             *(
                 client.delete_log_forwarder(forwarder_id)
                 for forwarder_id in self._assignment_cache_initial_state[subscription_id][region]["configurations"]
-            )
+            ),
+            return_exceptions=True,
         )
-
-        # delete if we haven't already cleaned it up
-        self.assignment_cache.get(subscription_id, {}).pop(region, None)
+        errors = log_errors("Failed to delete region", *maybe_errors)
+        if not errors:
+            # delete if we haven't already cleaned it up
+            self.assignment_cache.get(subscription_id, {}).pop(region, None)
 
     async def scale_region(
         self,
@@ -234,15 +239,19 @@ class ScalingTask(Task):
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]
     ) -> dict[str, list[MetricBlobEntry]]:
-        """Collects metrics for all forwarders in a region and returns them as a dictionary by config_id"""
+        """Collects metrics for all forwarders in a region and returns them as a dictionary by config_id. Returns an empty dict on failure."""
         oldest_metric_timestamp = (self.now - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
-        metrics = await gather(
+        maybe_metrics = await gather(
             *(
                 self.collect_forwarder_metrics(client, config_id, oldest_metric_timestamp)
                 for config_id in log_forwarders
-            )
+            ),
+            return_exceptions=True,
         )
-        return dict(zip(log_forwarders, metrics, strict=False))
+        errors = log_errors("Failed to collect metrics for forwarders", *maybe_metrics, reraise=False)
+        if errors:
+            return {}
+        return dict(zip(log_forwarders, cast(list[list[MetricBlobEntry]], maybe_metrics), strict=False))
 
     async def collect_forwarder_metrics(
         self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
@@ -384,9 +393,7 @@ class ScalingTask(Task):
             *(self.delete_log_forwarder(client, region_config, config_id) for config_id in forwarders_to_delete),
             return_exceptions=True,
         )
-        for maybe_error in maybe_errors:
-            if isinstance(maybe_error, Exception):
-                log.error("Error during scaling down", exc_info=maybe_error)
+        log_errors("Errors during scaling down", *maybe_errors)
 
     async def collapse_forwarders(
         self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str

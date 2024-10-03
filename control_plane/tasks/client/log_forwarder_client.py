@@ -70,7 +70,7 @@ from cache.common import (
     get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from tasks.common import Resource, collect, wait_for_resource
+from tasks.common import Resource, collect, log_errors, wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
@@ -145,12 +145,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    def log_and_raise_errors(self, message: str, *maybe_errors: Any) -> None:
-        errors = [e for e in maybe_errors if isinstance(e, Exception)]
-        if errors:
-            log.exception("%s: %s", message, errors)
-            raise errors[0]
-
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
         managed_env_name = get_managed_env_name(config_id)
@@ -160,7 +154,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
             wait_for_resource(*await self.create_log_forwarder_managed_environment(region, managed_env_name)),
             return_exceptions=True,
         )
-        self.log_and_raise_errors("Failed to create storage account and/or managed environment", *maybe_errors)
+        log_errors("Failed to create storage account and/or managed environment", *maybe_errors, reraise=True)
 
         maybe_errors = await gather(
             wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
@@ -168,7 +162,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
         )
-        self.log_and_raise_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors)
+        log_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True)
 
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
