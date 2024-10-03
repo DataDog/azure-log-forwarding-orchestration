@@ -32,8 +32,8 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
-func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
-	var blobs []storage.Blob
+func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]*storage.Blob, error) {
+	var blobs []*storage.Blob
 	var err error
 
 	iter := storageClient.ListBlobs(ctx, container)
@@ -48,7 +48,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %w", container, currErr), err)
 		}
 
-		blobs = append(blobs, storage.Blob{Item: blob, Container: container})
+		blobs = append(blobs, blob)
 	}
 	return blobs, err
 }
@@ -75,13 +75,13 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset := cursors.GetCursor(*blob.Item.Name)
+	currentOffset := cursors.GetCursor(blob.Name)
 	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
 	if err != nil {
-		return fmt.Errorf("download range for %s: %w", *blob.Item.Name, err)
+		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
+	cursors.SetCursor(blob.Name, blob.ContentLength)
 
 	return parseLogs(content.Content, logsChannel)
 }
@@ -195,7 +195,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	err = errors.Join(err, containerErr)
 
 	// Get all the blobs
-	var blobs []storage.Blob
+	var blobs []*storage.Blob
 	for _, c := range containers {
 		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
 		err = errors.Join(err, blobsErr)
@@ -208,11 +208,11 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	for _, blob := range blobs {
 		// Skip blobs that are not recent
 		// Blobs may have old data that we don't want to process
-		if !storage.Current(blob, currNow) {
+		if !blob.IsCurrent(currNow) {
 			continue
 		}
 		downloadEg.Go(func() error {
-			return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+			return getLogs(segmentCtx, storageClient, cursors, *blob, logCh)
 		})
 	}
 

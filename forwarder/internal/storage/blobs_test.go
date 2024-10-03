@@ -47,7 +47,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*container.BlobItem, error) {
+func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*storage.Blob, error) {
 	ctrl := gomock.NewController(t)
 
 	handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
@@ -64,7 +64,7 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 
 	it := client.ListBlobs(ctx, containerName)
 
-	var results []*container.BlobItem
+	var results []*storage.Blob
 	for {
 		blob, err := it.Next(ctx)
 
@@ -97,8 +97,8 @@ func TestListBlobs(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0].Name)
-		assert.Equal(t, testString, *results[1].Name)
+		assert.Equal(t, testString, results[0].Name)
+		assert.Equal(t, testString, results[1].Name)
 	})
 
 	t.Run("returns empty array", func(t *testing.T) {
@@ -149,8 +149,8 @@ func TestListBlobs(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0].Name)
-		assert.Equal(t, testString, *results[1].Name)
+		assert.Equal(t, testString, results[0].Name)
+		assert.Equal(t, testString, results[1].Name)
 	})
 }
 
@@ -244,13 +244,9 @@ func TestAppendBlob(t *testing.T) {
 
 func getBlob(creationTime time.Time) storage.Blob {
 	return storage.Blob{
-		Container: "container",
-		Item: &container.BlobItem{
-			Name: to.StringPtr("blob"),
-			Properties: &container.BlobProperties{
-				CreationTime: &creationTime,
-			},
-		},
+		Container:    "container",
+		Name:         "blob",
+		CreationTime: creationTime,
 	}
 }
 
@@ -264,7 +260,7 @@ func TestCurrent(t *testing.T) {
 		blob := getBlob(currTime)
 
 		// WHEN
-		current := storage.Current(blob, currTime)
+		current := blob.IsCurrent(currTime)
 
 		// THEN
 		assert.True(t, current)
@@ -277,10 +273,10 @@ func TestCurrent(t *testing.T) {
 		blob := getBlob(currTime.Add(-1 * time.Hour))
 
 		// WHEN
-		current := storage.Current(blob, currTime)
+		got := blob.IsCurrent(currTime)
 
 		// THEN
-		assert.True(t, current)
+		assert.True(t, got)
 	})
 
 	t.Run("three hours ago is not current", func(t *testing.T) {
@@ -290,7 +286,7 @@ func TestCurrent(t *testing.T) {
 		blob := getBlob(currTime.Add(-3 * time.Hour))
 
 		// WHEN
-		current := storage.Current(blob, currTime)
+		current := blob.IsCurrent(currTime)
 
 		// THEN
 		assert.False(t, current)

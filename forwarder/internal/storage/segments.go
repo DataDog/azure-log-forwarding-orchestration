@@ -31,17 +31,17 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 		BlockSize: 1024 * 1024,
 	}
 
-	content := make([]byte, int(*blob.Item.Properties.ContentLength))
+	content := make([]byte, int(blob.ContentLength))
 
-	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
+	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, blob.Name, content, options)
 	if err != nil {
 		return BlobSegment{}, fmt.Errorf("failed to download blob: %w", err)
 	}
 	return BlobSegment{
-		Name:          *blob.Item.Name,
+		Name:          blob.Name,
 		Container:     blob.Container,
 		Content:       content,
 		Offset:        offset,
-		ContentLength: *blob.Item.Properties.ContentLength,
+		ContentLength: blob.ContentLength,
 	}, nil
 }

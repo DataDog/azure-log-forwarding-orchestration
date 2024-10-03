@@ -6,9 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	// 3p
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 
@@ -32,13 +29,9 @@ func downloadBlob(t *testing.T, ctx context.Context, containerName string, blobN
 	defer span.Finish()
 
 	blob := storage.Blob{
-		Container: containerName,
-		Item: &container.BlobItem{
-			Name: to.StringPtr(blobName),
-			Properties: &container.BlobProperties{
-				ContentLength: to.Int64Ptr(int64(len(buffer))),
-			},
-		},
+		Container:     containerName,
+		Name:          blobName,
+		ContentLength: int64(len(buffer)),
 	}
 	_, err := client.DownloadSegment(ctx, blob, 0)
 	return err
