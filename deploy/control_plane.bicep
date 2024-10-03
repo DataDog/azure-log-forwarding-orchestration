@@ -43,6 +43,12 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   sku: { name: 'Standard_LRS' }
 }
 
+resource fileServices 'Microsoft.Storage/storageAccounts/fileServices@2023-05-01' = {
+  name: 'default'
+  parent: storageAccount
+  properties: {}
+}
+
 resource blobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
   name: 'default'
   parent: storageAccount
@@ -55,8 +61,19 @@ resource cacheContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
   properties: {}
 }
 
+var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
+
+var commonAppSettings = [
+  { name: 'AzureWebJobsStorage', value: connectionString }
+  { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
+  { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+  { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
+  { name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', value: connectionString }
+]
+
+var resourceTaskName = 'resources-task-${lfoId}'
 resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
-  name: 'resources-task-${lfoId}'
+  name: resourceTaskName
   location: controlPlaneLocation
   kind: 'functionapp'
   identity: {
@@ -65,24 +82,18 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
   properties: {
     serverFarmId: asp.id
     siteConfig: {
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
-        }
-        { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
-      ]
+      appSettings: union(commonAppSettings, [
+        { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
+      ])
       linuxFxVersion: 'Python|3.11'
     }
     publicNetworkAccess: 'Disabled'
     httpsOnly: true
   }
 }
-
+var diagnosticSettingsTaskName = 'diagnostic-settings-task-${lfoId}'
 resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
-  name: 'diagnostic-settings-task-${lfoId}'
+  name: diagnosticSettingsTaskName
   location: controlPlaneLocation
   kind: 'functionapp'
   identity: {
@@ -91,16 +102,10 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
   properties: {
     serverFarmId: asp.id
     siteConfig: {
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
-        }
-        { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
+      appSettings: union(commonAppSettings, [
         { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
-      ]
+        { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
+      ])
       linuxFxVersion: 'Python|3.11'
     }
     publicNetworkAccess: 'Disabled'
@@ -108,8 +113,9 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
   }
 }
 
+var scalingTaskName = 'scaling-task-${lfoId}'
 resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
-  name: 'scaling-task-${lfoId}'
+  name: scalingTaskName
   location: controlPlaneLocation
   kind: 'functionapp'
   identity: {
@@ -118,20 +124,14 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
   properties: {
     serverFarmId: asp.id
     siteConfig: {
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
-        }
-        { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
+      appSettings: union(commonAppSettings, [
         { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
+        { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: 'forwarder_image', value: forwarderImage }
         { name: 'DD_API_KEY', value: datadogApiKey }
         { name: 'DD_APP_KEY', value: datadogApplicationKey }
         { name: 'DD_SITE', value: datadogSite }
-      ]
+      ])
       linuxFxVersion: 'Python|3.11'
     }
     publicNetworkAccess: 'Disabled'
@@ -163,10 +163,7 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
       replicaRetryLimit: 1
       replicaTimeout: 1800
       secrets: [
-        {
-          name: 'connection-string'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
-        }
+        { name: 'connection-string', value: connectionString }
         { name: 'dd-api-key', value: datadogApiKey }
         { name: 'dd-app-key', value: datadogApplicationKey }
       ]
