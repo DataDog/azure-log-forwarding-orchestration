@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -39,7 +41,7 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 
 func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*storage.Container, error) {
 	ctrl := gomock.NewController(t)
-	handler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
+	handler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
 
 	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
 
@@ -53,17 +55,9 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 
 	it := client.GetContainersMatchingPrefix(ctx, prefix)
 
-	var results []*storage.Container
-	for {
-		item, err := it.Next(ctx)
-
-		if errors.Is(err, storage.Done) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("error getting next container: %w", err)
-		}
-		results = append(results, item)
+	results, err := collections.Collect(ctx, it)
+	if err != nil {
+		return nil, err
 	}
 	return results, nil
 }

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -93,11 +95,11 @@ func TestRun(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
-		containerHandler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
+		containerHandler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
 		containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
 		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
 
-		blobHandler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
+		blobHandler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
 		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
 		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
 

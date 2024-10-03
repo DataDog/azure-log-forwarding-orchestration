@@ -8,6 +8,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -55,7 +57,7 @@ func NewBlob(container string, item *container.BlobItem) Blob {
 }
 
 // ListBlobs returns an iterator over the blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[*Blob, azblob.ListBlobsFlatResponse] {
+func (c *Client) ListBlobs(ctx context.Context, containerName string) collections.Iterator[*Blob, azblob.ListBlobsFlatResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
@@ -66,14 +68,12 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[*
 		if resp.Segment == nil {
 			return nil
 		}
-		var blobs []*Blob
-		for _, item := range resp.Segment.BlobItems {
+		return collections.Map(resp.Segment.BlobItems, func(item *container.BlobItem) *Blob {
 			currBlob := NewBlob(containerName, item)
-			blobs = append(blobs, &currBlob)
-		}
-		return blobs
+			return &currBlob
+		})
 	}
-	iter := NewIterator(blobPager, getBlobs, nil)
+	iter := collections.NewIterator(blobPager, getBlobs, nil)
 	return iter
 }
 

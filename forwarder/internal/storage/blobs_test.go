@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -50,7 +52,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*storage.Blob, error) {
 	ctrl := gomock.NewController(t)
 
-	handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
+	handler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
 
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
@@ -64,18 +66,9 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 
 	it := client.ListBlobs(ctx, containerName)
 
-	var results []*storage.Blob
-	for {
-		blob, err := it.Next(ctx)
-
-		if errors.Is(err, storage.Done) {
-			break
-		}
-
-		if err != nil {
-			return nil, err
-		}
-		results = append(results, blob)
+	results, err := collections.Collect(ctx, it)
+	if err != nil {
+		return nil, err
 	}
 	return results, nil
 }

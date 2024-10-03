@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
@@ -40,7 +42,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stri
 	for {
 		blob, currErr := iter.Next(ctx)
 
-		if errors.Is(currErr, storage.Done) {
+		if errors.Is(currErr, collections.Done) {
 			break
 		}
 
@@ -60,7 +62,7 @@ func getContainers(ctx context.Context, storageClient *storage.Client) ([]string
 	for {
 		container, currErr := iter.Next(ctx)
 
-		if errors.Is(currErr, storage.Done) {
+		if errors.Is(currErr, collections.Done) {
 			break
 		}
 

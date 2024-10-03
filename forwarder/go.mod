@@ -11,7 +11,6 @@ require (
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/mock v0.4.0
 	golang.org/x/sync v0.7.0
-	google.golang.org/api v0.188.0
 	gopkg.in/DataDog/dd-trace-go.v1 v1.65.1
 )
 
