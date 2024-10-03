@@ -19,6 +19,7 @@ scaling_task = [
     "azure-mgmt-storage==21.2.1",
     "datadog-api-client==2.26.0",
     "aiosonic==0.15.0",
+    "tenacity==8.5.0",
 ]
 deployer = [
     "aiohttp==3.9.5",
