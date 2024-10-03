@@ -37,7 +37,7 @@ resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: 'lfostorage${lfoId}'
-  kind: 'BlobStorage'
+  kind: 'StorageV2'
   location: controlPlaneLocation
   properties: { accessTier: 'Hot' }
   sku: { name: 'Standard_LRS' }
