@@ -1,6 +1,7 @@
 # stdlib
 from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from datetime import datetime
+from logging import getLogger
 from math import inf
 from typing import Any, Protocol, TypeVar
 from uuid import uuid4
@@ -9,6 +10,8 @@ from uuid import uuid4
 from azure.core.exceptions import ResourceNotFoundError
 from azure.core.polling import AsyncLROPoller
 from tenacity import retry, retry_if_exception_type, stop_after_delay
+
+log = getLogger(__name__)
 
 
 def now() -> str:
@@ -59,6 +62,18 @@ async def collect(it: AsyncIterable[T]) -> list[T]:
 def chunks(lst: list[T], n: int) -> Iterable[tuple[T, ...]]:
     """Yield successive n-sized chunks from lst. If the last chunk is smaller than n, it will be dropped"""
     return zip(*(lst[i::n] for i in range(n)), strict=False)
+
+
+def log_errors(message: str, *maybe_errors: object | Exception, reraise=False) -> list[Exception]:
+    """Log and return any errors in `maybe_errors`.
+    If reraise is True, the first error will be raised"""
+    errors = [e for e in maybe_errors if isinstance(e, Exception)]
+    if errors:
+        log.exception("%s: %s", message, errors)
+        if reraise:
+            raise errors[0]
+
+    return errors
 
 
 class Resource(Protocol):

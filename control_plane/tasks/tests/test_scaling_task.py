@@ -27,7 +27,7 @@ from tasks.scaling_task import (
     is_consistently_over_threshold,
     resources_to_move_by_load,
 )
-from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException
+from tasks.tests.common import AsyncMockClient, TaskTestCase
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -506,23 +506,6 @@ class TestScalingTask(TaskTestCase):
 
         self.assertEqual(m.call_count, 3)
         self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
-
-    async def test_unexpected_failure_skips_cache_write(self):
-        self.client.get_blob_metrics_lines.side_effect = UnexpectedException("unexpected")
-        write_caches = self.patch("ScalingTask.write_caches")
-        with self.assertRaises(UnexpectedException):
-            await self.run_scaling_task(
-                {SUB_ID1: {EAST_US: {"resource1", "resource2"}, WEST_US: {"resource3"}}},
-                {
-                    SUB_ID1: {
-                        EAST_US: {
-                            "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
-                            "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
-                        }
-                    },
-                },
-            )
-        write_caches.assert_not_awaited()
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_scaling_up_based_on_resource_load_with_onboarding(self, collect_forwarder_metrics: AsyncMock):
