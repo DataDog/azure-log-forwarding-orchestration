@@ -70,7 +70,8 @@ from cache.common import (
     get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from tasks.common import Resource, collect, log_errors, wait_for_resource
+from tasks.common import Resource, collect, log_errors
+from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
