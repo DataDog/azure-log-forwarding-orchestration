@@ -2,6 +2,8 @@
 
 set -euxo pipefail
 
+git clone git@github.com:DataDog/vault-config.git
+
 cd forwarder
 
 : run tests with coverage
