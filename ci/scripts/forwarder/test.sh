@@ -2,6 +2,8 @@
 
 set -euxo pipefail
 
+apt-get update
+apt-get install git-all -y
 git clone git@github.com:DataDog/vault-config.git
 
 cd forwarder
