@@ -115,7 +115,7 @@ func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	scanner.Buffer(buffer, maxBufferSize)
 
 	for scanner.Scan() {
-		currLog, currErr := logs.NewLog([]byte(scanner.Text()))
+		currLog, currErr := logs.NewLog(scanner.Bytes())
 		if currErr != nil {
 			err = errors.Join(err, currErr)
 			continue
