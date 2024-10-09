@@ -19,7 +19,7 @@ param _now string = utcNow()
 
 var lfoId = toLower(substring(guid('lfo', deployment().name, _now), 24, 12))
 
-var datadogPublicRegistry = '486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo'
+var datadogPublicRegistry = 'datadoghq.azurecr.io'
 var deployerTaskImage = '${datadogPublicRegistry}/deployer:latest'
 var forwarderImage = '${datadogPublicRegistry}/forwarder:latest'
 
