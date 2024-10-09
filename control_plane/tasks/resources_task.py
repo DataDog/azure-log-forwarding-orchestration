@@ -43,7 +43,7 @@ class ResourcesTask(Task):
             subscriptions = await collect(
                 cast(str, sub.subscription_id).casefold()
                 async for sub in subscription_client.subscriptions.list()
-                if cast(str, sub.display_name).casefold()
+                if cast(str, sub.display_name).casefold() in self.monitored_subscription_names
             )
 
         await gather(*map(self.process_subscription, subscriptions))
