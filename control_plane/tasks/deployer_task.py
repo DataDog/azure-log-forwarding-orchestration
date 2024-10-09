@@ -35,8 +35,7 @@ from cache.manifest_cache import (
     ManifestKey,
     deserialize_manifest_cache,
 )
-from tasks.client.log_forwarder_client import Resource
-from tasks.common import collect, generate_unique_id
+from tasks.common import Resource, collect, generate_unique_id
 from tasks.deploy_common import wait_for_resource
 from tasks.task import Task
 
