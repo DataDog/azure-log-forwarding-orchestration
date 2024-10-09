@@ -3,11 +3,11 @@ package main
 import (
 	// stdlib
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"strconv"
@@ -105,11 +105,11 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 
 	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
 
-	return parseLogs(content.Content, logsChannel)
+	return parseLogs(content.Reader, logsChannel)
 }
 
-func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
-	scanner := bufio.NewScanner(bytes.NewReader(data))
+func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (err error) {
+	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
 	buffer := make([]byte, 0)
