@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -36,7 +37,7 @@ import (
 // maxBufferSize is the maximum buffer to use for scanning logs.
 // Logs greater than this buffer will be dropped by bufio.Scanner.
 // The buffer is defaulted to the maximum value of an integer.
-const maxBufferSize = int(^uint(0) >> 1)
+const maxBufferSize = math.MaxInt32
 
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
