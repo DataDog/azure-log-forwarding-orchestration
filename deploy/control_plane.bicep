@@ -19,8 +19,9 @@ param _now string = utcNow()
 
 var lfoId = toLower(substring(guid('lfo', deployment().name, _now), 24, 12))
 
-var deployerTaskImage = 'mattlogger.azurecr.io/deployer:latest'
-var forwarderImage = 'mattlogger.azurecr.io/forwarder:latest'
+var datadogPublicRegistry = '486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo'
+var deployerTaskImage = '${datadogPublicRegistry}/deployer:latest'
+var forwarderImage = '${datadogPublicRegistry}/forwarder:latest'
 
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: 'control-plane-asp-${lfoId}'
