@@ -145,8 +145,10 @@ forwarder-publish:
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
-  stage: after-test
+  stage: test
   tags: ["arch:amd64"]
+  rules:
+    - if: $CI_COMMIT_BRANCH != "main"
   dependencies:
     - forwarder-tests
     - control-plane-tests
