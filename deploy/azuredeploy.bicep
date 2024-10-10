@@ -1,5 +1,7 @@
 targetScope = 'managementGroup'
 
+param monitoredSubscriptions string
+
 param controlPlaneLocation string
 param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
@@ -26,6 +28,7 @@ module controlPlaneResourceGroup './control_plane.bicep' = {
     controlPlaneLocation: controlPlaneLocation
     controlPlaneResourceGroupName: controlPlaneResourceGroupName
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
+    monitoredSubscriptions: monitoredSubscriptions
     datadogApiKey: datadogApiKey
     datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
@@ -39,7 +42,6 @@ var resourceTaskPrincipalId = controlPlaneResourceGroup.outputs.resourceTaskPrin
 var diagnosticSettingsTaskPrincipalId = controlPlaneResourceGroup.outputs.diagnosticSettingsTaskPrincipalId
 var scalingTaskPrincipalId = controlPlaneResourceGroup.outputs.scalingTaskPrincipalId
 var deployerTaskPrincipalId = controlPlaneResourceGroup.outputs.deployerTaskPrincipalId
-
 
 var contributorRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -82,7 +84,7 @@ resource diagnosticSettingsTaskStorageRole 'Microsoft.Authorization/roleAssignme
   }
 }
 
-resource scalingTaskId_name 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('scaling', deployment().name)
   properties: {
     roleDefinitionId: contributorRole
@@ -90,7 +92,7 @@ resource scalingTaskId_name 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-resource deployerTaskId_name 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('deployer', deployment().name)
   properties: {
     roleDefinitionId: contributorRole

@@ -5,15 +5,6 @@
   "parameters": {
     "basics": [
       {
-        "name": "infoServicePrincipal",
-        "type": "Microsoft.Common.InfoBox",
-        "visible": true,
-        "options": {
-          "icon": "Info",
-          "text": "The selection of management group above defines the subscription(s) that will have log forwarding enabled. Any subscriptions within the selected scope, including any subscriptions created in the future, will be automatically discovered and will have logs forwarded. You must have the <b>owner</b> role in the Management Group selected.\n\nThe selection of region, subscription, and resource group defines where the management resources will be deployed. Logs will be forwarded from all subscriptions within the selected management group."
-        }
-      },
-      {
         "name": "armio",
         "type": "Microsoft.Solutions.ArmApiControl",
         "request": {
@@ -22,9 +13,33 @@
         }
       },
       {
-        "name": "subscriptionsID",
+        "name": "monitoredSubscriptions",
         "type": "Microsoft.Common.DropDown",
-        "label": "Subscription",
+        "label": "Subscriptions to Forward Logs",
+        "filterPlaceholder": "Select Subscriptions to Enable Log Forwarding",
+        "filter": true,
+        "multiselect": true,
+        "selectAll": true,
+        "defaultValue": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
+        "constraints": {
+          "allowedValues": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
+          "required": true
+        },
+        "visible": true
+      },
+      {
+        "name": "controlPlaneInfo",
+        "type": "Microsoft.Common.InfoBox",
+        "visible": true,
+        "options": {
+          "icon": "Info",
+          "text": "The Control Plane is a set of resources that will be deployed to a single subscription. The Control Plane will be used to manage the log forwarding scaling and configuration across all subscriptions. The region selected above will be where the Control Plane resources are deployed. Resources in all regions will have logs forwarded to Datadog."
+        }
+      },
+      {
+        "name": "controlPlaneSubscription",
+        "type": "Microsoft.Common.DropDown",
+        "label": "Control Plane Subscription",
         "toolTip": "Subscription to deploy the Control Plane resources",
         "filterPlaceholder": "Select subscription to deploy the Control Plane resources",
         "filter": true,
@@ -160,8 +175,9 @@
       }
     ],
     "outputs": {
+      "monitoredSubscriptions": "[steps('basics').monitoredSubscriptions]",
       "controlPlaneLocation": "[location()]",
-      "controlPlaneSubscriptionId": "[steps('basics').subscriptionsID]",
+      "controlPlaneSubscriptionId": "[steps('basics').controlPlaneSubscription]",
       "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
       "datadogApplicationKey": "[steps('datadogConfig').datadogIntegration.datadogApplicationKey]",
       "datadogApiKey": "[steps('datadogConfig').datadogIntegration.datadogApiKey]",
