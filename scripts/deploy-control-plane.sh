@@ -155,7 +155,7 @@ settings="$(az functionapp config appsettings list --name scaling-task --resourc
 grep -q "forwarder_image" <<<"$settings" || {
     echo -n "Setting forwarder_acr_name for scaling-task..."
     az functionapp config appsettings set --name scaling-task --resource-group $resource_group --settings \
-        forwarder_image=486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo/forwarder:latest \
+        forwarder_image=datadoghq.azurecr.io/forwarder:latest \
         DD_API_KEY=$DD_API_KEY \
         DD_APP_KEY=$DD_APP_KEY >/dev/null
 }
