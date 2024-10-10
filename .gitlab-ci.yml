@@ -59,8 +59,6 @@ build-tasks:
   only:
     refs:
       - main
-  variables:
-    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
     - ci/scripts/control_plane/build_tasks.sh
   artifacts:
