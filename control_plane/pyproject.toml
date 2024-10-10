@@ -22,14 +22,14 @@ scaling_task = [
     "aiosonic==0.15.0",
     "tenacity==8.5.0",
 ]
-deployer = [
+deployer_task = [
     "azure-mgmt-web==7.3.0",
     "azure-mgmt-storage==21.2.1",
     "tenacity==8.5.0",
 ]
 
 dev = [
-    "azure-log-forwarding-orchestration[resources_task,diagnostic_settings_task,scaling_task,deployer]",
+    "azure-log-forwarding-orchestration[resources_task,diagnostic_settings_task,scaling_task,deployer_task]",
     "pre-commit==3.6.2",
     "pytest==8.0.2",
     "coverage==7.4.4",

@@ -28,6 +28,12 @@ control-plane-tests:
   artifacts:
     paths:
       - ci/control_plane_coverage.md
+control-plane-test-dependencies:
+  image: $CI_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - ci/scripts/control_plane/test-dependencies.sh
 control-plane-formatting:
   image: $CI_IMAGE
   stage: test
