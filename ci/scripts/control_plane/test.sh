@@ -6,7 +6,7 @@ source /venv/bin/activate
 set -euxo pipefail
 
 : make sure all deps are installed
-pip install -e './control_plane[dev]'
+uv pip install -e './control_plane[dev]'
 
 : run tests and coverage
 python -m coverage run -m pytest ./control_plane
