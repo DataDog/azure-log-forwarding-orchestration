@@ -160,7 +160,7 @@ forwarder-publish:
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
-  stage: test
+  stage: build
   tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH != "main"
