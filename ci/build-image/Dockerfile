@@ -16,6 +16,7 @@ ENV PATH=$PATH:/usr/local/go/bin
 RUN python3.11 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 COPY ./control_plane /control_plane_deps
+RUN pip install --upgrade pip
 RUN pip install './control_plane_deps[dev]'
 
 # Install deps for forwarder
