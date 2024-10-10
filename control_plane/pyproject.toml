@@ -19,26 +19,26 @@ scaling_task = [
     "azure-mgmt-appcontainers==3.1.0",
     "azure-mgmt-storage==21.2.1",
     "datadog-api-client==2.26.0",
-    "aiosonic==0.15.0",
-    "tenacity==8.5.0",
+    "aiosonic==0.15.0", # old version required by datadog-api-client
+    "tenacity==9.0.0",
 ]
 deployer_task = [
     "azure-mgmt-web==7.3.0",
     "azure-mgmt-storage==21.2.1",
-    "tenacity==8.5.0",
+    "tenacity==9.0.0",
 ]
 
 dev = [
     "azure-log-forwarding-orchestration[resources_task,diagnostic_settings_task,scaling_task,deployer_task]",
-    "pre-commit==3.6.2",
+    "pre-commit==4.0.1",
     "pytest==8.0.2",
     "coverage==7.4.4",
     "pycobertura==3.3.2",
     "stickytape==0.2.1",
     "mypy==1.10",
-    "ruff==0.5.4",
-    "types-jsonschema==4.22.0.20240610",
-    "types-requests==2.32.0.20240602",
+    "ruff==0.6.9",
+    "types-jsonschema==4.23.0.20240813",
+    "types-requests==2.32.0.20240602"
 ]
 
 [build-system]
