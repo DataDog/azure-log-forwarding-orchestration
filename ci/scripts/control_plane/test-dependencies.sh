@@ -6,7 +6,8 @@ cd ./control_plane
 
 test_task() {
     local task_name=$1
-    echo "Testing $task_name"
+    echo "Testing $task_name. If there is an import error," \
+        "the task is missing a dependency or is importing something incorrectly."
     python -m venv ./test_venv
     source ./test_venv/bin/activate
 
