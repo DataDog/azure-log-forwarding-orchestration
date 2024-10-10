@@ -3,7 +3,6 @@
 set -euo pipefail
 
 cd ./control_plane
-export UV_LINK_MODE=copy
 
 greenify() {
     echo -e "\033[32m$@\033[0m"
