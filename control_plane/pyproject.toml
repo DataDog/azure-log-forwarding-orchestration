@@ -69,5 +69,18 @@ indent-style = "space"
 docstring-code-format = true
 
 [tool.mypy]
+strict = true
 check_untyped_defs = true
-ignore_missing_imports = true
+disable_error_code = [
+    "import-untyped",
+    "unused-ignore",   # used for incompatibilities with pyright and mypy
+    "no-untyped-call", # datadog api library problems
+]
+# exclude test files and config directory
+exclude = ".*test.*|config/"
+
+
+[[tool.mypy.overrides]]
+module = "azure.mgmt.*"
+# azure mgmt modules are very slow and we do not have control, we should skip those
+follow_imports = "skip"

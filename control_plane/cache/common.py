@@ -6,7 +6,7 @@ from typing import Any, Final, Literal, NamedTuple, TypeVar
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
-from azure.storage.blob.aio import BlobClient
+from azure.storage.blob.aio import BlobClient, StorageStreamDownloader
 from jsonschema import ValidationError, validate
 
 BLOB_STORAGE_CACHE = "control-plane-cache"
@@ -80,11 +80,11 @@ EVENT_HUB_NAMESPACE_PREFIX = NotImplemented
 
 
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
-    return EVENT_HUB_NAME_PREFIX + config_id
+    return EVENT_HUB_NAME_PREFIX + config_id  # type: ignore
 
 
 def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
-    return EVENT_HUB_NAMESPACE_PREFIX + config_id
+    return EVENT_HUB_NAMESPACE_PREFIX + config_id  # type: ignore
 
 
 LogForwarderType = Literal["eventhub", "storageaccount"]
@@ -111,7 +111,7 @@ async def read_cache(blob_name: str) -> str:
         get_config_option(STORAGE_CONNECTION_SETTING), BLOB_STORAGE_CACHE, blob_name
     ) as blob_client:
         try:
-            blob = await blob_client.download_blob()
+            blob: StorageStreamDownloader[bytes] = await blob_client.download_blob()
         except ResourceNotFoundError:
             return ""
         return (await blob.readall()).decode()
