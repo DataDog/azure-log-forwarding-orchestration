@@ -278,7 +278,7 @@ class DeployerTask(Task):
         await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
 
 
-async def main():
+async def main() -> None:
     async with DeployerTask() as deployer:
         await deployer.run()
 

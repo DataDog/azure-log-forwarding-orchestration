@@ -46,6 +46,7 @@ from azure.mgmt.storage.v2023_05_01.models import (
     StorageAccountKey,
 )
 from azure.storage.blob.aio import ContainerClient
+from azure.storage.blob.aio._download_async import StorageStreamDownloader
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
@@ -114,7 +115,7 @@ def get_datetime_str(time: datetime) -> str:
     return f"{time:%Y-%m-%d-%H}"
 
 
-class LogForwarderClient(AbstractAsyncContextManager):
+class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
         self.forwarder_image = get_config_option("forwarder_image")
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
@@ -297,7 +298,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         """Deletes the Log forwarder, returns True if successful, False otherwise"""
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
-        async def _delete_forwarder():
+        async def _delete_forwarder() -> None:
             log.info("Attempting to delete log forwarder %s", forwarder_id)
 
             # start deleting the storage account now, it has no dependencies
@@ -380,7 +381,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
     async def read_blob(self, container_client: ContainerClient, blob_name: str) -> str:
         try:
             async with container_client.get_blob_client(blob_name) as blob_client:
-                raw_data = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
+                raw_data: StorageStreamDownloader[bytes] = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
                 dict_str = await raw_data.readall()
                 return dict_str.decode("utf-8")
         except ResourceNotFoundError:
@@ -398,29 +399,27 @@ class LogForwarderClient(AbstractAsyncContextManager):
             log.error(error)
 
     def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
-        return cast(  # annoying hack to get mypy typing to work since the SDK overrides __new__
-            MetricPayload,
-            MetricPayload(
-                series=[
-                    MetricSeries(
-                        metric="Runtime",
-                        type=MetricIntakeType.UNSPECIFIED,
-                        points=[
-                            MetricPoint(
-                                timestamp=int(metric["timestamp"]),
-                                value=metric["runtime_seconds"],
-                            )
-                            for metric in metric_entries
-                        ],
-                        resources=[
-                            MetricResource(
-                                name=get_container_app_name(log_forwarder_id),
-                                type="logforwarder",
-                            ),
-                        ],
-                    ),
-                ]
-            ),
+        # type ignore hack to get pyright typing to work since the SDK overrides __new__
+        return MetricPayload(  # type: ignore
+            series=[
+                MetricSeries(
+                    metric="Runtime",
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=int(metric["timestamp"]),
+                            value=metric["runtime_seconds"],
+                        )
+                        for metric in metric_entries
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=get_container_app_name(log_forwarder_id),
+                            type="logforwarder",
+                        ),
+                    ],
+                ),
+            ]
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:

@@ -298,7 +298,7 @@ class ScalingTask(Task):
         region: str,
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
-    ):
+    ) -> bool:
         def _has_enough_resources_to_scale_up(config_id: str) -> bool:
             if num_resources_by_forwarder[config_id] < 2:
                 log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
@@ -311,6 +311,9 @@ class ScalingTask(Task):
             if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS)
             and _has_enough_resources_to_scale_up(config_id)
         ]
+
+        if not forwarders_to_scale_up:
+            return False
 
         # create a second forwarder for each forwarder that needs to scale up
         new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
@@ -325,6 +328,8 @@ class ScalingTask(Task):
                 new_forwarder,
                 forwarder_metrics[overwhelmed_forwarder_id],
             )
+
+        return True
 
     def split_forwarder_resources(
         self,
@@ -372,7 +377,7 @@ class ScalingTask(Task):
         region_config: RegionAssignmentConfiguration,
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
-    ):
+    ) -> None:
         forwarders_to_collapse = sorted(
             [
                 config_id

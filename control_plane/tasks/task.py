@@ -14,7 +14,7 @@ log = getLogger(__name__)
 getLogger("azure").setLevel(ERROR)
 
 
-class Task(AbstractAsyncContextManager):
+class Task(AbstractAsyncContextManager["Task"]):
     def __init__(self) -> None:
         self.credential = DefaultAzureCredential()
 
