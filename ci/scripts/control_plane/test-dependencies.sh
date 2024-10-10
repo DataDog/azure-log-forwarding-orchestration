@@ -10,7 +10,7 @@ test_task() {
     python -m venv ./test_venv
     source ./test_venv/bin/activate
 
-    pip install ".[$task_name]"
+    pip install ".[$task_name]" >/dev/null
 
     task_name_const="${task_name^^}_NAME"
     python -c "from tasks.$task_name import $task_name_const; print($task_name_const, 'successfully imported')"
