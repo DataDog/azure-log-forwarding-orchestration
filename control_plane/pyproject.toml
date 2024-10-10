@@ -30,15 +30,15 @@ deployer_task = [
 
 dev = [
     "azure-log-forwarding-orchestration[resources_task,diagnostic_settings_task,scaling_task,deployer_task]",
-    "pre-commit==3.6.2",
+    "pre-commit==4.0.1",
     "pytest==8.0.2",
     "coverage==7.4.4",
     "pycobertura==3.3.2",
     "stickytape==0.2.1",
     "mypy==1.10",
-    "ruff==0.5.4",
-    "types-jsonschema==4.22.0.20240610",
-    "types-requests==2.32.0.20240602",
+    "ruff==0.6.9",
+    "types-jsonschema==4.23.0.20240813",
+    "types-requests==2.32.0.20240602"
 ]
 
 [build-system]
