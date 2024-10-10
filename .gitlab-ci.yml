@@ -6,8 +6,8 @@ variables:
 stages:
   - ci-image
   - test
-  - after-test
-  - build-and-release
+  - build
+  - publish
 # ------------- CI IMAGE -------------
 ci-build-image:
   image: $DOCKER_IMAGE
@@ -46,27 +46,44 @@ control-plane-lint:
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/lint.sh
-type-check:
+control-plane-type-check:
   image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/type-check.sh
-build-and-publish-tasks:
+build-tasks:
   image: $CI_IMAGE
-  stage: build-and-release
+  stage: build
   tags: ["arch:amd64"]
+  only:
+    refs:
+      - main
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
     - ci/scripts/control_plane/build_tasks.sh
-    - ci/scripts/control_plane/publish.py
+  artifacts:
+    paths:
+      - dist/diagnostic_settings_task.zip
+      - dist/resources_task.zip
+      - dist/scaling_task.zip
+publish-tasks:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
+  script:
+    - ci/scripts/control_plane/publish.py
+  dependencies:
+    - build-tasks
 deployer-build-latest:
   image: $DOCKER_IMAGE
-  stage: build-and-release
+  stage: build
   only:
     refs:
       - main
@@ -75,7 +92,7 @@ deployer-build-latest:
     - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-tagged:
   image: $DOCKER_IMAGE
-  stage: build-and-release
+  stage: build
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -83,7 +100,7 @@ deployer-build-tagged:
   script:
     - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-publish:
-  stage: build-and-release
+  stage: publish
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -110,7 +127,7 @@ forwarder-tests:
       - ci/forwarder_coverage.md
 forwarder-build-latest:
   image: $DOCKER_IMAGE
-  stage: build-and-release
+  stage: build
   tags: ["arch:amd64"]
   only:
     refs:
@@ -119,7 +136,7 @@ forwarder-build-latest:
     - ci/scripts/forwarder/build_and_push.sh latest
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
-  stage: build-and-release
+  stage: build
   tags: ["arch:amd64"]
   only:
     refs:
@@ -127,7 +144,7 @@ forwarder-build-tagged:
   script:
     - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 forwarder-publish:
-  stage: build-and-release
+  stage: publish
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
