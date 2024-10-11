@@ -7,7 +7,7 @@ set -uxo pipefail
 cd control_plane
 
 : make sure all deps are installed
-pip install -e '.[dev]'
+uv pip install '.[dev]'
 
 : run mypy
 python -m mypy --config-file pyproject.toml .
