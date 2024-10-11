@@ -112,7 +112,7 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (err error) {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
-	buffer := make([]byte, 0)
+	buffer := make([]byte, 1024*1024*5)
 	scanner.Buffer(buffer, maxBufferSize)
 
 	for scanner.Scan() {
