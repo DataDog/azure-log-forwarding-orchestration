@@ -58,23 +58,22 @@ func NewBlob(container string, item *container.BlobItem) Blob {
 }
 
 // ListBlobs returns an iterator over the blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, containerName string) collections.Iterator[*Blob, azblob.ListBlobsFlatResponse] {
+func (c *Client) ListBlobs(ctx context.Context, containerName string) collections.Iterator[Blob, azblob.ListBlobsFlatResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
 
-	getBlobs := func(resp azblob.ListBlobsFlatResponse) []*Blob {
+	getBlobs := func(resp azblob.ListBlobsFlatResponse) []Blob {
 		if resp.Segment == nil {
 			return nil
 		}
-		return collections.Map(resp.Segment.BlobItems, func(item *container.BlobItem) *Blob {
-			currBlob := NewBlob(containerName, item)
-			return &currBlob
+		return collections.Map(resp.Segment.BlobItems, func(item *container.BlobItem) Blob {
+			return NewBlob(containerName, item)
 		})
 	}
-	iter := collections.NewIterator(blobPager, getBlobs, nil)
+	iter := collections.NewIterator(blobPager, getBlobs)
 	return iter
 }
 

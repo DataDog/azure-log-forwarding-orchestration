@@ -33,7 +33,7 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
-func getBlobs(ctx context.Context, storageClient *storage.Client, container *storage.Container) ([]*storage.Blob, error) {
+func getBlobs(ctx context.Context, storageClient *storage.Client, container storage.Container) ([]storage.Blob, error) {
 	it := storageClient.ListBlobs(ctx, container.Name)
 	results, err := collections.Collect(ctx, it)
 	if err != nil {
@@ -42,7 +42,7 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container *sto
 	return results, nil
 }
 
-func getContainers(ctx context.Context, storageClient *storage.Client) ([]*storage.Container, error) {
+func getContainers(ctx context.Context, storageClient *storage.Client) ([]storage.Container, error) {
 	it := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
 	results, err := collections.Collect(ctx, it)
 	if err != nil {
@@ -172,7 +172,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	err = errors.Join(err, containerErr)
 
 	// Get all the blobs
-	var blobs []*storage.Blob
+	var blobs []storage.Blob
 	for _, c := range containers {
 		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
 		err = errors.Join(err, blobsErr)
@@ -189,7 +189,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 			continue
 		}
 		downloadEg.Go(func() error {
-			return getLogs(segmentCtx, storageClient, cursors, *blob, logCh)
+			return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
 		})
 	}
 

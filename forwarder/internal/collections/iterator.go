@@ -20,7 +20,6 @@ type Iterator[ReturnType any, PagerType any] struct {
 	azurePager    *runtime.Pager[PagerType]
 	internalPager Pager[ReturnType]
 	getter        func(PagerType) []ReturnType
-	nilValue      ReturnType
 }
 
 type Pager[ReturnType any] struct {
@@ -51,10 +50,12 @@ func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (r ReturnTyp
 	if !i.internalPager.More() {
 		err = i.getNextPage(ctx)
 		if err != nil {
-			return i.nilValue, err
+			var zeroValue ReturnType
+			return zeroValue, err
 		}
 		if !i.internalPager.More() {
-			return i.nilValue, Done
+			var zeroValue ReturnType
+			return zeroValue, Done
 		}
 	}
 
@@ -77,15 +78,22 @@ func (i *Iterator[ReturnType, PagerType]) getNextPage(ctx context.Context) error
 }
 
 // NewIterator creates a new iterator.
-func NewIterator[ReturnType any, PagerType any](pager *runtime.Pager[PagerType], getter func(PagerType) []ReturnType, nilValue ReturnType) Iterator[ReturnType, PagerType] {
-	return Iterator[ReturnType, PagerType]{azurePager: pager, getter: getter, nilValue: nilValue}
+func NewIterator[ReturnType any, PagerType any](
+	pager *runtime.Pager[PagerType],
+	getter func(PagerType) []ReturnType) Iterator[ReturnType, PagerType] {
+
+	return Iterator[ReturnType, PagerType]{azurePager: pager, getter: getter}
 }
 
 // PagingError is returned when more items are fetched than expected.
 var PagingError = errors.New("fetched more items than expected")
 
 // NewPagingHandler creates a new paging handler.
-func NewPagingHandler[ContentType any, ResponseType any](items []ContentType, fetcherError error, getter func(ContentType) ResponseType) runtime.PagingHandler[ResponseType] {
+func NewPagingHandler[ContentType any, ResponseType any](
+	items []ContentType,
+	fetcherError error,
+	getter func(ContentType) ResponseType) runtime.PagingHandler[ResponseType] {
+
 	counter := 0
 	return runtime.PagingHandler[ResponseType]{
 		Fetcher: func(ctx context.Context, response *ResponseType) (ResponseType, error) {

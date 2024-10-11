@@ -23,17 +23,17 @@ type Container struct {
 }
 
 // GetContainersMatchingPrefix returns an iterator over containers with a given prefix.
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) collections.Iterator[*Container, service.ListContainersResponse] {
+func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) collections.Iterator[Container, service.ListContainersResponse] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
-	iter := collections.NewIterator(containerPager, func(resp service.ListContainersResponse) []*Container {
-		return collections.Map(resp.ContainerItems, func(item *service.ContainerItem) *Container {
-			return &Container{
+	iter := collections.NewIterator(containerPager, func(resp service.ListContainersResponse) []Container {
+		return collections.Map(resp.ContainerItems, func(item *service.ContainerItem) Container {
+			return Container{
 				Name: *item.Name,
 			}
 		})
-	}, nil)
+	})
 	return iter
 }
 

@@ -14,8 +14,8 @@ func Map[SliceType, ReturnType any](typeSlice []SliceType, fn func(SliceType) Re
 	return result
 }
 
-func Collect[ReturnType any, ResponseType any](ctx context.Context, it Iterator[*ReturnType, ResponseType]) ([]*ReturnType, error) {
-	var collection []*ReturnType
+func Collect[ReturnType any, ResponseType any](ctx context.Context, it Iterator[ReturnType, ResponseType]) ([]ReturnType, error) {
+	var collection []ReturnType
 	for {
 		item, err := it.Next(ctx)
 
