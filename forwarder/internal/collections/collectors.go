@@ -19,7 +19,7 @@ func Collect[ReturnType any, ResponseType any](ctx context.Context, it Iterator[
 	for {
 		item, err := it.Next(ctx)
 
-		if errors.Is(err, Done) {
+		if errors.Is(err, ErrDone) {
 			break
 		}
 

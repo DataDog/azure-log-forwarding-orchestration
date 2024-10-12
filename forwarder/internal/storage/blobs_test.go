@@ -48,7 +48,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*storage.Blob, error) {
+func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]storage.Blob, error) {
 	ctrl := gomock.NewController(t)
 
 	handler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
@@ -93,17 +93,16 @@ func TestListBlobs(t *testing.T) {
 		assert.Equal(t, testString, results[1].Name)
 	})
 
-	t.Run("returns empty array", func(t *testing.T) {
+	t.Run("errors on empty array", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		results, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
+		_, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
 
 		// THEN
-		assert.NoError(t, err)
-		assert.Len(t, results, 0)
+		assert.ErrorAs(t, err, &collections.ErrEmptyPage)
 	})
 
 	t.Run("error response", func(t *testing.T) {

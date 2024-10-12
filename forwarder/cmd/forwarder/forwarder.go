@@ -35,20 +35,12 @@ import (
 
 func getBlobs(ctx context.Context, storageClient *storage.Client, container storage.Container) ([]storage.Blob, error) {
 	it := storageClient.ListBlobs(ctx, container.Name)
-	results, err := collections.Collect(ctx, it)
-	if err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collections.Collect(ctx, it)
 }
 
 func getContainers(ctx context.Context, storageClient *storage.Client) ([]storage.Container, error) {
 	it := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-	results, err := collections.Collect(ctx, it)
-	if err != nil {
-		return nil, err
-	}
-	return results, nil
+	return collections.Collect(ctx, it)
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {

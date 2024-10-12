@@ -38,7 +38,7 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 	}
 }
 
-func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*storage.Container, error) {
+func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]storage.Container, error) {
 	ctrl := gomock.NewController(t)
 	handler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
 
@@ -82,17 +82,16 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		assert.Equal(t, testString, results[1].Name)
 	})
 
-	t.Run("returns empty array", func(t *testing.T) {
+	t.Run("returns error on empty array", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		containers := [][]*service.ContainerItem{}
 
 		// WHEN
-		results, err := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, nil)
+		_, err := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, nil)
 
 		// THEN
-		assert.NoError(t, err)
-		assert.Len(t, results, 0)
+		assert.ErrorAs(t, err, &collections.ErrEmptyPage)
 	})
 
 	t.Run("error response", func(t *testing.T) {
