@@ -7,6 +7,17 @@ from cache.common import deserialize_cache
 RESOURCE_CACHE_BLOB = "resources.json"
 
 
+MonitoredSubscriptions = list[str]
+MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": {"type": "string"},
+}
+
+
+def deserialize_monitored_subscriptions(env_str: str) -> MonitoredSubscriptions | None:
+    return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA)
+
+
 ResourceCache: TypeAlias = dict[str, dict[str, set[str]]]
 "mapping of subscription_id to region to resource_ids"
 

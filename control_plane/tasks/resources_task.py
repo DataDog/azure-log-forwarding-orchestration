@@ -9,8 +9,14 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
-from cache.common import get_config_option, read_cache, write_cache
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache, prune_resource_cache
+from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
+from cache.resources_cache import (
+    RESOURCE_CACHE_BLOB,
+    ResourceCache,
+    deserialize_monitored_subscriptions,
+    deserialize_resource_cache,
+    prune_resource_cache,
+)
 from tasks.common import collect, now
 from tasks.constants import ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
@@ -26,9 +32,10 @@ DISALLOWED_REGIONS = {"global"}
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
-        self.monitored_subscription_names = {
-            sub_name.strip().casefold() for sub_name in get_config_option("MONITORED_SUBSCRIPTIONS").split(",")
-        }
+        monitored_subs = deserialize_monitored_subscriptions(get_config_option("MONITORED_SUBSCRIPTIONS"))
+        if not monitored_subs:
+            raise InvalidCacheError("Monitored Subscriptions Must be a valid non-empty list")
+        self.monitored_subscriptions = monitored_subs
         resource_cache = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             log.warning("Resource Cache is in an invalid format, task will reset the cache")
@@ -41,9 +48,9 @@ class ResourcesTask(Task):
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = await collect(
-                cast(str, sub.subscription_id).casefold()
+                sub_id
                 async for sub in subscription_client.subscriptions.list()
-                if cast(str, sub.display_name).casefold() in self.monitored_subscription_names
+                if (sub_id := cast(str, sub.subscription_id).casefold()) in self.monitored_subscriptions
             )
 
         await gather(*map(self.process_subscription, subscriptions))
