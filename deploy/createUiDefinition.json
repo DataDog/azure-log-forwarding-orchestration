@@ -175,7 +175,7 @@
       }
     ],
     "outputs": {
-      "monitoredSubscriptions": "[steps('basics').monitoredSubscriptions]",
+      "monitoredSubscriptions": "[string(steps('basics').monitoredSubscriptions)]",
       "controlPlaneLocation": "[location()]",
       "controlPlaneSubscriptionId": "[steps('basics').controlPlaneSubscription]",
       "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
