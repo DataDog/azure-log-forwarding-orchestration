@@ -61,8 +61,8 @@ class TestDeserializeResourceCache(TestCase):
         monitored_subscriptions = deserialize_monitored_subscriptions(env_var)
         self.assertEqual(
             monitored_subscriptions,
-            {
+            [
                 "8c56d827-5f07-45ce-8f2b-6c5001db5c6f",
                 "0b62a232-b8db-4380-9da6-640f7272ed6d",
-            },
+            ],
         )
