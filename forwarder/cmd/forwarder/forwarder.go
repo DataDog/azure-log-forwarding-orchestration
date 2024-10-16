@@ -136,7 +136,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.AddLog(ctx, logItem)
-		var invalidLogError logs.InvalidLogError
+		var invalidLogError logs.TooLargeError
 		if errors.As(currErr, &invalidLogError) {
 			logger.Warning(invalidLogError.Error())
 		}

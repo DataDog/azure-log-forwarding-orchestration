@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
+// Log represents a log to send to Datadog.
 type Log struct {
 	ByteSize   int
 	Content    string
@@ -24,11 +25,12 @@ type Log struct {
 	Tags       []string
 }
 
+// IsValid checks if the log is valid to send to Datadog.
 func (l *Log) IsValid() bool {
 	return l.ByteSize < MaxPayloadSize
 }
 
-// NewLog creates a new Log from the given log bytes
+// NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte) (*Log, error) {
 	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
 	log, err := unmarshall(logBytes)
@@ -46,21 +48,21 @@ func NewLog(logBytes []byte) (*Log, error) {
 	return log, nil
 }
 
-// InvalidLogError represents an error for when a log is not valid
-type InvalidLogError struct {
+// TooLargeError represents an error for when a log is too large to send to Datadog.
+type TooLargeError struct {
 	log Log
 }
 
-// Error returns a string representation of the InvalidLogError
-func (e InvalidLogError) Error() string {
-	return fmt.Sprintf("invalid log from %s", e.log.ResourceId)
+// Error returns a string representation of the TooLargeError.
+func (e TooLargeError) Error() string {
+	return fmt.Sprintf("large log from %s with a size of %d", e.log.ResourceId, len(e.log.Content))
 }
 
-// bufferSize is the maximum number of logs per post to Logs API
+// bufferSize is the maximum number of logs per post to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
 const bufferSize = 1000
 
-// maxPayloadSize is the maximum byte size of the payload to Logs API
+// MaxPayloadSize is the maximum byte size of the payload to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
 const MaxPayloadSize = 5 * 1000000
 
@@ -77,33 +79,33 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	return logItem
 }
 
-// DatadogLogsSubmitter wraps around the datadogV2.LogsApi struct
+// DatadogLogsSubmitter wraps around the datadogV2.LogsApi struct.
 //
 //go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
 type DatadogLogsSubmitter interface {
 	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
 }
 
-// Client is a client for submitting logs to Datadog
-// It buffers logs and sends them in batches to the Datadog API
-// Client is not thread safe
+// Client is a client for submitting logs to Datadog.
+// It buffers logs and sends them in batches to the Datadog API.
+// Client is not thread safe.
 type Client struct {
 	logsSubmitter DatadogLogsSubmitter
 	logsBuffer    []*Log
 	currentSize   int
 }
 
-// NewClient creates a new Client
+// NewClient creates a new Client.
 func NewClient(logsApi DatadogLogsSubmitter) *Client {
 	return &Client{
 		logsSubmitter: logsApi,
 	}
 }
 
-// AddLog adds a log to the buffer for future submission
+// AddLog adds a log to the buffer for future submission.
 func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
 	if !log.IsValid() {
-		return InvalidLogError{
+		return TooLargeError{
 			log: *log,
 		}
 	}
@@ -119,7 +121,7 @@ func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
 	return nil
 }
 
-// Flush sends all buffered logs to the Datadog API
+// Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Flush")
 	defer span.Finish(tracer.WithError(err))
@@ -137,7 +139,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	return err
 }
 
-// shouldFlush checks if adding the current log to the buffer would result in an invalid payload
+// shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.ByteSize >= MaxPayloadSize
 }

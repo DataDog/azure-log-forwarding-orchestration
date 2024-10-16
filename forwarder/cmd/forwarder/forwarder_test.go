@@ -267,7 +267,7 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
-		var invalidLogError logs.InvalidLogError
+		var invalidLogError logs.TooLargeError
 		parsedLog, err := logs.NewLog(invalidLog)
 		require.NoError(t, err)
 
