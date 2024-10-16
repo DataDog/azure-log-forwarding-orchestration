@@ -70,7 +70,7 @@ class TestLogForwarderClient(AsyncTestCase):
         environ["DD_APP_KEY"] = "456456"
         environ["DD_SITE"] = "datadoghq.com"
         environ["SHOULD_SUBMIT_METRICS"] = ""
-        environ["forwarder_image"] = "ddlfo.azurecr.io/blobforwarder:latest"
+        environ["FORWARDER_IMAGE"] = "ddlfo.azurecr.io/blobforwarder:latest"
 
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
