@@ -9,9 +9,15 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
-from cache.common import read_cache, write_cache
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache, prune_resource_cache
-from tasks.common import now
+from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
+from cache.resources_cache import (
+    RESOURCE_CACHE_BLOB,
+    ResourceCache,
+    deserialize_monitored_subscriptions,
+    deserialize_resource_cache,
+    prune_resource_cache,
+)
+from tasks.common import collect, now
 from tasks.constants import ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
@@ -26,6 +32,10 @@ DISALLOWED_REGIONS = {"global"}
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
+        monitored_subs = deserialize_monitored_subscriptions(get_config_option("MONITORED_SUBSCRIPTIONS"))
+        if not monitored_subs:
+            raise InvalidCacheError("Monitored Subscriptions Must be a valid non-empty list")
+        self.monitored_subscriptions = monitored_subs
         resource_cache = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             log.warning("Resource Cache is in an invalid format, task will reset the cache")
@@ -37,12 +47,13 @@ class ResourcesTask(Task):
 
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
-            await gather(
-                *[
-                    self.process_subscription(cast(str, sub.subscription_id).casefold())
-                    async for sub in subscription_client.subscriptions.list()
-                ]
+            subscriptions = await collect(
+                sub_id
+                async for sub in subscription_client.subscriptions.list()
+                if (sub_id := cast(str, sub.subscription_id).casefold()) in self.monitored_subscriptions
             )
+
+        await gather(*map(self.process_subscription, subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
         log.debug("Processing the following subscription: %s", subscription_id)

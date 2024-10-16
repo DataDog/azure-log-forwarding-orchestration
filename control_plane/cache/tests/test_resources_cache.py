@@ -3,7 +3,12 @@ from json import dumps
 from unittest import TestCase
 
 # project
-from cache.resources_cache import ResourceCache, deserialize_resource_cache, prune_resource_cache
+from cache.resources_cache import (
+    ResourceCache,
+    deserialize_monitored_subscriptions,
+    deserialize_resource_cache,
+    prune_resource_cache,
+)
 from cache.tests import sub_id1, sub_id2
 
 
@@ -50,3 +55,14 @@ class TestDeserializeResourceCache(TestCase):
         cache: ResourceCache = {"sub1": {"region2": set()}, "sub2": {"region1": {"resource1"}}}
         prune_resource_cache(cache)
         self.assertEqual(cache, {"sub2": {"region1": {"resource1"}}})
+
+    def test_monitored_subscriptions_var(self):
+        env_var = '["8c56d827-5f07-45ce-8f2b-6c5001db5c6f","0b62a232-b8db-4380-9da6-640f7272ed6d"]'
+        monitored_subscriptions = deserialize_monitored_subscriptions(env_var)
+        self.assertEqual(
+            monitored_subscriptions,
+            [
+                "8c56d827-5f07-45ce-8f2b-6c5001db5c6f",
+                "0b62a232-b8db-4380-9da6-640f7272ed6d",
+            ],
+        )

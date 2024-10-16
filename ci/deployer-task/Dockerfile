@@ -6,6 +6,6 @@ COPY ./tasks ./tasks
 COPY ./pyproject.toml ./pyproject.toml
 
 # Download dependencies
-RUN  python3.11 -m pip install .
+RUN python3.11 -m pip install --no-cache-dir '.[deployer_task]'
 
 CMD ["python3.11", "-m", "tasks.deployer_task"]

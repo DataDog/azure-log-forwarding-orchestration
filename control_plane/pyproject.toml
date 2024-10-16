@@ -3,32 +3,43 @@ version = "0.0.1"
 name = "azure-log-forwarding-orchestration"
 requires-python = ">= 3.11"
 readme = "README.md"
+
+# common dependencies
 dependencies = [
     "aiohttp==3.9.5",
-    "aiosonic==0.15.0",
     "azure-identity==1.15.0",
-    "azure-mgmt-appcontainers==3.1.0",
-    "azure-mgmt-monitor==6.0.2",
-    "azure-mgmt-resource==23.0.1",
-    "azure-mgmt-storage==21.2.1",
-    "azure-mgmt-web==7.3.0",
     "azure-storage-blob==12.20.0",
-    "datadog-api-client==2.26.0",
     "jsonschema==4.21.1",
-    "tenacity==8.5.0",
 ]
 
 [project.optional-dependencies]
+resources_task = ["azure-mgmt-resource==23.0.1"]
+diagnostic_settings_task = ["azure-mgmt-monitor==6.0.2"]
+scaling_task = [
+    "azure-mgmt-appcontainers==3.1.0",
+    "azure-mgmt-resource==23.0.1",
+    "azure-mgmt-storage==21.2.1",
+    "datadog-api-client==2.26.0",
+    "aiosonic==0.15.0", # old version required by datadog-api-client
+    "tenacity==9.0.0",
+]
+deployer_task = [
+    "azure-mgmt-web==7.3.0",
+    "azure-mgmt-storage==21.2.1",
+    "tenacity==9.0.0",
+]
+
 dev = [
-    "pre-commit==3.6.2",
+    "azure-log-forwarding-orchestration[resources_task,diagnostic_settings_task,scaling_task,deployer_task]",
+    "pre-commit==4.0.1",
     "pytest==8.0.2",
     "coverage==7.4.4",
     "pycobertura==3.3.2",
     "stickytape==0.2.1",
     "mypy==1.10",
-    "ruff==0.5.4",
-    "types-jsonschema==4.22.0.20240610",
-    "types-requests==2.32.0.20240602",
+    "ruff==0.6.9",
+    "types-jsonschema==4.23.0.20240813",
+    "types-requests==2.32.0.20240602"
 ]
 
 [build-system]
@@ -59,5 +70,18 @@ indent-style = "space"
 docstring-code-format = true
 
 [tool.mypy]
+strict = true
 check_untyped_defs = true
-ignore_missing_imports = true
+disable_error_code = [
+    "import-untyped",
+    "unused-ignore",   # used for incompatibilities with pyright and mypy
+    "no-untyped-call", # datadog api library problems
+]
+# exclude test files and config directory
+exclude = ".*test.*|config/"
+
+
+[[tool.mypy.overrides]]
+module = "azure.mgmt.*"
+# azure mgmt modules are very slow and we do not have control, we should skip those
+follow_imports = "skip"

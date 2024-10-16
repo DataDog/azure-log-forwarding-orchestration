@@ -25,6 +25,8 @@ from azure.mgmt.appcontainers.models import (
     ManagedEnvironment,
     Secret,
 )
+from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
+from azure.mgmt.resource.resources.v2021_01_01.models import ResourceGroup
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
     BlobContainer,
@@ -46,6 +48,7 @@ from azure.mgmt.storage.v2023_05_01.models import (
     StorageAccountKey,
 )
 from azure.storage.blob.aio import ContainerClient
+from azure.storage.blob.aio._download_async import StorageStreamDownloader
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
@@ -70,12 +73,15 @@ from cache.common import (
     get_storage_account_name,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from tasks.common import Resource, collect, wait_for_resource
+from tasks.common import Resource, collect, log_errors
+from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
 DD_SITE_SETTING = "DD_SITE"
 DD_API_KEY_SETTING = "DD_API_KEY"
+FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
+CONTROL_PLANE_REGION_SETTING = "CONTROL_PLANE_REGION"
 
 DD_API_KEY_SECRET = "dd-api-key"
 CONNECTION_STRING_SECRET = "connection-string"
@@ -113,15 +119,17 @@ def get_datetime_str(time: datetime) -> str:
     return f"{time:%Y-%m-%d-%H}"
 
 
-class LogForwarderClient(AbstractAsyncContextManager):
+class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
-        self.forwarder_image = get_config_option("forwarder_image")
+        self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
         self.dd_site = get_config_option(DD_SITE_SETTING)
+        self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
+        self.resource_client = ResourceManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
         self.metrics_client = MetricsApi(self._datadog_client)
@@ -130,10 +138,12 @@ class LogForwarderClient(AbstractAsyncContextManager):
 
     async def __aenter__(self) -> Self:
         await gather(
+            self.resource_client.__aenter__(),
             self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
             self._datadog_client.__aenter__(),
         )
+        await self.ensure_resource_group()
         return self
 
     async def __aexit__(
@@ -145,12 +155,6 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    def log_and_raise_errors(self, message: str, *maybe_errors: Any) -> None:
-        errors = [e for e in maybe_errors if isinstance(e, Exception)]
-        if errors:
-            log.exception("%s: %s", message, errors)
-            raise errors[0]
-
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
         managed_env_name = get_managed_env_name(config_id)
@@ -160,7 +164,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
             wait_for_resource(*await self.create_log_forwarder_managed_environment(region, managed_env_name)),
             return_exceptions=True,
         )
-        self.log_and_raise_errors("Failed to create storage account and/or managed environment", *maybe_errors)
+        log_errors("Failed to create storage account and/or managed environment", *maybe_errors, reraise=True)
 
         maybe_errors = await gather(
             wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
@@ -168,10 +172,17 @@ class LogForwarderClient(AbstractAsyncContextManager):
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
         )
-        self.log_and_raise_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors)
+        log_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True)
 
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
+
+    async def ensure_resource_group(self) -> None:
+        exists = await self.resource_client.resource_groups.check_existence(self.resource_group)
+        if not exists:
+            await self.resource_client.resource_groups.create_or_update(
+                self.resource_group, ResourceGroup(location=self.control_plane_region)
+            )
 
     async def create_log_forwarder_storage_account(
         self, region: str, storage_account_name: str
@@ -302,7 +313,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
         """Deletes the Log forwarder, returns True if successful, False otherwise"""
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
-        async def _delete_forwarder():
+        async def _delete_forwarder() -> None:
             log.info("Attempting to delete log forwarder %s", forwarder_id)
 
             # start deleting the storage account now, it has no dependencies
@@ -385,7 +396,7 @@ class LogForwarderClient(AbstractAsyncContextManager):
     async def read_blob(self, container_client: ContainerClient, blob_name: str) -> str:
         try:
             async with container_client.get_blob_client(blob_name) as blob_client:
-                raw_data = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
+                raw_data: StorageStreamDownloader[bytes] = await blob_client.download_blob(timeout=CLIENT_MAX_SECONDS)
                 dict_str = await raw_data.readall()
                 return dict_str.decode("utf-8")
         except ResourceNotFoundError:
@@ -403,29 +414,27 @@ class LogForwarderClient(AbstractAsyncContextManager):
             log.error(error)
 
     def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
-        return cast(  # annoying hack to get mypy typing to work since the SDK overrides __new__
-            MetricPayload,
-            MetricPayload(
-                series=[
-                    MetricSeries(
-                        metric="Runtime",
-                        type=MetricIntakeType.UNSPECIFIED,
-                        points=[
-                            MetricPoint(
-                                timestamp=int(metric["timestamp"]),
-                                value=metric["runtime_seconds"],
-                            )
-                            for metric in metric_entries
-                        ],
-                        resources=[
-                            MetricResource(
-                                name=get_container_app_name(log_forwarder_id),
-                                type="logforwarder",
-                            ),
-                        ],
-                    ),
-                ]
-            ),
+        # type ignore hack to get pyright typing to work since the SDK overrides __new__
+        return MetricPayload(  # type: ignore
+            series=[
+                MetricSeries(
+                    metric="Runtime",
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=int(metric["timestamp"]),
+                            value=metric["runtime_seconds"],
+                        )
+                        for metric in metric_entries
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=get_container_app_name(log_forwarder_id),
+                            type="logforwarder",
+                        ),
+                    ],
+                ),
+            ]
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:

@@ -1,5 +1,7 @@
 targetScope = 'managementGroup'
 
+param monitoredSubscriptions string
+
 param controlPlaneLocation string
 param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
@@ -26,6 +28,7 @@ module controlPlaneResourceGroup './control_plane.bicep' = {
     controlPlaneLocation: controlPlaneLocation
     controlPlaneResourceGroupName: controlPlaneResourceGroupName
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
+    monitoredSubscriptions: monitoredSubscriptions
     datadogApiKey: datadogApiKey
     datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
@@ -40,14 +43,13 @@ var diagnosticSettingsTaskPrincipalId = controlPlaneResourceGroup.outputs.diagno
 var scalingTaskPrincipalId = controlPlaneResourceGroup.outputs.scalingTaskPrincipalId
 var deployerTaskPrincipalId = controlPlaneResourceGroup.outputs.deployerTaskPrincipalId
 
-
 var contributorRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
-  '749f88d5-cbae-40b8-bcfc-e573ddc772fa'
+  'b24988ac-6180-42a0-ab88-20f7382dd24c'
 )
 var monitoringReaderRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
-  '749f88d5-cbae-40b8-bcfc-e573ddc772fa'
+  '43d0d8ad-25c7-4714-9337-8ba259a9fe05'
 )
 var monitoringContributorRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -56,6 +58,10 @@ var monitoringContributorRole = managementGroupResourceId(
 var readerAndDataAccessRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'c12c1c16-33a1-487b-954d-41c89c60f349'
+)
+var websiteContributorRole = managementGroupResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'de139f84-1756-47ae-9be6-808fbbe84772'
 )
 
 resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -82,7 +88,7 @@ resource diagnosticSettingsTaskStorageRole 'Microsoft.Authorization/roleAssignme
   }
 }
 
-resource scalingTaskId_name 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('scaling', deployment().name)
   properties: {
     roleDefinitionId: contributorRole
@@ -90,10 +96,10 @@ resource scalingTaskId_name 'Microsoft.Authorization/roleAssignments@2022-04-01'
   }
 }
 
-resource deployerTaskId_name 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('deployer', deployment().name)
   properties: {
-    roleDefinitionId: contributorRole
+    roleDefinitionId: websiteContributorRole
     principalId: deployerTaskPrincipalId
   }
 }

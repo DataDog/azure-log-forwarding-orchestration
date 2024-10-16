@@ -4,6 +4,7 @@ import (
 	// stdlib
 	"bytes"
 	"context"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -35,7 +36,9 @@ import (
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
-var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")
+func getLogWithContent(content string) []byte {
+	return []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")
+}
 
 func newContainerItem(name string) *service.ContainerItem {
 	return &service.ContainerItem{
@@ -56,7 +59,7 @@ func newBlobItem(name string) *container.BlobItem {
 	return &container.BlobItem{
 		Name: to.StringPtr(name),
 		Properties: &container.BlobProperties{
-			ContentLength: to.Int64Ptr(int64(len(validLog))),
+			ContentLength: to.Int64Ptr(int64(len(getLogWithContent("test")))),
 			CreationTime:  &now,
 		},
 	}
@@ -102,9 +105,11 @@ func TestRun(t *testing.T) {
 		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
 		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
 
-		mockClient.EXPECT().DownloadBuffer(gomock.Any(), testString, testString, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, buffer []byte, o *azblob.DownloadBufferOptions) (int64, error) {
-			copy(buffer, validLog)
-			return int64(len(validLog)), nil
+		mockClient.EXPECT().DownloadStream(gomock.Any(), testString, testString, gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			validLog := getLogWithContent("test")
+			resp := azblob.DownloadStreamResponse{}
+			resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
+			return resp, nil
 		})
 
 		var uploadedMetrics []byte
@@ -143,7 +148,7 @@ func TestRun(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		var submittedLogs []datadogV2.HTTPLogItem
-		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
+		mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
 		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
 			submittedLogs = append(submittedLogs, body...)
 			return nil, nil, nil
@@ -188,15 +193,16 @@ func TestProcessLogs(t *testing.T) {
 	t.Run("submits logs to dd", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		validLog := []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")
-		var data []byte
-		data = append(data, validLog...)
-		data = append(data, validLog...)
-		data = append(data, validLog...)
+		validLog := "{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n"
+		var content string
+		for range 3 {
+			content += validLog
+		}
+		reader := io.NopCloser(strings.NewReader(content))
 
 		ctrl := gomock.NewController(t)
 		var submittedLogs []datadogV2.HTTPLogItem
-		mockDDClient := datadogmocks.NewMockLogsApiInterface(ctrl)
+		mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
 		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
 			submittedLogs = append(submittedLogs, body...)
 			return nil, nil, nil
@@ -207,17 +213,22 @@ func TestProcessLogs(t *testing.T) {
 
 		eg, egCtx := errgroup.WithContext(context.Background())
 
-		logsChannel := make(chan *logs.Log, 100)
-		volumeChannel := make(chan string, 100)
+		logsCh := make(chan *logs.Log, 100)
+		volumeCh := make(chan string, 100)
+
+		var output []byte
+		buffer := bytes.NewBuffer(output)
+		logger := log.New()
+		logger.SetOutput(buffer)
 
 		// WHEN
 		eg.Go(func() error {
-			defer close(volumeChannel)
-			return processLogs(egCtx, datadogClient, logsChannel, volumeChannel)
+			defer close(volumeCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(logger), logsCh, volumeCh)
 		})
 		eg.Go(func() error {
-			defer close(logsChannel)
-			return parseLogs(data, logsChannel)
+			defer close(logsCh)
+			return parseLogs(reader, logsCh)
 		})
 		err := eg.Wait()
 
@@ -229,6 +240,55 @@ func TestProcessLogs(t *testing.T) {
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
+
+	t.Run("logs when dropping a too large log", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		oneHundredAs := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		var content string
+		for range logs.MaxPayloadSize / 100 {
+			content += oneHundredAs
+		}
+		invalidLog := getLogWithContent(content)
+		reader := io.NopCloser(strings.NewReader(string(invalidLog)))
+
+		ctrl := gomock.NewController(t)
+		mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
+
+		datadogClient := logs.NewClient(mockDDClient)
+		defer datadogClient.Flush(context.Background())
+
+		eg, egCtx := errgroup.WithContext(context.Background())
+
+		logsCh := make(chan *logs.Log, 100)
+		volumeCh := make(chan string, 100)
+
+		var output []byte
+		buffer := bytes.NewBuffer(output)
+		logger := log.New()
+		logger.SetOutput(buffer)
+
+		var invalidLogError logs.TooLargeError
+		parsedLog, err := logs.NewLog(invalidLog)
+		require.NoError(t, err)
+
+		// WHEN
+		eg.Go(func() error {
+			defer close(volumeCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(logger), logsCh, volumeCh)
+		})
+		eg.Go(func() error {
+			defer close(logsCh)
+			return parseLogs(reader, logsCh)
+		})
+
+		err = eg.Wait()
+
+		// THEN
+		assert.False(t, parsedLog.IsValid())
+		assert.ErrorAs(t, err, &invalidLogError)
+		assert.Contains(t, string(buffer.Bytes()), "large log from")
+	})
 }
 
 func TestParseLogs(t *testing.T) {
@@ -237,10 +297,12 @@ func TestParseLogs(t *testing.T) {
 	t.Run("creates a Log from raw log", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		var data []byte
-		data = append(data, validLog...)
-		data = append(data, validLog...)
-		data = append(data, validLog...)
+		validLog := getLogWithContent("test")
+		var content string
+		for range 3 {
+			content += string(validLog)
+		}
+		reader := io.NopCloser(strings.NewReader(content))
 
 		eg, _ := errgroup.WithContext(context.Background())
 		var got []*logs.Log
@@ -256,7 +318,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			return parseLogs(data, logsChannel)
+			return parseLogs(reader, logsChannel)
 		})
 		err := eg.Wait()
 

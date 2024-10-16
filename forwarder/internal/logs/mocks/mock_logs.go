@@ -18,37 +18,37 @@ import (
 	gomock "go.uber.org/mock/gomock"
 )
 
-// MockLogsApiInterface is a mock of LogsApiInterface interface.
-type MockLogsApiInterface struct {
+// MockDatadogLogsSubmitter is a mock of DatadogLogsSubmitter interface.
+type MockDatadogLogsSubmitter struct {
 	ctrl     *gomock.Controller
-	recorder *MockLogsApiInterfaceMockRecorder
+	recorder *MockDatadogLogsSubmitterMockRecorder
 }
 
-// MockLogsApiInterfaceMockRecorder is the mock recorder for MockLogsApiInterface.
-type MockLogsApiInterfaceMockRecorder struct {
-	mock *MockLogsApiInterface
+// MockDatadogLogsSubmitterMockRecorder is the mock recorder for MockDatadogLogsSubmitter.
+type MockDatadogLogsSubmitterMockRecorder struct {
+	mock *MockDatadogLogsSubmitter
 }
 
-// NewMockLogsApiInterface creates a new mock instance.
-func NewMockLogsApiInterface(ctrl *gomock.Controller) *MockLogsApiInterface {
-	mock := &MockLogsApiInterface{ctrl: ctrl}
-	mock.recorder = &MockLogsApiInterfaceMockRecorder{mock}
+// NewMockDatadogLogsSubmitter creates a new mock instance.
+func NewMockDatadogLogsSubmitter(ctrl *gomock.Controller) *MockDatadogLogsSubmitter {
+	mock := &MockDatadogLogsSubmitter{ctrl: ctrl}
+	mock.recorder = &MockDatadogLogsSubmitterMockRecorder{mock}
 	return mock
 }
 
 // EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockLogsApiInterface) EXPECT() *MockLogsApiInterfaceMockRecorder {
+func (m *MockDatadogLogsSubmitter) EXPECT() *MockDatadogLogsSubmitterMockRecorder {
 	return m.recorder
 }
 
 // SubmitLog mocks base method.
-func (m *MockLogsApiInterface) SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
+func (m *MockDatadogLogsSubmitter) SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
 	m.ctrl.T.Helper()
 	varargs := []any{ctx, body}
 	for _, a := range o {
 		varargs = append(varargs, a)
 	}
-	ret := m.ctrl.Call(m, "AddLog", varargs...)
+	ret := m.ctrl.Call(m, "SubmitLog", varargs...)
 	ret0, _ := ret[0].(any)
 	ret1, _ := ret[1].(*http.Response)
 	ret2, _ := ret[2].(error)
@@ -56,8 +56,8 @@ func (m *MockLogsApiInterface) SubmitLog(ctx context.Context, body []datadogV2.H
 }
 
 // SubmitLog indicates an expected call of SubmitLog.
-func (mr *MockLogsApiInterfaceMockRecorder) SubmitLog(ctx, body any, o ...any) *gomock.Call {
+func (mr *MockDatadogLogsSubmitterMockRecorder) SubmitLog(ctx, body any, o ...any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{ctx, body}, o...)
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddLog", reflect.TypeOf((*MockLogsApiInterface)(nil).SubmitLog), varargs...)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitLog", reflect.TypeOf((*MockDatadogLogsSubmitter)(nil).SubmitLog), varargs...)
 }

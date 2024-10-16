@@ -88,4 +88,4 @@ ui_url = f"{url_base}{UI_TEMPLATE}?{dotenv['ui_token']}"
 template_url = "https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/{}/createUIDefinitionUri/{}".format(
     quote(deploy_url, safe=""), quote(ui_url, safe="")
 )
-print(f"Generated template url:\n{template_url}")
+print(template_url)

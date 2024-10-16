@@ -210,7 +210,7 @@ class DiagnosticSettingsTask(Task):
         pass  # nothing to do here
 
 
-async def main():
+async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
     assignment_cache = await read_cache(ASSIGNMENT_CACHE_BLOB)

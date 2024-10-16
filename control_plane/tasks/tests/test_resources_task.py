@@ -11,6 +11,10 @@ from tasks.tests.common import TaskTestCase, UnexpectedException, async_generato
 
 AsyncIterableFunc: TypeAlias = Callable[[], AsyncIterable[Mock]]
 
+sub_id1 = "a062baee-fdd3-4784-beb4-d817f591422c"
+sub_id2 = "77602a31-36b2-4417-a27c-9071107ca3e6"
+sub1 = mock(subscription_id=sub_id1)
+sub2 = mock(subscription_id=sub_id2)
 
 resource1 = mock(id="res1", location="region1", type="Microsoft.Compute/virtualMachines")
 resource2 = mock(id="res2", location="region1", type="Microsoft.Network/applicationgateways")
@@ -22,6 +26,9 @@ class TestResourcesTask(TaskTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        self.patch("get_config_option").side_effect = {
+            "MONITORED_SUBSCRIPTIONS": '["a062baee-fdd3-4784-beb4-d817f591422c", "77602a31-36b2-4417-a27c-9071107ca3e6"]'
+        }.__getitem__
         self.sub_client: AsyncMock = self.patch("SubscriptionClient").return_value.__aenter__.return_value
         self.resource_client = self.patch("ResourceManagementClient")
         self.resource_client_mapping: dict[str, AsyncIterableFunc] = {}
@@ -45,64 +52,56 @@ class TestResourcesTask(TaskTestCase):
         return self.cache_value(RESOURCE_CACHE_BLOB, deserialize_resource_cache)
 
     async def test_invalid_cache(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(return_value=async_generator(resource1, resource2)),
-            "sub2": Mock(return_value=async_generator(resource3)),
+            sub_id1: Mock(return_value=async_generator(resource1, resource2)),
+            sub_id2: Mock(return_value=async_generator(resource3)),
         }
 
         async with ResourcesTask("[[[[{{{{{asjdklahjs]]]}}}") as task:
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertEqual(self.cache, {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}})
+        self.assertEqual(self.cache, {sub_id1: {"region1": {"res1", "res2"}}, sub_id2: {"region2": {"res3"}}})
 
     async def test_empty_cache_adds_resources(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(return_value=async_generator(resource1, resource2)),
-            "sub2": Mock(return_value=async_generator(resource3)),
+            sub_id1: Mock(return_value=async_generator(resource1, resource2)),
+            sub_id2: Mock(return_value=async_generator(resource3)),
         }
 
         async with ResourcesTask("") as task:
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertEqual(self.cache, {"sub1": {"region1": {"res1", "res2"}}, "sub2": {"region2": {"res3"}}})
+        self.assertEqual(self.cache, {sub_id1: {"region1": {"res1", "res2"}}, sub_id2: {"region2": {"res3"}}})
 
     async def test_no_new_resources_doesnt_cache(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(return_value=async_generator(resource1, resource2)),
-            "sub2": Mock(return_value=async_generator(resource3)),
+            sub_id1: Mock(return_value=async_generator(resource1, resource2)),
+            sub_id2: Mock(return_value=async_generator(resource3)),
         }
         await self.run_resources_task(
             {
-                "sub1": {"region1": {"res1", "res2"}},
-                "sub2": {"region2": {"res3"}},
+                sub_id1: {"region1": {"res1", "res2"}},
+                sub_id2: {"region2": {"res3"}},
             }
         )
 
         self.write_cache.assert_not_called()
 
     async def test_resources_gone(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(return_value=async_generator()),
-            "sub2": Mock(return_value=async_generator()),
+            sub_id1: Mock(return_value=async_generator()),
+            sub_id2: Mock(return_value=async_generator()),
         }
         await self.run_resources_task(
             {
-                "sub1": {"region2": {"res1", "res2"}},
-                "sub2": {"region1": {"res3"}},
+                sub_id1: {"region2": {"res1", "res2"}},
+                sub_id2: {"region1": {"res3"}},
             }
         )
         self.assertEqual(self.cache, {})
@@ -112,46 +111,42 @@ class TestResourcesTask(TaskTestCase):
         # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
         await self.run_resources_task(
             {
-                "sub1": {"region1": {"res1", "res2"}},
-                "sub2": {"region2": {"res3"}},
+                sub_id1: {"region1": {"res1", "res2"}},
+                sub_id2: {"region2": {"res3"}},
             }
         )
         self.assertEqual(self.cache, {})
 
     async def test_global_resource_ignored(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(
+            sub_id1: Mock(
                 return_value=async_generator(
                     mock(id="res1", location="global", type="Microsoft.Compute/virtualMachines"), resource2
                 )
             ),
-            "sub2": Mock(return_value=async_generator(resource3)),
+            sub_id2: Mock(return_value=async_generator(resource3)),
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}, "sub2": {"region2": {"res3"}}})
+        self.assertEqual(self.cache, {sub_id1: {"region1": {"res2"}}, sub_id2: {"region2": {"res3"}}})
 
     async def test_unsupported_resource_types_ignored(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(
+            sub_id1: Mock(
                 return_value=async_generator(
                     mock(id="res1", location="region1", type="Microsoft.Compute/Snapshots"),
                     resource2,
                 )
             ),
-            "sub2": Mock(
+            sub_id2: Mock(
                 return_value=async_generator(
                     mock(id="res3", location="region2", type="Microsoft.AlertsManagement/PrometheusRuleGroups")
                 )
             ),
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {"sub1": {"region1": {"res2"}}})
+        self.assertEqual(self.cache, {sub_id1: {"region1": {"res2"}}})
 
     async def test_unexpected_failure_skips_cache_write(self):
         write_caches = self.patch("ResourcesTask.write_caches")
@@ -159,24 +154,22 @@ class TestResourcesTask(TaskTestCase):
         with self.assertRaises(UnexpectedException):
             await self.run_resources_task(
                 {
-                    "sub1": {"region1": {"res1", "res2"}},
-                    "sub2": {"region2": {"res3"}},
+                    sub_id1: {"region1": {"res1", "res2"}},
+                    sub_id2: {"region2": {"res3"}},
                 }
             )
         write_caches.assert_not_awaited()
 
     async def test_case_insensitive_matching(self):
-        self.sub_client.subscriptions.list = Mock(
-            return_value=async_generator(Mock(subscription_id="Sub1"), Mock(subscription_id="sub2"))
-        )
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            "sub1": Mock(
+            sub_id1: Mock(
                 return_value=async_generator(
                     mock(id="rEs1", location="Region1", type="Microsoft.Compute/virtualMachines"),
                     mock(id="RES2", location="REGION1", type="Microsoft.Compute/virtualMachines"),
                 )
             ),
-            "sub2": Mock(
+            sub_id2: Mock(
                 return_value=async_generator(
                     mock(id="reß3", location="regIon2", type="Microsoft.Compute/virtualMachines"),
                     mock(id="Res4", location="reGION2", type="Microsoft.Compute/virtualMachines"),
@@ -186,15 +179,25 @@ class TestResourcesTask(TaskTestCase):
 
         await self.run_resources_task(
             {
-                "sub1": {"region1": {"res1", "res2"}},
-                "sub2": {"region2": {"ress3"}},
+                sub_id1: {"region1": {"res1", "res2"}},
+                sub_id2: {"region2": {"ress3"}},
             }
         )
 
         self.assertEqual(
             self.cache,
             {
-                "sub1": {"region1": {"res1", "res2"}},
-                "sub2": {"region2": {"ress3", "res4"}},
+                sub_id1: {"region1": {"res1", "res2"}},
+                sub_id2: {"region2": {"ress3", "res4"}},
             },
         )
+
+    async def test_unmonitored_subscriptions_ignored(self):
+        sub_id3 = "6522f787-edd0-4005-a901-d61c0ee60cb8"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, Mock(subscription_id=sub_id3)))
+        self.resource_client_mapping = {
+            sub_id1: Mock(return_value=async_generator(resource1, resource2)),
+            sub_id3: Mock(return_value=async_generator(resource3)),
+        }
+        await self.run_resources_task({})
+        self.assertEqual(self.cache, {sub_id1: {"region1": {"res1", "res2"}}})
