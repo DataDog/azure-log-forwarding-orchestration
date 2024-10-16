@@ -130,6 +130,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
+        self._resource_group_exists = False
 
     async def __aenter__(self) -> Self:
         await gather(
@@ -149,6 +150,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         )
 
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
+        # self.ensure_resource_group()
+
         storage_account_name = get_storage_account_name(config_id)
         managed_env_name = get_managed_env_name(config_id)
 
