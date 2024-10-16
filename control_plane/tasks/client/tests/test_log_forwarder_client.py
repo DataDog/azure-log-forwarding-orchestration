@@ -79,6 +79,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         await self.client.__aexit__(None, None, None)
         self.client.resource_client = AsyncMockClient()
+        self.client.resource_client.resource_groups.check_existence.return_value = True
         self.client.container_apps_client = AsyncMockClient()
         self.client.storage_client = AsyncMockClient()
         self.client._datadog_client = AsyncMockClient()
@@ -558,3 +559,13 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             res = await client.list_log_forwarder_ids()
         self.assertEqual(res, {config_id, "way_more_than_twelve_chars"})
+
+    async def test_resource_group_not_existing_gets_created(self):
+        self.client.resource_client.resource_groups.check_existence.return_value = False
+        async with self.client:
+            # we dont actually care what operation would happen,
+            # just checking that it gets checked when we use the client
+            pass
+        self.client.resource_client.resource_groups.create_or_update.assert_awaited_once_with(
+            rg1, AzureModelMatcher({"location": "eastus"})
+        )
