@@ -130,46 +130,78 @@
                   "hideConfirmation": true
                 },
                 "visible": true
+              },
+              {
+                "name": "datadogSite",
+                "type": "Microsoft.Common.DropDown",
+                "label": "Datadog Site",
+                "defaultValue": "US1",
+                "toolTip": "The datadog site where you login to the datadog app.",
+                "constraints": {
+                  "allowedValues": [
+                    {
+                      "label": "US1",
+                      "value": "datadoghq.com"
+                    },
+                    {
+                      "label": "US3",
+                      "value": "us3.datadoghq.com"
+                    },
+                    {
+                      "label": "US5",
+                      "value": "us5.datadoghq.com"
+                    },
+                    {
+                      "label": "EU1",
+                      "value": "datadoghq.eu"
+                    },
+                    {
+                      "label": "AP1",
+                      "value": "ap1.datadoghq.com"
+                    },
+                    {
+                      "label": "US1-FED",
+                      "value": "ddog-gov.com"
+                    }
+                  ],
+                  "required": false
+                },
+                "visible": true
               }
             ],
             "visible": true
-          },
+          }
+        ]
+      },
+      {
+        "name": "deployment",
+        "label": "Deployment",
+        "elements": [
           {
-            "name": "datadogSite",
-            "type": "Microsoft.Common.DropDown",
-            "label": "Datadog Site",
-            "defaultValue": "US1",
-            "toolTip": "The datadog site where you usually login. For US3, search for and install the Datadog Resource from the Azure Marketplace instead of using this form",
-            "constraints": {
-              "allowedValues": [
-                {
-                  "label": "US1",
-                  "value": "datadoghq.com"
-                },
-                {
-                  "label": "US3",
-                  "value": "us3.datadoghq.com"
-                },
-                {
-                  "label": "US5",
-                  "value": "us5.datadoghq.com"
-                },
-                {
-                  "label": "EU1",
-                  "value": "datadoghq.eu"
-                },
-                {
-                  "label": "AP1",
-                  "value": "ap1.datadoghq.com"
-                },
-                {
-                  "label": "US1-FED",
-                  "value": "ddog-gov.com"
+            "name": "deploymentSection",
+            "type": "Microsoft.Common.Section",
+            "label": "Deployment",
+            "elements": [
+              {
+                "name": "deploymentInfo",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": true,
+                "options": {
+                  "icon": "Warning",
+                  "text": "During the deployment process, diagnostic settings will be applied to all monitored resources. This action will trigger restarts of App Services, including Web Apps and Function Apps."
                 }
-              ],
-              "required": false
-            },
-            "visible": true
+              },
+              {
+                "name": "deployAcknowledgment",
+                "label": "I acknowledge the warning above",
+                "type": "Microsoft.Common.CheckBox",
+                "visible": true,
+                "constraints": {
+                  "required": true,
+                  "validationMessage": "You must acknowledge the warning above to proceed"
+                }
+              }
+            ]
           }
         ]
       }
@@ -181,7 +213,7 @@
       "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
       "datadogApplicationKey": "[steps('datadogConfig').datadogIntegration.datadogApplicationKey]",
       "datadogApiKey": "[steps('datadogConfig').datadogIntegration.datadogApiKey]",
-      "datadogSite": "[steps('datadogConfig').datadogSite]"
+      "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]"
     }
   }
 }
