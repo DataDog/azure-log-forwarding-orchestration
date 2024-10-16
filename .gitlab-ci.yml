@@ -91,9 +91,9 @@ deployer-build-latest:
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+  only:
+    refs:
+      - main
   tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
