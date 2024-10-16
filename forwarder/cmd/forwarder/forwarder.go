@@ -39,6 +39,9 @@ import (
 // The buffer is defaulted to the maximum value of an integer.
 const maxBufferSize = math.MaxInt32
 
+// initialBufferSize is the initial buffer size to use for scanning logs.
+const initialBufferSize = 1024 * 1024 * 5
+
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
 	var err error
@@ -112,7 +115,7 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (err error) {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
-	buffer := make([]byte, 1024*1024*5)
+	buffer := make([]byte, initialBufferSize)
 	scanner.Buffer(buffer, maxBufferSize)
 
 	for scanner.Scan() {
