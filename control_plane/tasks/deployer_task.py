@@ -26,7 +26,7 @@ from cache.manifest_cache import (
     ManifestKey,
     deserialize_manifest_cache,
 )
-from tasks.common import Resource, collect, generate_unique_id
+from tasks.common import Resource, collect
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"
@@ -61,7 +61,6 @@ class DeployerTask(Task):
         self.subscription_id = get_config_option("SUBSCRIPTION_ID")
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
-        self.control_plane_id = generate_unique_id()
         self.public_storage_client = ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
