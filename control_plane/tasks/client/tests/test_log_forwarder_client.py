@@ -55,6 +55,7 @@ class FakeHttpError(HttpResponseError):
 class MockedLogForwarderClient(LogForwarderClient):
     """Used for typing since we know the underlying clients will be mocks"""
 
+    resource_client: AsyncMock
     container_apps_client: AsyncMock
     storage_client: AsyncMock
     _datadog_client: AsyncMock
@@ -71,14 +72,16 @@ class TestLogForwarderClient(AsyncTestCase):
         environ["DD_SITE"] = "datadoghq.com"
         environ["SHOULD_SUBMIT_METRICS"] = ""
         environ["FORWARDER_IMAGE"] = "ddlfo.azurecr.io/blobforwarder:latest"
+        environ["CONTROL_PLANE_REGION"] = "eastus"
 
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
         )
         await self.client.__aexit__(None, None, None)
-        self.client.container_apps_client = AsyncMock()
-        self.client.storage_client = AsyncMock()
-        self.client._datadog_client = AsyncMock()
+        self.client.resource_client = AsyncMockClient()
+        self.client.container_apps_client = AsyncMockClient()
+        self.client.storage_client = AsyncMockClient()
+        self.client._datadog_client = AsyncMockClient()
         self.client.metrics_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
