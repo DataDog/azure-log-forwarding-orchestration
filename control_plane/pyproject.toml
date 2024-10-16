@@ -17,6 +17,7 @@ resources_task = ["azure-mgmt-resource==23.0.1"]
 diagnostic_settings_task = ["azure-mgmt-monitor==6.0.2"]
 scaling_task = [
     "azure-mgmt-appcontainers==3.1.0",
+    "azure-mgmt-resource==23.0.1",
     "azure-mgmt-storage==21.2.1",
     "datadog-api-client==2.26.0",
     "aiosonic==0.15.0", # old version required by datadog-api-client
