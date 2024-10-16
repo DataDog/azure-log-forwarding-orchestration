@@ -19,26 +19,6 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
-//func downloadBlob(t *testing.T, ctx context.Context, containerName string, blobName string, buffer []byte, expectedResponse int64, expectedErr error) error {
-//	ctrl := gomock.NewController(t)
-//
-//	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-//	mockClient.EXPECT().DownloadBuffer(gomock.Any(), containerName, blobName, gomock.Any(), gomock.Any()).Return(expectedResponse, expectedErr)
-//
-//	client := storage.NewClient(mockClient)
-//
-//	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-//	defer span.Finish()
-//
-//	blob := storage.Blob{
-//		Container:     containerName,
-//		Name:          blobName,
-//		ContentLength: int64(len(buffer)),
-//	}
-//	_, err := client.DownloadSegment(ctx, blob, 0)
-//	return err
-//}
-
 func TestDownloadSegment(t *testing.T) {
 	t.Parallel()
 
