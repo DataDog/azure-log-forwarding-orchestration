@@ -3,11 +3,12 @@ package main
 import (
 	// stdlib
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -32,6 +33,14 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
+
+// maxBufferSize is the maximum buffer to use for scanning logs.
+// Logs greater than this buffer will be dropped by bufio.Scanner.
+// The buffer is defaulted to the maximum value of an integer.
+const maxBufferSize = math.MaxInt32
+
+// initialBufferSize is the initial buffer size to use for scanning logs.
+const initialBufferSize = 1024 * 1024 * 5
 
 func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
 	var blobs []storage.Blob
@@ -99,13 +108,18 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 
 	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
 
-	return parseLogs(content.Content, logsChannel)
+	return parseLogs(content.Reader, logsChannel)
 }
 
-func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
-	scanner := bufio.NewScanner(bytes.NewReader(data))
+func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (err error) {
+	scanner := bufio.NewScanner(reader)
+
+	// set buffer size so we can process logs bigger than 65kb
+	buffer := make([]byte, initialBufferSize)
+	scanner.Buffer(buffer, maxBufferSize)
+
 	for scanner.Scan() {
-		currLog, currErr := logs.NewLog([]byte(scanner.Text()))
+		currLog, currErr := logs.NewLog(scanner.Bytes())
 		if currErr != nil {
 			err = errors.Join(err, currErr)
 			continue
@@ -116,12 +130,16 @@ func parseLogs(data []byte, logsChannel chan<- *logs.Log) (err error) {
 	return err
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.AddLog(ctx, logItem)
+		var invalidLogError logs.TooLargeError
+		if errors.As(currErr, &invalidLogError) {
+			logger.Warning(invalidLogError.Error())
+		}
 		err = errors.Join(err, currErr)
 	}
 	flushErr := logsClient.Flush(ctx)
@@ -202,7 +220,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logCh, resourceIdCh)
+			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh)
 		})
 	}
 

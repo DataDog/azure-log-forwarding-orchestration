@@ -4,6 +4,7 @@ import (
 	// stdlib
 	"context"
 	"fmt"
+	"io"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -16,7 +17,7 @@ import (
 type BlobSegment struct {
 	Name          string
 	Container     string
-	Content       []byte
+	Reader        io.ReadCloser
 	Offset        int64
 	ContentLength int64
 }
@@ -26,21 +27,18 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()
 
-	options := &azblob.DownloadBufferOptions{
-		Range:     azblob.HTTPRange{Offset: offset},
-		BlockSize: 1024 * 1024,
+	options := &azblob.DownloadStreamOptions{
+		Range: azblob.HTTPRange{Offset: offset},
 	}
 
-	content := make([]byte, int(*blob.Item.Properties.ContentLength))
-
-	_, err := c.azBlobClient.DownloadBuffer(ctx, blob.Container, *blob.Item.Name, content, options)
+	resp, err := c.azBlobClient.DownloadStream(ctx, blob.Container, *blob.Item.Name, options)
 	if err != nil {
 		return BlobSegment{}, fmt.Errorf("failed to download blob: %w", err)
 	}
 	return BlobSegment{
 		Name:          *blob.Item.Name,
 		Container:     blob.Container,
-		Content:       content,
+		Reader:        resp.Body,
 		Offset:        offset,
 		ContentLength: *blob.Item.Properties.ContentLength,
 	}, nil

@@ -2,21 +2,12 @@ package logs
 
 import (
 	// stdlib
-	"bytes"
 	"encoding/json"
 	"strings"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 )
-
-type Log struct {
-	ByteSize   int
-	Content    string
-	ResourceId string
-	Category   string
-	Tags       []string
-}
 
 func trimQuotes(s string) string {
 	// TODO AZINTS-2751 replace with json5 parsing
@@ -91,22 +82,4 @@ func getResourceIdTags(id *arm.ResourceID) []string {
 
 func getForwarderTags() []string {
 	return []string{"forwarder:lfo"}
-}
-
-// NewLog creates a new Log from the given log bytes
-func NewLog(logBytes []byte) (*Log, error) {
-	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
-	log, err := unmarshall(logBytes)
-	if err != nil {
-		return nil, err
-	}
-	parsedId, err := arm.ParseResourceID(log.ResourceId)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Tags = getResourceIdTags(parsedId)
-	log.Tags = append(log.Tags, getForwarderTags()...)
-
-	return log, nil
 }
