@@ -4,11 +4,11 @@ import (
 	// stdlib
 	"context"
 	"errors"
+	"iter"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -23,18 +23,26 @@ type Container struct {
 }
 
 // GetContainersMatchingPrefix returns an iterator over containers with a given prefix.
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) collections.Iterator[Container, service.ListContainersResponse] {
+func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) iter.Seq[Container] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
-	iter := collections.NewIterator(containerPager, func(resp service.ListContainersResponse) []Container {
-		return collections.Map(resp.ContainerItems, func(item *service.ContainerItem) Container {
-			return Container{
-				Name: *item.Name,
-			}
-		})
+	//iter := collections.NewIterator(containerPager, func(resp service.ListContainersResponse) []Container {
+	//	return collections.Map(resp.ContainerItems, func(item *service.ContainerItem) Container {
+	//		return Container{
+	//			Name: *item.Name,
+	//		}
+	//	})
+	//})
+	return collections.New[Container, azblob.ListContainersResponse](ctx, containerPager, func(item azblob.ListContainersResponse) []Container {
+		var containers []Container
+		for _, container := range item.ContainerItems {
+			containers = append(containers, Container{
+				Name: *container.Name,
+			})
+		}
+		return containers
 	})
-	return iter
 }
 
 // CreateContainer a container with the given name

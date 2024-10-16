@@ -38,10 +38,10 @@ func getBlobs(ctx context.Context, storageClient *storage.Client, container stor
 	return collections.Collect(ctx, it)
 }
 
-func getContainers(ctx context.Context, storageClient *storage.Client) ([]storage.Container, error) {
-	it := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-	return collections.Collect(ctx, it)
-}
+//func getContainers(ctx context.Context, storageClient *storage.Client) ([]storage.Container, error) {
+//	it := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
+//	return collections.Collect(ctx, it)
+//}
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
 	currentOffset := cursors.GetCursor(blob.Name)
@@ -160,12 +160,12 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	}
 
 	// Get all the containers
-	containers, containerErr := getContainers(ctx, storageClient)
-	err = errors.Join(err, containerErr)
+	containers := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
+	//err = errors.Join(err, containerErr)
 
 	// Get all the blobs
 	var blobs []storage.Blob
-	for _, c := range containers {
+	for c := range containers {
 		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
 		err = errors.Join(err, blobsErr)
 		blobs = append(blobs, blobsPerContainer...)

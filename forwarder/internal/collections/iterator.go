@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -93,6 +94,29 @@ func NewIterator[ReturnType any, PagerType any](
 	transformer func(PagerType) []ReturnType) Iterator[ReturnType, PagerType] {
 
 	return Iterator[ReturnType, PagerType]{azurePager: pager, transformer: transformer}
+}
+
+func New[ReturnType any, PagerType any](
+	ctx context.Context,
+	pager *runtime.Pager[PagerType],
+	transformer func(PagerType) []ReturnType) iter.Seq[ReturnType] {
+
+	return func(yield func(ReturnType) bool) {
+		for {
+			if !pager.More() {
+				return
+			}
+			resp, err := pager.NextPage(ctx)
+			if err != nil {
+				return
+			}
+			for _, item := range transformer(resp) {
+				if !yield(item) {
+					return
+				}
+			}
+		}
+	}
 }
 
 // ErrTooManyItems is returned when more items are fetched than expected.
