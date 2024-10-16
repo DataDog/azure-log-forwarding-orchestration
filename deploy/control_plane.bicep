@@ -137,6 +137,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
         { name: 'DD_API_KEY', value: datadogApiKey }
         { name: 'DD_APP_KEY', value: datadogApplicationKey }
         { name: 'DD_SITE', value: datadogSite }
+        { name: 'CONTROL_PLANE_REGION', value: controlPlaneLocation }
       ])
       linuxFxVersion: 'Python|3.11'
     }
