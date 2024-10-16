@@ -1,5 +1,7 @@
 targetScope = 'resourceGroup'
 
+param controlPlaneId string
+
 param controlPlaneLocation string
 param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
@@ -17,16 +19,12 @@ param datadogApplicationKey string
 @description('Datadog Site')
 param datadogSite string
 
-param _now string = utcNow()
-
-var lfoId = toLower(substring(guid('lfo', deployment().name, _now), 24, 12))
-
 var datadogPublicRegistry = 'datadoghq.azurecr.io'
 var deployerTaskImage = '${datadogPublicRegistry}/deployer:latest'
 var forwarderImage = '${datadogPublicRegistry}/forwarder:latest'
 
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
-  name: 'control-plane-asp-${lfoId}'
+  name: 'control-plane-asp-${controlPlaneId}'
   location: controlPlaneLocation
   kind: 'linux'
   properties: {
@@ -39,7 +37,7 @@ resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
 }
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: 'lfostorage${lfoId}'
+  name: 'lfostorage${controlPlaneId}'
   kind: 'StorageV2'
   location: controlPlaneLocation
   properties: { accessTier: 'Hot' }
@@ -74,7 +72,7 @@ var commonAppSettings = [
   { name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', value: connectionString }
 ]
 
-var resourceTaskName = 'resources-task-${lfoId}'
+var resourceTaskName = 'resources-task-${controlPlaneId}'
 resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
   name: resourceTaskName
   location: controlPlaneLocation
@@ -96,7 +94,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
   }
   dependsOn: [fileServices]
 }
-var diagnosticSettingsTaskName = 'diagnostic-settings-task-${lfoId}'
+var diagnosticSettingsTaskName = 'diagnostic-settings-task-${controlPlaneId}'
 resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
   name: diagnosticSettingsTaskName
   location: controlPlaneLocation
@@ -119,7 +117,7 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
   dependsOn: [fileServices]
 }
 
-var scalingTaskName = 'scaling-task-${lfoId}'
+var scalingTaskName = 'scaling-task-${controlPlaneId}'
 resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
   name: scalingTaskName
   location: controlPlaneLocation
@@ -148,12 +146,12 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
 }
 
 resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2022-03-01' = {
-  name: 'deployer-task-env-${lfoId}'
+  name: 'deployer-task-env-${controlPlaneId}'
   location: controlPlaneLocation
   properties: {}
 }
 
-var deployerTaskName = 'deployer-task-${lfoId}'
+var deployerTaskName = 'deployer-task-${controlPlaneId}'
 
 resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
   name: deployerTaskName
