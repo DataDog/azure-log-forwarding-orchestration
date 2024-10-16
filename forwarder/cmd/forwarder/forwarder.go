@@ -24,24 +24,12 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 
-	// project
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
-
-func getBlobs(ctx context.Context, storageClient *storage.Client, container storage.Container) ([]storage.Blob, error) {
-	it := storageClient.ListBlobs(ctx, container.Name)
-	return collections.Collect(ctx, it)
-}
-
-//func getContainers(ctx context.Context, storageClient *storage.Client) ([]storage.Container, error) {
-//	it := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-//	return collections.Collect(ctx, it)
-//}
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
 	currentOffset := cursors.GetCursor(blob.Name)
@@ -164,25 +152,22 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	//err = errors.Join(err, containerErr)
 
 	// Get all the blobs
-	var blobs []storage.Blob
-	for c := range containers {
-		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
-		err = errors.Join(err, blobsErr)
-		blobs = append(blobs, blobsPerContainer...)
-	}
-
-	// Per blob spawn goroutine to download and transform
 	currNow := now()
 	downloadEg, segmentCtx := errgroup.WithContext(ctx)
-	for _, blob := range blobs {
-		// Skip blobs that are not recent
-		// Blobs may have old data that we don't want to process
-		if !blob.IsCurrent(currNow) {
-			continue
+	for c := range containers {
+		blobs := storageClient.ListBlobs(ctx, c.Name)
+
+		// Per blob spawn goroutine to download and transform
+		for blob := range blobs {
+			// Skip blobs that are not recent
+			// Blobs may have old data that we don't want to process
+			if !blob.IsCurrent(currNow) {
+				continue
+			}
+			downloadEg.Go(func() error {
+				return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+			})
 		}
-		downloadEg.Go(func() error {
-			return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
-		})
 	}
 
 	// Wait for all the goroutines to finish
@@ -286,7 +271,6 @@ func main() {
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int64)
-	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
 	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
 	metricBuffer, err := json.Marshal(metricBlob)
 

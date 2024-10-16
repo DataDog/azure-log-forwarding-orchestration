@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -48,7 +47,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]storage.Blob, error) {
+func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) []storage.Blob {
 	ctrl := gomock.NewController(t)
 
 	handler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
@@ -63,13 +62,12 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "blobs.test")
 	defer span.Finish()
 
+	var blobs []storage.Blob
 	it := client.ListBlobs(ctx, containerName)
-
-	results, err := collections.Collect(ctx, it)
-	if err != nil {
-		return nil, err
+	for item := range it {
+		blobs = append(blobs, item)
 	}
-	return results, nil
+	return blobs
 }
 
 func TestListBlobs(t *testing.T) {
@@ -84,25 +82,24 @@ func TestListBlobs(t *testing.T) {
 		}
 
 		// WHEN
-		results, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, [][]*container.BlobItem{firstPage}, nil)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, [][]*container.BlobItem{firstPage}, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 2)
 		assert.Equal(t, testString, results[0].Name)
 		assert.Equal(t, testString, results[1].Name)
 	})
 
-	t.Run("errors on empty array", func(t *testing.T) {
+	t.Run("empty slice input results in empty slice output", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		_, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
 
 		// THEN
-		assert.ErrorAs(t, err, &collections.ErrEmptyPage)
+		assert.Len(t, results, 0)
 	})
 
 	t.Run("error response", func(t *testing.T) {
@@ -114,12 +111,10 @@ func TestListBlobs(t *testing.T) {
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		got, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, fetcherError)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, fetcherError)
 
 		// THEN
-		assert.Nil(t, got)
-		assert.Error(t, err)
-		assert.Contains(t, fmt.Sprintf("%v", err), testString)
+		assert.Len(t, results, 0)
 	})
 
 	t.Run("multiple pages", func(t *testing.T) {
@@ -135,10 +130,9 @@ func TestListBlobs(t *testing.T) {
 		pages := [][]*container.BlobItem{firstPage, secondPage}
 
 		// WHEN
-		results, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, pages, nil)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, pages, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 2)
 		assert.Equal(t, testString, results[0].Name)
 		assert.Equal(t, testString, results[1].Name)

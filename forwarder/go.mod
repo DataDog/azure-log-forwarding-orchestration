@@ -1,6 +1,6 @@
 module github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 
-go 1.22.2
+go 1.23.2
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.14.0

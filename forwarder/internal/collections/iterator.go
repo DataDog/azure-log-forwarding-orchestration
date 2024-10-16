@@ -4,98 +4,13 @@ import (
 	// stdlib
 	"context"
 	"errors"
-	"fmt"
 	"iter"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-
-	// datadog
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 )
 
-// ErrDone is returned by Iterator's Next method when the iteration is
-// complete; when there are no more items to return.
-var ErrDone = errors.New("no more items in iterator")
-
-// ErrEmptyPage is returned when an empty list is received from Azure.
-var ErrEmptyPage = errors.New("received an empty list from Azure")
-
-// Iterator is a generic iterator for paginated responses containing lists.
-type Iterator[ReturnType any, PagerType any] struct {
-	azurePager    *runtime.Pager[PagerType]
-	internalPager *Pager[ReturnType]
-	transformer   func(PagerType) []ReturnType
-}
-
-// Pager is a generic pager for list responses.
-type Pager[ReturnType any] struct {
-	page      []ReturnType
-	nextIndex int
-}
-
-// More returns true if there are more items in the pager.
-func (p *Pager[ReturnType]) More() bool {
-	return p.nextIndex < len(p.page)
-}
-
-// Next returns the next item in the pager.
-func (p *Pager[ReturnType]) Next() ReturnType {
-	currItem := p.page[p.nextIndex]
-	p.nextIndex += 1
-	return currItem
-}
-
-// NewPager creates a new pager.
-func NewPager[ReturnType any](page []ReturnType) (*Pager[ReturnType], error) {
-	if len(page) == 0 {
-		return &Pager[ReturnType]{}, ErrEmptyPage
-	}
-	return &Pager[ReturnType]{
-		page: page,
-	}, nil
-}
-
-// Next returns the next item in the iterator.
-func (i *Iterator[ReturnType, PagerType]) Next(ctx context.Context) (ReturnType, error) {
-	var err error
-	if i.internalPager == nil || !i.internalPager.More() {
-		err = i.getNextPage(ctx)
-		if err != nil {
-			var zeroValue ReturnType
-			return zeroValue, err
-		}
-	}
-
-	return i.internalPager.Next(), nil
-}
-
-func (i *Iterator[ReturnType, PagerType]) getNextPage(ctx context.Context) error {
-	var err error
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Iterator.getNextPage")
-	defer span.Finish(tracer.WithError(err))
-	if !i.azurePager.More() {
-		return ErrDone
-	}
-
-	resp, err := i.azurePager.NextPage(ctx)
-	if err != nil {
-		return fmt.Errorf("getting next page: %w", err)
-	}
-
-	page := i.transformer(resp)
-	i.internalPager, err = NewPager(page)
-	return err
-}
-
-// NewIterator creates a new iterator.
-func NewIterator[ReturnType any, PagerType any](
-	pager *runtime.Pager[PagerType],
-	transformer func(PagerType) []ReturnType) Iterator[ReturnType, PagerType] {
-
-	return Iterator[ReturnType, PagerType]{azurePager: pager, transformer: transformer}
-}
-
+// New creates a new iterator over a sequence generated from an Azure pager.
 func New[ReturnType any, PagerType any](
 	ctx context.Context,
 	pager *runtime.Pager[PagerType],
