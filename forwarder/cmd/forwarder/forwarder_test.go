@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -325,5 +326,18 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Len(t, got, 3)
+	})
+}
+
+// TestRunMain exists for performance testing purposes.
+func TestRunMain(t *testing.T) {
+	t.Parallel()
+
+	t.Run("run main", func(t *testing.T) {
+		t.Parallel()
+		if os.Getenv("CI") != "" {
+			t.Skip("Skipping testing in CI environment")
+		}
+		main()
 	})
 }
