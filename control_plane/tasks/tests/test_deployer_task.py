@@ -28,7 +28,6 @@ class TestDeployerTask(TaskTestCase):
             "REGION": "region1",
             "SUBSCRIPTION_ID": "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
         }.get
-        self.patch("generate_unique_id").return_value = "8191de530fe7"
 
         self.public_client = AsyncMockClient()
         self.patch("ContainerClient").return_value = self.public_client

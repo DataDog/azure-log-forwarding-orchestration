@@ -1,7 +1,7 @@
 # stdlib
 
 from asyncio import gather, run
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Iterable
 from json import dumps
 from logging import INFO, basicConfig, getLogger
 from types import TracebackType
@@ -10,17 +10,8 @@ from typing import NamedTuple, Self, cast
 # 3p
 from aiohttp import ClientSession
 from azure.core.exceptions import ResourceNotFoundError
-from azure.core.polling import AsyncLROPoller
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
-from azure.mgmt.web.v2023_12_01.models import (
-    AppServicePlan,
-    ManagedServiceIdentity,
-    NameValuePair,
-    Site,
-    SiteConfig,
-    SkuDescription,
-)
 from azure.storage.blob.aio import ContainerClient
 from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
@@ -35,8 +26,7 @@ from cache.manifest_cache import (
     ManifestKey,
     deserialize_manifest_cache,
 )
-from tasks.common import Resource, collect, generate_unique_id
-from tasks.deploy_common import wait_for_resource
+from tasks.common import Resource, collect
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"
@@ -71,7 +61,6 @@ class DeployerTask(Task):
         self.subscription_id = get_config_option("SUBSCRIPTION_ID")
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
-        self.control_plane_id = generate_unique_id()
         self.public_storage_client = ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
@@ -117,8 +106,6 @@ class DeployerTask(Task):
                 "diagnostic_settings": "",
             }
         ).copy()
-
-        # TODO(AZINTS-2771) implement creating dependency resources when needed
 
         await gather(
             *[
@@ -200,60 +187,6 @@ class DeployerTask(Task):
     async def deploy_log_forwarder_image(self) -> None:
         # TODO(AZINTS-2770): Implement this
         self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
-
-    async def create_or_update_function_app(
-        self, function_app_name: str, service_plan: AppServicePlan, connection_string: str
-    ) -> None:
-        await wait_for_resource(
-            *await self.create_control_plane_function_app(
-                self.region,
-                function_app_name,
-                service_plan.id,  # type: ignore
-                connection_string,
-            )
-        )
-
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def create_app_service_plan(
-        self, region: str, app_service_plan_name: str
-    ) -> tuple[AsyncLROPoller[AppServicePlan], Callable[[], Awaitable[AppServicePlan]]]:
-        return await self.web_client.app_service_plans.begin_create_or_update(
-            self.resource_group,
-            app_service_plan_name,
-            AppServicePlan(
-                location=region,
-                kind="linux",
-                reserved=True,  # TODO(AZINTS-2646): figure out if this is what we want
-                sku=SkuDescription(
-                    # TODO(AZINTS-2646): figure out which SKU we should be using here
-                    tier="Basic",
-                    name="B1",
-                ),
-            ),
-        ), lambda: self.web_client.app_service_plans.get(self.resource_group, app_service_plan_name)
-
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def create_control_plane_function_app(
-        self, region: str, function_app_name: str, app_service_plan_id: str, connection_string: str
-    ) -> tuple[AsyncLROPoller[Site], Callable[[], Awaitable[Site]]]:
-        return await self.web_client.web_apps.begin_create_or_update(
-            self.resource_group,
-            function_app_name,
-            Site(
-                location=region,
-                kind="functionapp",
-                identity=ManagedServiceIdentity(type="SystemAssigned"),
-                server_farm_id=app_service_plan_id,
-                https_only=True,
-                site_config=SiteConfig(
-                    app_settings=[
-                        NameValuePair(name="FUNCTIONS_WORKER_RUNTIME", value="python"),
-                        NameValuePair(name="AzureWebJobsStorage", value=connection_string),
-                        NameValuePair(name="FUNCTIONS_EXTENSION_VERSION", value="~4"),
-                    ]
-                ),
-            ),
-        ), lambda: self.web_client.web_apps.get(self.resource_group, function_app_name)
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
