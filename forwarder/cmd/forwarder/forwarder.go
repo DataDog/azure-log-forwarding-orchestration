@@ -149,7 +149,6 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 
 	// Get all the containers
 	containers := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-	//err = errors.Join(err, containerErr)
 
 	// Get all the blobs
 	currNow := now()
