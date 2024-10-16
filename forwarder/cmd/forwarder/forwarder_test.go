@@ -286,7 +286,7 @@ func TestProcessLogs(t *testing.T) {
 		// THEN
 		assert.False(t, parsedLog.IsValid())
 		assert.ErrorAs(t, err, &invalidLogError)
-		assert.Contains(t, string(buffer.Bytes()), "invalid log")
+		assert.Contains(t, string(buffer.Bytes()), "large log from")
 	})
 }
 
