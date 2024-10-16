@@ -78,6 +78,7 @@ FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
 DD_SITE_SETTING = "DD_SITE"
 DD_API_KEY_SETTING = "DD_API_KEY"
+FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
 
 DD_API_KEY_SECRET = "dd-api-key"
 CONNECTION_STRING_SECRET = "connection-string"
@@ -117,7 +118,7 @@ def get_datetime_str(time: datetime) -> str:
 
 class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
-        self.forwarder_image = get_config_option("forwarder_image")
+        self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
         self.dd_site = get_config_option(DD_SITE_SETTING)
         self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
