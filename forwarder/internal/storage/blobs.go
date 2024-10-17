@@ -69,15 +69,16 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *lo
 	})
 
 	return collections.New[Blob, azblob.ListBlobsFlatResponse](ctx, blobPager, func(item azblob.ListBlobsFlatResponse) []Blob {
-		var blobs []Blob
 		if item.Segment == nil {
-			return blobs
+			var emptyBlobs []Blob
+			return emptyBlobs
 		}
-		for _, blobItem := range item.Segment.BlobItems {
+		blobs := make([]Blob, len(item.Segment.BlobItems))
+		for idx, blobItem := range item.Segment.BlobItems {
 			if blobItem == nil {
 				continue
 			}
-			blobs = append(blobs, NewBlob(containerName, blobItem))
+			blobs[idx] = NewBlob(containerName, blobItem)
 		}
 		return blobs
 	}, logger)
