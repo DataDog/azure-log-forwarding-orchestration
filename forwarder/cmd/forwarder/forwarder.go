@@ -167,13 +167,13 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	}
 
 	// Get all the containers
-	containers := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
+	containers := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix, logger)
 
 	// Get all the blobs
 	currNow := now()
 	downloadEg, segmentCtx := errgroup.WithContext(ctx)
 	for c := range containers {
-		blobs := storageClient.ListBlobs(ctx, c.Name)
+		blobs := storageClient.ListBlobs(ctx, c.Name, logger)
 
 		// Per blob spawn goroutine to download and transform
 		for blob := range blobs {

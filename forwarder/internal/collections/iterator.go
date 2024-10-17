@@ -4,7 +4,10 @@ import (
 	// stdlib
 	"context"
 	"errors"
+	"fmt"
 	"iter"
+
+	log "github.com/sirupsen/logrus"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -14,15 +17,14 @@ import (
 func New[ReturnType any, PagerType any](
 	ctx context.Context,
 	pager *runtime.Pager[PagerType],
-	transformer func(PagerType) []ReturnType) iter.Seq[ReturnType] {
+	transformer func(PagerType) []ReturnType,
+	logger *log.Entry) iter.Seq[ReturnType] {
 
 	return func(yield func(ReturnType) bool) {
-		for {
-			if !pager.More() {
-				return
-			}
+		for pager.More() {
 			resp, err := pager.NextPage(ctx)
 			if err != nil {
+				logger.Error(fmt.Errorf("fetching next page: %w", err))
 				return
 			}
 			for _, item := range transformer(resp) {

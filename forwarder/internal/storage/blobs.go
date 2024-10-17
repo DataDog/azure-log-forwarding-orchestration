@@ -9,6 +9,8 @@ import (
 	"iter"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -59,7 +61,7 @@ func NewBlob(container string, item *container.BlobItem) Blob {
 }
 
 // ListBlobs returns a iterator over a sequence of blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, containerName string) iter.Seq[Blob] {
+func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *log.Entry) iter.Seq[Blob] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
@@ -78,7 +80,7 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string) iter.Seq[B
 			blobs = append(blobs, NewBlob(containerName, blobItem))
 		}
 		return blobs
-	})
+	}, logger)
 }
 
 // DownloadBlob downloads a blob from a container.

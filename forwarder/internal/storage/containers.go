@@ -6,6 +6,8 @@ import (
 	"errors"
 	"iter"
 
+	log "github.com/sirupsen/logrus"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -23,7 +25,7 @@ type Container struct {
 }
 
 // GetContainersMatchingPrefix returns an iterator over a sequence of containers with a given prefix.
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string) iter.Seq[Container] {
+func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string, logger *log.Entry) iter.Seq[Container] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
@@ -35,7 +37,7 @@ func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string)
 			})
 		}
 		return containers
-	})
+	}, logger)
 }
 
 // CreateContainer a container with the given name
