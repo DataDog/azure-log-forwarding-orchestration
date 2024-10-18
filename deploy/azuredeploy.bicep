@@ -21,10 +21,23 @@ module controlPlaneSubscription './subscription.bicep' = {
   }
 }
 
+// sub-uuid for the control plane is based on the identifiers below.
+// This is to be consistent if there are multiple deploys, while still making a unique id.
+// - the management group
+// - control plane subscription id
+// - control plane resource group name
+// - control plane region
+var controlPlaneId = toLower(substring(
+  guid(managementGroup().id, controlPlaneSubscriptionId, controlPlaneResourceGroupName, controlPlaneLocation),
+  24,
+  12
+))
+
 module controlPlaneResourceGroup './control_plane.bicep' = {
   name: 'controlPlaneResourceGroup'
   scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
   params: {
+    controlPlaneId: controlPlaneId
     controlPlaneLocation: controlPlaneLocation
     controlPlaneResourceGroupName: controlPlaneResourceGroupName
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
