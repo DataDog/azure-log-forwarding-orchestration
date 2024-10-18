@@ -1,6 +1,10 @@
 package storage_test
 
 import (
+	"bytes"
+
+	log "github.com/sirupsen/logrus"
+
 	// stdlib
 	"context"
 	"errors"
@@ -13,9 +17,6 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-
-	// datadog
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
@@ -48,11 +49,13 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 
 	client := storage.NewClient(mockClient)
 
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-	defer span.Finish()
+	var output []byte
+	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
 
 	var containers []storage.Container
-	seq := client.GetContainersMatchingPrefix(ctx, prefix)
+	seq := client.GetContainersMatchingPrefix(ctx, prefix, log.NewEntry(logger))
 	for item := range seq {
 		containers = append(containers, item)
 	}
