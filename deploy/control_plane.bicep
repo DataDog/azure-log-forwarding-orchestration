@@ -108,6 +108,7 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
       appSettings: union(commonAppSettings, [
         { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
+        { name: 'CONTROL_PLANE_ID', value: controlPlaneId }
       ])
       linuxFxVersion: 'Python|3.11'
     }

@@ -37,10 +37,6 @@ log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 
-def get_diagnostic_setting_name(config_id: str) -> str:
-    return DIAGNOSTIC_SETTING_PREFIX + config_id
-
-
 def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:  # pragma: no cover
     # no test coverage because we don't have event hub support yet
     return (
@@ -80,6 +76,7 @@ class DiagnosticSettingsTask(Task):
         super().__init__()
 
         self.resource_group = get_config_option("RESOURCE_GROUP")
+        self.diagnostic_settings_name = (DIAGNOSTIC_SETTING_PREFIX + get_config_option("CONTROL_PLANE_ID")).lower()
 
         # read caches
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
@@ -133,33 +130,31 @@ class DiagnosticSettingsTask(Task):
             log.exception("Failed to get diagnostic settings for resource %s", resource_id)
             return
 
-        current_settings_by_name = {
-            setting_name: ds
-            for ds in current_diagnostic_settings
-            if (setting_name := cast(str, ds.name).casefold()).startswith(DIAGNOSTIC_SETTING_PREFIX)
-        }
-        assigned_setting = current_settings_by_name.pop(get_diagnostic_setting_name(assigned_config.id), None)
+        current_setting = next(
+            filter(
+                lambda ds: cast(str, ds.name).lower() == self.diagnostic_settings_name,
+                current_diagnostic_settings,
+            ),
+            None,
+        )
 
         if (
-            assigned_setting
-            and assigned_setting.storage_account_id
-            and assigned_setting.storage_account_id.casefold()
-            != get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
+            current_setting
+            and current_setting.storage_account_id
+            and current_setting.storage_account_id.casefold()
+            == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
-            await self.set_diagnostic_setting(
-                client,
-                sub_id,
-                resource_id,
-                assigned_config,
-                # keep the same categories selected, just fix the storage account
-                categories=[cast(str, log.category) for log in (assigned_setting.logs or [])],
-            )
-        elif not assigned_setting:
-            # no existing setting, create a new one
-            await self.set_diagnostic_setting(client, sub_id, resource_id, assigned_config)
+            return  # it is set up properly already
 
-        if current_settings_by_name:  # any others that start with the same prefix
-            ...  # TODO(AZINTS-2689) old/unused setting cleanup
+        # otherwise fix it
+        await self.set_diagnostic_setting(
+            client,
+            sub_id,
+            resource_id,
+            assigned_config,
+            # keep the same categories selected (or add all if new), just fix the storage account
+            categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
+        )
 
     async def set_diagnostic_setting(
         self,
@@ -181,7 +176,7 @@ class DiagnosticSettingsTask(Task):
 
             await client.diagnostic_settings.create_or_update(
                 resource_id,
-                get_diagnostic_setting_name(config.id),
+                self.diagnostic_settings_name,
                 get_diagnostic_setting(sub_id, self.resource_group, config, categories),
             )
             log.info("Added diagnostic setting for resource %s", resource_id)
