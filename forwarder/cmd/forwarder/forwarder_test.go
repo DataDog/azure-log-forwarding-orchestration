@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
@@ -96,11 +98,11 @@ func TestRun(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
-		containerHandler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
+		containerHandler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
 		containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
 		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
 
-		blobHandler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
+		blobHandler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
 		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
 		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
 
@@ -324,5 +326,18 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Len(t, got, 3)
+	})
+}
+
+// TestRunMain exists for performance testing purposes.
+func TestRunMain(t *testing.T) {
+	t.Parallel()
+
+	t.Run("run main", func(t *testing.T) {
+		t.Parallel()
+		if os.Getenv("CI") != "" {
+			t.Skip("Skipping testing in CI environment")
+		}
+		main()
 	})
 }

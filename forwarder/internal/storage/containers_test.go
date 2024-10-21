@@ -1,10 +1,13 @@
 package storage_test
 
 import (
+	"bytes"
+
+	log "github.com/sirupsen/logrus"
+
 	// stdlib
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
 	// 3p
@@ -14,12 +17,9 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"google.golang.org/api/iterator"
-
-	// datadog
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
@@ -38,9 +38,9 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 	}
 }
 
-func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) ([]*service.ContainerItem, error) {
+func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) []storage.Container {
 	ctrl := gomock.NewController(t)
-	handler := storage.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
+	handler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
 
 	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
 
@@ -49,28 +49,17 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 
 	client := storage.NewClient(mockClient)
 
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "containers.test")
-	defer span.Finish()
+	var output []byte
+	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
 
-	it := client.GetContainersMatchingPrefix(ctx, prefix)
-
-	var results []*service.ContainerItem
-	var v, err = it.Next(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error getting next container: %w", err)
+	var containers []storage.Container
+	seq := client.GetContainersMatchingPrefix(ctx, prefix, log.NewEntry(logger))
+	for item := range seq {
+		containers = append(containers, item)
 	}
-	for ; v != nil; v, err = it.Next(ctx) {
-		if err != nil && err.Error() == iterator.Done.Error() {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("error getting next container: %w", err)
-		}
-		for _, container := range v {
-			results = append(results, container)
-		}
-	}
-	return results, nil
+	return containers
 }
 
 func TestGetContainersMatchingPrefix(t *testing.T) {
@@ -85,25 +74,23 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		}
 
 		// WHEN
-		results, err := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, [][]*service.ContainerItem{firstPage}, nil)
+		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, [][]*service.ContainerItem{firstPage}, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0].Name)
-		assert.Equal(t, testString, *results[1].Name)
+		assert.Equal(t, testString, results[0].Name)
+		assert.Equal(t, testString, results[1].Name)
 	})
 
-	t.Run("returns empty array", func(t *testing.T) {
+	t.Run("returns empty array on empty array", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		containers := [][]*service.ContainerItem{}
 
 		// WHEN
-		results, err := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, nil)
+		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 0)
 	})
 
@@ -116,11 +103,10 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		containers := [][]*service.ContainerItem{}
 
 		// WHEN
-		_, err := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, fetcherError)
+		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, fetcherError)
 
 		// THEN
-		assert.Error(t, err)
-		assert.Contains(t, fmt.Sprintf("%v", err), testString)
+		assert.Len(t, results, 0)
 	})
 
 	t.Run("multiple pages", func(t *testing.T) {
@@ -136,12 +122,11 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		pages := [][]*service.ContainerItem{firstPage, secondPage}
 
 		// WHEN
-		results, err := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, pages, nil)
+		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, pages, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0].Name)
-		assert.Equal(t, testString, *results[1].Name)
+		assert.Equal(t, testString, results[0].Name)
+		assert.Equal(t, testString, results[1].Name)
 	})
 }

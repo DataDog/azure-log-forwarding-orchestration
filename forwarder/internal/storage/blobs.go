@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,6 +19,9 @@ import (
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 )
 
 // LookBackPeriod defines the period of time from now that we would look back for logs
@@ -23,31 +29,58 @@ const LookBackPeriod = -2 * time.Hour
 
 // Blob represents a blob in a container.
 type Blob struct {
-	Item      *container.BlobItem
-	Container string
+	Container     string
+	Name          string
+	ContentLength int64
+	CreationTime  time.Time
 }
 
-// Current returns true if the blob was created within the look back period
-func Current(blob Blob, now time.Time) bool {
-	return blob.Item.Properties.CreationTime.After(now.Add(LookBackPeriod))
+// IsCurrent returns true if the blob was created within the look back period
+func (b *Blob) IsCurrent(now time.Time) bool {
+	return b.CreationTime.After(now.Add(LookBackPeriod))
 }
 
-func getBlobItems(resp azblob.ListBlobsFlatResponse) []*container.BlobItem {
-	if resp.Segment == nil {
-		return nil
+func NewBlob(container string, item *container.BlobItem) Blob {
+	newBlob := Blob{
+		Container: container,
 	}
-	return resp.Segment.BlobItems
+	if item.Name != nil {
+		newBlob.Name = *item.Name
+	}
+
+	if item.Properties != nil {
+		if item.Properties.ContentLength != nil {
+			newBlob.ContentLength = *item.Properties.ContentLength
+		}
+		if item.Properties.CreationTime != nil {
+			newBlob.CreationTime = *item.Properties.CreationTime
+		}
+	}
+
+	return newBlob
 }
 
-// ListBlobs returns an iterator over the blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, containerName string) Iterator[[]*container.BlobItem, azblob.ListBlobsFlatResponse] {
+// ListBlobs returns an iterator over a sequence of blobs in a container.
+func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *log.Entry) iter.Seq[Blob] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
-	iter := NewIterator(blobPager, getBlobItems, nil)
-	return iter
+
+	return collections.New[Blob, azblob.ListBlobsFlatResponse](ctx, blobPager, func(item azblob.ListBlobsFlatResponse) []Blob {
+		if item.Segment == nil {
+			return nil
+		}
+		blobs := make([]Blob, 0, len(item.Segment.BlobItems))
+		for _, blobItem := range item.Segment.BlobItems {
+			if blobItem == nil {
+				continue
+			}
+			blobs = append(blobs, NewBlob(containerName, blobItem))
+		}
+		return blobs
+	}, logger)
 }
 
 // DownloadBlob downloads a blob from a container.

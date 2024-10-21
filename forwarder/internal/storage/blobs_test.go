@@ -5,12 +5,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -19,12 +20,9 @@ import (
 	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
-	"google.golang.org/api/iterator"
-
-	// datadog
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
@@ -48,10 +46,10 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) ([]*container.BlobItem, error) {
+func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) []storage.Blob {
 	ctrl := gomock.NewController(t)
 
-	handler := storage.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
+	handler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
 
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
@@ -60,32 +58,17 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 
 	client := storage.NewClient(mockClient)
 
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "blobs.test")
-	defer span.Finish()
+	var output []byte
+	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
 
-	it := client.ListBlobs(ctx, containerName)
-
-	var results []*container.BlobItem
-	for {
-		blobList, err := it.Next(ctx)
-
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		for _, blob := range blobList {
-			if blob == nil {
-				continue
-			}
-			results = append(results, blob)
-		}
-
+	var blobs []storage.Blob
+	it := client.ListBlobs(ctx, containerName, log.NewEntry(logger))
+	for item := range it {
+		blobs = append(blobs, item)
 	}
-	return results, nil
+	return blobs
 }
 
 func TestListBlobs(t *testing.T) {
@@ -100,25 +83,23 @@ func TestListBlobs(t *testing.T) {
 		}
 
 		// WHEN
-		results, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, [][]*container.BlobItem{firstPage}, nil)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, [][]*container.BlobItem{firstPage}, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0].Name)
-		assert.Equal(t, testString, *results[1].Name)
+		assert.Equal(t, testString, results[0].Name)
+		assert.Equal(t, testString, results[1].Name)
 	})
 
-	t.Run("returns empty array", func(t *testing.T) {
+	t.Run("empty slice input results in empty slice output", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		results, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 0)
 	})
 
@@ -131,12 +112,10 @@ func TestListBlobs(t *testing.T) {
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		got, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, fetcherError)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, fetcherError)
 
 		// THEN
-		assert.Nil(t, got)
-		assert.Error(t, err)
-		assert.Contains(t, fmt.Sprintf("%v", err), testString)
+		assert.Len(t, results, 0)
 	})
 
 	t.Run("multiple pages", func(t *testing.T) {
@@ -152,13 +131,12 @@ func TestListBlobs(t *testing.T) {
 		pages := [][]*container.BlobItem{firstPage, secondPage}
 
 		// WHEN
-		results, err := listBlobs(t, context.Background(), storage.LogContainerPrefix, pages, nil)
+		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, pages, nil)
 
 		// THEN
-		assert.NoError(t, err)
 		assert.Len(t, results, 2)
-		assert.Equal(t, testString, *results[0].Name)
-		assert.Equal(t, testString, *results[1].Name)
+		assert.Equal(t, testString, results[0].Name)
+		assert.Equal(t, testString, results[1].Name)
 	})
 }
 
@@ -252,13 +230,9 @@ func TestAppendBlob(t *testing.T) {
 
 func getBlob(creationTime time.Time) storage.Blob {
 	return storage.Blob{
-		Container: "container",
-		Item: &container.BlobItem{
-			Name: to.StringPtr("blob"),
-			Properties: &container.BlobProperties{
-				CreationTime: &creationTime,
-			},
-		},
+		Container:    "container",
+		Name:         "blob",
+		CreationTime: creationTime,
 	}
 }
 
@@ -272,7 +246,7 @@ func TestCurrent(t *testing.T) {
 		blob := getBlob(currTime)
 
 		// WHEN
-		current := storage.Current(blob, currTime)
+		current := blob.IsCurrent(currTime)
 
 		// THEN
 		assert.True(t, current)
@@ -285,10 +259,10 @@ func TestCurrent(t *testing.T) {
 		blob := getBlob(currTime.Add(-1 * time.Hour))
 
 		// WHEN
-		current := storage.Current(blob, currTime)
+		got := blob.IsCurrent(currTime)
 
 		// THEN
-		assert.True(t, current)
+		assert.True(t, got)
 	})
 
 	t.Run("three hours ago is not current", func(t *testing.T) {
@@ -298,7 +272,7 @@ func TestCurrent(t *testing.T) {
 		blob := getBlob(currTime.Add(-3 * time.Hour))
 
 		// WHEN
-		current := storage.Current(blob, currTime)
+		current := blob.IsCurrent(currTime)
 
 		// THEN
 		assert.False(t, current)

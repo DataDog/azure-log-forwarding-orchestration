@@ -17,7 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/iterator"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
@@ -42,71 +41,14 @@ const maxBufferSize = math.MaxInt32
 // initialBufferSize is the initial buffer size to use for scanning logs.
 const initialBufferSize = 1024 * 1024 * 5
 
-func getBlobs(ctx context.Context, storageClient *storage.Client, container string) ([]storage.Blob, error) {
-	var blobs []storage.Blob
-	var err error
-
-	iter := storageClient.ListBlobs(ctx, container)
-	for {
-		blobList, currErr := iter.Next(ctx)
-
-		if errors.Is(currErr, iterator.Done) {
-			break
-		}
-
-		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of blobs for %s: %w", container, currErr), err)
-		}
-
-		if blobList == nil {
-			continue
-		}
-		for _, b := range blobList {
-			if b == nil {
-				continue
-			}
-			blobs = append(blobs, storage.Blob{Item: b, Container: container})
-		}
-	}
-	return blobs, err
-}
-
-func getContainers(ctx context.Context, storageClient *storage.Client) ([]string, error) {
-	var containers []string
-	var err error
-	iter := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix)
-	for {
-		containerList, currErr := iter.Next(ctx)
-
-		if errors.Is(currErr, iterator.Done) {
-			break
-		}
-
-		if currErr != nil {
-			err = errors.Join(fmt.Errorf("getting next page of containers: %w", currErr), err)
-			continue
-		}
-
-		if containerList != nil {
-			for _, container := range containerList {
-				if container == nil {
-					continue
-				}
-				containers = append(containers, *container.Name)
-			}
-		}
-	}
-	return containers, err
-}
-
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset := cursors.GetCursor(*blob.Item.Name)
+	currentOffset := cursors.GetCursor(blob.Name)
 	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
 	if err != nil {
-		return fmt.Errorf("download range for %s: %w", *blob.Item.Name, err)
+		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	cursors.SetCursor(*blob.Item.Name, *blob.Item.Properties.ContentLength)
+	cursors.SetCursor(blob.Name, blob.ContentLength)
 
 	return parseLogs(content.Reader, logsChannel)
 }
@@ -225,29 +167,25 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	}
 
 	// Get all the containers
-	containers, containerErr := getContainers(ctx, storageClient)
-	err = errors.Join(err, containerErr)
+	containers := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix, logger)
 
 	// Get all the blobs
-	var blobs []storage.Blob
-	for _, c := range containers {
-		blobsPerContainer, blobsErr := getBlobs(ctx, storageClient, c)
-		err = errors.Join(err, blobsErr)
-		blobs = append(blobs, blobsPerContainer...)
-	}
-
-	// Per blob spawn goroutine to download and transform
 	currNow := now()
 	downloadEg, segmentCtx := errgroup.WithContext(ctx)
-	for _, blob := range blobs {
-		// Skip blobs that are not recent
-		// Blobs may have old data that we don't want to process
-		if !storage.Current(blob, currNow) {
-			continue
+	for c := range containers {
+		blobs := storageClient.ListBlobs(ctx, c.Name, logger)
+
+		// Per blob spawn goroutine to download and transform
+		for blob := range blobs {
+			// Skip blobs that are not recent
+			// Blobs may have old data that we don't want to process
+			if !blob.IsCurrent(currNow) {
+				continue
+			}
+			downloadEg.Go(func() error {
+				return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+			})
 		}
-		downloadEg.Go(func() error {
-			return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
-		})
 	}
 
 	// Wait for all the goroutines to finish
@@ -351,7 +289,6 @@ func main() {
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int64)
-	//TODO[AZINTS-2653]: Add volume data to resourceVolumeMap once we have it
 	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
 	metricBuffer, err := json.Marshal(metricBlob)
 

@@ -10,8 +10,6 @@ import (
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
-	"github.com/Azure/go-autorest/autorest/to"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -42,13 +40,9 @@ func TestDownloadSegment(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		blob := storage.Blob{
-			Container: containerName,
-			Item: &container.BlobItem{
-				Name: to.StringPtr(blobName),
-				Properties: &container.BlobProperties{
-					ContentLength: to.Int64Ptr(int64(len(want))),
-				},
-			},
+			Container:     containerName,
+			Name:          blobName,
+			ContentLength: int64(len(want)),
 		}
 
 		// WHEN
@@ -79,13 +73,9 @@ func TestDownloadSegment(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		blob := storage.Blob{
-			Container: containerName,
-			Item: &container.BlobItem{
-				Name: to.StringPtr(blobName),
-				Properties: &container.BlobProperties{
-					ContentLength: to.Int64Ptr(5),
-				},
-			},
+			Container:     containerName,
+			Name:          blobName,
+			ContentLength: 5,
 		}
 
 		// WHEN
