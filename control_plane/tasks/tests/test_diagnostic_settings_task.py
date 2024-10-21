@@ -22,6 +22,8 @@ from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator,
 sub_id1: Final = "sub1"
 region1: Final = "region1"
 config_id1: Final = "bc666ef914ec"
+control_plane_id: Final = "e90ecb54476d"
+DIAGNOSTIC_SETTING_NAME: Final = DIAGNOSTIC_SETTING_PREFIX + control_plane_id
 resource_id1: Final = "/subscriptions/1/resourcegroups/rg1/providers/microsoft.compute/virtualmachines/vm1"
 storage_account1: Final = "/subscriptions/1/resourceGroups/lfo/providers/Microsoft.Storage/storageAccounts/storageacc1"
 
@@ -40,7 +42,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
 
         self.log = self.patch("log")
-        env = patch.dict(environ, {"RESOURCE_GROUP": "lfo"})
+        env = patch.dict(environ, {"RESOURCE_GROUP": "lfo", "CONTROL_PLANE_ID": control_plane_id})
         env.start()
         self.addCleanup(env.stop)
 
@@ -75,7 +77,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         # check the diagnostic setting was created
         self.create_or_update_setting.assert_awaited_once_with(
             resource_id1,
-            "datadog_log_forwarding_bc666ef914ec",
+            DIAGNOSTIC_SETTING_NAME,
             AzureModelMatcher(
                 {
                     "logs": [{"category": "cool_logs", "enabled": True}],
@@ -85,10 +87,8 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
     async def test_task_leaves_existing_settings_unchanged(self):
-        config_id = "3168b2251a45"
-
         self.list_diagnostic_settings.return_value = async_generator(
-            Mock(name=DIAGNOSTIC_SETTING_PREFIX + config_id, event_hub_name=TEST_EVENT_HUB_NAME)
+            Mock(name=DIAGNOSTIC_SETTING_NAME, event_hub_name=TEST_EVENT_HUB_NAME)
         )
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
@@ -106,7 +106,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
     async def test_task_updates_incorrect_settings(self):
         self.list_diagnostic_settings.return_value = async_generator(
-            mock(name="datadog_log_forwarding_bc666ef914ec", storage_account_id="wrong_storage_account_id", logs=None),
+            mock(name=DIAGNOSTIC_SETTING_NAME, storage_account_id="wrong_storage_account_id", logs=None),
         )
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS)
@@ -126,7 +126,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         # check the diagnostic setting was created
         self.create_or_update_setting.assert_awaited_once_with(
             resource_id1,
-            "datadog_log_forwarding_bc666ef914ec",
+            DIAGNOSTIC_SETTING_NAME,
             AzureModelMatcher(
                 {
                     "logs": [{"category": "cool_logs", "enabled": True}],
@@ -138,7 +138,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
     async def test_task_uses_already_found_settings_instead_of_requerying(self):
         self.list_diagnostic_settings.return_value = async_generator(
             mock(
-                name="datadog_log_forwarding_bc666ef914ec",
+                name=DIAGNOSTIC_SETTING_NAME,
                 storage_account_id="wrong_storage_account_id",
                 logs=[mock(category="cool_logs")],
             ),
@@ -159,7 +159,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         # check the diagnostic setting was created
         self.create_or_update_setting.assert_awaited_once_with(
             resource_id1,
-            "datadog_log_forwarding_bc666ef914ec",
+            DIAGNOSTIC_SETTING_NAME,
             AzureModelMatcher(
                 {
                     "logs": [{"category": "cool_logs", "enabled": True}],
@@ -173,7 +173,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         http_error.error = Mock(code="ResourceTypeNotSupported")
         self.list_diagnostic_settings.return_value = async_generator(
             mock(
-                name="datadog_log_forwarding_bc666ef914ec",
+                name=DIAGNOSTIC_SETTING_NAME,
                 storage_account_id="wrong_storage_account_id",
                 logs=[mock(category="cool_logs")],
             ),
