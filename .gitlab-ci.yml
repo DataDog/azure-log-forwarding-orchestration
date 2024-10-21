@@ -18,6 +18,12 @@ ci-build-image:
   tags: ["arch:amd64"]
   script:
     - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
+ci-do-a-test:
+  image: $DOCKER_IMAGE
+  stage: ci-image
+  tags: ["arch:amd64"]
+  script:
+    - echo $(vault kv get -field=test kv/k8s/gitlab-runner/azure-log-forwarding-orchestration)
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
