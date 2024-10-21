@@ -30,11 +30,11 @@ func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string,
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
 	return collections.New[Container, azblob.ListContainersResponse](ctx, containerPager, func(item azblob.ListContainersResponse) []Container {
-		containers := make([]Container, len(item.ContainerItems))
-		for idx, container := range item.ContainerItems {
-			containers[idx] = Container{
+		containers := make([]Container, 0, len(item.ContainerItems))
+		for _, container := range item.ContainerItems {
+			containers = append(containers, Container{
 				Name: *container.Name,
-			}
+			})
 		}
 		return containers
 	}, logger)

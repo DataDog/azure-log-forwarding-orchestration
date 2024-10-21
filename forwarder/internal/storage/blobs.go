@@ -73,12 +73,12 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *lo
 			var emptyBlobs []Blob
 			return emptyBlobs
 		}
-		blobs := make([]Blob, len(item.Segment.BlobItems))
-		for idx, blobItem := range item.Segment.BlobItems {
+		blobs := make([]Blob, 0, len(item.Segment.BlobItems))
+		for _, blobItem := range item.Segment.BlobItems {
 			if blobItem == nil {
 				continue
 			}
-			blobs[idx] = NewBlob(containerName, blobItem)
+			blobs = append(blobs, NewBlob(containerName, blobItem))
 		}
 		return blobs
 	}, logger)
