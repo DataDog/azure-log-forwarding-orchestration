@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.11
 """Adapted from: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/secure-template-with-sas-token?tabs=azure-cli#provide-sas-token-during-deployment"""
 
+from datetime import datetime, timedelta
 from urllib.parse import quote
 from os.path import isfile, join
 from os import environ
@@ -16,7 +17,7 @@ connection_parts = {
 
 
 def get_token(file: str, duration: str, connection: str) -> str:
-    return run(
+    res = run(
         [
             *("az", "storage", "blob", "generate-sas"),
             *("--container-name", "templates"),
@@ -27,7 +28,10 @@ def get_token(file: str, duration: str, connection: str) -> str:
         ],
         capture_output=True,
         text=True,
-    ).stdout.strip()
+    )
+    if res.returncode != 0:
+        raise ValueError(res.stderr)
+    return res.stdout.strip()
 
 
 DEPLOY_TEMPLATE = "azuredeploy.json"
@@ -54,12 +58,12 @@ if isfile(dotenv_path):
 else:
     dotenv = {}
 
-if not all(key in dotenv for key in ("deploy_token", "ui_token")):
+if not dotenv.get("deploy_token") or not dotenv.get("ui_token"):
     print(".env missing fields, regenerating...")
-    if "deploy_token" not in dotenv or "ui_token" not in dotenv:
-        duration = input("How long should the tokens be valid? [1 week]: ") or "1 week"
-        dotenv["deploy_token"] = get_token(DEPLOY_TEMPLATE, duration, connection)
-        dotenv["ui_token"] = get_token(UI_TEMPLATE, duration, connection)
+    time = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    duration = input(f"When should the token expire? [{time}]: ") or time
+    dotenv["deploy_token"] = get_token(DEPLOY_TEMPLATE, duration, connection)
+    dotenv["ui_token"] = get_token(UI_TEMPLATE, duration, connection)
     print("writing to .env...", end="")
     with open(dotenv_path, "w") as f:
         f.write("\n".join(k + "=" + v for k, v in dotenv.items()))
