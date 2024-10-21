@@ -60,7 +60,7 @@ func NewBlob(container string, item *container.BlobItem) Blob {
 	return newBlob
 }
 
-// ListBlobs returns a iterator over a sequence of blobs in a container.
+// ListBlobs returns an iterator over a sequence of blobs in a container.
 func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *log.Entry) iter.Seq[Blob] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
