@@ -70,8 +70,7 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *lo
 
 	return collections.New[Blob, azblob.ListBlobsFlatResponse](ctx, blobPager, func(item azblob.ListBlobsFlatResponse) []Blob {
 		if item.Segment == nil {
-			var emptyBlobs []Blob
-			return emptyBlobs
+			return nil
 		}
 		blobs := make([]Blob, 0, len(item.Segment.BlobItems))
 		for _, blobItem := range item.Segment.BlobItems {
