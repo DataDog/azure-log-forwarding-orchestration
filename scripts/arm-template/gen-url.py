@@ -7,17 +7,12 @@ from os import environ
 from subprocess import run
 
 
-def get_connection_string(account: str, rg: str) -> str:
-    return run(
-        [
-            *("az", "storage", "account", "show-connection-string"),
-            *("--resource-group", rg),
-            *("--name", account),
-            *("--query", "connectionString"),
-        ],
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+if (connection := environ.get("connection")) is None:
+    raise ValueError("Please set the `connection` environment variable")
+connection = connection.lower()
+connection_parts = {
+    kv[0]: kv[1] for kv in map(lambda seg: seg.split("="), connection.split(";"))
+}
 
 
 def get_token(file: str, duration: str, connection: str) -> str:
@@ -59,18 +54,10 @@ if isfile(dotenv_path):
 else:
     dotenv = {}
 
-if not all(key in dotenv for key in ("deploy_token", "ui_token", "account", "rg")):
+if not all(key in dotenv for key in ("deploy_token", "ui_token")):
     print(".env missing fields, regenerating...")
-    if "account" not in dotenv:
-        dotenv["account"] = input("What is the storage account name?: ")
-    if "rg" not in dotenv:
-        dotenv["rg"] = input(
-            "What is the resource group name for the storage account?: "
-        )
-
     if "deploy_token" not in dotenv or "ui_token" not in dotenv:
         duration = input("How long should the tokens be valid? [1 week]: ") or "1 week"
-        connection = get_connection_string(dotenv["account"], dotenv["rg"])
         dotenv["deploy_token"] = get_token(DEPLOY_TEMPLATE, duration, connection)
         dotenv["ui_token"] = get_token(UI_TEMPLATE, duration, connection)
     print("writing to .env...", end="")
@@ -79,7 +66,7 @@ if not all(key in dotenv for key in ("deploy_token", "ui_token", "account", "rg"
     print("done")
 
 
-url_base = "https://avargab74.blob.core.windows.net/templates/"
+url_base = f"{connection_parts['blobendpoint']}templates/"
 
 
 deploy_url = f"{url_base}{DEPLOY_TEMPLATE}?{dotenv['deploy_token']}"
