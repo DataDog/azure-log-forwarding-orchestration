@@ -79,6 +79,17 @@ publish-tasks:
     - ci/scripts/control_plane/publish.py
   dependencies:
     - build-tasks
+publish-tasks-qa:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ["arch:amd64"]
+  script:
+    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - ci/scripts/control_plane/publish.py
+  dependencies:
+    - build-tasks
 deployer-build-latest:
   image: $DOCKER_IMAGE
   stage: build
@@ -87,7 +98,17 @@ deployer-build-latest:
       - main
   tags: ["arch:amd64"]
   script:
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+deployer-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  #  only:
+  #    refs:
+  #      - main
+  tags: ["arch:amd64"]
+  script:
+    - docker buildx build --platform=linux/amd64 --tag lfoqa.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -141,26 +162,16 @@ forwarder-build-tagged:
       - main
   script:
     - ci/scripts/forwarder/build_and_push.sh registry.ddbuild.io/lfo v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-forwarder-build-prod:
+forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
   tags: ["arch:amd64"]
-  #  only:
-  #    refs:
-  #      - main
+  only:
+    refs:
+      - main
   script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/prod)
-    - ci/scripts/forwarder/build_and_push.sh lfoprod.azurecr.io latest
-forwarder-build-dev:
-  image: $DOCKER_IMAGE
-  stage: build
-  tags: ["arch:amd64"]
-  #  only:
-  #    refs:
-  #      - main
-  script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/dev)
-    - ci/scripts/forwarder/build_and_push.sh lfodev.azurecr.io latest
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - ci/scripts/forwarder/build_and_push.sh lfoqa.azurecr.io latest
 forwarder-publish:
   stage: publish
   rules:
