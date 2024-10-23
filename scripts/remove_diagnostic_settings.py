@@ -2,7 +2,7 @@
 # script to remove diagnostic settings from all resources
 
 # stdlib
-from asyncio import create_task, gather, run
+from asyncio import create_task, gather, run, sleep
 from itertools import chain
 from logging import INFO, WARNING, basicConfig, getLogger
 from sys import argv
@@ -10,6 +10,7 @@ from typing import Any, AsyncIterable, Callable, Coroutine, Iterable, TypeVar
 
 # 3p
 from azure.core.credentials_async import AsyncTokenCredential
+from azure.core.exceptions import HttpResponseError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.resource.resources.aio import ResourceManagementClient
@@ -44,13 +45,20 @@ async def run_parallel(
 
 
 async def delete_setting(
-    client: MonitorManagementClient, resource_id: str, setting: str
+    client: MonitorManagementClient, resource_id: str, setting: str, retries: int = 3
 ):
     if setting and setting.startswith(DIAGNOSTIC_SETTING_PREFIX):
         try:
             if not DRY_RUN:
                 await client.diagnostic_settings.delete(resource_id, setting)
             log.info(f"Deleted setting {setting} for resource {resource_id} ✅")
+        except HttpResponseError as e:
+            if e.error and e.error.code == "SubscriptionRequestsThrottled":
+                if retries == 0:
+                    raise e
+                log.warning("Throttled, sleeping for 1s and retrying")
+                await sleep(1)
+                await delete_setting(client, resource_id, setting, retries - 1)
         except Exception:
             log.exception(
                 f"Failed to delete setting {setting} for resource {resource_id}"
