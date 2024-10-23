@@ -18,12 +18,6 @@ ci-build-image:
   tags: ["arch:amd64"]
   script:
     - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
-ci-do-a-test:
-  image: $DOCKER_IMAGE
-  stage: ci-image
-  tags: ["arch:amd64"]
-  script:
-    - echo $(vault kv get -field=value kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/test)
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
@@ -137,7 +131,7 @@ forwarder-build-latest:
     refs:
       - main
   script:
-    - ci/scripts/forwarder/build_and_push.sh latest
+    - ci/scripts/forwarder/build_and_push.sh registry.ddbuild.io/lfo latest
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -146,7 +140,7 @@ forwarder-build-tagged:
     refs:
       - main
   script:
-    - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    - ci/scripts/forwarder/build_and_push.sh registry.ddbuild.io/lfo v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 forwarder-build-prod:
   image: $DOCKER_IMAGE
   stage: build
@@ -156,7 +150,7 @@ forwarder-build-prod:
   #      - main
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/prod)
-    - ci/scripts/forwarder/build_and_push.sh latest
+    - ci/scripts/forwarder/build_and_push.sh lfoprod.azurecr.io latest
 forwarder-build-dev:
   image: $DOCKER_IMAGE
   stage: build
@@ -166,7 +160,7 @@ forwarder-build-dev:
   #      - main
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/dev)
-    - ci/scripts/forwarder/build_and_push.sh latest
+    - ci/scripts/forwarder/build_and_push.sh lfodev.azurecr.io latest
 forwarder-publish:
   stage: publish
   rules:

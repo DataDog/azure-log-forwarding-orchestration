@@ -4,4 +4,4 @@ set -euxo pipefail
 
 cd forwarder
 
-docker buildx build --platform=linux/amd64 --label target=build --tag registry.ddbuild.io/lfo/forwarder:$1 --push .
+docker buildx build --platform=linux/amd64 --label target=build --tag $1/forwarder:$2 --push .
