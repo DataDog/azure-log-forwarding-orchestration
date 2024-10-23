@@ -23,7 +23,7 @@ ci-do-a-test:
   stage: ci-image
   tags: ["arch:amd64"]
   script:
-    - echo $(vault kv get -field=test kv/k8s/gitlab-runner/azure-log-forwarding-orchestration)
+    - echo $(vault kv get -field=test kv/data/k8s/gitlab-runner/azure-log-forwarding-orchestration)
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
