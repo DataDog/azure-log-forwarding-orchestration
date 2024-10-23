@@ -147,6 +147,26 @@ forwarder-build-tagged:
       - main
   script:
     - ci/scripts/forwarder/build_and_push.sh v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+forwarder-build-prod:
+  image: $DOCKER_IMAGE
+  stage: build
+  tags: ["arch:amd64"]
+  #  only:
+  #    refs:
+  #      - main
+  script:
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/prod)
+    - ci/scripts/forwarder/build_and_push.sh latest
+forwarder-build-dev:
+  image: $DOCKER_IMAGE
+  stage: build
+  tags: ["arch:amd64"]
+  #  only:
+  #    refs:
+  #      - main
+  script:
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/dev)
+    - ci/scripts/forwarder/build_and_push.sh latest
 forwarder-publish:
   stage: publish
   rules:
