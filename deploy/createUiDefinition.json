@@ -107,7 +107,8 @@
                 "toolTip": "Your Datadog API key",
                 "constraints": {
                   "required": true,
-                  "validationMessage": "Must be a valid API Key"
+                  "regex": "^(?![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$).*",
+                  "validationMessage": "Must be a valid API Key (not a Key ID)."
                 },
                 "options": {
                   "hideConfirmation": true
@@ -124,7 +125,8 @@
                 "toolTip": "Your Datadog Application key",
                 "constraints": {
                   "required": true,
-                  "validationMessage": "Must be a valid Application Key"
+                  "regex": "^(?![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$).*",
+                  "validationMessage": "Must be a valid Application Key (not a Key ID)."
                 },
                 "options": {
                   "hideConfirmation": true
