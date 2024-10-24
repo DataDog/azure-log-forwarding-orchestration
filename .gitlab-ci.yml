@@ -76,7 +76,7 @@ publish-tasks:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ci/scripts/control_plane/publish.py
+    - ci/scripts/control_plane/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
 publish-tasks-qa:
@@ -87,7 +87,7 @@ publish-tasks-qa:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/control_plane/publish.py
+    - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
 deployer-build-latest:
@@ -98,7 +98,6 @@ deployer-build-latest:
       - main
   tags: ["arch:amd64"]
   script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-qa:
   image: $DOCKER_IMAGE
@@ -108,6 +107,7 @@ deployer-build-qa:
   #      - main
   tags: ["arch:amd64"]
   script:
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - docker buildx build --platform=linux/amd64 --tag lfoqa.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-tagged:
   image: $DOCKER_IMAGE
