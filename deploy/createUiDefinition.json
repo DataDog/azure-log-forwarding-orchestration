@@ -1,219 +1,221 @@
 {
-  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
-  "handler": "Microsoft.Azure.CreateUIDef",
-  "version": "0.1.2-preview",
-  "parameters": {
-    "basics": [
-      {
-        "name": "armio",
-        "type": "Microsoft.Solutions.ArmApiControl",
-        "request": {
-          "method": "POST",
-          "path": "/providers/Microsoft.Management/getEntities?api-version=2020-05-01"
-        }
-      },
-      {
-        "name": "monitoredSubscriptions",
-        "type": "Microsoft.Common.DropDown",
-        "label": "Subscriptions to Forward Logs",
-        "filterPlaceholder": "Select Subscriptions to Enable Log Forwarding",
-        "filter": true,
-        "multiselect": true,
-        "selectAll": true,
-        "defaultValue": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
-        "constraints": {
-          "allowedValues": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
-          "required": true
-        },
-        "visible": true
-      },
-      {
-        "name": "controlPlaneInfo",
-        "type": "Microsoft.Common.InfoBox",
-        "visible": true,
-        "options": {
-          "icon": "Info",
-          "text": "The Control Plane is a set of resources that will be deployed to a single subscription. The Control Plane will be used to manage the log forwarding scaling and configuration across all subscriptions. The region selected above will be where the Control Plane resources are deployed. Resources in all regions will have logs forwarded to Datadog."
-        }
-      },
-      {
-        "name": "controlPlaneSubscription",
-        "type": "Microsoft.Common.DropDown",
-        "label": "Control Plane Subscription",
-        "toolTip": "Subscription to deploy the Control Plane resources",
-        "filterPlaceholder": "Select subscription to deploy the Control Plane resources",
-        "filter": true,
-        "multiselect": false,
-        "selectAll": false,
-        "constraints": {
-          "allowedValues": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
-          "required": true
-        },
-        "visible": true
-      },
-      {
-        "name": "resourceGroup",
-        "type": "Microsoft.Common.TextBox",
-        "label": "Resource Group Name",
-        "toolTip": "Resource Group to deploy the Control Plane resources",
-        "defaultValue": "datadog-log-forwarding",
-        "placeholder": "datadog-log-forwarding",
-        "constraints": {
-          "required": true,
-          "regex": "^[-\\w\\._\\(\\)]+$",
-          "validationMessage": "Must be a valid Resource Group Name"
-        },
-        "visible": true
-      },
-      {
-        "name": "infoResourceGroup",
-        "type": "Microsoft.Common.InfoBox",
-        "visible": true,
-        "options": {
-          "icon": "Warning",
-          "text": "This resource group will be used across all subscriptions for the Control Plane and Forwarders. It is reccomended to not re-use an existing resource group name for simpler management and cleanup."
-        }
-      }
-    ],
-    "steps": [
-      {
-        "name": "datadogConfig",
-        "label": "Datadog Configuration",
-        "elements": [
-          {
-            "name": "datadogIntegration",
-            "type": "Microsoft.Common.Section",
-            "label": "Datadog Organization",
-            "elements": [
-              {
-                "name": "textBlock1",
-                "type": "Microsoft.Common.TextBlock",
-                "visible": true,
-                "options": {
-                  "text": "To fill out the fields below, copy the API and Application keys from your Datadog org. You can find your API and App Keys in the Access section of the Organization Settings.",
-                  "link": {
-                    "label": "Learn more",
-                    "uri": "https://docs.datadoghq.com/account_management/org_settings/"
-                  }
+    "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+    "handler": "Microsoft.Azure.CreateUIDef",
+    "version": "0.1.2-preview",
+    "parameters": {
+        "basics": [
+            {
+                "name": "armio",
+                "type": "Microsoft.Solutions.ArmApiControl",
+                "request": {
+                    "method": "POST",
+                    "path": "/providers/Microsoft.Management/getEntities?api-version=2020-05-01"
                 }
-              },
-              {
-                "name": "datadogApiKey",
-                "type": "Microsoft.Common.PasswordBox",
-                "label": {
-                  "password": "Datadog API Key",
-                  "confirmPassword": "Re-enter Datadog Api Key"
-                },
-                "toolTip": "Your Datadog API key",
-                "constraints": {
-                  "required": true,
-                  "validationMessage": "Must be a valid API Key"
-                },
-                "options": {
-                  "hideConfirmation": true
-                },
-                "visible": true
-              },
-              {
-                "name": "datadogApplicationKey",
-                "type": "Microsoft.Common.PasswordBox",
-                "label": {
-                  "password": "Datadog Application Key",
-                  "confirmPassword": "Re-enter Datadog Application Key"
-                },
-                "toolTip": "Your Datadog Application key",
-                "constraints": {
-                  "required": true,
-                  "validationMessage": "Must be a valid Application Key"
-                },
-                "options": {
-                  "hideConfirmation": true
-                },
-                "visible": true
-              },
-              {
-                "name": "datadogSite",
+            },
+            {
+                "name": "monitoredSubscriptions",
                 "type": "Microsoft.Common.DropDown",
-                "label": "Datadog Site",
-                "defaultValue": "US1",
-                "toolTip": "The datadog site where you login to the datadog app.",
+                "label": "Subscriptions to Forward Logs",
+                "filterPlaceholder": "Select Subscriptions to Enable Log Forwarding",
+                "filter": true,
+                "multiselect": true,
+                "selectAll": true,
+                "defaultValue": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
                 "constraints": {
-                  "allowedValues": [
-                    {
-                      "label": "US1",
-                      "value": "datadoghq.com"
-                    },
-                    {
-                      "label": "US3",
-                      "value": "us3.datadoghq.com"
-                    },
-                    {
-                      "label": "US5",
-                      "value": "us5.datadoghq.com"
-                    },
-                    {
-                      "label": "EU1",
-                      "value": "datadoghq.eu"
-                    },
-                    {
-                      "label": "AP1",
-                      "value": "ap1.datadoghq.com"
-                    },
-                    {
-                      "label": "US1-FED",
-                      "value": "ddog-gov.com"
-                    }
-                  ],
-                  "required": false
+                    "allowedValues": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
+                    "required": true
                 },
                 "visible": true
-              }
-            ],
-            "visible": true
-          }
-        ]
-      },
-      {
-        "name": "deployment",
-        "label": "Deployment",
-        "elements": [
-          {
-            "name": "deploymentSection",
-            "type": "Microsoft.Common.Section",
-            "label": "Deployment",
-            "elements": [
-              {
-                "name": "deploymentInfo",
+            },
+            {
+                "name": "controlPlaneInfo",
                 "type": "Microsoft.Common.InfoBox",
                 "visible": true,
                 "options": {
-                  "icon": "Warning",
-                  "text": "During the deployment process, diagnostic settings will be applied to all monitored resources. This action will trigger restarts of App Services, including Web Apps and Function Apps."
+                    "icon": "Info",
+                    "text": "The Control Plane is a set of resources that will be deployed to a single subscription. The Control Plane will be used to manage the log forwarding scaling and configuration across all subscriptions. The region selected above will be where the Control Plane resources are deployed. Resources in all regions will have logs forwarded to Datadog."
                 }
-              },
-              {
-                "name": "deployAcknowledgment",
-                "label": "I acknowledge the warning above",
-                "type": "Microsoft.Common.CheckBox",
-                "visible": true,
+            },
+            {
+                "name": "controlPlaneSubscription",
+                "type": "Microsoft.Common.DropDown",
+                "label": "Control Plane Subscription",
+                "toolTip": "Subscription to deploy the Control Plane resources",
+                "filterPlaceholder": "Select subscription to deploy the Control Plane resources",
+                "filter": true,
+                "multiselect": false,
+                "selectAll": false,
                 "constraints": {
-                  "required": true,
-                  "validationMessage": "You must acknowledge the warning above to proceed"
+                    "allowedValues": "[map(filter(steps('basics').armio.value,(i)=>and(not(equals(i.type, 'Microsoft.Management/managementGroups')),not(and(equals(i.properties.permissions, 'noaccess'),equals(i.properties.inheritedPermissions, 'noaccess')))  )), (item)=> parse(concat('{\"label\":\"', item.properties.displayName, '\",\"value\":\"', item.name, '\"}')))]",
+                    "required": true
+                },
+                "visible": true
+            },
+            {
+                "name": "resourceGroup",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Resource Group Name",
+                "toolTip": "Resource Group to deploy the Control Plane resources",
+                "defaultValue": "datadog-log-forwarding",
+                "placeholder": "datadog-log-forwarding",
+                "constraints": {
+                    "required": true,
+                    "regex": "^[-\\w\\._\\(\\)]+$",
+                    "validationMessage": "Must be a valid Resource Group Name"
+                },
+                "visible": true
+            },
+            {
+                "name": "infoResourceGroup",
+                "type": "Microsoft.Common.InfoBox",
+                "visible": true,
+                "options": {
+                    "icon": "Warning",
+                    "text": "This resource group will be used across all subscriptions for the Control Plane and Forwarders. It is reccomended to not re-use an existing resource group name for simpler management and cleanup."
                 }
-              }
-            ]
-          }
-        ]
-      }
-    ],
-    "outputs": {
-      "monitoredSubscriptions": "[string(steps('basics').monitoredSubscriptions)]",
-      "controlPlaneLocation": "[location()]",
-      "controlPlaneSubscriptionId": "[steps('basics').controlPlaneSubscription]",
-      "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
-      "datadogApplicationKey": "[steps('datadogConfig').datadogIntegration.datadogApplicationKey]",
-      "datadogApiKey": "[steps('datadogConfig').datadogIntegration.datadogApiKey]",
-      "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]"
+            }
+        ],
+        "steps": [
+            {
+                "name": "datadogConfig",
+                "label": "Datadog Configuration",
+                "elements": [
+                    {
+                        "name": "datadogIntegration",
+                        "type": "Microsoft.Common.Section",
+                        "label": "Datadog Organization",
+                        "elements": [
+                            {
+                                "name": "textBlock1",
+                                "type": "Microsoft.Common.TextBlock",
+                                "visible": true,
+                                "options": {
+                                    "text": "To fill out the fields below, copy the API and Application keys from your Datadog org. You can find your API and App Keys in the Access section of the Organization Settings.",
+                                    "link": {
+                                        "label": "Learn more",
+                                        "uri": "https://docs.datadoghq.com/account_management/org_settings/"
+                                    }
+                                }
+                            },
+                            {
+                                "name": "datadogApiKey",
+                                "type": "Microsoft.Common.PasswordBox",
+                                "label": {
+                                    "password": "Datadog API Key",
+                                    "confirmPassword": "Re-enter Datadog Api Key"
+                                },
+                                "toolTip": "Your Datadog API key",
+                                "constraints": {
+                                    "required": true,
+                                    "regex": "^(?![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$).*",
+                                    "validationMessage": "Must be a valid API Key (not a Key ID)."
+                                },
+                                "options": {
+                                    "hideConfirmation": true
+                                },
+                                "visible": true
+                            },
+                            {
+                                "name": "datadogApplicationKey",
+                                "type": "Microsoft.Common.PasswordBox",
+                                "label": {
+                                    "password": "Datadog Application Key",
+                                    "confirmPassword": "Re-enter Datadog Application Key"
+                                },
+                                "toolTip": "Your Datadog Application key",
+                                "constraints": {
+                                    "required": true,
+                                    "regex": "^(?![0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$).*",
+                                    "validationMessage": "Must be a valid Application Key (not a Key ID)."
+                                },
+                                "options": {
+                                    "hideConfirmation": true
+                                },
+                                "visible": true
+                            },
+                            {
+                                "name": "datadogSite",
+                                "type": "Microsoft.Common.DropDown",
+                                "label": "Datadog Site",
+                                "defaultValue": "US1",
+                                "toolTip": "The datadog site where you login to the datadog app.",
+                                "constraints": {
+                                    "allowedValues": [
+                                        {
+                                            "label": "US1",
+                                            "value": "datadoghq.com"
+                                        },
+                                        {
+                                            "label": "US3",
+                                            "value": "us3.datadoghq.com"
+                                        },
+                                        {
+                                            "label": "US5",
+                                            "value": "us5.datadoghq.com"
+                                        },
+                                        {
+                                            "label": "EU1",
+                                            "value": "datadoghq.eu"
+                                        },
+                                        {
+                                            "label": "AP1",
+                                            "value": "ap1.datadoghq.com"
+                                        },
+                                        {
+                                            "label": "US1-FED",
+                                            "value": "ddog-gov.com"
+                                        }
+                                    ],
+                                    "required": false
+                                },
+                                "visible": true
+                            }
+                        ],
+                        "visible": true
+                    }
+                ]
+            },
+            {
+                "name": "deployment",
+                "label": "Deployment",
+                "elements": [
+                    {
+                        "name": "deploymentSection",
+                        "type": "Microsoft.Common.Section",
+                        "label": "Deployment",
+                        "elements": [
+                            {
+                                "name": "deploymentInfo",
+                                "type": "Microsoft.Common.InfoBox",
+                                "visible": true,
+                                "options": {
+                                    "icon": "Warning",
+                                    "text": "During the deployment process, diagnostic settings will be applied to all monitored resources. This action will trigger restarts of App Services, including Web Apps and Function Apps."
+                                }
+                            },
+                            {
+                                "name": "deployAcknowledgment",
+                                "label": "I acknowledge the warning above",
+                                "type": "Microsoft.Common.CheckBox",
+                                "visible": true,
+                                "constraints": {
+                                    "required": true,
+                                    "validationMessage": "You must acknowledge the warning above to proceed"
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "outputs": {
+            "monitoredSubscriptions": "[string(steps('basics').monitoredSubscriptions)]",
+            "controlPlaneLocation": "[location()]",
+            "controlPlaneSubscriptionId": "[steps('basics').controlPlaneSubscription]",
+            "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
+            "datadogApplicationKey": "[steps('datadogConfig').datadogIntegration.datadogApplicationKey]",
+            "datadogApiKey": "[steps('datadogConfig').datadogIntegration.datadogApiKey]",
+            "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]"
+        }
     }
-  }
 }
