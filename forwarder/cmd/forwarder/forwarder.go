@@ -41,8 +41,8 @@ const maxBufferSize = math.MaxInt32
 // initialBufferSize is the initial buffer size to use for scanning logs.
 const initialBufferSize = 1024 * 1024 * 5
 
-// newLineBytes is the number of bytes in a new line character in utf-8.
-const newLineBytes = 2
+// newlineBytes is the number of bytes in a newline character in utf-8.
+const newlineBytes = 2
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
 	currentOffset := cursors.GetCursor(blob.Container, blob.Name)
@@ -84,7 +84,7 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) 
 		}
 
 		// bufio.Scanner consumes the new line character so we need to add it back
-		processedBytes += len(currBytes) + newLineBytes
+		processedBytes += len(currBytes) + newlineBytes
 		logsChannel <- currLog
 	}
 	return processedBytes, nil
