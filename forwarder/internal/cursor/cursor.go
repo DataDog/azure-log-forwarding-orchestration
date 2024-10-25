@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -24,15 +23,15 @@ func blobKey(containerName string, blobName string) string {
 const BlobName = "cursors.json"
 
 type Cursors struct {
-	mu     sync.Mutex
+	mu     sync.RWMutex
 	data   map[string]int64
 	Length int
 }
 
 // GetCursor returns the cursor for the given key or 0 if it does not exist.
 func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	value, found := c.data[blobKey(containerName, blobName)]
 	if !found {
 		return 0
@@ -49,10 +48,9 @@ func (c *Cursors) SetCursor(containerName string, blobName string, offset int64)
 
 // Bytes returns the a []byte representation of the cursors.
 func (c *Cursors) Bytes() ([]byte, error) {
-	c.mu.Lock()
-	data := maps.Clone(c.data)
-	c.mu.Unlock()
-	return json.Marshal(data)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return json.Marshal(c.data)
 }
 
 // SaveCursors saves the cursors to storage
