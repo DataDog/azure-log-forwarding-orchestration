@@ -16,10 +16,15 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
+func getKey(containerName string, blobName string) string {
+	return fmt.Sprintf("%s/%s", containerName, blobName)
+}
+
 const BlobName = "cursors.json"
 
 type Cursors struct {
-	sync.Map
+	mu     sync.Mutex
+	data   map[string]int64
 	Length int
 }
 
@@ -28,25 +33,27 @@ func NewCursors(data map[string]int64) *Cursors {
 	if data == nil {
 		data = make(map[string]int64)
 	}
-	cursors := &Cursors{}
-	for key, value := range data {
-		cursors.SetCursor(key, value)
+	cursors := &Cursors{
+		data: data,
 	}
+
 	return cursors
 }
 
 // GetCursor returns the cursor for the given key or 0 if it does not exist.
-func (c *Cursors) GetCursor(key string) int64 {
-	value, found := c.Load(key)
+func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
+	value, found := c.data[getKey(containerName, blobName)]
 	if !found {
 		return 0
 	}
-	return value.(int64)
+	return value
 }
 
 // SetCursor sets the cursor for the given key.
-func (c *Cursors) SetCursor(key string, offset int64) {
-	c.Store(key, offset)
+func (c *Cursors) SetCursor(containerName string, blobName string, offset int64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data[getKey(containerName, blobName)] = offset
 }
 
 // LoadCursors loads the cursors from the storage client.
@@ -73,12 +80,7 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 
 // Bytes returns the a []byte representation of the cursors.
 func (c *Cursors) Bytes() ([]byte, error) {
-	cursorMap := make(map[string]int64)
-	c.Range(func(key, value interface{}) bool {
-		cursorMap[key.(string)] = value.(int64)
-		return true
-	})
-	return json.Marshal(cursorMap)
+	return json.Marshal(c.data)
 }
 
 // SaveCursors saves the cursors to storage

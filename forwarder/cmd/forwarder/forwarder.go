@@ -41,19 +41,30 @@ const maxBufferSize = math.MaxInt32
 // initialBufferSize is the initial buffer size to use for scanning logs.
 const initialBufferSize = 1024 * 1024 * 5
 
+// newLineBytes is the number of bytes in a new line character in utf-8
+const newLineBytes = 2
+
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset := cursors.GetCursor(blob.Name)
+	currentOffset := cursors.GetCursor(blob.Container, blob.Name)
+	if currentOffset == blob.ContentLength {
+		return nil
+	}
+	if currentOffset > blob.ContentLength {
+		return fmt.Errorf("cursor is ahead of blob length for %s", blob.Name)
+	}
 	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	cursors.SetCursor(blob.Name, blob.ContentLength)
+	writtenBytes, err := parseLogs(content.Reader, logsChannel)
+	cursors.SetCursor(blob.Container, blob.Name, currentOffset+int64(writtenBytes))
 
-	return parseLogs(content.Reader, logsChannel)
+	return err
 }
 
-func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (err error) {
+func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) {
+	processedBytes := 0
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -61,15 +72,22 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (err error) {
 	scanner.Buffer(buffer, maxBufferSize)
 
 	for scanner.Scan() {
-		currLog, currErr := logs.NewLog(scanner.Bytes())
-		if currErr != nil {
-			err = errors.Join(err, currErr)
-			continue
+		currBytes := scanner.Bytes()
+		currLog, err := logs.NewLog(scanner.Bytes())
+		if err != nil {
+			var jsonSyntaxError *json.SyntaxError
+			if errors.As(err, &jsonSyntaxError) && jsonSyntaxError.Error() == "unexpected end of JSON input" {
+				// partial log, skip
+				break
+			}
+			return processedBytes, err
 		}
 
+		// bufio.Scanner consumes the new line character so we need to add it back
+		processedBytes += len(currBytes) + newLineBytes
 		logsChannel <- currLog
 	}
-	return err
+	return processedBytes, nil
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
