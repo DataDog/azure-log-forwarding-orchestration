@@ -4,6 +4,8 @@ import (
 	// stdlib
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -30,11 +32,18 @@ func (l *Log) IsValid() bool {
 	return l.ByteSize < MaxPayloadSize
 }
 
+// ErrIncompleteLog is an error for when a log is incomplete.
+var ErrIncompleteLog = errors.New("received a partial log")
+
 // NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte) (*Log, error) {
 	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
 	log, err := unmarshall(logBytes)
 	if err != nil {
+		var jsonSyntaxError *json.SyntaxError
+		if errors.As(err, &jsonSyntaxError) && jsonSyntaxError.Error() == "unexpected end of JSON input" {
+			return nil, ErrIncompleteLog
+		}
 		return nil, err
 	}
 	parsedId, err := arm.ParseResourceID(log.ResourceId)

@@ -28,10 +28,11 @@ func TestLoadCursors(t *testing.T) {
 	t.Run("reads cursors from azure", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		testKey := "test"
+		testContainerName := "test"
+		testBlobName := "test"
 		testValue := int64(300)
 		cursors := cursor.NewCursors(nil)
-		cursors.SetCursor(testKey, testValue)
+		cursors.SetCursor(testContainerName, testBlobName, testValue)
 		data, err := cursors.Bytes()
 		reader := io.NopCloser(bytes.NewReader(data))
 		response := azblob.DownloadStreamResponse{
@@ -57,7 +58,7 @@ func TestLoadCursors(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.NotNil(t, got)
-		gotValue := got.GetCursor(testKey)
+		gotValue := got.GetCursor(testContainerName, testBlobName)
 		assert.Equal(t, testValue, gotValue)
 	})
 
@@ -95,10 +96,11 @@ func TestSaveCursors(t *testing.T) {
 	t.Run("saves cursors to azure", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		testKey := "test"
+		testContainerName := "test"
+		testBlobName := "test"
 		testValue := int64(300)
 		cursors := cursor.NewCursors(nil)
-		cursors.SetCursor(testKey, testValue)
+		cursors.SetCursor(testContainerName, testBlobName, testValue)
 		response := azblob.UploadBufferResponse{}
 		createContainerResponse := azblob.CreateContainerResponse{}
 

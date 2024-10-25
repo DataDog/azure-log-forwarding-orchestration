@@ -229,7 +229,8 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			return parseLogs(reader, logsCh)
+			_, err := parseLogs(reader, logsCh)
+			return err
 		})
 		err := eg.Wait()
 
@@ -280,7 +281,8 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			return parseLogs(reader, logsCh)
+			_, err := parseLogs(reader, logsCh)
+			return err
 		})
 
 		err = eg.Wait()
@@ -319,7 +321,8 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			return parseLogs(reader, logsChannel)
+			_, err := parseLogs(reader, logsChannel)
+			return err
 		})
 		err := eg.Wait()
 
