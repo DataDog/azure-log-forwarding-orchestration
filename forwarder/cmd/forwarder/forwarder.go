@@ -73,7 +73,7 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) 
 
 	for scanner.Scan() {
 		currBytes := scanner.Bytes()
-		currLog, err := logs.NewLog(scanner.Bytes())
+		currLog, err := logs.NewLog(currBytes)
 		if err != nil {
 			if errors.Is(err, logs.ErrIncompleteLog) {
 				// partial log, skip
