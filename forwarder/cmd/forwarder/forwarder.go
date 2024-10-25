@@ -65,7 +65,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 }
 
 func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) {
-	processedBytes := 0
+	var processedBytes int
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
