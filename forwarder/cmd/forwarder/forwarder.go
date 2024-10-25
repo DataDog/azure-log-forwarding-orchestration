@@ -41,7 +41,7 @@ const maxBufferSize = math.MaxInt32
 // initialBufferSize is the initial buffer size to use for scanning logs.
 const initialBufferSize = 1024 * 1024 * 5
 
-// newLineBytes is the number of bytes in a new line character in utf-8
+// newLineBytes is the number of bytes in a new line character in utf-8.
 const newLineBytes = 2
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
