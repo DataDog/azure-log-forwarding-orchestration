@@ -59,6 +59,8 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	}
 
 	writtenBytes, err := parseLogs(content.Reader, logsChannel)
+
+	// we have processed and submitted logs up to currentOffset+int64(writtenBytes) whether the error is nil or not
 	cursors.SetCursor(blob.Container, blob.Name, currentOffset+int64(writtenBytes))
 
 	return err
@@ -77,7 +79,8 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) 
 		currLog, err := logs.NewLog(currBytes)
 		if err != nil {
 			if errors.Is(err, logs.ErrIncompleteLog) {
-				// partial log, skip
+				// azure has not finished writing the file
+				// we should stop processing
 				break
 			}
 			return processedBytes, err
