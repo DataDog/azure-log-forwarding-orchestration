@@ -56,9 +56,9 @@ build-tasks:
   image: $CI_IMAGE
   stage: build
   tags: ["arch:amd64"]
-  #  only:
-  #    refs:
-  #      - main
+  only:
+    refs:
+      - main
   script:
     - ci/scripts/control_plane/build_tasks.sh
   artifacts:
@@ -102,9 +102,9 @@ deployer-build-latest:
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
-  #  only:
-  #    refs:
-  #      - main
+  only:
+    refs:
+      - main
   tags: ["arch:amd64"]
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
@@ -166,9 +166,9 @@ forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
   tags: ["arch:amd64"]
-  #  only:
-  #    refs:
-  #      - main
+  only:
+    refs:
+      - main
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - ci/scripts/forwarder/build_and_push.sh lfoqa.azurecr.io latest
