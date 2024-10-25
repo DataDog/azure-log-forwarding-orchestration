@@ -17,7 +17,7 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
-func getKey(containerName string, blobName string) string {
+func blobKey(containerName string, blobName string) string {
 	return fmt.Sprintf("%s/%s", containerName, blobName)
 }
 
@@ -33,7 +33,7 @@ type Cursors struct {
 func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	value, found := c.data[getKey(containerName, blobName)]
+	value, found := c.data[blobKey(containerName, blobName)]
 	if !found {
 		return 0
 	}
@@ -44,7 +44,7 @@ func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
 func (c *Cursors) SetCursor(containerName string, blobName string, offset int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.data[getKey(containerName, blobName)] = offset
+	c.data[blobKey(containerName, blobName)] = offset
 }
 
 // Bytes returns the a []byte representation of the cursors.
