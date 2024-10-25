@@ -43,6 +43,17 @@ func TestNewLog(t *testing.T) {
 		assert.Nil(t, log)
 	})
 
+	t.Run("returns custom error on incomplete json", func(t *testing.T) {
+		t.Parallel()
+		// WHEN
+		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "))
+
+		// THEN
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid character")
+		assert.Nil(t, log)
+	})
+
 	t.Run("returns error on invalid resource id", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN

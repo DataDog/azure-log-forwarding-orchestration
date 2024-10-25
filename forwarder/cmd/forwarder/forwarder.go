@@ -75,8 +75,7 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) 
 		currBytes := scanner.Bytes()
 		currLog, err := logs.NewLog(scanner.Bytes())
 		if err != nil {
-			var jsonSyntaxError *json.SyntaxError
-			if errors.As(err, &jsonSyntaxError) && jsonSyntaxError.Error() == "unexpected end of JSON input" {
+			if errors.Is(err, logs.ErrIncompleteLog) {
 				// partial log, skip
 				break
 			}
