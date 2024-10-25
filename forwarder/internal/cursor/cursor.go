@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"sync"
 
-	// 3p
 	log "github.com/sirupsen/logrus"
+
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
@@ -28,20 +29,10 @@ type Cursors struct {
 	Length int
 }
 
-// NewCursors creates a new Cursors object with the given data.
-func NewCursors(data map[string]int64) *Cursors {
-	if data == nil {
-		data = make(map[string]int64)
-	}
-	cursors := &Cursors{
-		data: data,
-	}
-
-	return cursors
-}
-
 // GetCursor returns the cursor for the given key or 0 if it does not exist.
 func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	value, found := c.data[getKey(containerName, blobName)]
 	if !found {
 		return 0
@@ -54,6 +45,41 @@ func (c *Cursors) SetCursor(containerName string, blobName string, offset int64)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.data[getKey(containerName, blobName)] = offset
+}
+
+// Bytes returns the a []byte representation of the cursors.
+func (c *Cursors) Bytes() ([]byte, error) {
+	c.mu.Lock()
+	data := maps.Clone(c.data)
+	c.mu.Unlock()
+	return json.Marshal(data)
+}
+
+// SaveCursors saves the cursors to storage
+func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.SaveCursors")
+	defer span.Finish()
+	data, err := c.Bytes()
+	if err != nil {
+		return fmt.Errorf("error marshalling cursors: %w", err)
+	}
+	err = client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
+	if err != nil {
+		return fmt.Errorf("uploading cursors failed: %w", err)
+	}
+	return nil
+}
+
+// NewCursors creates a new Cursors object with the given data.
+func NewCursors(data map[string]int64) *Cursors {
+	if data == nil {
+		data = make(map[string]int64)
+	}
+	cursors := &Cursors{
+		data: data,
+	}
+
+	return cursors
 }
 
 // LoadCursors loads the cursors from the storage client.
@@ -76,24 +102,4 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 		return NewCursors(nil), nil
 	}
 	return NewCursors(cursorMap), nil
-}
-
-// Bytes returns the a []byte representation of the cursors.
-func (c *Cursors) Bytes() ([]byte, error) {
-	return json.Marshal(c.data)
-}
-
-// SaveCursors saves the cursors to storage
-func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.SaveCursors")
-	defer span.Finish()
-	data, err := c.Bytes()
-	if err != nil {
-		return fmt.Errorf("error marshalling cursors: %w", err)
-	}
-	err = client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
-	if err != nil {
-		return fmt.Errorf("uploading cursors failed: %w", err)
-	}
-	return nil
 }
