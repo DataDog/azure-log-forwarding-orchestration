@@ -47,6 +47,7 @@ const newLineBytes = 2
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
 	currentOffset := cursors.GetCursor(blob.Container, blob.Name)
 	if currentOffset == blob.ContentLength {
+		// Cursor is at the end of the blob, no need to process
 		return nil
 	}
 	if currentOffset > blob.ContentLength {
