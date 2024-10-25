@@ -75,11 +75,9 @@ func NewCursors(data map[string]int64) *Cursors {
 	if data == nil {
 		data = make(map[string]int64)
 	}
-	cursors := &Cursors{
+	return &Cursors{
 		data: data,
 	}
-
-	return cursors
 }
 
 // LoadCursors loads the cursors from the storage client.
