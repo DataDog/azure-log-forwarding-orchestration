@@ -2,9 +2,10 @@
 
 # stdlib
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
 from json import dumps
 from logging import WARNING, getLogger, basicConfig, INFO
-from hashlib import sha256
+import sys
 
 # 3p
 from azure.identity import DefaultAzureCredential
@@ -17,10 +18,14 @@ from cache.manifest_cache import (
     SCALING_TASK_ZIP,
     DIAGNOSTIC_SETTINGS_TASK_ZIP,
     MANIFEST_FILE_NAME,
-    PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
 )
 
+if len(sys.argv) < 2:
+    print("Usage: publish.py <public_storage_account_url>")
+    sys.exit(1)
+
+PUBLIC_STORAGE_ACCOUNT_URL = sys.argv[1]
 
 basicConfig(level=INFO)
 log = getLogger("publish")
