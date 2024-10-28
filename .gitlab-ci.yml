@@ -3,6 +3,8 @@ variables:
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
   REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo
+  INTERNAL_DOCKER_REGISTRY: registry.ddbuild.io/lfo
+  QA_DOCKER_REGISTRY: lfoqa.azurecr.io
 stages:
   - ci-image
   - test
@@ -83,6 +85,9 @@ publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish
   tags: ["arch:amd64"]
+  only:
+    refs:
+      - main
   script:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
@@ -98,7 +103,7 @@ deployer-build-latest:
       - main
   tags: ["arch:amd64"]
   script:
-    - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --tag $INTERNAL_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
@@ -108,7 +113,7 @@ deployer-build-qa:
   tags: ["arch:amd64"]
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - docker buildx build --platform=linux/amd64 --tag lfoqa.azurecr.io/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -117,7 +122,7 @@ deployer-build-tagged:
       - main
   tags: ["arch:amd64"]
   script:
-    - docker buildx build --platform=linux/amd64 --tag registry.ddbuild.io/lfo/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --tag $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-publish:
   stage: publish
   rules:
@@ -152,7 +157,7 @@ forwarder-build-latest:
     refs:
       - main
   script:
-    - ci/scripts/forwarder/build_and_push.sh registry.ddbuild.io/lfo latest
+    - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY latest
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -161,7 +166,7 @@ forwarder-build-tagged:
     refs:
       - main
   script:
-    - ci/scripts/forwarder/build_and_push.sh registry.ddbuild.io/lfo v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
@@ -171,7 +176,7 @@ forwarder-build-qa:
       - main
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/forwarder/build_and_push.sh lfoqa.azurecr.io latest
+    - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
 forwarder-publish:
   stage: publish
   rules:
