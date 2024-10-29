@@ -7,7 +7,7 @@ from azure.core.exceptions import HttpResponseError
 
 # project
 from cache.common import InvalidCacheError
-from cache.manifest_cache import ManifestCache
+from cache.manifest_cache import ManifestCache, PublicManifest
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator
 
@@ -16,6 +16,9 @@ ALL_FUNCTIONS = [
     "scaling-task-0863329b4b49",
     "diagnostic-settings-task-0863329b4b49",
 ]
+
+OLD_VERSION = "v47707852-0fafeed8"
+NEW_VERSION = "v47826247-f7abf93e"
 
 
 class TestDeployerTask(TaskTestCase):
@@ -44,11 +47,34 @@ class TestDeployerTask(TaskTestCase):
         self.storage_client.storage_accounts.list_by_resource_group = MagicMock(return_value=async_generator())
         self.patch("StorageManagementClient").return_value = self.storage_client
 
-    def set_caches(self, public_cache: ManifestCache, private_cache: ManifestCache):
+        self.public_manifest: PublicManifest = {
+            "latest": {
+                "resources": NEW_VERSION,
+                "diagnostic_settings": NEW_VERSION,
+                "scaling": NEW_VERSION,
+            },
+            "version_history": {
+                NEW_VERSION: {
+                    "resources": "19408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+                    "diagnostic_settings": "29408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+                    "scaling": "39408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+                },
+                OLD_VERSION: {
+                    "resources": "49408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+                    "diagnostic_settings": "59408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+                    "scaling": "69408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+                },
+            },
+        }
+
+    def set_caches(self, public_cache: PublicManifest, private_cache: ManifestCache):
         self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
         self.read_private_cache.return_value = dumps(private_cache)
 
-    def set_current_function_apps(self, function_apps: list[str]):
+    def set_current_function_apps(self, function_apps: list[str] | None = None):
+        """Sets up which function apps are currently deployed, defaults to all"""
+        if function_apps is None:
+            function_apps = ALL_FUNCTIONS
         self.web_client.web_apps.list_by_resource_group.return_value = async_generator(
             *(Mock(name=app) for app in function_apps)
         )
@@ -59,116 +85,56 @@ class TestDeployerTask(TaskTestCase):
 
     async def test_deploy_task_no_diff(self):
         self.set_caches(
-            public_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
+            public_cache=self.public_manifest,
             private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
+                "resources": NEW_VERSION,
+                "scaling": NEW_VERSION,
+                "diagnostic_settings": NEW_VERSION,
             },
         )
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         await self.run_deployer_task()
 
         self.write_cache.assert_not_awaited()
 
-    async def test_deploy_task_diff_func_app(self):
-        public_cache: ManifestCache = {
-            "resources": "2",
-            "forwarder": "1",
-            "scaling": "1",
-            "diagnostic_settings": "1",
-        }
+    async def test_deploy_task_private_cache_not_latest(self):
         self.set_caches(
-            public_cache=public_cache,
+            public_cache=self.public_manifest,
             private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
+                "resources": OLD_VERSION,
+                "scaling": NEW_VERSION,
+                "diagnostic_settings": NEW_VERSION,
             },
         )
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(public_cache)
+        self.write_cache.assert_awaited_once_with(
+            "manifest.json",
+            dumps(
+                {
+                    "resources": NEW_VERSION,
+                    "scaling": NEW_VERSION,
+                    "diagnostic_settings": NEW_VERSION,
+                }
+            ),
+        )
 
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
-
-    async def test_deploy_task_diff_container_app(self):
-        public_cache: ManifestCache = {
-            "resources": "1",
-            "forwarder": "2",
-            "scaling": "1",
-            "diagnostic_settings": "1",
-        }
+    async def test_partial_success_doesnt_write_to_cache(self):
         self.set_caches(
-            public_cache=public_cache,
+            public_cache=self.public_manifest,
             private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
+                "resources": OLD_VERSION,
+                "scaling": OLD_VERSION,
+                "diagnostic_settings": OLD_VERSION,
             },
         )
-        self.set_current_function_apps(ALL_FUNCTIONS)
-
-        await self.run_deployer_task()
-
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
-
-    async def test_deploy_task_diff_func_and_container_app(self):
-        public_cache: ManifestCache = {
-            "resources": "2",
-            "forwarder": "2",
-            "scaling": "1",
-            "diagnostic_settings": "1",
-        }
-        self.set_caches(
-            public_cache=public_cache,
-            private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
-        self.set_current_function_apps(ALL_FUNCTIONS)
-
-        await self.run_deployer_task()
-
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
-
-    async def test_partial_success_func_app(self):
-        self.set_caches(
-            public_cache={
-                "resources": "2",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "2",
-            },
-            private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         def _download_blob(item: str):
-            if item == "diagnostic_settings_task.zip":
+            if item.startswith("diagnostic_settings_task"):
                 raise HttpResponseError()
             return DEFAULT
 
@@ -176,16 +142,7 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(
-            {
-                "resources": "2",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            }
-        )
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.write_cache.assert_not_awaited()
         self.assertEqual(
             self.public_client.download_blob.mock_calls,
             [
@@ -206,12 +163,11 @@ class TestDeployerTask(TaskTestCase):
         self.read_private_cache.return_value = dumps(
             {
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             }
         )
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         with self.assertRaises(InvalidCacheError) as ctx:
             await self.run_deployer_task()
@@ -221,26 +177,27 @@ class TestDeployerTask(TaskTestCase):
         self.assertEqual("Invalid Public Manifest: invalid", str(ctx.exception))
 
     async def test_deploy_task_no_private_manifests(self):
-        public_cache: ManifestCache = {
-            "forwarder": "2",
-            "resources": "2",
-            "scaling": "1",
-            "diagnostic_settings": "1",
-        }
-        self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
+        self.public_client.download_blob.return_value.readall.return_value = dumps(self.public_manifest).encode()
         self.read_private_cache.return_value = ""
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.write_cache.assert_awaited_once_with(
+            "manifest.json",
+            dumps(
+                {
+                    "resources": NEW_VERSION,
+                    "scaling": NEW_VERSION,
+                    "diagnostic_settings": NEW_VERSION,
+                }
+            ),
+        )
 
     async def test_deploy_task_no_manifests(self):
         self.public_client.download_blob.return_value.readall.return_value = b""
         self.read_private_cache.return_value = ""
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         with self.assertRaises(InvalidCacheError) as ctx:
             await self.run_deployer_task()
@@ -250,15 +207,14 @@ class TestDeployerTask(TaskTestCase):
         self.assertEqual("Invalid Public Manifest: ", str(ctx.exception))
 
     async def test_deploy_task_private_manifest_retry_error(self):
-        public_cache: ManifestCache = {
-            "forwarder": "2",
+        public_cache: PublicManifest = {
             "resources": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
         }
         self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
         self.read_private_cache.side_effect = HttpResponseError
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         await self.run_deployer_task()
 
@@ -271,21 +227,22 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
         )
         self.rest_client.post.return_value.ok = False
-        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.set_current_function_apps()
 
         await self.run_deployer_task()
 
         self.write_cache.assert_not_awaited()
         self.assertEqual(self.rest_client.post.await_count, 5)
+
+    async def test_deploy_hash_mismatch(self):
+        pass

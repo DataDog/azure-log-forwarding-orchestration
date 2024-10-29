@@ -1,6 +1,7 @@
 # stdlib
 from collections.abc import Callable
 from json import JSONDecodeError, loads
+from logging import getLogger
 from os import environ
 from typing import Any, Final, Literal, NamedTuple, TypeVar
 
@@ -12,6 +13,8 @@ from jsonschema import ValidationError, validate
 BLOB_STORAGE_CACHE = "control-plane-cache"
 
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
+
+log = getLogger(__name__)
 
 
 class MissingConfigOptionError(Exception):
@@ -77,5 +80,6 @@ def deserialize_cache(
         cache = loads(cache_str)
         validate(instance=cache, schema=schema)
         return post_processing(cache)
-    except (JSONDecodeError, ValidationError):
+    except (JSONDecodeError, ValidationError, InvalidCacheError) as e:
+        log.warning("Failed to deserialize cache: %s", e)
         return None

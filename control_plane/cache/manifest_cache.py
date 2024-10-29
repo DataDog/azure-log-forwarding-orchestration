@@ -2,53 +2,109 @@
 from typing import Any, Literal, TypeAlias, TypedDict
 
 # project
-from cache.common import deserialize_cache
+from cache.common import InvalidCacheError, deserialize_cache
 
-ManifestKey: TypeAlias = Literal["forwarder", "resources", "scaling", "diagnostic_settings"]
+# manifest example:
+# {
+#     "latest": {
+#         "scaling": "v{pipeline-id}-{git-sha}",
+#         "resources": "v{pipeline-id}-{git-sha}",
+#         "diagnostic_settings": "v{pipeline-id}-{git-sha}",
+#     },
+#     "version_history": {
+#         "v{pipeline-id}-{git-sha}": {
+#             "scaling": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+#             "resources": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+#             "diagnostic_settings": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d"
+#         },
+#         "v{pipeline-id}-{git-sha}": {
+#             "scaling": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+#             "resources": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+#             "diagnostic_settings": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d"
+#         },
+#         "v{pipeline-id}-{git-sha}": {
+#             "scaling": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+#             "resources": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d",
+#             "diagnostic_settings": "b9408c5738ad9d09e70f45510ce770979552d9bcf88d873e2ea17d705639635d"
+#         }
+#     }
+# }
 
 
-class ManifestCache(TypedDict, total=True):
-    """
-    Mapping of deployable name to SHA-256 manifest
-    """
+DeployableName: TypeAlias = Literal["resources", "scaling", "diagnostic_settings"]
 
-    forwarder: str
-    resources: str
-    scaling: str
-    diagnostic_settings: str
 
+Versions: TypeAlias = dict[DeployableName, str]
+"Mapping of deployable name to version (either a hash or a version tag)"
+
+
+class PublicManifest(TypedDict, total=True):
+    latest: Versions
+    version_history: dict[str, Versions]
+
+
+def get_versions_schema(version_regex: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "resources": {"type": "string", "pattern": version_regex},
+            "scaling": {"type": "string", "pattern": version_regex},
+            "diagnostic_settings": {"type": "string", "pattern": version_regex},
+        },
+        "additionalProperties": False,
+    }
+
+
+VERSION_TAG_REGEX = r"^v[0-9]+-[0-9a-f]+$"
+HASH_REGEX = r"^[0-9a-f]{64}$"
 
 MANIFEST_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "forwarder": {"type": "string"},
-        "resources": {"type": "string"},
-        "scaling": {"type": "string"},
-        "diagnostic_settings": {"type": "string"},
+        "latest": get_versions_schema(VERSION_TAG_REGEX),
+        "version_history": {
+            "type": "object",
+            "patternProperties": {
+                VERSION_TAG_REGEX: get_versions_schema(HASH_REGEX),
+            },
+        },
     },
-    "required": ["resources", "forwarder", "diagnostic_settings", "scaling"],
+    "required": ["latest", "version_history"],
     "additionalProperties": False,
 }
 
-MANIFEST_CACHE_NAME = "manifest.json"
+MANIFEST_NAME = "manifest.json"
 
 
 PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 TASKS_CONTAINER = "lfo"
 
-RESOURCES_TASK_ZIP = "resources_task.zip"
-SCALING_TASK_ZIP = "scaling_task.zip"
-DIAGNOSTIC_SETTINGS_TASK_ZIP = "diagnostic_settings_task.zip"
+RESOURCES = "resources"
+SCALING = "scaling"
+DIAGNOSTIC_SETTINGS = "diagnostic_settings"
+ALL_DEPLOYABLES = [RESOURCES, SCALING, DIAGNOSTIC_SETTINGS]
 MANIFEST_FILE_NAME = "manifest.json"
 
-ALL_ZIPS = [RESOURCES_TASK_ZIP, SCALING_TASK_ZIP, DIAGNOSTIC_SETTINGS_TASK_ZIP]
 
-KEY_TO_ZIP = {
-    "resources": RESOURCES_TASK_ZIP,
-    "scaling": SCALING_TASK_ZIP,
-    "diagnostic_settings": DIAGNOSTIC_SETTINGS_TASK_ZIP,
-}
+def get_task_zip_name(deployable: str, version_tag: str) -> str:
+    return f"{deployable}_task_{version_tag}.zip"
+
+
+def deserialize_public_manifest(raw_manifest: str) -> PublicManifest | None:
+    def _validate_public_manifest(manifest: PublicManifest) -> PublicManifest:
+        if not all(version in manifest["version_history"] for version in manifest["latest"].values()):
+            raise InvalidCacheError("Latest version not in version history")
+        if not all(deployable in manifest["latest"] for deployable in ALL_DEPLOYABLES):
+            raise InvalidCacheError("`latest` does not contain all deployables")
+        return manifest
+
+    return deserialize_cache(raw_manifest, MANIFEST_SCHEMA, _validate_public_manifest)
+
+
+ManifestCache: TypeAlias = Versions
+"Private cache of versions currently deployed"
+MANIFEST_CACHE_SCHEMA = get_versions_schema(VERSION_TAG_REGEX)
 
 
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
-    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA)
+    return deserialize_cache(raw_manifest_cache, MANIFEST_CACHE_SCHEMA)

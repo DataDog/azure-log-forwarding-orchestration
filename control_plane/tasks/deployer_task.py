@@ -1,7 +1,7 @@
 # stdlib
 
 from asyncio import gather, run
-from collections.abc import Iterable
+from hashlib import sha256
 from json import dumps
 from logging import INFO, basicConfig, getLogger
 from types import TracebackType
@@ -18,13 +18,15 @@ from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_
 # project
 from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
 from cache.manifest_cache import (
-    KEY_TO_ZIP,
     MANIFEST_FILE_NAME,
     PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
+    DeployableName,
     ManifestCache,
-    ManifestKey,
+    PublicManifest,
     deserialize_manifest_cache,
+    deserialize_public_manifest,
+    get_task_zip_name,
 )
 from tasks.common import (
     CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX,
@@ -81,7 +83,10 @@ class DeployerTask(Task):
         return self
 
     async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         await gather(
             self.public_storage_client.__aexit__(exc_type, exc_val, exc_tb),
@@ -93,39 +98,38 @@ class DeployerTask(Task):
 
     async def run(self) -> None:
         public_manifest, private_manifest, current_components = await gather(
-            self.get_public_manifests(), self.get_private_manifests(), self.get_current_components()
+            self.get_public_manifests(),
+            self.get_private_manifests(),
+            self.get_current_components(),
         )
         if not private_manifest:
             log.info("Failed to read private manifest. Deploying all components.")
         self.public_manifest = public_manifest
         self.private_manifest = private_manifest
-        self.manifest_cache = (
-            private_manifest
-            or {
-                "forwarder": "",
-                "resources": "",
-                "scaling": "",
-                "diagnostic_settings": "",
-            }
-        ).copy()
+        self.manifest_cache = (private_manifest or {}).copy()
 
         await gather(
             *[
-                self.deploy_component(component, current_components)
-                for component in cast(Iterable[ManifestKey], public_manifest)
-                if not private_manifest or public_manifest[component] != private_manifest[component]
+                self.deploy_component(component, latest_version, current_components)
+                for component, latest_version in public_manifest["latest"].items()
+                if not private_manifest
+                or component not in private_manifest
+                or latest_version != private_manifest[component]
             ]
         )
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
-    async def get_public_manifests(self) -> ManifestCache:
+    @retry(
+        stop=stop_after_attempt(MAX_ATTEMPTS),
+        retry=retry_if_not_exception_type(InvalidCacheError),
+    )
+    async def get_public_manifests(self) -> PublicManifest:
         try:
             stream = await self.public_storage_client.download_blob(MANIFEST_FILE_NAME)
         except ResourceNotFoundError as e:
             raise InvalidCacheError("Public Manifest not found") from e
         blob_data = await stream.readall()
         cache_str = blob_data.decode()
-        if not (cache := deserialize_manifest_cache(cache_str)):
+        if not (cache := deserialize_public_manifest(cache_str)):
             raise InvalidCacheError(f"Invalid Public Manifest: {cache_str}")
         return cache
 
@@ -133,7 +137,10 @@ class DeployerTask(Task):
         try:
             blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_FILE_NAME)
         except RetryError as e:
-            log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
+            log.error(
+                "Error reading private manifest cache",
+                exc_info=e.last_attempt.exception(),
+            )
             return None
         return deserialize_manifest_cache(blob_data)
 
@@ -159,36 +166,41 @@ class DeployerTask(Task):
                 for task in cast(list[Resource], current_apps)
                 if any(
                     task.name.startswith(prefix)
-                    for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX)
+                    for prefix in (
+                        SCALING_TASK_PREFIX,
+                        RESOURCES_TASK_PREFIX,
+                        DIAGNOSTIC_SETTINGS_TASK_PREFIX,
+                    )
                 )
             },
         )
 
-    async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
+    async def deploy_component(
+        self, component: DeployableName, version: str, current_components: ControlPlaneResources
+    ) -> None:
         log.info(f"Deploying {component}")
-        if component == "forwarder":
-            return await self.deploy_log_forwarder_image()
         task_prefix = f"{component.replace('_', '-')}-task-"
-        function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
+        function_app = next(
+            (app for app in current_components.function_apps if app.startswith(task_prefix)),
+            None,
+        )
         if not function_app:
             log.error(
                 f"Function app for {component} not found in {current_components.function_apps}, skipping deployment"
             )
             return
+        zip_name = get_task_zip_name(component, version)
         try:
-            log.info(f"Downloading function app data for {component}")
-            zip_data = await self.download_function_app_data(component)
-            log.info(f"Deploying {function_app}")
+            log.info(f"Downloading function app data for {zip_name}")
+            zip_data = await self.download_function_app_data(zip_name)
+            self.validate_zip_data(component, version, zip_data)
+            log.info(f"Deploying {function_app} with {zip_name}")
             await self.upload_function_app_data(function_app, zip_data)
         except Exception:
             log.exception(f"Failed to deploy {component}")
             return
-        self.manifest_cache[component] = self.public_manifest[component]
+        self.manifest_cache[component] = self.public_manifest["latest"][component]
         log.info(f"Finished deploying {component}")
-
-    async def deploy_log_forwarder_image(self) -> None:
-        # TODO(AZINTS-2770): Implement this
-        self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
@@ -201,11 +213,16 @@ class DeployerTask(Task):
             raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def download_function_app_data(self, component: str) -> bytes:
-        blob_name = KEY_TO_ZIP[component]
-        stream = await self.public_storage_client.download_blob(blob_name)
+    async def download_function_app_data(self, zip_name: str) -> bytes:
+        stream = await self.public_storage_client.download_blob(zip_name)
         app_data = await stream.readall()
         return app_data
+
+    def validate_zip_data(self, component: DeployableName, version: str, zip_data: bytes) -> None:
+        expected_sha = self.public_manifest["version_history"][version][component]
+        actual_sha = sha256(zip_data).hexdigest()
+        if actual_sha != expected_sha:
+            raise DeployError(f"Hash mismatch for {component} {version}: ({actual_sha=}) != ({expected_sha=})")
 
     async def write_caches(self) -> None:
         if self.manifest_cache == self.private_manifest:
