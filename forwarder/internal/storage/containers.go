@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -22,6 +23,11 @@ import (
 // Container represents a container in a Storage Account.
 type Container struct {
 	Name string
+}
+
+func (c *Container) Category() string {
+	parts := strings.Split(c.Name, "-")
+	return parts[len(parts)-1]
 }
 
 // GetContainersMatchingPrefix returns an iterator over a sequence of containers with a given prefix.

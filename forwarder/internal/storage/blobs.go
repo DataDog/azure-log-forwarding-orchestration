@@ -27,9 +27,19 @@ import (
 // LookBackPeriod defines the period of time from now that we would look back for logs
 const LookBackPeriod = -2 * time.Hour
 
+// idBeginIndex is the index where the id begins after resourceId= in the blob name.
+const idBeginIndex = 11
+
+// idEndOffset is the offset from the end of the blob name to the end of the id.
+// this is the length of the string /y=2024/m=10/d=28/h=16/m=00/PT1H.json
+const idEndOffset = 37
+
+// ErrInvalidResourceId is an error for when a blob name is invalid.
+var ErrInvalidResourceId = errors.New("blob name does not include resource id")
+
 // Blob represents a blob in a container.
 type Blob struct {
-	Container     string
+	Container     Container
 	Name          string
 	ContentLength int64
 	CreationTime  time.Time
@@ -40,7 +50,14 @@ func (b *Blob) IsCurrent(now time.Time) bool {
 	return b.CreationTime.After(now.Add(LookBackPeriod))
 }
 
-func NewBlob(container string, item *container.BlobItem) Blob {
+func (b *Blob) ResourceId() (string, error) {
+	if len(b.Name) < idBeginIndex+idEndOffset {
+		return "", ErrInvalidResourceId
+	}
+	return b.Name[idBeginIndex : len(b.Name)-idEndOffset], nil
+}
+
+func NewBlob(container Container, item *container.BlobItem) Blob {
 	newBlob := Blob{
 		Container: container,
 	}
@@ -61,10 +78,10 @@ func NewBlob(container string, item *container.BlobItem) Blob {
 }
 
 // ListBlobs returns an iterator over a sequence of blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *log.Entry) iter.Seq[Blob] {
+func (c *Client) ListBlobs(ctx context.Context, container Container, logger *log.Entry) iter.Seq[Blob] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
 	defer span.Finish()
-	blobPager := c.azBlobClient.NewListBlobsFlatPager(containerName, &azblob.ListBlobsFlatOptions{
+	blobPager := c.azBlobClient.NewListBlobsFlatPager(container.Name, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
 
@@ -77,7 +94,7 @@ func (c *Client) ListBlobs(ctx context.Context, containerName string, logger *lo
 			if blobItem == nil {
 				continue
 			}
-			blobs = append(blobs, NewBlob(containerName, blobItem))
+			blobs = append(blobs, NewBlob(container, blobItem))
 		}
 		return blobs
 	}, logger)

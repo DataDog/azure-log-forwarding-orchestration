@@ -1,10 +1,7 @@
 package logs
 
 import (
-	// stdlib
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -16,12 +13,14 @@ import (
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
 // Log represents a log to send to Datadog.
 type Log struct {
-	ByteSize   int
-	Content    string
+	content    []byte
 	ResourceId string
 	Category   string
 	Tags       []string
@@ -29,32 +28,61 @@ type Log struct {
 
 // IsValid checks if the log is valid to send to Datadog.
 func (l *Log) IsValid() bool {
-	return l.ByteSize < MaxPayloadSize
+	return len(l.content) < MaxPayloadSize
+}
+
+// Content converts the log content to a string.
+func (l *Log) Content() string {
+	return string(l.content)
+}
+
+// Length returns the length of the log content.
+func (l *Log) Length() int {
+	return len(l.content)
 }
 
 // ErrIncompleteLog is an error for when a log is incomplete.
 var ErrIncompleteLog = errors.New("received a partial log")
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte) (*Log, error) {
-	logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
-	log, err := unmarshall(logBytes)
-	if err != nil {
-		var jsonSyntaxError *json.SyntaxError
-		if errors.As(err, &jsonSyntaxError) && jsonSyntaxError.Error() == "unexpected end of JSON input" {
-			return nil, ErrIncompleteLog
-		}
-		return nil, err
+func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
+	if logBytes[len(logBytes)-1] != '}' {
+		return nil, ErrIncompleteLog
 	}
-	parsedId, err := arm.ParseResourceID(log.ResourceId)
+
+	resourceId, err := blob.ResourceId()
 	if err != nil {
 		return nil, err
 	}
 
-	log.Tags = getResourceIdTags(parsedId)
-	log.Tags = append(log.Tags, getForwarderTags()...)
+	parsedId, err := arm.ParseResourceID(resourceId)
+	if err != nil {
+		return nil, err
+	}
 
-	return log, nil
+	tags := getResourceIdTags(parsedId)
+	tags = append(tags, getForwarderTags()...)
+
+	return &Log{
+		Category:   blob.Container.Category(),
+		content:    logBytes,
+		ResourceId: resourceId,
+		Tags:       tags,
+	}, nil
+}
+
+func getResourceIdTags(id *arm.ResourceID) []string {
+	var tags []string
+
+	tags = append(tags, "subscription_id:"+id.SubscriptionID)
+	tags = append(tags, "resource_group:"+id.ResourceGroupName)
+	tags = append(tags, "source:"+strings.Replace(id.ResourceType.String(), "/", ".", -1))
+
+	return tags
+}
+
+func getForwarderTags() []string {
+	return []string{"forwarder:lfo"}
 }
 
 // TooLargeError represents an error for when a log is too large to send to Datadog.
@@ -64,7 +92,7 @@ type TooLargeError struct {
 
 // Error returns a string representation of the TooLargeError.
 func (e TooLargeError) Error() string {
-	return fmt.Sprintf("large log from %s with a size of %d", e.log.ResourceId, len(e.log.Content))
+	return fmt.Sprintf("large log from %s with a size of %d", e.log.ResourceId, e.log.Length())
 }
 
 // bufferSize is the maximum number of logs per post to Logs API.
@@ -83,7 +111,7 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	logItem := datadogV2.HTTPLogItem{
 		Ddsource: ptr("azure"),
 		Ddtags:   ptr(strings.Join(log.Tags, ",")),
-		Message:  log.Content,
+		Message:  log.Content(),
 	}
 	return logItem
 }
@@ -122,7 +150,7 @@ func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
 		err = c.Flush(ctx)
 	}
 	c.logsBuffer = append(c.logsBuffer, log)
-	c.currentSize += log.ByteSize
+	c.currentSize += log.Length()
 
 	if err != nil {
 		return err
@@ -150,5 +178,5 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
-	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.ByteSize >= MaxPayloadSize
+	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
 }
