@@ -1,11 +1,8 @@
 package storage_test
 
 import (
-	"bytes"
-
-	log "github.com/sirupsen/logrus"
-
 	// stdlib
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -15,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/go-autorest/autorest/to"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 

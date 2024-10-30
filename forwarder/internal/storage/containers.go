@@ -7,11 +7,10 @@ import (
 	"iter"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	log "github.com/sirupsen/logrus"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
