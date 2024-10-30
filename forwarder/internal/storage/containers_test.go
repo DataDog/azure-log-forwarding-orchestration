@@ -128,3 +128,18 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		assert.Equal(t, testString, results[1].Name)
 	})
 }
+
+func TestCategory(t *testing.T) {
+	t.Parallel()
+
+	t.Run("parses category from container name", func(t *testing.T) {
+		t.Parallel() // GIVEN
+		c := storage.Container{Name: "insights-logs-functionapplogs"}
+		want := "functionapplogs"
+
+		// WHEN
+		got := c.Category()
+		// THEN
+		assert.Equal(t, want, got)
+	})
+}

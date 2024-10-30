@@ -11,14 +11,15 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	// 3p
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/go-autorest/autorest/to"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	// project
@@ -276,5 +277,38 @@ func TestCurrent(t *testing.T) {
 
 		// THEN
 		assert.False(t, current)
+	})
+}
+
+func TestResourceId(t *testing.T) {
+	t.Parallel()
+
+	t.Run("legit blob name results in a valid resource id", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blobName := "resourceId=/subscriptions/123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
+		blob := storage.Blob{Name: blobName}
+
+		// WHEN
+		resourceId, err := blob.ResourceId()
+		require.NoError(t, err)
+		parsedId, err := arm.ParseResourceID(resourceId)
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Equal(t, parsedId.ResourceGroupName, "rg")
+		assert.Equal(t, parsedId.SubscriptionID, "123")
+	})
+
+	t.Run("short blob name throws an error", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := storage.Blob{Name: "test"}
+
+		// WHEN
+		_, err := blob.ResourceId()
+
+		// THEN
+		assert.ErrorIs(t, err, storage.ErrInvalidResourceId)
 	})
 }
