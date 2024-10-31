@@ -12,7 +12,7 @@ param datadogApplicationKey string
 param datadogApiKey string
 param datadogSite string
 
-param imageRegistry string = "datadoghq.azurecr.io"
+param imageRegistry string = 'datadoghq.azurecr.io'
 
 module controlPlaneSubscription './subscription.bicep' = {
   name: 'createControlPlaneResourceGroup'
