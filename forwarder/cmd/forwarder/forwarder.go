@@ -193,6 +193,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	// Get all the blobs
 	currNow := now()
 	downloadEg, segmentCtx := errgroup.WithContext(ctx)
+	downloadEg.SetLimit(channelSize)
 	for c := range containers {
 		blobs := storageClient.ListBlobs(ctx, c.Name, logger)
 
@@ -277,6 +278,12 @@ func main() {
 	defer profiler.Stop()
 
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
+
+	forceProfile := os.Getenv("DD_FORCE_PROFILE")
+	if forceProfile != "" {
+		// Sleep for 5 seconds to allow profiler to start
+		time.Sleep(5 * time.Second)
+	}
 
 	goroutineString := os.Getenv("NUM_GOROUTINES")
 	if goroutineString == "" {

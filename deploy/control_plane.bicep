@@ -147,7 +147,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
   dependsOn: [fileServices]
 }
 
-resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2022-03-01' = {
+resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: 'deployer-task-env-${controlPlaneId}'
   location: controlPlaneLocation
   properties: {}

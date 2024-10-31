@@ -85,14 +85,13 @@ func TestRun(t *testing.T) {
 	t.Run("execute the basic functionality", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		testString := "test"
 		containerPage := []*service.ContainerItem{
-			newContainerItem(testString),
-			newContainerItem(testString),
+			newContainerItem("testA"),
+			newContainerItem("testB"),
 		}
 		blobPage := []*container.BlobItem{
-			newBlobItem(testString),
-			newBlobItem(testString),
+			newBlobItem("testA"),
+			newBlobItem("testB"),
 		}
 
 		ctrl := gomock.NewController(t)
@@ -106,7 +105,7 @@ func TestRun(t *testing.T) {
 		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
 		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
 
-		mockClient.EXPECT().DownloadStream(gomock.Any(), testString, testString, gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+		mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
 			validLog := getLogWithContent("test")
 			resp := azblob.DownloadStreamResponse{}
 			resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
