@@ -209,12 +209,11 @@ coverage-comment:
 # ------------- QA ENV -------------
 deploy-qa-env:
   image: $CI_IMAGE
-  #  stage: publish
-  stage: ci-image
+  stage: publish
   tags: ["arch:amd64"]
-  #  rules:
-  #    - if: $CI_COMMIT_BRANCH == "main"
-  #      when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
   script:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
