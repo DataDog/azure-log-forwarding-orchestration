@@ -222,4 +222,3 @@ deploy-qa-env:
     - export DD_API_KEY=$(vault kv get -field=ddApiKey kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export DD_APP_KEY=$(vault kv get -field=ddAppKey kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - az deployment mg create --management-group-id "Azure-Integrations-Mg" --location eastus --name lfoqaenv --template-file ./deploy/azuredeploy.bicep --parameters monitoredSubscriptions=$AZURE_SUBSCRIPTION_ID --parameters controlPlaneLocation=eastus --parameters controlPlaneSubscriptionId=$AZURE_SUBSCRIPTION_ID --parameters controlPlaneResourceGroupName=lfoqaenv --parameters datadogApplicationKey=$DD_APP_KEY --parameters datadogApiKey=$DD_API_KEY --parameters datadogSite=datadoghq.com --parameters imageRegistry=lfoqa.azurecr.io
-    -
