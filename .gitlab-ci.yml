@@ -209,7 +209,8 @@ coverage-comment:
 # ------------- QA ENV -------------
 deploy-qa-env:
   image: $CI_IMAGE
-  stage: publish
+  #  stage: publish
+  stage: ci-image
   tags: ["arch:amd64"]
   rules:
     - when: manual
