@@ -18,6 +18,9 @@ RUN rm go1.23.2.linux-amd64.tar.gz
 
 ENV PATH=$PATH:/usr/local/go/bin
 
+# Install az CLI
+RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
 # Install deps for control plane
 RUN python3.11 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
