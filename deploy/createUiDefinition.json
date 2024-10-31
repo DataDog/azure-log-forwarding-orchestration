@@ -215,8 +215,7 @@
       "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
       "datadogApplicationKey": "[steps('datadogConfig').datadogIntegration.datadogApplicationKey]",
       "datadogApiKey": "[steps('datadogConfig').datadogIntegration.datadogApiKey]",
-      "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]",
-      "imageRegistry": "datadoghq.azurecr.io",
+      "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]"
     }
   }
 }
