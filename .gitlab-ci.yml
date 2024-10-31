@@ -200,6 +200,7 @@ coverage-comment:
   tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH != "main"
+      allow_failure: true
   dependencies:
     - forwarder-tests
     - control-plane-tests
