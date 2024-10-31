@@ -78,7 +78,7 @@ var websiteContributorRole = managementGroupResourceId(
 )
 
 resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('resourceTask', deployment().name)
+  name: guid('resourceTask', controlPlaneId)
   properties: {
     roleDefinitionId: monitoringReaderRole
     principalId: resourceTaskPrincipalId
@@ -86,7 +86,7 @@ resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 }
 
 resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('monitor', 'diagnosticSettings', deployment().name)
+  name: guid('monitor', 'diagnosticSettings', controlPlaneId)
   properties: {
     roleDefinitionId: monitoringContributorRole
     principalId: diagnosticSettingsTaskPrincipalId
@@ -94,7 +94,7 @@ resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignme
 }
 
 resource diagnosticSettingsTaskStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('storage', 'diagnosticSettings', deployment().name)
+  name: guid('storage', 'diagnosticSettings', controlPlaneId)
   properties: {
     roleDefinitionId: readerAndDataAccessRole
     principalId: diagnosticSettingsTaskPrincipalId
@@ -102,7 +102,7 @@ resource diagnosticSettingsTaskStorageRole 'Microsoft.Authorization/roleAssignme
 }
 
 resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('scaling', deployment().name)
+  name: guid('scaling', controlPlaneId)
   properties: {
     roleDefinitionId: contributorRole
     principalId: scalingTaskPrincipalId
@@ -110,7 +110,7 @@ resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 }
 
 resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('deployer', deployment().name)
+  name: guid('deployer', controlPlaneId)
   properties: {
     roleDefinitionId: websiteContributorRole
     principalId: deployerTaskPrincipalId
