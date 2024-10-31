@@ -72,10 +72,6 @@ var readerAndDataAccessRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'c12c1c16-33a1-487b-954d-41c89c60f349'
 )
-var websiteContributorRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'de139f84-1756-47ae-9be6-808fbbe84772'
-)
 
 resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('resourceTask', controlPlaneId)
@@ -112,7 +108,7 @@ resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('deployer', controlPlaneId)
   properties: {
-    roleDefinitionId: websiteContributorRole
+    roleDefinitionId: contributorRole
     principalId: deployerTaskPrincipalId
   }
 }
