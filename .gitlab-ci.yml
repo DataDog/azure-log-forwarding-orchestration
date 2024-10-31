@@ -209,11 +209,10 @@ coverage-comment:
 # ------------- QA ENV -------------
 deploy-qa-env:
   image: $CI_IMAGE
-  stage: ci-image
-  #  stage: publish
+  stage: publish
   tags: ["arch:amd64"]
-  #  rules:
-  #    - if: $CI_COMMIT_BRANCH == "main"
-  #      when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
   script:
     - ci/scripts/deploy/deploy_qa_env.sh
