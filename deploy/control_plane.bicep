@@ -21,7 +21,6 @@ param datadogApplicationKey string
 @description('Datadog Site')
 param datadogSite string
 
-// var datadogPublicRegistry = 'datadoghq.azurecr.io'
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
 var forwarderImage = '${imageRegistry}/forwarder:latest'
 
