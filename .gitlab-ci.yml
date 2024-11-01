@@ -95,15 +95,6 @@ publish-tasks-qa:
     - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
-deployer-build-latest:
-  image: $DOCKER_IMAGE
-  stage: build
-  only:
-    refs:
-      - main
-  tags: ["arch:amd64"]
-  script:
-    - docker buildx build --platform=linux/amd64 --tag $INTERNAL_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
@@ -151,12 +142,11 @@ forwarder-tests:
       - ci/forwarder_coverage.md
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
-  #  stage: build
-  stage: ci-image
+  stage: build
   tags: ["arch:amd64"]
-  #  only:
-  #    refs:
-  #      - main
+  only:
+    refs:
+      - main
   script:
     - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 forwarder-build-qa:
@@ -171,9 +161,9 @@ forwarder-build-qa:
     - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
 forwarder-publish:
   stage: publish
-  #  rules:
-  #    - if: $CI_COMMIT_BRANCH == "main"
-  #      when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
   needs:
     - forwarder-build-tagged
   trigger:
