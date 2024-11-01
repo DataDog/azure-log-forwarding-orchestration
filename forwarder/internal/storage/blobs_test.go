@@ -310,5 +310,6 @@ func TestResourceId(t *testing.T) {
 
 		// THEN
 		assert.ErrorIs(t, err, storage.ErrInvalidResourceId)
+		assert.Contains(t, err.Error(), "test")
 	})
 }

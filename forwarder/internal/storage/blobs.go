@@ -52,7 +52,7 @@ func (b *Blob) IsCurrent(now time.Time) bool {
 
 func (b *Blob) ResourceId() (string, error) {
 	if len(b.Name) < idBeginIndex+idEndOffset {
-		return "", ErrInvalidResourceId
+		return "", fmt.Errorf("invalid resource id for blob %s: %w", b.Name, ErrInvalidResourceId)
 	}
 	return b.Name[idBeginIndex : len(b.Name)-idEndOffset], nil
 }
