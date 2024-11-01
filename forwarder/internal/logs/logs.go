@@ -62,7 +62,7 @@ func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
 	}
 
 	tags := getResourceIdTags(parsedId)
-	tags = append(tags, getForwarderTags()...)
+	tags = append(tags, getForwarderTag())
 
 	return &Log{
 		Category:   blob.Container.Category(),
@@ -73,17 +73,15 @@ func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
 }
 
 func getResourceIdTags(id *arm.ResourceID) []string {
-	var tags []string
-
-	tags = append(tags, "subscription_id:"+id.SubscriptionID)
-	tags = append(tags, "resource_group:"+id.ResourceGroupName)
-	tags = append(tags, "source:"+strings.Replace(id.ResourceType.String(), "/", ".", -1))
-
-	return tags
+	return []string{
+		"subscription_id:" + id.SubscriptionID,
+		"resource_group:" + id.ResourceGroupName,
+		"source:" + strings.Replace(id.ResourceType.String(), "/", ".", -1),
+	}
 }
 
-func getForwarderTags() []string {
-	return []string{"forwarder:lfo"}
+func getForwarderTag() string {
+	return "forwarder:lfo"
 }
 
 // TooLargeError represents an error for when a log is too large to send to Datadog.
