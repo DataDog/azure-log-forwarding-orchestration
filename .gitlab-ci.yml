@@ -149,22 +149,14 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-build-latest:
-  image: $DOCKER_IMAGE
-  stage: build
-  tags: ["arch:amd64"]
-  only:
-    refs:
-      - main
-  script:
-    - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY latest
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
-  stage: build
+  #  stage: build
+  stage: ci-image
   tags: ["arch:amd64"]
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 forwarder-build-qa:
@@ -179,9 +171,9 @@ forwarder-build-qa:
     - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
 forwarder-publish:
   stage: publish
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+  #  rules:
+  #    - if: $CI_COMMIT_BRANCH == "main"
+  #      when: manual
   needs:
     - forwarder-build-tagged
   trigger:
