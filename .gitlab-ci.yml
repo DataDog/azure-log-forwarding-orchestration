@@ -200,8 +200,19 @@ coverage-comment:
   tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH != "main"
+      allow_failure: true
   dependencies:
     - forwarder-tests
     - control-plane-tests
   script:
     - ci/scripts/coverage-comment.sh
+# ------------- QA ENV -------------
+deploy-qa-env:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ["arch:amd64"]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - ci/scripts/deploy/deploy_qa_env.sh

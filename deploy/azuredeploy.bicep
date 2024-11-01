@@ -12,6 +12,8 @@ param datadogApplicationKey string
 param datadogApiKey string
 param datadogSite string
 
+param imageRegistry string = 'datadoghq.azurecr.io'
+
 module controlPlaneSubscription './subscription.bicep' = {
   name: 'createControlPlaneResourceGroup'
   scope: subscription(controlPlaneSubscriptionId)
@@ -45,6 +47,7 @@ module controlPlaneResourceGroup './control_plane.bicep' = {
     datadogApiKey: datadogApiKey
     datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
+    imageRegistry: imageRegistry
   }
   dependsOn: [
     controlPlaneSubscription

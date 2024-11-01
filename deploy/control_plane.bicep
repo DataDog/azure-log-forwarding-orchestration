@@ -8,6 +8,8 @@ param controlPlaneResourceGroupName string
 
 param monitoredSubscriptions string
 
+param imageRegistry string
+
 @description('Datadog API Key')
 @secure()
 param datadogApiKey string
@@ -19,9 +21,8 @@ param datadogApplicationKey string
 @description('Datadog Site')
 param datadogSite string
 
-var datadogPublicRegistry = 'datadoghq.azurecr.io'
-var deployerTaskImage = '${datadogPublicRegistry}/deployer:latest'
-var forwarderImage = '${datadogPublicRegistry}/forwarder:latest'
+var deployerTaskImage = '${imageRegistry}/deployer:latest'
+var forwarderImage = '${imageRegistry}/forwarder:latest'
 
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: 'control-plane-asp-${controlPlaneId}'
