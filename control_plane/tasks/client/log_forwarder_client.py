@@ -89,7 +89,7 @@ CONNECTION_STRING_SECRET = "connection-string"
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
-FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 14
+FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
 
 log = getLogger(__name__)
 
@@ -286,7 +286,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                                 ),
                                 filters=ManagementPolicyFilter(
                                     blob_types=["blockBlob", "appendBlob"],
-                                    prefix_match=[FORWARDER_METRIC_CONTAINER_NAME + "/"],
+                                    prefix_match=[f"{FORWARDER_METRIC_CONTAINER_NAME}/metrics"],
                                 ),
                             ),
                         )
