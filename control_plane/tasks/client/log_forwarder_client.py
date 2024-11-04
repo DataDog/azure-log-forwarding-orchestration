@@ -36,7 +36,6 @@ from azure.mgmt.storage.v2023_05_01.models import (
     ManagementPolicyAction,
     ManagementPolicyBaseBlob,
     ManagementPolicyDefinition,
-    ManagementPolicyFilter,
     ManagementPolicyName,
     ManagementPolicyRule,
     ManagementPolicySchema,
@@ -89,7 +88,7 @@ CONNECTION_STRING_SECRET = "connection-string"
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
-FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 14
+FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
 
 log = getLogger(__name__)
 
@@ -283,10 +282,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                                             days_after_creation_greater_than=FORWARDER_METRIC_BLOB_LIFETIME_DAYS
                                         )
                                     ),
-                                ),
-                                filters=ManagementPolicyFilter(
-                                    blob_types=["blockBlob", "appendBlob"],
-                                    prefix_match=[FORWARDER_METRIC_CONTAINER_NAME + "/"],
                                 ),
                             ),
                         )

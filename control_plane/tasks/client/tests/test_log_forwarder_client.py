@@ -485,12 +485,8 @@ class TestLogForwarderClient(AsyncTestCase):
                                 "type": "Lifecycle",
                                 "definition": {
                                     "actions": {
-                                        "base_blob": {"delete": {"days_after_modification_greater_than": 14}},
-                                        "snapshot": {"delete": {"days_after_creation_greater_than": 14}},
-                                    },
-                                    "filters": {
-                                        "prefix_match": ["dd-forwarder/"],
-                                        "blob_types": ["blockBlob", "appendBlob"],
+                                        "base_blob": {"delete": {"days_after_modification_greater_than": 1}},
+                                        "snapshot": {"delete": {"days_after_creation_greater_than": 1}},
                                     },
                                 },
                             }
