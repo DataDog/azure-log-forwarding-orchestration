@@ -77,8 +77,18 @@ class ResourcesTask(Task):
             return
         # since sets cannot be json serialized, we convert them to lists before storing
         await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
-        resources_count = sum(len(resources) for resources in self.resource_cache.values())
-        log.info(f"Updated Resources, {resources_count} resources stored in the cache")
+
+        subscription_count = len(self.resource_cache)
+        region_count = sum(len(regions) for regions in self.resource_cache.values())
+        resources_count = sum(
+            len(resources) for regions in self.resource_cache.values() for resources in regions.values()
+        )
+        log.info(
+            "Updated Resources, monitoring %s resources stored in the cache across %s regions across %s subscriptions",
+            resources_count,
+            region_count,
+            subscription_count,
+        )
 
 
 async def main() -> None:
