@@ -95,15 +95,6 @@ publish-tasks-qa:
     - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
-deployer-build-latest:
-  image: $DOCKER_IMAGE
-  stage: build
-  only:
-    refs:
-      - main
-  tags: ["arch:amd64"]
-  script:
-    - docker buildx build --platform=linux/amd64 --tag $INTERNAL_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
@@ -129,7 +120,7 @@ deployer-publish:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
   needs:
-    - forwarder-build-tagged
+    - deployer-build-tagged
   trigger:
     project: DataDog/public-images
     branch: main
@@ -149,15 +140,6 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
-forwarder-build-latest:
-  image: $DOCKER_IMAGE
-  stage: build
-  tags: ["arch:amd64"]
-  only:
-    refs:
-      - main
-  script:
-    - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY latest
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -193,6 +175,21 @@ forwarder-publish:
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+forwarder-tidy:
+  image: $CI_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - cd forwarder
+    - go mod tidy
+    - git diff --exit-code
+forwarder-vet:
+  image: $CI_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - cd forwarder
+    - go vet ./...
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE

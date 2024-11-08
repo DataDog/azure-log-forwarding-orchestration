@@ -2,6 +2,7 @@
 from asyncio import Task as AsyncTask
 from asyncio import create_task, gather, run, wait
 from collections.abc import Coroutine, Generator, Iterable
+from contextlib import suppress
 from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
@@ -10,6 +11,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any, cast
 
 # 3p
+from azure.mgmt.appcontainers.models import Job
 from tenacity import retry, retry_if_result, stop_after_attempt
 
 # project
@@ -28,7 +30,7 @@ from cache.common import (
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
-from tasks.client.log_forwarder_client import LogForwarderClient
+from tasks.client.log_forwarder_client import DEFAULT_CPU, DEFAULT_MEMORY_GB, LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors, now
 from tasks.task import Task
 
@@ -38,6 +40,7 @@ METRIC_COLLECTION_PERIOD_MINUTES = 5
 
 SCALE_UP_EXECUTION_SECONDS = 25
 SCALE_DOWN_EXECUTION_SECONDS = 3
+
 
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
@@ -147,12 +150,14 @@ class ScalingTask(Task):
             await self.clean_up_orphaned_forwarders(client, subscription_id)
 
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
-    async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
+    async def create_log_forwarder(
+        self, client: LogForwarderClient, region: str, memory_gb: int = DEFAULT_MEMORY_GB, cpu: float = DEFAULT_CPU
+    ) -> LogForwarder | None:
         """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
         config_id = generate_unique_id()
         try:
-            config_type = await client.create_log_forwarder(region, config_id)
+            config_type = await client.create_log_forwarder(region, config_id, memory_gb, cpu)
             return LogForwarder(config_id, config_type)
         except Exception:
             log.exception("Failed to create log forwarder %s, cleaning up", config_id)
@@ -215,26 +220,37 @@ class ScalingTask(Task):
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        config_ids = list(region_config["resources"].values())
+        assigned_config_ids = list(region_config["resources"].values())
         num_resources_by_forwarder = {
-            config_id: config_ids.count(config_id) for config_id in region_config["configurations"]
+            config_id: assigned_config_ids.count(config_id) for config_id in region_config["configurations"]
         }
 
-        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
+        forwarder_metrics, forwarder_apps_by_id = await gather(
+            self.collect_region_forwarder_metrics(client, region_config["configurations"]),
+            self.get_forwarder_apps_by_id(client, region_config["configurations"]),
+        )
 
         if not any(forwarder_metrics.values()):
             log.warning("No valid metrics found for forwarders in region %s", region)
             return
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
-        did_scale = await self.scale_up_forwarders(
-            client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics
+        did_scale = await self.split_scale_up_forwarders(
+            client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics, forwarder_apps_by_id
         )
-        # if we don't scale up, we can check for scaling down
+        # if we don't scale up (by splitting), we can check for scaling down via coalescing
         if did_scale:
             return
 
-        await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
+        did_scale = await self.coalesce_scale_down_forwarders(
+            client, region_config, num_resources_by_forwarder, forwarder_metrics
+        )
+
+        # if we don't scale down (by coalescing), we can check for scaling up memory
+        if did_scale:
+            return
+
+        await self.memory_scale_forwarders(client, forwarder_metrics, forwarder_apps_by_id)
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]
@@ -268,8 +284,15 @@ class ScalingTask(Task):
         self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
         return forwarder_metrics
 
+    async def get_forwarder_apps_by_id(self, client: LogForwarderClient, config_ids: Iterable[str]) -> dict[str, Job]:
+        forwarders = await gather(*(client.get_log_forwarder_container_app(config_id) for config_id in config_ids))
+        return dict(zip(config_ids, forwarders, strict=False))
+
     def onboard_new_resources(
-        self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
+        self,
+        subscription_id: str,
+        region: str,
+        forwarder_metrics: dict[str, list[MetricBlobEntry]],
     ) -> None:
         """Assigns new resources to the least busy forwarder in the region"""
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
@@ -291,13 +314,14 @@ class ScalingTask(Task):
             {resource: least_busy_forwarder_id for resource in new_resources}
         )
 
-    async def scale_up_forwarders(
+    async def split_scale_up_forwarders(
         self,
         client: LogForwarderClient,
         subscription_id: str,
         region: str,
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
+        forwarder_apps_by_id: dict[str, Job],
     ) -> bool:
         def _has_enough_resources_to_scale_up(config_id: str) -> bool:
             if num_resources_by_forwarder[config_id] < 2:
@@ -315,8 +339,25 @@ class ScalingTask(Task):
         if not forwarders_to_scale_up:
             return False
 
+        def get_memory_gb(config_id: str) -> int:
+            if (
+                (app := forwarder_apps_by_id.get(config_id))
+                and app.template
+                and app.template.containers
+                and (resources := app.template.containers[0].resources)
+                and resources.memory
+            ):
+                with suppress(ValueError):
+                    return int(resources.memory.removesuffix("Gi"))
+            return DEFAULT_MEMORY_GB
+
         # create a second forwarder for each forwarder that needs to scale up
-        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
+        new_forwarders = await gather(
+            *[
+                self.create_log_forwarder(client, region, memory_gb=get_memory_gb(old_forwarder))
+                for old_forwarder in forwarders_to_scale_up
+            ]
+        )
 
         for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
             if not new_forwarder:
@@ -371,13 +412,13 @@ class ScalingTask(Task):
             {resource_id: new_forwarder.config_id for resource_id in resources_to_move_by_load(resource_loads)}
         )
 
-    async def scale_down_forwarders(
+    async def coalesce_scale_down_forwarders(
         self,
         client: LogForwarderClient,
         region_config: RegionAssignmentConfiguration,
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
-    ) -> None:
+    ) -> bool:
         forwarders_to_collapse = sorted(
             [
                 config_id
@@ -390,6 +431,9 @@ class ScalingTask(Task):
             config_id for config_id, num_resources in num_resources_by_forwarder.items() if num_resources == 0
         ]
 
+        if not forwarders_to_collapse and not forwarders_to_delete:
+            return False
+
         maybe_errors = await gather(
             *(
                 self.collapse_forwarders(client, region_config, config_1, config_2)
@@ -398,7 +442,8 @@ class ScalingTask(Task):
             *(self.delete_log_forwarder(client, region_config, config_id) for config_id in forwarders_to_delete),
             return_exceptions=True,
         )
-        log_errors("Errors during scaling down", *maybe_errors)
+        log_errors("Errors during scaling down", *maybe_errors, reraise=True)
+        return True
 
     async def collapse_forwarders(
         self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
@@ -419,6 +464,15 @@ class ScalingTask(Task):
         await client.delete_log_forwarder(config_id)
         region_config["configurations"].pop(config_id, None)
 
+    async def memory_scale_forwarders(
+        self,
+        client: LogForwarderClient,
+        forwarder_metrics: dict[str, list[MetricBlobEntry]],
+        forwarder_apps_by_id: dict[str, Job],
+    ) -> None:
+        """Checks the memory usage of a forwarder and scales it up if needed"""
+        pass  # TODO
+
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
         existing_log_forwarders = await client.list_log_forwarder_ids()
         orphaned_forwarders = set(existing_log_forwarders) - set(
@@ -430,7 +484,11 @@ class ScalingTask(Task):
         if not orphaned_forwarders:
             return
 
-        log.info("Cleaning up orphaned forwarders for subscription %s: %s", subscription_id, orphaned_forwarders)
+        log.info(
+            "Cleaning up orphaned forwarders for subscription %s: %s",
+            subscription_id,
+            orphaned_forwarders,
+        )
         await gather(
             *(
                 # only try once and don't error, if something transiently fails

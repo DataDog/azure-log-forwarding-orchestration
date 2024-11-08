@@ -99,7 +99,7 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state={},
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID, 1, 0.5)
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -141,7 +141,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID, 1, 0.5)
         self.client.delete_log_forwarder.assert_called_once_with(OLD_LOG_FORWARDER_ID)
 
         expected_cache: AssignmentCache = {
@@ -244,7 +244,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID, 1, 0.5)
         self.client.delete_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
             SUB_ID1: {
@@ -440,7 +440,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID, 1, 0.5)
         self.client.delete_log_forwarder.assert_not_awaited()
         self.assertEqual(
             self.cache,
@@ -545,7 +545,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID, 1, 0.5)
         self.client.delete_log_forwarder.assert_not_awaited()
 
         expected_cache: AssignmentCache = {
@@ -659,7 +659,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID, 1, 0.5)
         self.client.delete_log_forwarder.assert_not_awaited()
 
         expected_cache: AssignmentCache = {

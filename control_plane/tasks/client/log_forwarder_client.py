@@ -36,6 +36,7 @@ from azure.mgmt.storage.v2023_05_01.models import (
     ManagementPolicyAction,
     ManagementPolicyBaseBlob,
     ManagementPolicyDefinition,
+    ManagementPolicyFilter,
     ManagementPolicyName,
     ManagementPolicyRule,
     ManagementPolicySchema,
@@ -87,6 +88,9 @@ CONNECTION_STRING_SECRET = "connection-string"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
+
+DEFAULT_MEMORY_GB = 4
+DEFAULT_CPU = 2
 
 FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
 
@@ -154,7 +158,12 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
+    async def get_log_forwarder_container_app(self, config_id: str) -> Job:
+        return await self.container_apps_client.jobs.get(self.resource_group, get_container_app_name(config_id))
+
+    async def create_log_forwarder(
+        self, region: str, config_id: str, memory_gb: int = DEFAULT_MEMORY_GB, cpu: float = DEFAULT_CPU
+    ) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
         managed_env_name = get_managed_env_name(config_id)
 
@@ -166,7 +175,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         log_errors("Failed to create storage account and/or managed environment", *maybe_errors, reraise=True)
 
         maybe_errors = await gather(
-            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
+            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id, memory_gb, cpu)),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -214,7 +223,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.container_apps_client.managed_environments.get(self.resource_group, env_name)
 
-    async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
+    async def create_log_forwarder_container_app(
+        self, region: str, config_id: str, memory_gb: int, cpu: float
+    ) -> ResourcePoller[Job]:
         connection_string = await self.get_connection_string(get_storage_account_name(config_id))
         job_name = get_container_app_name(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
@@ -238,7 +249,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         Container(
                             name="forwarder",
                             image=self.forwarder_image,
-                            resources=ContainerResources(cpu=0.5, memory="1Gi"),
+                            resources=ContainerResources(cpu=cpu, memory=f"{memory_gb}Gi"),
                             env=[
                                 EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
                                 EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
@@ -282,6 +293,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                                             days_after_creation_greater_than=FORWARDER_METRIC_BLOB_LIFETIME_DAYS
                                         )
                                     ),
+                                ),
+                                filters=ManagementPolicyFilter(
+                                    blob_types=["blockBlob", "appendBlob"],
                                 ),
                             ),
                         )
