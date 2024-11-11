@@ -317,7 +317,11 @@ func main() {
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
 
 	resourceVolumeMap := make(map[string]int64)
-	metricBlob := metrics.MetricEntry{(time.Now()).Unix(), time.Since(start).Seconds(), resourceVolumeMap}
+	metricBlob := metrics.MetricEntry{
+		Timestamp:          time.Now().Unix(),
+		RuntimeSeconds:     time.Since(start).Seconds(),
+		ResourceLogVolumes: resourceVolumeMap,
+	}
 	metricBuffer, err := json.Marshal(metricBlob)
 
 	if err != nil {
