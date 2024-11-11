@@ -160,7 +160,7 @@ forwarder-build-latest:
     - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY latest
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
-  stage: build
+  stage: ci-image
   tags: ["arch:amd64"]
   # only:
   #   refs:
@@ -193,7 +193,7 @@ forwarder-publish:
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
-forwarder-tidy: 
+forwarder-tidy:
   image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
@@ -201,7 +201,7 @@ forwarder-tidy:
     - cd forwarder
     - go mod tidy
     - git diff --exit-code
-forwarder-vet: 
+forwarder-vet:
   image: $CI_IMAGE
   stage: test
   tags: ["arch:amd64"]
