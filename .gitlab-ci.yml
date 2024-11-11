@@ -201,6 +201,13 @@ forwarder-tidy:
     - cd forwarder
     - go mod tidy
     - git diff --exit-code
+forwarder-vet: 
+  image: $CI_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - cd forwarder
+    - go vet ./...
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
