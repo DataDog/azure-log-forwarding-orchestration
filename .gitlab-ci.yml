@@ -198,6 +198,7 @@ forwarder-tidy:
   stage: ci-image # update
   tags: ["arch:amd64"]
   script:
+    - cd forwarder
     - go mod tidy
     - git diff --exit-code
 # ------------- CODE COV -------------
