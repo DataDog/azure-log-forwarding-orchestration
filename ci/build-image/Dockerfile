@@ -1,6 +1,6 @@
 FROM registry.ddbuild.io/images/mirror/ubuntu:24.04
 RUN apt-get update
-RUN apt-get install -y software-properties-common binutils zip jq ca-certificates curl wget
+RUN apt-get install -y software-properties-common binutils zip jq ca-certificates curl wget git
 RUN add-apt-repository ppa:deadsnakes/ppa
 RUN apt-get update
 RUN apt-get install -y python3.11 python3-pip python3.11-venv
