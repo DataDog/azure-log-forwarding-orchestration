@@ -6,7 +6,7 @@ variables:
   INTERNAL_DOCKER_REGISTRY: registry.ddbuild.io/lfo
   QA_DOCKER_REGISTRY: lfoqa.azurecr.io
 stages:
-  - ci-image #use this stage to debug so it runs first
+  - ci-image
   - test
   - build
   - publish
@@ -42,12 +42,12 @@ control-plane-formatting:
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/format.sh
-control-plane-lint: #altan example
-  image: $CI_IMAGE #image to execute the step
-  stage: test #what series it gets executed in
-  tags: ["arch:amd64"] #copy paste this
+control-plane-lint:
+  image: $CI_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
   script:
-    - ci/scripts/control_plane/lint.sh #takes in array, script to call
+    - ci/scripts/control_plane/lint.sh
 control-plane-type-check:
   image: $CI_IMAGE
   stage: test
