@@ -195,7 +195,7 @@ forwarder-publish:
     IMG_REGISTRIES: public-azure
 forwarder-tidy: 
   image: $CI_IMAGE
-  stage: ci-image # update
+  stage: test
   tags: ["arch:amd64"]
   script:
     - cd forwarder
