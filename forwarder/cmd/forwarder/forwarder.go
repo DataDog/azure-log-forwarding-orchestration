@@ -1,8 +1,6 @@
 package main
 
 import (
-	"github.com/yosuke-furukawa/json5/encoding/json5"
-
 	// stdlib
 	"bufio"
 	"context"
@@ -232,13 +230,6 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 }
 
 func main() {
-	var data interface{}
-	dec := json5.NewDecoder(os.Stdin)
-	err := dec.Decode(&data)
-	if err != nil {
-		fmt.Println(err)
-	}
-
 	tracer.Start()
 	defer tracer.Stop()
 	var err error
