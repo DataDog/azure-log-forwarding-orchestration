@@ -6,7 +6,7 @@ variables:
   INTERNAL_DOCKER_REGISTRY: registry.ddbuild.io/lfo
   QA_DOCKER_REGISTRY: lfoqa.azurecr.io
 stages:
-  - ci-image
+  - ci-image #use this stage to debug so it runs first
   - test
   - build
   - publish
@@ -42,12 +42,12 @@ control-plane-formatting:
   tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/format.sh
-control-plane-lint:
-  image: $CI_IMAGE
-  stage: test
-  tags: ["arch:amd64"]
+control-plane-lint: #altan example
+  image: $CI_IMAGE #image to execute the step
+  stage: test #what series it gets executed in
+  tags: ["arch:amd64"] #copy paste this
   script:
-    - ci/scripts/control_plane/lint.sh
+    - ci/scripts/control_plane/lint.sh #takes in array, script to call
 control-plane-type-check:
   image: $CI_IMAGE
   stage: test
@@ -193,6 +193,13 @@ forwarder-publish:
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+forwarder-tidy: 
+  image: $CI_IMAGE
+  stage: ci-image # update
+  tags: ["arch:amd64"]
+  script:
+    - go mod tidy
+    - git diff --exit-code
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
