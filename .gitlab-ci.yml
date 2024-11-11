@@ -193,6 +193,14 @@ forwarder-publish:
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+forwarder-tidy: 
+  image: $CI_IMAGE
+  stage: test
+  tags: ["arch:amd64"]
+  script:
+    - cd forwarder
+    - go mod tidy
+    - git diff --exit-code
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
