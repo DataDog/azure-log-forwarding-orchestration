@@ -1,4 +1,4 @@
-FROM registry.ddbuild.io/images/mirror/golang:1.23.2-alpine AS builder
+FROM registry.ddbuild.io/images/mirror/golang:1.23 AS builder
 WORKDIR /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 # Copy and download dependencies
 COPY go.mod go.sum ./
