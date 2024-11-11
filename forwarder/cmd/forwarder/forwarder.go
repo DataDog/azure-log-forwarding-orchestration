@@ -78,11 +78,6 @@ func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs
 		currBytes := scanner.Bytes()
 		currLog, err := logs.NewLog(blob, currBytes)
 		if err != nil {
-			if errors.Is(err, logs.ErrIncompleteLog) {
-				// azure has not finished writing the file
-				// we should stop processing
-				break
-			}
 			return processedBytes, err
 		}
 
@@ -269,7 +264,8 @@ func main() {
 			profiler.MutexProfile,
 			profiler.GoroutineProfile,
 		),
-		profiler.WithAPIKey(""),
+		profiler.WithAPIKey(os.Getenv("DD_API_KEY")),
+		profiler.WithAgentlessUpload(),
 	)
 	if err != nil {
 		logger.Warning(err)

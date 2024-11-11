@@ -90,11 +90,11 @@ func (e TooLargeError) Error() string {
 
 // bufferSize is the maximum number of logs per post to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
-const bufferSize = 1000
+const bufferSize = 950
 
 // MaxPayloadSize is the maximum byte size of the payload to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
-const MaxPayloadSize = 5 * 1000000
+const MaxPayloadSize = 4 * 1000000
 
 func ptr[T any](v T) *T {
 	return &v
