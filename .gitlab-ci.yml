@@ -203,7 +203,7 @@ forwarder-tidy:
     - git diff --exit-code
 forwarder-vet: 
   image: $CI_IMAGE
-  stage: ci-image
+  stage: test
   tags: ["arch:amd64"]
   script:
     - cd forwarder
