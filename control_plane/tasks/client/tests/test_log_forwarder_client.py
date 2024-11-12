@@ -31,6 +31,7 @@ WEST_US = "westus"
 config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
+control_plane_id = "e90ecb54476d"
 managed_env_name = MANAGED_ENVIRONMENT_PREFIX + config_id
 container_app_name = CONTAINER_APP_PREFIX + config_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + config_id
@@ -73,6 +74,8 @@ class TestLogForwarderClient(AsyncTestCase):
         environ["SHOULD_SUBMIT_METRICS"] = ""
         environ["FORWARDER_IMAGE"] = "ddlfo.azurecr.io/blobforwarder:latest"
         environ["CONTROL_PLANE_REGION"] = "eastus"
+        environ["CONTROL_PLANE_ID"] = control_plane_id
+        environ["CONFIG_ID"] = config_id
 
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
