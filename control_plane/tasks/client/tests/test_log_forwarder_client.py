@@ -488,6 +488,9 @@ class TestLogForwarderClient(AsyncTestCase):
                                         "base_blob": {"delete": {"days_after_modification_greater_than": 1}},
                                         "snapshot": {"delete": {"days_after_creation_greater_than": 1}},
                                     },
+                                    "filters": {
+                                        "blob_types": ["blockBlob", "appendBlob"],
+                                    },
                                 },
                             }
                         ]

@@ -129,7 +129,7 @@ deployer-publish:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
   needs:
-    - forwarder-build-tagged
+    - deployer-build-tagged
   trigger:
     project: DataDog/public-images
     branch: main
