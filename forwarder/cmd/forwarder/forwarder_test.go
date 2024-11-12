@@ -38,7 +38,7 @@ import (
 )
 
 func getLogWithContent(content string) []byte {
-	return []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n")
+	return []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 }
 
 func newContainerItem(name string) *service.ContainerItem {
@@ -55,10 +55,15 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 	}
 }
 
+func getBlobName(name string) string {
+	return "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/" + name + "/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
+}
+
 func newBlobItem(name string) *container.BlobItem {
 	now := time.Now()
+	blobName := getBlobName(name)
 	return &container.BlobItem{
-		Name: to.StringPtr(name),
+		Name: to.StringPtr(blobName),
 		Properties: &container.BlobProperties{
 			ContentLength: to.Int64Ptr(int64(len(getLogWithContent("test")))),
 			CreationTime:  &now,
@@ -228,7 +233,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(reader, logsCh)
+			_, err := parseLogs(storage.Blob{Name: getBlobName("test")}, reader, logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -269,8 +274,10 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
+		blob := storage.Blob{Name: getBlobName("test")}
+
 		var invalidLogError logs.TooLargeError
-		parsedLog, err := logs.NewLog(invalidLog)
+		parsedLog, err := logs.NewLog(blob, invalidLog)
 		require.NoError(t, err)
 
 		// WHEN
@@ -280,7 +287,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(reader, logsCh)
+			_, err := parseLogs(blob, reader, logsCh)
 			return err
 		})
 
@@ -302,9 +309,10 @@ func TestParseLogs(t *testing.T) {
 		validLog := getLogWithContent("test")
 		var content string
 		for range 3 {
-			content += string(validLog)
+			content += string(validLog) + "\n"
 		}
 		reader := io.NopCloser(strings.NewReader(content))
+		blob := storage.Blob{Name: getBlobName("test")}
 
 		eg, _ := errgroup.WithContext(context.Background())
 		var got []*logs.Log
@@ -320,7 +328,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, err := parseLogs(reader, logsChannel)
+			_, err := parseLogs(blob, reader, logsChannel)
 			return err
 		})
 		err := eg.Wait()
