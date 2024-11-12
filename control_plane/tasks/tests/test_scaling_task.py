@@ -22,6 +22,7 @@ from cache.resources_cache import ResourceCache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
+    SCALE_UP_EXECUTION_SECONDS,
     SCALING_TASK_NAME,
     ScalingTask,
     is_consistently_over_threshold,
@@ -300,7 +301,7 @@ class TestScalingTask(TaskTestCase):
     async def test_log_forwarders_dont_scale_when_not_needed(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime_seconds": 22.2,
+                "runtime_seconds": SCALE_UP_EXECUTION_SECONDS / 2,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
                 "resource_log_volume": {"resource1": 4000, "resource2": 6000},
             }
@@ -325,7 +326,7 @@ class TestScalingTask(TaskTestCase):
     async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = [
             {
-                "runtime_seconds": 23,
+                "runtime_seconds": SCALE_UP_EXECUTION_SECONDS - 3,
                 "timestamp": (datetime.now() - timedelta(seconds=30 * i)).timestamp(),
                 "resource_log_volume": {"resource1": 4000, "resource2": 6000},
             }
