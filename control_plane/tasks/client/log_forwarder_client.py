@@ -239,7 +239,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         Container(
                             name="forwarder",
                             image=self.forwarder_image,
-                            resources=ContainerResources(cpu=0.5, memory="1Gi"),
+                            resources=ContainerResources(cpu=2, memory="4Gi"),
                             env=[
                                 EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
                                 EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
