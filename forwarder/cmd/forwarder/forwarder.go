@@ -33,6 +33,9 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
+// serviceName is the service tag used for APM and logs about this forwarder.
+const serviceName = "dd-azure-forwarder"
+
 // maxBufferSize is the maximum buffer to use for scanning logs.
 // Logs greater than this buffer will be dropped by bufio.Scanner.
 // The buffer is defaulted to the maximum value of an integer.
@@ -230,8 +233,12 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 }
 
 func main() {
-	tracer.Start()
-	defer tracer.Stop()
+	enableAPM := os.Getenv("DD_ENABLE_APM")
+
+	if enableAPM != "" {
+		tracer.Start()
+		defer tracer.Stop()
+	}
 	var err error
 	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
 	defer span.Finish(tracer.WithError(err))
@@ -260,22 +267,26 @@ func main() {
 
 	start := time.Now()
 	log.SetFormatter(&log.JSONFormatter{})
-	logger := log.WithFields(log.Fields{"service": "forwarder"})
+	logger := log.WithFields(log.Fields{"service": serviceName})
 
-	err = profiler.Start(
-		profiler.WithProfileTypes(
-			profiler.CPUProfile,
-			profiler.HeapProfile,
-			profiler.BlockProfile,
-			profiler.MutexProfile,
-			profiler.GoroutineProfile,
-		),
-		profiler.WithAPIKey(""),
-	)
-	if err != nil {
-		logger.Warning(err)
+	if enableAPM != "" {
+		err = profiler.Start(
+			profiler.WithProfileTypes(
+				profiler.CPUProfile,
+				profiler.HeapProfile,
+				profiler.BlockProfile,
+				profiler.MutexProfile,
+				profiler.GoroutineProfile,
+			),
+			profiler.WithAPIKey(os.Getenv("DD_API_KEY")),
+			profiler.WithService(serviceName),
+			profiler.WithAgentlessUpload(),
+		)
+		if err != nil {
+			logger.Warning(err)
+		}
+		defer profiler.Stop()
 	}
-	defer profiler.Stop()
 
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
