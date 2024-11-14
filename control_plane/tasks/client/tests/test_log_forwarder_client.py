@@ -43,6 +43,7 @@ containerAppSettings: dict[str, str] = {
     "FORWARDER_IMAGE": "ddlfo.azurecr.io/blobforwarder:latest",
     "CONTROL_PLANE_REGION": EAST_US,
     "CONTROL_PLANE_ID": "e90ecb54476d",
+    "SHOULD_SUBMIT_METRICS": "True",
 }
 
 
@@ -148,6 +149,10 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(containerAppSettings["FORWARDER_IMAGE"], self.client.forwarder_image)
         self.assertEqual(containerAppSettings["CONTROL_PLANE_REGION"], self.client.control_plane_region)
         self.assertEqual(containerAppSettings["CONTROL_PLANE_ID"], self.client.control_plane_id)
+        self.assertEqual(
+            bool(containerAppSettings["DD_APP_KEY"] and containerAppSettings["SHOULD_SUBMIT_METRICS"]),
+            self.client.should_submit_metrics,
+        )
         self.assertEqual(rg1, self.client.resource_group)
         self.assertEqual(sub_id1, self.client.subscription_id)
 
