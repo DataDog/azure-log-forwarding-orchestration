@@ -326,7 +326,7 @@ func main() {
 
 	blobName := metrics.GetMetricFileName(time.Now())
 
-	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
+	err = storageClient.AppendBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
 
 	err = errors.Join(runErr, err)
 

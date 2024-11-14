@@ -171,7 +171,6 @@ func (c *Client) AppendBlob(ctx context.Context, containerName string, blobName 
 		return fmt.Errorf("error downloading existing blob %s: %w", blobName, downErr)
 	}
 
-	buffer = append(buffer, "\n"...)
 	buffer = append(buffer, content...)
 
 	return c.UploadBlob(ctx, containerName, blobName, buffer)
