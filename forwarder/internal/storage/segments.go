@@ -31,14 +31,14 @@ func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (
 		Range: azblob.HTTPRange{Offset: offset},
 	}
 
-	resp, err := c.azBlobClient.DownloadStream(ctx, blob.Container, blob.Name, options)
+	resp, err := c.azBlobClient.DownloadStream(ctx, blob.Container.Name, blob.Name, options)
 
 	if err != nil {
 		return BlobSegment{}, fmt.Errorf("failed to download blob: %w", err)
 	}
 	return BlobSegment{
 		Name:          blob.Name,
-		Container:     blob.Container,
+		Container:     blob.Container.Name,
 		Reader:        resp.Body,
 		Offset:        offset,
 		ContentLength: blob.ContentLength,
