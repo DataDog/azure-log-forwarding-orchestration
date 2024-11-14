@@ -36,7 +36,7 @@ container_app_name = CONTAINER_APP_PREFIX + config_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + config_id
 rg1 = "test_lfo"
 
-containerAppSettings: dict[str,str] = {
+containerAppSettings: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
     "DD_API_KEY": "dd-api-key",
     "DD_APP_KEY": "456456",
@@ -45,6 +45,7 @@ containerAppSettings: dict[str,str] = {
     "CONTROL_PLANE_REGION": EAST_US,
     "CONTROL_PLANE_ID": "e90ecb54476d",
 }
+
 
 class FakeHttpError(HttpResponseError):
     def __init__(self, status_code: int) -> None:
@@ -150,7 +151,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(containerAppSettings["CONTROL_PLANE_ID"], self.client.control_plane_id)
         self.assertEqual(rg1, self.client.resource_group)
         self.assertEqual(sub_id1, self.client.subscription_id)
-            
+
     async def test_create_log_forwarder_container_app_failure(self):
         (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = Exception(
             "400: Function App creation failed"
