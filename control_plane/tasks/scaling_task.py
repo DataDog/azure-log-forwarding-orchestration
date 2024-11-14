@@ -215,8 +215,9 @@ class ScalingTask(Task):
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        await self.ensure_region_forwarders(client, region_config["configurations"])
-
+        all_forwarders_exist = await self.ensure_region_forwarders(client, region_config["configurations"])
+        if not all_forwarders_exist:
+            return
         forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
 
         if not any(forwarder_metrics.values()):
@@ -239,12 +240,14 @@ class ScalingTask(Task):
 
         await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
 
-    async def ensure_region_forwarders(self, client: LogForwarderClient, config_ids: Iterable[str]) -> None:
+    async def ensure_region_forwarders(self, client: LogForwarderClient, config_ids: Iterable[str]) -> bool:
         """Ensures that all forwarders cache still exist"""
-        for config_id in config_ids:
-            if not all(await client.get_forwarder_resources(config_id)):
-                log.warning("Forwarder %s is is gone, attempting to recreate", config_id)
-                await self.create_log_forwarder(client, config_id)
+        forwarder_resources = {config_id: await client.get_forwarder_resources(config_id) for config_id in config_ids}
+        if all(all(resources) for resources in forwarder_resources.values()):
+            # everything is there!
+            return True
+        log.warning("uh oh houston we have a problem")  # TODO determine what we wanna do
+        return False
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]
