@@ -2,7 +2,7 @@
 
 source /venv/bin/activate
 
-set -uxo pipefail
+set -euxo pipefail
 
 cd control_plane
 
