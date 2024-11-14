@@ -93,7 +93,7 @@ func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs
 	return processedBytes, nil
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
@@ -104,6 +104,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 			logger.Warning(invalidLogError.Error())
 		}
 		err = errors.Join(err, currErr)
+		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: int64(logItem.Length())}
 	}
 	flushErr := logsClient.Flush(ctx)
 	err = errors.Join(err, flushErr)
@@ -205,7 +206,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh)
+			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
 		})
 	}
 
@@ -340,22 +341,6 @@ func main() {
 	}
 
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
-
-	//resourceVolumeMap := make(map[string]int64)
-	//metricBlob := metrics.MetricEntry{
-	//	Timestamp:          time.Now().Unix(),
-	//	RuntimeSeconds:     time.Since(start).Seconds(),
-	//	ResourceLogVolumes: resourceVolumeMap,
-	//}
-	//metricBuffer, err := json.Marshal(metricBlob)
-	//
-	//if err != nil {
-	//	logger.Fatalf(fmt.Errorf("error while marshalling metrics: %w", err).Error())
-	//}
-	//
-	//blobName := metrics.GetMetricFileName(time.Now())
-	//
-	//err = storageClient.AppendBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
 
 	err = errors.Join(runErr, err)
 

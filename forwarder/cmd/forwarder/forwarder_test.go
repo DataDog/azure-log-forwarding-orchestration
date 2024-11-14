@@ -99,6 +99,8 @@ func TestRun(t *testing.T) {
 			newBlobItem("testB"),
 		}
 
+		testString := "test"
+
 		ctrl := gomock.NewController(t)
 		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
@@ -111,7 +113,12 @@ func TestRun(t *testing.T) {
 		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
 
 		mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-			validLog := getLogWithContent("test")
+			if strings.Contains(blobName, "metrics_") {
+				resp := azblob.DownloadStreamResponse{}
+				resp.Body = io.NopCloser(strings.NewReader(""))
+				return resp, nil
+			}
+			validLog := getLogWithContent(testString)
 			resp := azblob.DownloadStreamResponse{}
 			resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
 			return resp, nil
@@ -120,7 +127,7 @@ func TestRun(t *testing.T) {
 		var uploadedMetrics []byte
 		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
 			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
-				if strings.Contains(blobName, "metrics") {
+				if strings.Contains(blobName, "metrics_") {
 					uploadedMetrics = append(uploadedMetrics, content...)
 				}
 				return azblob.UploadBufferResponse{}, nil
@@ -177,12 +184,17 @@ func TestRun(t *testing.T) {
 		finalMetrics, err := metrics.FromBytes(uploadedMetrics)
 		assert.NoError(t, err)
 		totalLoad := 0
+		totalBytes := 0
 		for _, metric := range finalMetrics {
 			for _, value := range metric.ResourceLogVolumes {
 				totalLoad += int(value)
 			}
+			for _, value := range metric.ResourceLogBytes {
+				totalBytes += int(value)
+			}
 		}
 		assert.Equal(t, 2, totalLoad)
+		assert.Equal(t, 2*len(getLogWithContent(testString)), totalBytes)
 		assert.Len(t, submittedLogs, 2)
 
 		for _, logItem := range submittedLogs {
@@ -220,6 +232,7 @@ func TestProcessLogs(t *testing.T) {
 
 		logsCh := make(chan *logs.Log, 100)
 		volumeCh := make(chan string, 100)
+		bytesCh := make(chan resourceBytes, 100)
 
 		var output []byte
 		buffer := bytes.NewBuffer(output)
@@ -229,7 +242,8 @@ func TestProcessLogs(t *testing.T) {
 		// WHEN
 		eg.Go(func() error {
 			defer close(volumeCh)
-			return processLogs(egCtx, datadogClient, log.NewEntry(logger), logsCh, volumeCh)
+			defer close(bytesCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(logger), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
@@ -268,6 +282,7 @@ func TestProcessLogs(t *testing.T) {
 
 		logsCh := make(chan *logs.Log, 100)
 		volumeCh := make(chan string, 100)
+		bytesCh := make(chan resourceBytes, 100)
 
 		var output []byte
 		buffer := bytes.NewBuffer(output)
@@ -283,7 +298,8 @@ func TestProcessLogs(t *testing.T) {
 		// WHEN
 		eg.Go(func() error {
 			defer close(volumeCh)
-			return processLogs(egCtx, datadogClient, log.NewEntry(logger), logsCh, volumeCh)
+			defer close(bytesCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(logger), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
