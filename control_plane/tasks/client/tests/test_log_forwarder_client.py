@@ -1,7 +1,7 @@
 # stdlib
 from enum import StrEnum
 from os import environ
-from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock
+from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -36,14 +36,16 @@ container_app_name = CONTAINER_APP_PREFIX + config_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + config_id
 rg1 = "test_lfo"
 
-class ContainerAppSettings(StrEnum):
-    control_plane_id = "e90ecb54476d"
-    control_plane_region = EAST_US
-    dd_api_key_secret = "dd-api-key"
-    dd_site = "datadoghq.com"
-    forwarder_image = "ddlfo.azurecr.io/blobforwarder:latest"
-    connection_str_secret = "connection-string"
-    
+containerAppSettings: dict[str,str] = {
+    "AzureWebJobsStorage": "connection-string",
+    "DD_API_KEY": "dd-api-key",
+    "DD_APP_KEY": "456456",
+    "DD_SITE": "datadoghq.com",
+    "FORWARDER_IMAGE": "ddlfo.azurecr.io/blobforwarder:latest",
+    "CONTROL_PLANE_REGION": EAST_US,
+    "CONTROL_PLANE_ID": "e90ecb54476d",
+}
+
 class FakeHttpError(HttpResponseError):
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -70,19 +72,8 @@ class MockedLogForwarderClient(LogForwarderClient):
 
 
 class TestLogForwarderClient(AsyncTestCase):
+    @patch.dict(environ, containerAppSettings, clear=True)
     async def asyncSetUp(self) -> None:
-        environ.clear()
-        self.addCleanup(environ.clear)
-        environ["AzureWebJobsStorage"] = ContainerAppSettings.connection_str_secret
-        environ["DD_API_KEY"] = ContainerAppSettings.dd_api_key_secret
-        environ["DD_APP_KEY"] = "456456"
-        environ["DD_SITE"] = ContainerAppSettings.dd_site
-        environ["SHOULD_SUBMIT_METRICS"] = ""
-        environ["FORWARDER_IMAGE"] = ContainerAppSettings.forwarder_image
-        environ["CONTROL_PLANE_REGION"] = ContainerAppSettings.control_plane_region
-        environ["CONTROL_PLANE_ID"] = ContainerAppSettings.control_plane_id
-        environ["CONFIG_ID"] = config_id
-
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
         )
@@ -149,14 +140,16 @@ class TestLogForwarderClient(AsyncTestCase):
                 await self.client.create_log_forwarder(EAST_US, config_id)
         self.assertIn("400: Storage Account creation failed", str(ctx.exception))
 
-    async def test_create_log_forwarder_container_app_settings(self):
+    async def test_create_log_forwarder_settings(self):
         async with self.client:
-                await self.client.create_log_forwarder(EAST_US, config_id)
-        self.assertEqual(ContainerAppSettings.dd_api_key_secret, self.client.dd_api_key)
-        self.assertEqual(ContainerAppSettings.dd_site, self.client.dd_site)
-        self.assertEqual(ContainerAppSettings.forwarder_image, self.client.forwarder_image)
-        self.assertEqual(ContainerAppSettings.control_plane_region, self.client.control_plane_region)
-        self.assertEqual(ContainerAppSettings.control_plane_id, self.client.control_plane_id)
+            await self.client.create_log_forwarder(EAST_US, config_id)
+        self.assertEqual(containerAppSettings["DD_API_KEY"], self.client.dd_api_key)
+        self.assertEqual(containerAppSettings["DD_SITE"], self.client.dd_site)
+        self.assertEqual(containerAppSettings["FORWARDER_IMAGE"], self.client.forwarder_image)
+        self.assertEqual(containerAppSettings["CONTROL_PLANE_REGION"], self.client.control_plane_region)
+        self.assertEqual(containerAppSettings["CONTROL_PLANE_ID"], self.client.control_plane_id)
+        self.assertEqual(rg1, self.client.resource_group)
+        self.assertEqual(sub_id1, self.client.subscription_id)
             
     async def test_create_log_forwarder_container_app_failure(self):
         (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = Exception(
