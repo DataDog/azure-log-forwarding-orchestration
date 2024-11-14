@@ -1,4 +1,5 @@
 # stdlib
+from enum import StrEnum
 from os import environ
 from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock
 
@@ -27,17 +28,22 @@ from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
-WEST_US = "westus"
 config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
-control_plane_id = "e90ecb54476d"
 managed_env_name = MANAGED_ENVIRONMENT_PREFIX + config_id
 container_app_name = CONTAINER_APP_PREFIX + config_id
 storage_account_name = STORAGE_ACCOUNT_PREFIX + config_id
 rg1 = "test_lfo"
 
-
+class ContainerAppSettings(StrEnum):
+    control_plane_id = "e90ecb54476d"
+    control_plane_region = EAST_US
+    dd_api_key_secret = "dd-api-key"
+    dd_site = "datadoghq.com"
+    forwarder_image = "ddlfo.azurecr.io/blobforwarder:latest"
+    connection_str_secret = "connection-string"
+    
 class FakeHttpError(HttpResponseError):
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
@@ -67,14 +73,14 @@ class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
         environ.clear()
         self.addCleanup(environ.clear)
-        environ["AzureWebJobsStorage"] = "..."
-        environ["DD_API_KEY"] = "123123"
+        environ["AzureWebJobsStorage"] = ContainerAppSettings.connection_str_secret
+        environ["DD_API_KEY"] = ContainerAppSettings.dd_api_key_secret
         environ["DD_APP_KEY"] = "456456"
-        environ["DD_SITE"] = "datadoghq.com"
+        environ["DD_SITE"] = ContainerAppSettings.dd_site
         environ["SHOULD_SUBMIT_METRICS"] = ""
-        environ["FORWARDER_IMAGE"] = "ddlfo.azurecr.io/blobforwarder:latest"
-        environ["CONTROL_PLANE_REGION"] = "eastus"
-        environ["CONTROL_PLANE_ID"] = control_plane_id
+        environ["FORWARDER_IMAGE"] = ContainerAppSettings.forwarder_image
+        environ["CONTROL_PLANE_REGION"] = ContainerAppSettings.control_plane_region
+        environ["CONTROL_PLANE_ID"] = ContainerAppSettings.control_plane_id
         environ["CONFIG_ID"] = config_id
 
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
@@ -143,6 +149,15 @@ class TestLogForwarderClient(AsyncTestCase):
                 await self.client.create_log_forwarder(EAST_US, config_id)
         self.assertIn("400: Storage Account creation failed", str(ctx.exception))
 
+    async def test_create_log_forwarder_container_app_settings(self):
+        async with self.client:
+                await self.client.create_log_forwarder(EAST_US, config_id)
+        self.assertEqual(ContainerAppSettings.dd_api_key_secret, self.client.dd_api_key)
+        self.assertEqual(ContainerAppSettings.dd_site, self.client.dd_site)
+        self.assertEqual(ContainerAppSettings.forwarder_image, self.client.forwarder_image)
+        self.assertEqual(ContainerAppSettings.control_plane_region, self.client.control_plane_region)
+        self.assertEqual(ContainerAppSettings.control_plane_id, self.client.control_plane_id)
+            
     async def test_create_log_forwarder_container_app_failure(self):
         (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = Exception(
             "400: Function App creation failed"

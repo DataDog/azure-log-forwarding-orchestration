@@ -81,9 +81,9 @@ FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 DD_SITE_SETTING = "DD_SITE"
 DD_API_KEY_SETTING = "DD_API_KEY"
 FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
-CONFIG_ID = "CONFIG_ID"
+CONFIG_ID_SETTING = "CONFIG_ID"
 CONTROL_PLANE_REGION_SETTING = "CONTROL_PLANE_REGION"
-CONTROL_PLANE_ID = "CONTROL_PLANE_ID"
+CONTROL_PLANE_ID_SETTING = "CONTROL_PLANE_ID"
 
 DD_API_KEY_SECRET = "dd-api-key"
 CONNECTION_STRING_SECRET = "connection-string"
@@ -127,7 +127,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
         self.dd_site = get_config_option(DD_SITE_SETTING)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
-        self.control_plane_id = get_config_option(CONTROL_PLANE_ID)
+        self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
         self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
         self.resource_group = resource_group
         self.subscription_id = subscription_id
@@ -247,8 +247,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                                 EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
                                 EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
                                 EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
-                                EnvironmentVar(name=CONTROL_PLANE_ID, value=self.control_plane_id),
-                                EnvironmentVar(name=CONFIG_ID, value=config_id),
+                                EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
+                                EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
                             ],
                         )
                     ],
