@@ -1,5 +1,4 @@
 # stdlib
-from enum import StrEnum
 from os import environ
 from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
 
