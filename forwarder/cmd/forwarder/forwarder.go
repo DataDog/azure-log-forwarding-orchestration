@@ -234,7 +234,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 }
 
 func main() {
-	apmEnabled := environment.Enabled("DD_ENABLE_APM")
+	apmEnabled := environment.ApmEnabled()
 
 	if apmEnabled {
 		tracer.Start()
