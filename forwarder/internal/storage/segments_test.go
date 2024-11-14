@@ -40,7 +40,7 @@ func TestDownloadSegment(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		blob := storage.Blob{
-			Container:     containerName,
+			Container:     storage.Container{Name: containerName},
 			Name:          blobName,
 			ContentLength: int64(len(want)),
 		}
@@ -73,7 +73,7 @@ func TestDownloadSegment(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		blob := storage.Blob{
-			Container:     containerName,
+			Container:     storage.Container{Name: containerName},
 			Name:          blobName,
 			ContentLength: 5,
 		}

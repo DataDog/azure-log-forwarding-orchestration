@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"iter"
-
-	log "github.com/sirupsen/logrus"
+	"strings"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	log "github.com/sirupsen/logrus"
 
 	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -22,6 +22,11 @@ import (
 // Container represents a container in a Storage Account.
 type Container struct {
 	Name string
+}
+
+func (c *Container) Category() string {
+	parts := strings.Split(c.Name, "-")
+	return parts[len(parts)-1]
 }
 
 // GetContainersMatchingPrefix returns an iterator over a sequence of containers with a given prefix.

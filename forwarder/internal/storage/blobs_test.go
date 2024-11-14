@@ -11,14 +11,15 @@ import (
 	"testing"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	// 3p
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/go-autorest/autorest/to"
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	// project
@@ -46,7 +47,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func listBlobs(t *testing.T, ctx context.Context, containerName string, responses [][]*container.BlobItem, fetcherError error) []storage.Blob {
+func listBlobs(t *testing.T, ctx context.Context, blobContainer storage.Container, responses [][]*container.BlobItem, fetcherError error) []storage.Blob {
 	ctrl := gomock.NewController(t)
 
 	handler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
@@ -54,7 +55,7 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
 
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
-	mockClient.EXPECT().NewListBlobsFlatPager(containerName, gomock.Any()).Return(pager)
+	mockClient.EXPECT().NewListBlobsFlatPager(blobContainer.Name, gomock.Any()).Return(pager)
 
 	client := storage.NewClient(mockClient)
 
@@ -64,7 +65,7 @@ func listBlobs(t *testing.T, ctx context.Context, containerName string, response
 	logger.SetOutput(buffer)
 
 	var blobs []storage.Blob
-	it := client.ListBlobs(ctx, containerName, log.NewEntry(logger))
+	it := client.ListBlobs(ctx, blobContainer, log.NewEntry(logger))
 	for item := range it {
 		blobs = append(blobs, item)
 	}
@@ -83,7 +84,7 @@ func TestListBlobs(t *testing.T) {
 		}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, [][]*container.BlobItem{firstPage}, nil)
+		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, [][]*container.BlobItem{firstPage}, nil)
 
 		// THEN
 		assert.Len(t, results, 2)
@@ -97,7 +98,7 @@ func TestListBlobs(t *testing.T) {
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, nil)
+		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, blobs, nil)
 
 		// THEN
 		assert.Len(t, results, 0)
@@ -112,7 +113,7 @@ func TestListBlobs(t *testing.T) {
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, blobs, fetcherError)
+		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, blobs, fetcherError)
 
 		// THEN
 		assert.Len(t, results, 0)
@@ -131,7 +132,7 @@ func TestListBlobs(t *testing.T) {
 		pages := [][]*container.BlobItem{firstPage, secondPage}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.LogContainerPrefix, pages, nil)
+		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, pages, nil)
 
 		// THEN
 		assert.Len(t, results, 2)
@@ -230,7 +231,7 @@ func TestAppendBlob(t *testing.T) {
 
 func getBlob(creationTime time.Time) storage.Blob {
 	return storage.Blob{
-		Container:    "container",
+		Container:    storage.Container{Name: "container"},
 		Name:         "blob",
 		CreationTime: creationTime,
 	}
@@ -276,5 +277,39 @@ func TestCurrent(t *testing.T) {
 
 		// THEN
 		assert.False(t, current)
+	})
+}
+
+func TestResourceId(t *testing.T) {
+	t.Parallel()
+
+	t.Run("legit blob name results in a valid resource id", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blobName := "resourceId=/subscriptions/123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
+		blob := storage.Blob{Name: blobName}
+
+		// WHEN
+		resourceId, err := blob.ResourceId()
+		require.NoError(t, err)
+		parsedId, err := arm.ParseResourceID(resourceId)
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Equal(t, parsedId.ResourceGroupName, "rg")
+		assert.Equal(t, parsedId.SubscriptionID, "123")
+	})
+
+	t.Run("short blob name throws an error", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := storage.Blob{Name: "test"}
+
+		// WHEN
+		_, err := blob.ResourceId()
+
+		// THEN
+		assert.ErrorIs(t, err, storage.ErrInvalidResourceId)
+		assert.Contains(t, err.Error(), "test")
 	})
 }

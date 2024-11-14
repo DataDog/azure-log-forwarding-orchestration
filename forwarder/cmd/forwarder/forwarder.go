@@ -49,7 +49,7 @@ const initialBufferSize = 1024 * 1024 * 5
 const newlineBytes = 2
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset := cursors.GetCursor(blob.Container, blob.Name)
+	currentOffset := cursors.GetCursor(blob.Container.Name, blob.Name)
 	if currentOffset == blob.ContentLength {
 		// Cursor is at the end of the blob, no need to process
 		return nil
@@ -62,15 +62,15 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	writtenBytes, err := parseLogs(content.Reader, logsChannel)
+	writtenBytes, err := parseLogs(blob, content.Reader, logsChannel)
 
 	// we have processed and submitted logs up to currentOffset+int64(writtenBytes) whether the error is nil or not
-	cursors.SetCursor(blob.Container, blob.Name, currentOffset+int64(writtenBytes))
+	cursors.SetCursor(blob.Container.Name, blob.Name, currentOffset+int64(writtenBytes))
 
 	return err
 }
 
-func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) {
+func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) {
 	var processedBytes int
 	scanner := bufio.NewScanner(reader)
 
@@ -80,13 +80,8 @@ func parseLogs(reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) 
 
 	for scanner.Scan() {
 		currBytes := scanner.Bytes()
-		currLog, err := logs.NewLog(currBytes)
+		currLog, err := logs.NewLog(blob, currBytes)
 		if err != nil {
-			if errors.Is(err, logs.ErrIncompleteLog) {
-				// azure has not finished writing the file
-				// we should stop processing
-				break
-			}
 			return processedBytes, err
 		}
 
@@ -199,7 +194,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	downloadEg, segmentCtx := errgroup.WithContext(ctx)
 	downloadEg.SetLimit(channelSize)
 	for c := range containers {
-		blobs := storageClient.ListBlobs(ctx, c.Name, logger)
+		blobs := storageClient.ListBlobs(ctx, c, logger)
 
 		// Per blob spawn goroutine to download and transform
 		for blob := range blobs {
