@@ -1,5 +1,7 @@
 {
-    "mypy-type-checker.args": [
-        "--config-file=~/dd/azure-log-forwarding-orchestration/control_plane/pyproject.toml"
-    ]
+    "python.testing.pytestArgs": [
+        "."
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true
 }
