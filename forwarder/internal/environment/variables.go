@@ -6,6 +6,6 @@ func Enabled(environmentVariable string) bool {
 	return os.Getenv(environmentVariable) == "true"
 }
 
-func ApmEnabled() bool {
+func APMEnabled() bool {
 	return Enabled("DD_APM_ENABLED")
 }

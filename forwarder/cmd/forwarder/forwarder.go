@@ -229,7 +229,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 }
 
 func main() {
-	apmEnabled := environment.ApmEnabled()
+	apmEnabled := environment.APMEnabled()
 
 	if apmEnabled {
 		tracer.Start()
