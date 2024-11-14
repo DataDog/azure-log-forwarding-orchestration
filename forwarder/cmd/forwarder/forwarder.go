@@ -27,6 +27,7 @@ import (
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
@@ -233,9 +234,9 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 }
 
 func main() {
-	enableAPM := os.Getenv("DD_ENABLE_APM")
+	apmEnabled := environment.Enabled("DD_ENABLE_APM")
 
-	if enableAPM != "" {
+	if apmEnabled {
 		tracer.Start()
 		defer tracer.Stop()
 	}
@@ -269,7 +270,7 @@ func main() {
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.WithFields(log.Fields{"service": serviceName})
 
-	if enableAPM != "" {
+	if apmEnabled {
 		err = profiler.Start(
 			profiler.WithProfileTypes(
 				profiler.CPUProfile,
