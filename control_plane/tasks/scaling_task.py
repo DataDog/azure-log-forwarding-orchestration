@@ -215,10 +215,7 @@ class ScalingTask(Task):
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        config_ids = list(region_config["resources"].values())
-        num_resources_by_forwarder = {
-            config_id: config_ids.count(config_id) for config_id in region_config["configurations"]
-        }
+        await self.ensure_region_forwarders(client, region_config["configurations"])
 
         forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
 
@@ -227,6 +224,12 @@ class ScalingTask(Task):
             return
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
+
+        # count the number of resources after we have onboarded new resources
+        config_ids = list(region_config["resources"].values())
+        num_resources_by_forwarder = {
+            config_id: config_ids.count(config_id) for config_id in region_config["configurations"]
+        }
         did_scale = await self.scale_up_forwarders(
             client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics
         )
@@ -235,6 +238,13 @@ class ScalingTask(Task):
             return
 
         await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
+
+    async def ensure_region_forwarders(self, client: LogForwarderClient, config_ids: Iterable[str]) -> None:
+        """Ensures that all forwarders cache still exist"""
+        for config_id in config_ids:
+            if not all(await client.get_forwarder_resources(config_id)):
+                log.warning("Forwarder %s is is gone, attempting to recreate", config_id)
+                await self.create_log_forwarder(client, config_id)
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]
@@ -271,7 +281,7 @@ class ScalingTask(Task):
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
     ) -> None:
-        """Assigns new resources to the least busy forwarder in the region"""
+        """Assigns new resources to the least busy forwarder in the region, and updates the cache state accordingly"""
         new_resources = set(self.resource_cache[subscription_id][region]) - set(
             self.assignment_cache[subscription_id][region]["resources"]
         )
