@@ -73,8 +73,10 @@ class MockedLogForwarderClient(LogForwarderClient):
 
 
 class TestLogForwarderClient(AsyncTestCase):
-    @patch.dict(environ, containerAppSettings, clear=True)
     async def asyncSetUp(self) -> None:
+        p = patch.dict(environ, containerAppSettings, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
         )
