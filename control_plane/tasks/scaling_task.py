@@ -215,7 +215,7 @@ class ScalingTask(Task):
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        all_forwarders_exist = await self.ensure_region_forwarders(client, region_config["configurations"])
+        all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
         if not all_forwarders_exist:
             return
         forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
@@ -240,13 +240,52 @@ class ScalingTask(Task):
 
         await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
 
-    async def ensure_region_forwarders(self, client: LogForwarderClient, config_ids: Iterable[str]) -> bool:
-        """Ensures that all forwarders cache still exist"""
-        forwarder_resources = {config_id: await client.get_forwarder_resources(config_id) for config_id in config_ids}
+    async def ensure_region_forwarders(self, client: LogForwarderClient, subscription_id: str, region: str) -> bool:
+        """Ensures that all forwarders cache still exist, making the necessary adjustments if they don't
+        returns True if all forwarders exist, False if there are issues
+
+        INVARIANT: Assignment cache is pruned before we execute this. (see `prune_assignment_cache`)"""
+        region_config = self.assignment_cache[subscription_id][region]
+        if not region_config["configurations"]:
+            log.warning("No forwarders found in cache for region %s, recreating", region)
+            self.assignment_cache[subscription_id].pop(region)
+            await self.set_up_region(client, subscription_id, region)
+            return False
+        # fetch log resources
+        forwarder_resources_list = await gather(
+            *(client.get_forwarder_resources(config_id) for config_id in region_config["configurations"])
+        )
+        forwarder_resources = dict(zip(region_config["configurations"], forwarder_resources_list, strict=False))
+
         if all(all(resources) for resources in forwarder_resources.values()):
             # everything is there!
             return True
-        log.warning("uh oh houston we have a problem")  # TODO determine what we wanna do
+
+        # if all forwarders have been deleted, we need to recreate a forwarder, choose the first forwarder for now
+        if all(not all(resources) for resources in forwarder_resources.values()):
+            log.warning("All forwarders gone in region %s, setting up region again", region)
+            self.assignment_cache[subscription_id].pop(region)
+            await self.set_up_region(client, subscription_id, region)
+            return False
+
+        # if there are some partially missing forwarders, delete them from
+        # the cache and move them over to an existing forwarder
+        broken_forwarders = {
+            config_id for config_id, forwarder_resources in forwarder_resources.items() if not all(forwarder_resources)
+        }
+        working_forwarder = next(
+            config_id for config_id, forwarder_resources in forwarder_resources.items() if all(forwarder_resources)
+        )
+        region_config["resources"].update(
+            {
+                resource_id: working_forwarder
+                for resource_id, config_id in region_config["resources"].items()
+                if config_id in broken_forwarders
+            }
+        )
+        for broken_forwarder in broken_forwarders:
+            region_config["configurations"].pop(broken_forwarder)
+
         return False
 
     async def collect_region_forwarder_metrics(
