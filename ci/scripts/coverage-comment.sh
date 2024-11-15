@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -euxo pipefail
+set -uxo pipefail
 
 curl -f -v 'https://pr-commenter.us1.ddbuild.io/internal/cit/pr-comment'\
     -H "$(/bin/authanywhere)"\
