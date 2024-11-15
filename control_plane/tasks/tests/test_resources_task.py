@@ -16,9 +16,9 @@ sub_id2 = "77602a31-36b2-4417-a27c-9071107ca3e6"
 sub1 = mock(subscription_id=sub_id1)
 sub2 = mock(subscription_id=sub_id2)
 
-resource1 = mock(id="res1", location="norwayeast", type="Microsoft.Compute/virtualMachines")
-resource2 = mock(id="res2", location="norwayeast", type="Microsoft.Network/applicationgateways")
-resource3 = mock(id="res3", location="southafricanorth", type="Microsoft.Network/loadBalancers")
+resource1 = mock(id="res1", name="1", location="norwayeast", type="Microsoft.Compute/virtualMachines")
+resource2 = mock(id="res2", name="2", location="norwayeast", type="Microsoft.Network/applicationgateways")
+resource3 = mock(id="res3", name="3", location="southafricanorth", type="Microsoft.Network/loadBalancers")
 
 
 class TestResourcesTask(TaskTestCase):
@@ -169,14 +169,14 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client_mapping = {
             sub_id1: Mock(
                 return_value=async_generator(
-                    mock(id="rEs1", location="norwayeast", type="Microsoft.Compute/virtualMachines"),
-                    mock(id="RES2", location="NORWAYEAST", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="rEs1", name="1", location="norwayeast", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="RES2", name="2", location="NORWAYEAST", type="Microsoft.Compute/virtualMachines"),
                 )
             ),
             sub_id2: Mock(
                 return_value=async_generator(
-                    mock(id="reß3", location="southafricanorth", type="Microsoft.Compute/virtualMachines"),
-                    mock(id="Res4", location="southafricanorth", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="reß3", name="3", location="southafricanorth", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="Res4", name="4", location="southafricanorth", type="Microsoft.Compute/virtualMachines"),
                 )
             ),
         }
@@ -205,3 +205,40 @@ class TestResourcesTask(TaskTestCase):
         }
         await self.run_resources_task({})
         self.assertEqual(self.cache, {sub_id1: {"norwayeast": {"res1", "res2"}}})
+
+    async def test_lfo_resource_is_ignored(self):
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
+        self.resource_client_mapping = {
+            sub_id1: Mock(
+                return_value=async_generator(
+                    mock(
+                        id="/subscriptions/whatever/whatever/dd-lfo-control-12983471",
+                        name="scaling-task-12983471",
+                        location="norwayeast",
+                        type="Microsoft.Web/sites",
+                    ),
+                    resource1,
+                )
+            ),
+            sub_id2: Mock(
+                return_value=async_generator(
+                    resource3,
+                    mock(
+                        id="/subscriptions/whatever/whatever/dd-log-forwarder-env-12314535",
+                        name="dd-log-forwarder-env-12314535",
+                        location="southafricanorth",
+                        type="Microsoft.App/managedEnvironments",
+                    ),
+                )
+            ),
+        }
+
+        await self.run_resources_task({})
+
+        self.assertEqual(
+            self.cache,
+            {
+                sub_id1: {"norwayeast": {"res1"}},
+                sub_id2: {"southafricanorth": {"res3"}},
+            },
+        )

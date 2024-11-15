@@ -2,7 +2,7 @@
 from asyncio import gather, run
 from json import dumps
 from logging import DEBUG, basicConfig, getLogger
-from typing import cast
+from typing import Final, cast
 
 # 3p
 from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
@@ -17,13 +17,40 @@ from cache.resources_cache import (
     deserialize_resource_cache,
     prune_resource_cache,
 )
-from tasks.common import collect, now
+from tasks.common import (
+    DIAGNOSTIC_SETTINGS_TASK_PREFIX,
+    MANAGED_ENVIRONMENT_PREFIX,
+    RESOURCES_TASK_PREFIX,
+    SCALING_TASK_PREFIX,
+    collect,
+    now,
+)
 from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
 
 log = getLogger(RESOURCES_TASK_NAME)
+
+# we only need to ignore forwardable resource types here, since others will be filtered by type.
+IGNORED_LFO_PREFIXES: Final = frozenset(
+    {
+        MANAGED_ENVIRONMENT_PREFIX,
+        SCALING_TASK_PREFIX,
+        RESOURCES_TASK_PREFIX,
+        DIAGNOSTIC_SETTINGS_TASK_PREFIX,
+        # STORAGE_ACCOUNT_PREFIX, # TODO (AZINTS-2763): add these in once we implement adding storage accounts
+        # CONTROL_PLANE_STORAGE_PREFIX,
+    }
+)
+
+
+def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
+    return (
+        region not in ALLOWED_REGIONS
+        or resource_type not in ALLOWED_RESOURCE_TYPES
+        or any(resource_name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
+    )
 
 
 class ResourcesTask(Task):
@@ -59,8 +86,7 @@ class ResourcesTask(Task):
             resource_count = 0
             async for r in client.resources.list():
                 region = cast(str, r.location).casefold()
-                resource_type = cast(str, r.type).casefold()
-                if region not in ALLOWED_REGIONS or resource_type not in ALLOWED_RESOURCE_TYPES:
+                if should_ignore_resource(region, cast(str, r.type).casefold(), cast(str, r.name).casefold()):
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id).casefold())
                 resource_count += 1
