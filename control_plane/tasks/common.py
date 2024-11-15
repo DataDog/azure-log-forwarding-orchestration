@@ -19,6 +19,10 @@ CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
 MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 
+# TODO We will need to add prefixes for these when we implement event hub support
+EVENT_HUB_NAME_PREFIX: Final = NotImplemented
+EVENT_HUB_NAMESPACE_PREFIX: Final = NotImplemented
+
 
 def get_container_app_name(config_id: str) -> str:
     return CONTAINER_APP_PREFIX + config_id
@@ -58,6 +62,14 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
         + "/providers/microsoft.storage/storageaccounts/"
         + get_storage_account_name(config_id)
     ).casefold()
+
+
+def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
+    return EVENT_HUB_NAME_PREFIX + config_id  # type: ignore
+
+
+def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
+    return EVENT_HUB_NAMESPACE_PREFIX + config_id  # type: ignore
 
 
 def now() -> str:

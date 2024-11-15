@@ -29,18 +29,6 @@ def get_config_option(name: str) -> str:
 EVENT_HUB_TYPE: Final = "eventhub"
 STORAGE_ACCOUNT_TYPE: Final = "storageaccount"
 
-# TODO We will need to add prefixes for these when we implement event hub support
-EVENT_HUB_NAME_PREFIX = NotImplemented
-EVENT_HUB_NAMESPACE_PREFIX = NotImplemented
-
-
-def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
-    return EVENT_HUB_NAME_PREFIX + config_id  # type: ignore
-
-
-def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
-    return EVENT_HUB_NAMESPACE_PREFIX + config_id  # type: ignore
-
 
 LogForwarderType = Literal["eventhub", "storageaccount"]
 

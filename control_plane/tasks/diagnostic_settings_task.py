@@ -18,12 +18,12 @@ from cache.common import (
     InvalidCacheError,
     LogForwarderType,
     get_config_option,
-    get_event_hub_name,
-    get_event_hub_namespace,
     read_cache,
 )
 from tasks.common import (
     collect,
+    get_event_hub_name,
+    get_event_hub_namespace,
     get_resource_group_id,
     get_storage_account_id,
     now,
