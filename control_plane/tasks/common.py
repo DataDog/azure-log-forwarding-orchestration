@@ -109,7 +109,7 @@ def create_task_from_awaitable(awaitable: Awaitable[T]) -> Task[T]:
     """Turns an awaitable object into an asyncio Task,
     which starts it immediately and it can be awaited later"""
 
-    async def _f():
+    async def _f() -> T:
         return await awaitable
 
     return create_task(_f())
