@@ -18,13 +18,16 @@ from cache.common import (
     InvalidCacheError,
     LogForwarderType,
     get_config_option,
+    read_cache,
+)
+from tasks.common import (
+    collect,
     get_event_hub_name,
     get_event_hub_namespace,
     get_resource_group_id,
     get_storage_account_id,
-    read_cache,
+    now,
 )
-from tasks.common import collect, now
 from tasks.task import Task
 
 # silence azure logging except for errors

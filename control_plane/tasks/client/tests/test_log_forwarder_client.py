@@ -13,7 +13,9 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError
 
 # project
-from cache.common import (
+from cache.metric_blob_cache import MetricBlobEntry
+from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
+from tasks.common import (
     CONTAINER_APP_PREFIX,
     MANAGED_ENVIRONMENT_PREFIX,
     STORAGE_ACCOUNT_PREFIX,
@@ -21,9 +23,13 @@ from cache.common import (
     get_managed_env_name,
     get_storage_account_name,
 )
-from cache.metric_blob_cache import MetricBlobEntry
-from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
-from tasks.tests.common import AsyncMockClient, AsyncTestCase, AzureModelMatcher, async_generator, mock
+from tasks.tests.common import (
+    AsyncMockClient,
+    AsyncTestCase,
+    AzureModelMatcher,
+    async_generator,
+    mock,
+)
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"

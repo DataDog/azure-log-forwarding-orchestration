@@ -11,10 +11,6 @@ from cache.common import (
     STORAGE_CONNECTION_SETTING,
     MissingConfigOptionError,
     get_config_option,
-    get_container_app_id,
-    get_managed_env_id,
-    get_resource_group_id,
-    get_storage_account_id,
     read_cache,
     write_cache,
 )
@@ -31,34 +27,6 @@ class TestCommon(TestCase):
             get_config_option("missing_option")
 
         self.assertEqual(str(ctx.exception), "Missing required configuration option: missing_option")
-
-    def test_get_resource_group_id(self):
-        self.assertEqual(
-            "/subscriptions/sub1/resourcegroups/rg1",
-            get_resource_group_id("sub1", "rg1"),
-        )
-        self.assertTrue(get_resource_group_id("UpperCaseSub", "SomeUpperCaseRG").islower())
-
-    def test_get_container_app_id(self):
-        self.assertEqual(
-            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.app/jobs/dd-log-forwarder-config1",
-            get_container_app_id(sub1, rg1, config1),
-        )
-        self.assertTrue(get_container_app_id("UpperCaseSub", "SomeUpperCaseRG", config1).islower())
-
-    def test_get_managed_env_id(self):
-        self.assertEqual(
-            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-config1",
-            get_managed_env_id(sub1, rg1, config1),
-        )
-        self.assertTrue(get_managed_env_id("UpperCaseSub", "SomeUpperCaseRG", config1).islower())
-
-    def test_get_storage_account_id(self):
-        self.assertEqual(
-            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.storage/storageaccounts/ddlogstorageconfig1",
-            get_storage_account_id(sub1, rg1, config1),
-        )
-        self.assertTrue(get_storage_account_id("UpperCaseSub", "SomeUpperCaseRG", config1).islower())
 
 
 class TestCacheUtils(IsolatedAsyncioTestCase):

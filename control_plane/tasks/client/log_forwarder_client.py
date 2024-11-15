@@ -61,19 +61,23 @@ from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
 from cache.common import (
-    CONTAINER_APP_PREFIX,
-    MANAGED_ENVIRONMENT_PREFIX,
-    STORAGE_ACCOUNT_PREFIX,
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
     get_config_option,
+)
+from cache.metric_blob_cache import MetricBlobEntry
+from tasks.common import (
+    CONTAINER_APP_PREFIX,
+    MANAGED_ENVIRONMENT_PREFIX,
+    STORAGE_ACCOUNT_PREFIX,
+    Resource,
+    collect,
     get_container_app_name,
     get_managed_env_id,
     get_managed_env_name,
     get_storage_account_name,
+    log_errors,
 )
-from cache.metric_blob_cache import MetricBlobEntry
-from tasks.common import Resource, collect, log_errors
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
