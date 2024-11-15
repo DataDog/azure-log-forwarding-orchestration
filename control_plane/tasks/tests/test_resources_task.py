@@ -16,9 +16,9 @@ sub_id2 = "77602a31-36b2-4417-a27c-9071107ca3e6"
 sub1 = mock(subscription_id=sub_id1)
 sub2 = mock(subscription_id=sub_id2)
 
-resource1 = mock(id="res1", location="region1", type="Microsoft.Compute/virtualMachines")
-resource2 = mock(id="res2", location="region1", type="Microsoft.Network/applicationgateways")
-resource3 = mock(id="res3", location="region2", type="Microsoft.Network/loadBalancers")
+resource1 = mock(id="res1", location="norwayeast", type="Microsoft.Compute/virtualMachines")
+resource2 = mock(id="res2", location="norwayeast", type="Microsoft.Network/applicationgateways")
+resource3 = mock(id="res3", location="southafricanorth", type="Microsoft.Network/loadBalancers")
 
 
 class TestResourcesTask(TaskTestCase):
@@ -62,7 +62,9 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertEqual(self.cache, {sub_id1: {"region1": {"res1", "res2"}}, sub_id2: {"region2": {"res3"}}})
+        self.assertEqual(
+            self.cache, {sub_id1: {"norwayeast": {"res1", "res2"}}, sub_id2: {"southafricanorth": {"res3"}}}
+        )
 
     async def test_empty_cache_adds_resources(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
@@ -75,7 +77,9 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertEqual(self.cache, {sub_id1: {"region1": {"res1", "res2"}}, sub_id2: {"region2": {"res3"}}})
+        self.assertEqual(
+            self.cache, {sub_id1: {"norwayeast": {"res1", "res2"}}, sub_id2: {"southafricanorth": {"res3"}}}
+        )
 
     async def test_no_new_resources_doesnt_cache(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
@@ -85,8 +89,8 @@ class TestResourcesTask(TaskTestCase):
         }
         await self.run_resources_task(
             {
-                sub_id1: {"region1": {"res1", "res2"}},
-                sub_id2: {"region2": {"res3"}},
+                sub_id1: {"norwayeast": {"res1", "res2"}},
+                sub_id2: {"southafricanorth": {"res3"}},
             }
         )
 
@@ -100,8 +104,8 @@ class TestResourcesTask(TaskTestCase):
         }
         await self.run_resources_task(
             {
-                sub_id1: {"region2": {"res1", "res2"}},
-                sub_id2: {"region1": {"res3"}},
+                sub_id1: {"southafricanorth": {"res1", "res2"}},
+                sub_id2: {"norwayeast": {"res3"}},
             }
         )
         self.assertEqual(self.cache, {})
@@ -111,8 +115,8 @@ class TestResourcesTask(TaskTestCase):
         # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
         await self.run_resources_task(
             {
-                sub_id1: {"region1": {"res1", "res2"}},
-                sub_id2: {"region2": {"res3"}},
+                sub_id1: {"norwayeast": {"res1", "res2"}},
+                sub_id2: {"southafricanorth": {"res3"}},
             }
         )
         self.assertEqual(self.cache, {})
@@ -128,25 +132,25 @@ class TestResourcesTask(TaskTestCase):
             sub_id2: Mock(return_value=async_generator(resource3)),
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {sub_id1: {"region1": {"res2"}}, sub_id2: {"region2": {"res3"}}})
+        self.assertEqual(self.cache, {sub_id1: {"norwayeast": {"res2"}}, sub_id2: {"southafricanorth": {"res3"}}})
 
     async def test_unsupported_resource_types_ignored(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
             sub_id1: Mock(
                 return_value=async_generator(
-                    mock(id="res1", location="region1", type="Microsoft.Compute/Snapshots"),
+                    mock(id="res1", location="norwayeast", type="Microsoft.Compute/Snapshots"),
                     resource2,
                 )
             ),
             sub_id2: Mock(
                 return_value=async_generator(
-                    mock(id="res3", location="region2", type="Microsoft.AlertsManagement/PrometheusRuleGroups")
+                    mock(id="res3", location="southafricanorth", type="Microsoft.AlertsManagement/PrometheusRuleGroups")
                 )
             ),
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {sub_id1: {"region1": {"res2"}}})
+        self.assertEqual(self.cache, {sub_id1: {"norwayeast": {"res2"}}})
 
     async def test_unexpected_failure_skips_cache_write(self):
         write_caches = self.patch("ResourcesTask.write_caches")
@@ -154,8 +158,8 @@ class TestResourcesTask(TaskTestCase):
         with self.assertRaises(UnexpectedException):
             await self.run_resources_task(
                 {
-                    sub_id1: {"region1": {"res1", "res2"}},
-                    sub_id2: {"region2": {"res3"}},
+                    sub_id1: {"norwayeast": {"res1", "res2"}},
+                    sub_id2: {"southafricanorth": {"res3"}},
                 }
             )
         write_caches.assert_not_awaited()
@@ -165,30 +169,30 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client_mapping = {
             sub_id1: Mock(
                 return_value=async_generator(
-                    mock(id="rEs1", location="Region1", type="Microsoft.Compute/virtualMachines"),
-                    mock(id="RES2", location="REGION1", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="rEs1", location="norwayeast", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="RES2", location="NORWAYEAST", type="Microsoft.Compute/virtualMachines"),
                 )
             ),
             sub_id2: Mock(
                 return_value=async_generator(
-                    mock(id="reß3", location="regIon2", type="Microsoft.Compute/virtualMachines"),
-                    mock(id="Res4", location="reGION2", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="reß3", location="southafricanorth", type="Microsoft.Compute/virtualMachines"),
+                    mock(id="Res4", location="southafricanorth", type="Microsoft.Compute/virtualMachines"),
                 )
             ),
         }
 
         await self.run_resources_task(
             {
-                sub_id1: {"region1": {"res1", "res2"}},
-                sub_id2: {"region2": {"ress3"}},
+                sub_id1: {"norwayeast": {"res1", "res2"}},
+                sub_id2: {"southafricanorth": {"ress3"}},
             }
         )
 
         self.assertEqual(
             self.cache,
             {
-                sub_id1: {"region1": {"res1", "res2"}},
-                sub_id2: {"region2": {"ress3", "res4"}},
+                sub_id1: {"norwayeast": {"res1", "res2"}},
+                sub_id2: {"southafricanorth": {"ress3", "res4"}},
             },
         )
 
@@ -200,4 +204,4 @@ class TestResourcesTask(TaskTestCase):
             sub_id3: Mock(return_value=async_generator(resource3)),
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {sub_id1: {"region1": {"res1", "res2"}}})
+        self.assertEqual(self.cache, {sub_id1: {"norwayeast": {"res1", "res2"}}})
