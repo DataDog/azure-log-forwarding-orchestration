@@ -9,15 +9,17 @@ from uuid import uuid4
 log = getLogger(__name__)
 
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
-CONTROL_PLANE_STORAGE_PREFIX: Final = "ddlfocontrol"
+CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "ddlfocontrol"
 SCALING_TASK_PREFIX: Final = "scaling-task-"
 RESOURCES_TASK_PREFIX: Final = "resources-task-"
 DIAGNOSTIC_SETTINGS_TASK_PREFIX: Final = "diagnostic-settings-task-"
 
 
-CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
-MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
-STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
+FORWARDER_CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
+FORWARDER_MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
+FORWARDER_STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
+
+DEPLOYER_MANAGED_ENVIRONMENT_NAME: Final = "deployer-task-env-"
 
 # TODO We will need to add prefixes for these when we implement event hub support
 EVENT_HUB_NAME_PREFIX: Final = NotImplemented
@@ -25,7 +27,7 @@ EVENT_HUB_NAMESPACE_PREFIX: Final = NotImplemented
 
 
 def get_container_app_name(config_id: str) -> str:
-    return CONTAINER_APP_PREFIX + config_id
+    return FORWARDER_CONTAINER_APP_PREFIX + config_id
 
 
 def get_resource_group_id(subscription_id: str, resource_group: str) -> str:
@@ -41,7 +43,7 @@ def get_container_app_id(subscription_id: str, resource_group: str, config_id: s
 
 
 def get_managed_env_name(config_id: str) -> str:
-    return MANAGED_ENVIRONMENT_PREFIX + config_id
+    return FORWARDER_MANAGED_ENVIRONMENT_PREFIX + config_id
 
 
 def get_managed_env_id(subscription_id: str, resource_group: str, config_id: str) -> str:
@@ -53,7 +55,7 @@ def get_managed_env_id(subscription_id: str, resource_group: str, config_id: str
 
 
 def get_storage_account_name(config_id: str) -> str:
-    return STORAGE_ACCOUNT_PREFIX + config_id
+    return FORWARDER_STORAGE_ACCOUNT_PREFIX + config_id
 
 
 def get_storage_account_id(subscription_id: str, resource_group: str, config_id: str) -> str:
