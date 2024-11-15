@@ -54,6 +54,7 @@ func (c *Client) CreateContainer(ctx context.Context, containerName string) erro
 	if err != nil {
 		responseError := &azcore.ResponseError{}
 		errors.As(err, &responseError)
+		// 409 is the status code for container already exists
 		if responseError.RawResponse != nil && responseError.RawResponse.StatusCode == 409 {
 			return nil
 		}

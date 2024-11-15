@@ -4,7 +4,6 @@ import (
 	// stdlib
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -47,6 +46,12 @@ const initialBufferSize = 1024 * 1024 * 5
 
 // newlineBytes is the number of bytes in a newline character in utf-8.
 const newlineBytes = 2
+
+// resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
+type resourceBytes struct {
+	resourceId string
+	bytes      int64
+}
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
 	currentOffset := cursors.GetCursor(blob.Container.Name, blob.Name)
@@ -92,7 +97,7 @@ func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs
 	return processedBytes, nil
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
@@ -103,6 +108,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 			logger.Warning(invalidLogError.Error())
 		}
 		err = errors.Join(err, currErr)
+		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: int64(logItem.Length())}
 	}
 	flushErr := logsClient.Flush(ctx)
 	err = errors.Join(err, flushErr)
@@ -117,11 +123,24 @@ func getLogVolume(resourceIdCh <-chan string) map[string]int64 {
 	return resourceVolumes
 }
 
-func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, startTime time.Time) (int, error) {
+func getLogBytes(resourceBytesCh <-chan resourceBytes) map[string]int64 {
+	var resourceBytesMap = make(map[string]int64)
+	for bytes := range resourceBytesCh {
+		if _, ok := resourceBytesMap[bytes.resourceId]; !ok {
+			resourceBytesMap[bytes.resourceId] = bytes.bytes
+			continue
+		}
+		resourceBytesMap[bytes.resourceId] += bytes.bytes
+	}
+	return resourceBytesMap
+}
+
+func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, resourceBytes map[string]int64, startTime time.Time) (int, error) {
 	metricBlob := metrics.MetricEntry{
 		Timestamp:          time.Now().Unix(),
 		RuntimeSeconds:     time.Since(startTime).Seconds(),
 		ResourceLogVolumes: resourceVolumes,
+		ResourceLogBytes:   resourceBytes,
 	}
 
 	metricBuffer, err := metricBlob.ToBytes()
@@ -132,7 +151,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 
 	blobName := metrics.GetMetricFileName(time.Now())
 
-	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
+	err = storageClient.AppendBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
 
 	logCount := 0
 	for _, v := range resourceVolumes {
@@ -170,6 +189,8 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	var resourceVolumes map[string]int64
 	logCh := make(chan *logs.Log, channelSize)
 	resourceIdCh := make(chan string, channelSize)
+	var resourceBytesMap map[string]int64
+	resourceBytesCh := make(chan resourceBytes, channelSize)
 
 	// Spawn log volume processing goroutine
 	logVolumeEg, _ := errgroup.WithContext(ctx)
@@ -178,11 +199,18 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 		return nil
 	})
 
+	// Spawn log bytes processing goroutine
+	logBytesEg, _ := errgroup.WithContext(ctx)
+	logBytesEg.Go(func() error {
+		resourceBytesMap = getLogBytes(resourceBytesCh)
+		return nil
+	})
+
 	// Spawn log processing goroutines
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh)
+			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
 		})
 	}
 
@@ -215,13 +243,15 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	err = errors.Join(err, logsEg.Wait())
 	close(resourceIdCh)
 	err = errors.Join(err, logVolumeEg.Wait())
+	close(resourceBytesCh)
+	err = errors.Join(err, logBytesEg.Wait())
 
 	// Save cursors
 	cursorErr := cursors.SaveCursors(ctx, storageClient)
 	err = errors.Join(err, cursorErr)
 
 	// Write forwarder metrics
-	logCount, metricErr := writeMetrics(ctx, storageClient, resourceVolumes, start)
+	logCount, metricErr := writeMetrics(ctx, storageClient, resourceVolumes, resourceBytesMap, start)
 	err = errors.Join(err, metricErr)
 
 	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
@@ -322,22 +352,6 @@ func main() {
 	}
 
 	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
-
-	resourceVolumeMap := make(map[string]int64)
-	metricBlob := metrics.MetricEntry{
-		Timestamp:          time.Now().Unix(),
-		RuntimeSeconds:     time.Since(start).Seconds(),
-		ResourceLogVolumes: resourceVolumeMap,
-	}
-	metricBuffer, err := json.Marshal(metricBlob)
-
-	if err != nil {
-		logger.Fatalf(fmt.Errorf("error while marshalling metrics: %w", err).Error())
-	}
-
-	blobName := metrics.GetMetricFileName(time.Now())
-
-	err = storageClient.UploadBlob(ctx, storage.ForwarderContainer, blobName, metricBuffer)
 
 	err = errors.Join(runErr, err)
 

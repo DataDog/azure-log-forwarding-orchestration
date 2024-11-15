@@ -160,8 +160,7 @@ func TestAppendBlob(t *testing.T) {
 		stringReadCloser := io.NopCloser(stringReader)
 		downResp := azblob.DownloadStreamResponse{}
 		downResp.Body = stringReadCloser
-		expectedBuffer := append(oldBuffer, []byte("\n")...)
-		expectedBuffer = append(expectedBuffer, buffer...)
+		expectedBuffer := append(oldBuffer, buffer...)
 
 		mockClient.EXPECT().DownloadStream(gomock.Any(), containerName, blobName, gomock.Any()).Return(downResp, nil)
 		mockClient.EXPECT().CreateContainer(gomock.Any(), containerName, gomock.Any()).Return(azblob.CreateContainerResponse{}, nil)
