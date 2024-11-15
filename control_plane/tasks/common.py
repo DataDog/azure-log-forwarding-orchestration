@@ -23,19 +23,6 @@ STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 EVENT_HUB_NAME_PREFIX: Final = NotImplemented
 EVENT_HUB_NAMESPACE_PREFIX: Final = NotImplemented
 
-ALL_LFO_PREFIXES: Final = frozenset(
-    [
-        CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX,
-        CONTROL_PLANE_STORAGE_PREFIX,
-        SCALING_TASK_PREFIX,
-        RESOURCES_TASK_PREFIX,
-        DIAGNOSTIC_SETTINGS_TASK_PREFIX,
-        CONTAINER_APP_PREFIX,
-        MANAGED_ENVIRONMENT_PREFIX,
-        STORAGE_ACCOUNT_PREFIX,
-    ]
-)
-
 
 def get_container_app_name(config_id: str) -> str:
     return CONTAINER_APP_PREFIX + config_id

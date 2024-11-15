@@ -205,3 +205,40 @@ class TestResourcesTask(TaskTestCase):
         }
         await self.run_resources_task({})
         self.assertEqual(self.cache, {sub_id1: {"norwayeast": {"res1", "res2"}}})
+
+    async def test_lfo_resource_is_ignored(self):
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
+        self.resource_client_mapping = {
+            sub_id1: Mock(
+                return_value=async_generator(
+                    mock(
+                        id="/subscriptions/whatever/whatever/dd-lfo-control-12983471",
+                        name="scaling-task-12983471",
+                        location="norwayeast",
+                        type="Microsoft.Web/sites",
+                    ),
+                    resource1,
+                )
+            ),
+            sub_id2: Mock(
+                return_value=async_generator(
+                    resource3,
+                    mock(
+                        id="/subscriptions/whatever/whatever/dd-log-forwarder-env-12314535",
+                        name="dd-log-forwarder-env-12314535",
+                        location="southafricanorth",
+                        type="Microsoft.App/managedEnvironments",
+                    ),
+                )
+            ),
+        }
+
+        await self.run_resources_task({})
+
+        self.assertEqual(
+            self.cache,
+            {
+                sub_id1: {"norwayeast": {"res1"}},
+                sub_id2: {"southafricanorth": {"res3"}},
+            },
+        )
