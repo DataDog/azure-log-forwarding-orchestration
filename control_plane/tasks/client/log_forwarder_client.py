@@ -67,9 +67,9 @@ from cache.common import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.common import (
-    CONTAINER_APP_PREFIX,
-    MANAGED_ENVIRONMENT_PREFIX,
-    STORAGE_ACCOUNT_PREFIX,
+    FORWARDER_CONTAINER_APP_PREFIX,
+    FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
+    FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
     collect,
     get_container_app_name,
@@ -451,7 +451,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return {resource.name.removeprefix(prefix) for resource in it if resource.name.startswith(prefix)}
 
         return (
-            _get_forwarder_config_ids(cast(Iterable[Resource], jobs), CONTAINER_APP_PREFIX)
-            | _get_forwarder_config_ids(cast(Iterable[Resource], envs), MANAGED_ENVIRONMENT_PREFIX)
-            | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), STORAGE_ACCOUNT_PREFIX)
+            _get_forwarder_config_ids(cast(Iterable[Resource], jobs), FORWARDER_CONTAINER_APP_PREFIX)
+            | _get_forwarder_config_ids(cast(Iterable[Resource], envs), FORWARDER_MANAGED_ENVIRONMENT_PREFIX)
+            | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), FORWARDER_STORAGE_ACCOUNT_PREFIX)
         )

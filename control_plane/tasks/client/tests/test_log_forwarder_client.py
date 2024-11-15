@@ -16,9 +16,9 @@ from tenacity import RetryError
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import MAX_ATTEMPS, LogForwarderClient
 from tasks.common import (
-    CONTAINER_APP_PREFIX,
-    MANAGED_ENVIRONMENT_PREFIX,
-    STORAGE_ACCOUNT_PREFIX,
+    FORWARDER_CONTAINER_APP_PREFIX,
+    FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
+    FORWARDER_STORAGE_ACCOUNT_PREFIX,
     get_container_app_name,
     get_managed_env_name,
     get_storage_account_name,
@@ -37,9 +37,9 @@ WEST_US = "westus"
 config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
-managed_env_name = MANAGED_ENVIRONMENT_PREFIX + config_id
-container_app_name = CONTAINER_APP_PREFIX + config_id
-storage_account_name = STORAGE_ACCOUNT_PREFIX + config_id
+managed_env_name = FORWARDER_MANAGED_ENVIRONMENT_PREFIX + config_id
+container_app_name = FORWARDER_CONTAINER_APP_PREFIX + config_id
+storage_account_name = FORWARDER_STORAGE_ACCOUNT_PREFIX + config_id
 rg1 = "test_lfo"
 
 

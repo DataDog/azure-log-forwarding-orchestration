@@ -28,7 +28,7 @@ from cache.manifest_cache import (
 )
 from tasks.common import (
     CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX,
-    CONTROL_PLANE_STORAGE_PREFIX,
+    CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
@@ -152,7 +152,7 @@ class DeployerTask(Task):
             storage_accounts={
                 storage.name
                 for storage in cast(list[Resource], storage_accounts)
-                if storage.name.startswith(CONTROL_PLANE_STORAGE_PREFIX)
+                if storage.name.startswith(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX)
             },
             function_apps={
                 task.name
