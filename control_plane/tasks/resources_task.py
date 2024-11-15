@@ -18,15 +18,12 @@ from cache.resources_cache import (
     prune_resource_cache,
 )
 from tasks.common import collect, now
-from tasks.constants import ALLOWED_RESOURCE_TYPES
+from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
 
 log = getLogger(RESOURCES_TASK_NAME)
-
-
-DISALLOWED_REGIONS = {"global"}
 
 
 class ResourcesTask(Task):
@@ -63,7 +60,7 @@ class ResourcesTask(Task):
             async for r in client.resources.list():
                 region = cast(str, r.location).casefold()
                 resource_type = cast(str, r.type).casefold()
-                if region in DISALLOWED_REGIONS or resource_type not in ALLOWED_RESOURCE_TYPES:
+                if region not in ALLOWED_REGIONS or resource_type not in ALLOWED_RESOURCE_TYPES:
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id).casefold())
                 resource_count += 1
