@@ -17,13 +17,21 @@ from cache.resources_cache import (
     deserialize_resource_cache,
     prune_resource_cache,
 )
-from tasks.common import collect, now
+from tasks.common import ALL_LFO_PREFIXES, collect, now
 from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
 
 log = getLogger(RESOURCES_TASK_NAME)
+
+
+def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
+    return (
+        region not in ALLOWED_REGIONS
+        or resource_type not in ALLOWED_RESOURCE_TYPES
+        or any(resource_name.startswith(prefix) for prefix in ALL_LFO_PREFIXES)
+    )
 
 
 class ResourcesTask(Task):
@@ -59,8 +67,7 @@ class ResourcesTask(Task):
             resource_count = 0
             async for r in client.resources.list():
                 region = cast(str, r.location).casefold()
-                resource_type = cast(str, r.type).casefold()
-                if region not in ALLOWED_REGIONS or resource_type not in ALLOWED_RESOURCE_TYPES:
+                if should_ignore_resource(region, cast(str, r.type).casefold(), cast(str, r.name).casefold()):
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id).casefold())
                 resource_count += 1
