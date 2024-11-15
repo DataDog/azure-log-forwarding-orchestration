@@ -26,16 +26,18 @@ from cache.manifest_cache import (
     ManifestKey,
     deserialize_manifest_cache,
 )
-from tasks.common import Resource, collect
+from tasks.common import (
+    CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX,
+    CONTROL_PLANE_STORAGE_PREFIX,
+    DIAGNOSTIC_SETTINGS_TASK_PREFIX,
+    RESOURCES_TASK_PREFIX,
+    SCALING_TASK_PREFIX,
+    Resource,
+    collect,
+)
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"
-
-CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX = "dd-lfo-control-"
-CONTROL_PLANE_STORAGE_PREFIX = "ddlfocontrol"
-SCALING_TASK_PREFIX = "scaling-task-"
-RESOURCES_TASK_PREFIX = "resources-task-"
-DIAGNOSTIC_SETTINGS_TASK_PREFIX = "diagnostic-settings-task-"
 
 
 MAX_ATTEMPTS = 5
