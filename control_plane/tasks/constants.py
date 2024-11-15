@@ -150,3 +150,40 @@ ALLOWED_TYPES_PER_PROVIDER = {
 ALLOWED_RESOURCE_TYPES = {
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 }
+
+
+ALLOWED_REGIONS = {
+    "northcentralusstage",
+    "westus2",
+    "southeastasia",
+    "swedencentral",
+    "canadacentral",
+    "westeurope",
+    "northeurope",
+    "eastus",
+    "eastus2",
+    "eastasia",
+    "australiaeast",
+    "germanywestcentral",
+    "japaneast",
+    "uksouth",
+    "westus",
+    "centralus",
+    "northcentralus",
+    "southcentralus",
+    "koreacentral",
+    "brazilsouth",
+    "westus3",
+    "francecentral",
+    "southafricanorth",
+    "norwayeast",
+    "switzerlandnorth",
+    "uaenorth",
+    "canadaeast",
+    "westcentralus",
+    "ukwest",
+    "centralindia",
+    "italynorth",
+    "polandcentral",
+    "southindia",
+}
