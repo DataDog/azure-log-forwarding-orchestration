@@ -1,10 +1,15 @@
 package logs
 
 import (
+	"bufio"
+	"iter"
+	"math"
+
 	// stdlib
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -19,9 +24,21 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
+// maxBufferSize is the maximum buffer to use for scanning logs.
+// Logs greater than this buffer will be dropped by bufio.Scanner.
+// The buffer is defaulted to the maximum value of an integer.
+const maxBufferSize = math.MaxInt32
+
+// initialBufferSize is the initial buffer size to use for scanning logs.
+const initialBufferSize = 1024 * 1024 * 5
+
+// newlineBytes is the number of bytes in a newline character in utf-8.
+const newlineBytes = 2
+
 // Log represents a log to send to Datadog.
 type Log struct {
 	content    []byte
+	ByteSize   int64
 	ResourceId string
 	Category   string
 	Tags       []string
@@ -172,4 +189,28 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
+}
+
+func ParseLogs(blob storage.Blob, reader io.ReadCloser) iter.Seq2[*Log, error] {
+	scanner := bufio.NewScanner(reader)
+
+	// set buffer size so we can process logs bigger than 65kb
+	buffer := make([]byte, initialBufferSize)
+	scanner.Buffer(buffer, maxBufferSize)
+
+	return func(yield func(*Log, error) bool) {
+		for scanner.Scan() {
+			currBytes := scanner.Bytes()
+			currLog, err := NewLog(blob, currBytes)
+			if err != nil {
+				if !yield(nil, err) {
+					return
+				}
+			}
+			if !yield(currLog, nil) {
+				return
+			}
+		}
+	}
+
 }
