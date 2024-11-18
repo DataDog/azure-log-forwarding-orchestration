@@ -2,8 +2,11 @@ package logs
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"iter"
 	"math"
+	"time"
 
 	// stdlib
 	"context"
@@ -35,28 +38,72 @@ const initialBufferSize = 1024 * 1024 * 5
 // newlineBytes is the number of bytes in a newline character in utf-8.
 const newlineBytes = 2
 
+const functionAppContainer = "insights-logs-functionapplogs"
+
 // Log represents a log to send to Datadog.
 type Log struct {
-	content    []byte
+	content    *[]byte
 	ByteSize   int64
-	ResourceId string
-	Category   string
 	Tags       []string
+	Category   string
+	ResourceId string
+	Time       time.Time
+	Level      string
 }
 
 // IsValid checks if the log is valid to send to Datadog.
 func (l *Log) IsValid() bool {
-	return len(l.content) < MaxPayloadSize
+	return l.ByteSize < MaxPayloadSize
 }
 
 // Content converts the log content to a string.
 func (l *Log) Content() string {
-	return string(l.content)
+	return string(*l.content)
 }
 
 // Length returns the length of the log content.
-func (l *Log) Length() int {
-	return len(l.content)
+func (l *Log) Length() int64 {
+	return l.ByteSize
+}
+
+type azureLog struct {
+	Raw      *[]byte
+	ByteSize int64
+	Category string `json:"category"`
+	//PropertiesA any       `json:"Properties,-"`
+	//PropertiesB any       `json:"properties,-"`
+	ResourceIdA string    `json:"resourceId,omitempty"`
+	ResourceIdB string    `json:"ResourceId,omitempty"`
+	Time        time.Time `json:"time"`
+	Level       string    `json:"level,omitempty"`
+}
+
+func (l *azureLog) ResourceId() string {
+	if l.ResourceIdA != "" {
+		return l.ResourceIdA
+	}
+	return l.ResourceIdB
+}
+
+func (l *azureLog) ToLog() (*Log, error) {
+	parsedId, err := arm.ParseResourceID(l.ResourceId())
+	if err != nil {
+		return nil, err
+	}
+
+	if l.Level == "" {
+		l.Level = "Informational"
+	}
+
+	return &Log{
+		content:    l.Raw,
+		ByteSize:   l.ByteSize,
+		Category:   l.Category,
+		ResourceId: l.ResourceId(),
+		Time:       l.Time,
+		Level:      l.Level,
+		Tags:       getTags(parsedId),
+	}, nil
 }
 
 // ErrIncompleteLog is an error for when a log is incomplete.
@@ -64,26 +111,23 @@ var ErrIncompleteLog = errors.New("received a partial log")
 
 // NewLog creates a new Log from the given log bytes.
 func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
-	if logBytes[len(logBytes)-1] != '}' {
-		return nil, ErrIncompleteLog
+	var err error
+	var currLog *azureLog
+	if blob.Container.Name == functionAppContainer {
+		logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
 	}
+	decoder := json.NewDecoder(bytes.NewReader(logBytes))
+	err = decoder.Decode(&currLog)
 
-	resourceId, err := blob.ResourceId()
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 
-	parsedId, err := arm.ParseResourceID(resourceId)
-	if err != nil {
-		return nil, err
-	}
+	currLog.ByteSize = int64(len(logBytes))
+	currLog.Raw = &logBytes
 
-	return &Log{
-		Category:   blob.Container.Category(),
-		content:    logBytes,
-		ResourceId: resourceId,
-		Tags:       getTags(parsedId),
-	}, nil
+	return currLog.ToLog()
 }
 
 func getTags(id *arm.ResourceID) []string {
@@ -139,7 +183,7 @@ type DatadogLogsSubmitter interface {
 type Client struct {
 	logsSubmitter DatadogLogsSubmitter
 	logsBuffer    []*Log
-	currentSize   int
+	currentSize   int64
 }
 
 // NewClient creates a new Client.
