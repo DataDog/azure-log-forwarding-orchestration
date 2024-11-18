@@ -72,7 +72,7 @@ func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs
 		}
 
 		// bufio.Scanner consumes the new line character so we need to add it back
-		processedBytes += currLog.ByteSize // + newlineBytes
+		processedBytes += currLog.ByteSize
 		logsChannel <- currLog
 	}
 	return processedBytes, err

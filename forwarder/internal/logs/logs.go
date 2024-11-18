@@ -126,7 +126,7 @@ func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
 		return nil, err
 	}
 
-	currLog.ByteSize = int64(len(logBytes))
+	currLog.ByteSize = int64(len(logBytes) + newlineBytes)
 	currLog.Raw = &logBytes
 
 	return currLog.ToLog()

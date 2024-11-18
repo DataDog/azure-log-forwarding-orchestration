@@ -33,10 +33,12 @@ func TestAddLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var payload []*logs.Log
+		prefix := []byte("{\"category\":\"a\",\"key\":\"a")
+		suffix := []byte("a\"}")
 		for range 3 {
-			logBytes := make([]byte, logs.MaxPayloadSize/2-1)
-			logBytes[0] = '{'
-			logBytes[len(logBytes)-1] = '}'
+			logBytes := make([]byte, logs.MaxPayloadSize/2-len(prefix)-len(suffix)-1)
+			logBytes = append(prefix, logBytes...)
+			logBytes = append(logBytes, suffix...)
 			currLog, err := logs.NewLog(storage.Blob{
 				Container: storage.Container{Name: "insights-logs-functionapplogs"},
 				Name:      "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
