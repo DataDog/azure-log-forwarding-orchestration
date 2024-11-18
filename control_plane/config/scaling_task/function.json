@@ -6,7 +6,8 @@
             "name": "timer",
             "type": "timerTrigger",
             "direction": "in",
-            "schedule": "0 */10 * * * *"
+            "schedule": "0 */5 * * * *",
+            "functionTimeout": "00:30:00"
         }
     ]
 }
