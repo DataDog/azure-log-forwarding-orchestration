@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock
+from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -33,7 +33,6 @@ from tasks.tests.common import (
 
 sub_id1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
-WEST_US = "westus"
 config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
@@ -41,6 +40,17 @@ managed_env_name = FORWARDER_MANAGED_ENVIRONMENT_PREFIX + config_id
 container_app_name = FORWARDER_CONTAINER_APP_PREFIX + config_id
 storage_account_name = FORWARDER_STORAGE_ACCOUNT_PREFIX + config_id
 rg1 = "test_lfo"
+
+containerAppSettings: dict[str, str] = {
+    "AzureWebJobsStorage": "connection-string",
+    "DD_API_KEY": "dd-api-key",
+    "DD_APP_KEY": "456456",
+    "DD_SITE": "datadoghq.com",
+    "FORWARDER_IMAGE": "ddlfo.azurecr.io/blobforwarder:latest",
+    "CONTROL_PLANE_REGION": EAST_US,
+    "CONTROL_PLANE_ID": "e90ecb54476d",
+    "SHOULD_SUBMIT_METRICS": "True",
+}
 
 
 class FakeHttpError(HttpResponseError):
@@ -70,16 +80,9 @@ class MockedLogForwarderClient(LogForwarderClient):
 
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
-        environ.clear()
-        self.addCleanup(environ.clear)
-        environ["AzureWebJobsStorage"] = "..."
-        environ["DD_API_KEY"] = "123123"
-        environ["DD_APP_KEY"] = "456456"
-        environ["DD_SITE"] = "datadoghq.com"
-        environ["SHOULD_SUBMIT_METRICS"] = ""
-        environ["FORWARDER_IMAGE"] = "ddlfo.azurecr.io/blobforwarder:latest"
-        environ["CONTROL_PLANE_REGION"] = "eastus"
-
+        p = patch.dict(environ, containerAppSettings, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
         )
