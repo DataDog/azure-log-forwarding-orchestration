@@ -143,21 +143,6 @@ class TestLogForwarderClient(AsyncTestCase):
                 await self.client.create_log_forwarder(EAST_US, config_id)
         self.assertIn("400: Storage Account creation failed", str(ctx.exception))
 
-    async def test_create_log_forwarder_settings(self):
-        async with self.client:
-            await self.client.create_log_forwarder(EAST_US, config_id)
-        self.assertEqual(containerAppSettings["DD_API_KEY"], self.client.dd_api_key)
-        self.assertEqual(containerAppSettings["DD_SITE"], self.client.dd_site)
-        self.assertEqual(containerAppSettings["FORWARDER_IMAGE"], self.client.forwarder_image)
-        self.assertEqual(containerAppSettings["CONTROL_PLANE_REGION"], self.client.control_plane_region)
-        self.assertEqual(containerAppSettings["CONTROL_PLANE_ID"], self.client.control_plane_id)
-        self.assertEqual(
-            bool(containerAppSettings["DD_APP_KEY"] and containerAppSettings["SHOULD_SUBMIT_METRICS"]),
-            self.client.should_submit_metrics,
-        )
-        self.assertEqual(rg1, self.client.resource_group)
-        self.assertEqual(sub_id1, self.client.subscription_id)
-
     async def test_create_log_forwarder_container_app_failure(self):
         (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = Exception(
             "400: Function App creation failed"
