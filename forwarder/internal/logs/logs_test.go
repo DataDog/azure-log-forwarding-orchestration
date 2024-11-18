@@ -1,9 +1,14 @@
 package logs_test
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+
 	// stdlib
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	// 3p
@@ -80,7 +85,7 @@ func TestNewLog(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Equal(t, log.ResourceId, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING")
-		assert.Equal(t, log.Category, "functionapplogs")
+		assert.Equal(t, "FunctionAppLogs", log.Category)
 		assert.Contains(t, log.Tags, "forwarder:lfo")
 		assert.NotNil(t, log)
 
@@ -148,5 +153,83 @@ func TestValid(t *testing.T) {
 
 		// THEN
 		assert.False(t, got)
+	})
+}
+
+func TestParseLogs(t *testing.T) {
+	t.Parallel()
+
+	t.Run("can parse aks logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		workingDir, err := os.Getwd()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/aks_logs.json", workingDir))
+		require.NoError(t, err)
+
+		reader := bytes.NewReader(data)
+		closer := io.NopCloser(reader)
+
+		container := storage.Container{
+			Name: "insights-logs-kube-audit",
+		}
+
+		blob := storage.Blob{
+			Container:     container,
+			ContentLength: int64(len(data)),
+			Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/MIKE-AZURE/PROVIDERS/MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/MIKE-AZURE-AKS/y=2024/m=11/d=15/h=21/m=00/PT1H.json",
+		}
+
+		var got int
+
+		// WHEN
+		for currLog, err := range logs.ParseLogs(blob, closer) {
+			require.NoError(t, err)
+			require.NotEqual(t, "", currLog.Category)
+			require.NotEqual(t, "", currLog.ResourceId)
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, got, 21)
+	})
+
+	t.Run("can parse function app logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		workingDir, err := os.Getwd()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/function_app_logs.json", workingDir))
+		require.NoError(t, err)
+
+		reader := bytes.NewReader(data)
+		closer := io.NopCloser(reader)
+
+		container := storage.Container{
+			Name: "insights-logs-functionapplogs",
+		}
+
+		blob := storage.Blob{
+			Container:     container,
+			ContentLength: int64(len(data)),
+			Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/RG-FUNCTIONS-WITH-GO/PROVIDERS/MICROSOFT.WEB/SITES/SIMPLEAPI-FIN-WITH-GO-2024/y=2024/m=11/d=11/h=19/m=00/PT1H.json",
+		}
+
+		var got int
+
+		// WHEN
+		for currLog, err := range logs.ParseLogs(blob, closer) {
+			require.NoError(t, err)
+			require.NotEqual(t, "", currLog.Category)
+			require.NotEqual(t, "", currLog.ResourceId)
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, got, 20)
 	})
 }

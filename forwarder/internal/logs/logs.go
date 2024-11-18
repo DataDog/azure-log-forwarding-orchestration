@@ -120,7 +120,9 @@ func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
 	err = decoder.Decode(&currLog)
 
 	if err != nil {
-		fmt.Println(err)
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, ErrIncompleteLog
+		}
 		return nil, err
 	}
 
