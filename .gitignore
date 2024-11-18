@@ -67,3 +67,6 @@ __azurite_db*__.json
 ci/*coverage*
 !ci/scripts
 htmlcov
+
+# let people choose this themselves
+copilot-instructions.md
