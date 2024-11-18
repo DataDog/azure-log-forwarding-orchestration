@@ -71,14 +71,13 @@ from tasks.common import (
     FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
-    collect,
-    create_task_from_awaitable,
     get_container_app_name,
     get_managed_env_id,
     get_managed_env_name,
     get_storage_account_name,
     log_errors,
 )
+from tasks.concurrency import collect, create_task_from_awaitable
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"

@@ -244,7 +244,7 @@ class ScalingTask(Task):
         """Ensures that all forwarders cache still exist, making the necessary adjustments if they don't
         returns True if all forwarders exist, False if there are issues
 
-        INVARIANT: Assignment cache is pruned before we execute this. (see `prune_assignment_cache`)"""
+        ASSUMPTION: Assignment cache is pruned before we execute this. (see `prune_assignment_cache`)"""
         region_config = self.assignment_cache[subscription_id][region]
         if not region_config["configurations"]:
             log.warning("No forwarders found in cache for region %s, recreating", region)
