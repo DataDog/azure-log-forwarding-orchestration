@@ -1,20 +1,19 @@
 package logs
 
 import (
+	// stdlib
 	"bufio"
 	"bytes"
-	"encoding/json"
-	"iter"
-	"math"
-	"time"
-
-	// stdlib
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"iter"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
