@@ -67,11 +67,9 @@ func (l *Log) Length() int64 {
 }
 
 type azureLog struct {
-	Raw      *[]byte
-	ByteSize int64
-	Category string `json:"category"`
-	//PropertiesA any       `json:"Properties,-"`
-	//PropertiesB any       `json:"properties,-"`
+	Raw         *[]byte
+	ByteSize    int64
+	Category    string    `json:"category"`
 	ResourceIdA string    `json:"resourceId,omitempty"`
 	ResourceIdB string    `json:"ResourceId,omitempty"`
 	Time        time.Time `json:"time"`
