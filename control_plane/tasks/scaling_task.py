@@ -241,8 +241,8 @@ class ScalingTask(Task):
         await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
 
     async def ensure_region_forwarders(self, client: LogForwarderClient, subscription_id: str, region: str) -> bool:
-        """Ensures that all forwarders cache still exist, making the necessary adjustments if they don't
-        returns True if all forwarders exist, False if there are issues
+        """Ensures that all forwarders cache still exist, making the necessary adjustments to `self.assignment_cache`
+        if they don't. Returns True if all forwarders exist, False if there are issues
 
         ASSUMPTION: Assignment cache is pruned before we execute this. (see `prune_assignment_cache`)"""
         region_config = self.assignment_cache[subscription_id][region]
