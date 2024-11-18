@@ -1,13 +1,12 @@
 package logs_test
 
 import (
-	"bytes"
-	"fmt"
-	"io"
-
 	// stdlib
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"testing"
 
