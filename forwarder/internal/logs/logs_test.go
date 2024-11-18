@@ -26,6 +26,8 @@ func getLogWithContent(content string) []byte {
 	return []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 }
 
+const oneHundredAs = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 func TestAddLog(t *testing.T) {
 	t.Parallel()
 
@@ -33,12 +35,15 @@ func TestAddLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var payload []*logs.Log
-		prefix := []byte("{\"category\":\"a\",\"key\":\"a")
-		suffix := []byte("a\"}")
+		prefix := "{\"category\":\"a\",\"resourceId\":\"/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo-qa/providers/Microsoft.Web/sites/loggya/appServices\",\"key\":\"a"
+		suffix := "a\"}"
+		targetSize := logs.MaxPayloadSize/2 - len(suffix) - 3
+		logString := fmt.Sprintf("%s%s", prefix, oneHundredAs)
+		for len(logString) < targetSize {
+			logString += oneHundredAs
+		}
+		logBytes := []byte(logString[:targetSize] + suffix)
 		for range 3 {
-			logBytes := make([]byte, logs.MaxPayloadSize/2-len(prefix)-len(suffix)-1)
-			logBytes = append(prefix, logBytes...)
-			logBytes = append(logBytes, suffix...)
 			currLog, err := logs.NewLog(storage.Blob{
 				Container: storage.Container{Name: "insights-logs-functionapplogs"},
 				Name:      "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
@@ -142,7 +147,6 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns false for an invalid log", func(t *testing.T) {
 		t.Parallel()
 		// Given
-		oneHundredAs := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		var content string
 		for range logs.MaxPayloadSize / 100 {
 			content += oneHundredAs
