@@ -33,8 +33,8 @@ from tasks.common import (
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
     Resource,
-    collect,
 )
+from tasks.concurrency import collect
 from tasks.task import Task
 
 DEPLOYER_TASK_NAME = "deployer_task"

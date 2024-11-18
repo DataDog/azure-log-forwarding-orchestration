@@ -21,13 +21,13 @@ from cache.common import (
     read_cache,
 )
 from tasks.common import (
-    collect,
     get_event_hub_name,
     get_event_hub_namespace,
     get_resource_group_id,
     get_storage_account_id,
     now,
 )
+from tasks.concurrency import collect
 from tasks.task import Task
 
 # silence azure logging except for errors

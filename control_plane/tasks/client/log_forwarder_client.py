@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import Lock, create_task, gather
 from collections.abc import Awaitable, Callable, Iterable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
@@ -71,13 +71,13 @@ from tasks.common import (
     FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
-    collect,
     get_container_app_name,
     get_managed_env_id,
     get_managed_env_name,
     get_storage_account_name,
     log_errors,
 )
+from tasks.concurrency import collect, create_task_from_awaitable
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
@@ -190,6 +190,25 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             await self.resource_client.resource_groups.create_or_update(
                 self.resource_group, ResourceGroup(location=self.control_plane_region)
             )
+
+    async def get_forwarder_resources(self, config_id: str) -> tuple[Job | None, StorageAccount | None]:
+        # spawn them off at the same time
+        get_job = create_task_from_awaitable(
+            self.container_apps_client.jobs.get(self.resource_group, get_container_app_name(config_id))
+        )
+        get_storage_account = create_task_from_awaitable(
+            self.storage_client.storage_accounts.get_properties(
+                self.resource_group, get_storage_account_name(config_id)
+            )
+        )
+
+        job = None
+        with suppress(ResourceNotFoundError):
+            job = await get_job
+        storage_account = None
+        with suppress(ResourceNotFoundError):
+            storage_account = await get_storage_account
+        return job, storage_account
 
     async def create_log_forwarder_storage_account(
         self, region: str, storage_account_name: str
