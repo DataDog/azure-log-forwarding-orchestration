@@ -183,6 +183,9 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 	if containerName == functionAppContainer {
 		logBytes, err = BytesFromJSON(logBytes)
 		if err != nil {
+			if strings.Contains(err.Error(), "Unexpected token ;") {
+				return nil, ErrIncompleteLog
+			}
 			return nil, err
 		}
 	}
