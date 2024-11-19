@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"time"
 
@@ -257,13 +256,13 @@ func main() {
 		datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {
-				Key: os.Getenv("DD_API_KEY"),
+				Key: environment.Get(environment.DD_API_KEY),
 			},
 		},
 	)
 
 	// Set Datadog site
-	ddSite := os.Getenv("DD_SITE")
+	ddSite := environment.Get(environment.DD_SITE)
 	if ddSite == "" {
 		ddSite = "datadoghq.com"
 	}
@@ -286,7 +285,7 @@ func main() {
 				profiler.MutexProfile,
 				profiler.GoroutineProfile,
 			),
-			profiler.WithAPIKey(os.Getenv("DD_API_KEY")),
+			profiler.WithAPIKey(environment.Get(environment.DD_API_KEY)),
 			profiler.WithService(serviceName),
 			profiler.WithAgentlessUpload(),
 		)
@@ -298,13 +297,13 @@ func main() {
 
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
-	forceProfile := os.Getenv("DD_FORCE_PROFILE")
+	forceProfile := environment.Get(environment.DD_FORCE_PROFILE)
 	if forceProfile != "" {
 		// Sleep for 5 seconds to allow profiler to start
 		time.Sleep(5 * time.Second)
 	}
 
-	goroutineString := os.Getenv("NUM_GOROUTINES")
+	goroutineString := environment.Get(environment.NUM_GOROUTINES)
 	if goroutineString == "" {
 		goroutineString = "10"
 	}
@@ -314,7 +313,7 @@ func main() {
 	}
 
 	// Initialize storage client
-	storageAccountConnectionString := os.Getenv("AzureWebJobsStorage")
+	storageAccountConnectionString := environment.Get(environment.AZURE_WEB_JOBS_STORAGE)
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())

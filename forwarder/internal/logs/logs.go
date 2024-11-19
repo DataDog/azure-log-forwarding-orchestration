@@ -23,6 +23,9 @@ import (
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
 // maxBufferSize is the maximum buffer to use for scanning logs.
@@ -200,10 +203,12 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 
 func getTags(id *arm.ResourceID) []string {
 	return []string{
-		"subscription_id:" + id.SubscriptionID,
-		"resource_group:" + id.ResourceGroupName,
-		"source:" + strings.Replace(id.ResourceType.String(), "/", ".", -1),
-		"forwarder:lfo",
+		fmt.Sprintf("subscription_id:%s", id.SubscriptionID),
+		fmt.Sprintf("resource_group:%s", id.ResourceGroupName),
+		fmt.Sprintf("source:%s", strings.Replace(id.ResourceType.String(), "/", ".", -1)),
+		fmt.Sprintf("forwarder:%s", "lfo"),
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
 	}
 }
 
