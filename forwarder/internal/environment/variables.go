@@ -16,14 +16,14 @@ const (
 	NUM_GOROUTINES         = "NUM_GOROUTINES"
 )
 
+func GetEnvVar(varName string) string {
+	return os.Getenv(varName)
+}
+
 func Enabled(environmentVariable string) bool {
 	return GetEnvVar(environmentVariable) == "true"
 }
 
 func APMEnabled() bool {
 	return Enabled(APM_ENABLED)
-}
-
-func GetEnvVar(varName string) string {
-	return os.Getenv(varName)
 }
