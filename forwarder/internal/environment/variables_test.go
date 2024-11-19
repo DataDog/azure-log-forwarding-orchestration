@@ -57,3 +57,32 @@ func TestEnabled(t *testing.T) {
 		assert.False(t, got)
 	})
 }
+
+func TestGetEnv(t *testing.T) {
+	t.Parallel()
+
+	t.Run("GetEnv returns correct value if env var is set", func(t *testing.T) {
+		// GIVEN
+		testKey := uuid.New().String()
+		const testValue = "hello world"
+		err := os.Setenv(testKey, testValue)
+		require.NoError(t, err)
+
+		// WHEN
+		envVarValue := environment.Get(testKey)
+
+		// THEN
+		assert.Equal(t, envVarValue, testValue, "values should be equal")
+	})
+
+	t.Run("GetEnv returns empty string if env var is not set", func(t *testing.T) {
+		// GIVEN
+		testKey := uuid.New().String()
+
+		// WHEN
+		envVarValue := environment.Get(testKey)
+
+		// THEN
+		assert.Equal(t, "", envVarValue, "envVarValue should be empty string")
+	})
+}
