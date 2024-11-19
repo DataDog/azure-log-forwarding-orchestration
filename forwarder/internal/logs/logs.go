@@ -68,20 +68,20 @@ func (l *Log) Length() int64 {
 }
 
 type azureLog struct {
-	Raw         *[]byte
-	ByteSize    int64
-	Category    string    `json:"category"`
-	ResourceIdA string    `json:"resourceId,omitempty"`
-	ResourceIdB string    `json:"ResourceId,omitempty"`
-	Time        time.Time `json:"time"`
-	Level       string    `json:"level,omitempty"`
+	Raw             *[]byte
+	ByteSize        int64
+	Category        string    `json:"category"`
+	ResourceIdLower string    `json:"resourceId,omitempty"`
+	ResourceIdUpper string    `json:"ResourceId,omitempty"`
+	Time            time.Time `json:"time"`
+	Level           string    `json:"level,omitempty"`
 }
 
 func (l *azureLog) ResourceId() string {
-	if l.ResourceIdA != "" {
-		return l.ResourceIdA
+	if l.ResourceIdLower != "" {
+		return l.ResourceIdLower
 	}
-	return l.ResourceIdB
+	return l.ResourceIdUpper
 }
 
 func (l *azureLog) ToLog() (*Log, error) {
