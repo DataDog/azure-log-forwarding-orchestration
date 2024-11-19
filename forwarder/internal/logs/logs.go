@@ -72,12 +72,12 @@ func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
 
 func getTags(id *arm.ResourceID) []string {
 	return []string{
-		"subscription_id:" + id.SubscriptionID,
-		"resource_group:" + id.ResourceGroupName,
-		"source:" + strings.Replace(id.ResourceType.String(), "/", ".", -1),
-		"forwarder:lfo",
-		"control_plane_id:" + environment.GetEnvVar(environment.CONTROL_PLANE_ID),
-		"config_id:" + environment.GetEnvVar(environment.CONFIG_ID),
+		fmt.Sprintf("subscription_id:%s", id.SubscriptionID),
+		fmt.Sprintf("resource_group:%s", id.ResourceGroupName),
+		fmt.Sprintf("source:%s", strings.Replace(id.ResourceType.String(), "/", ".", -1)),
+		fmt.Sprintf("forwarder:%s", "lfo"),
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
 	}
 }
 

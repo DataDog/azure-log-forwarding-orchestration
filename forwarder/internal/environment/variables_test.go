@@ -69,7 +69,7 @@ func TestGetEnv(t *testing.T) {
 		require.NoError(t, err)
 
 		// WHEN
-		envVarValue := environment.GetEnvVar(testKey)
+		envVarValue := environment.Get(testKey)
 
 		// THEN
 		assert.Equal(t, envVarValue, testValue, "values should be equal")
@@ -80,7 +80,7 @@ func TestGetEnv(t *testing.T) {
 		testKey := uuid.New().String()
 
 		// WHEN
-		envVarValue := environment.GetEnvVar(testKey)
+		envVarValue := environment.Get(testKey)
 
 		// THEN
 		assert.Equal(t, "", envVarValue, "envVarValue should be empty string")
