@@ -1,1 +1,0 @@
-ok  	github.com/DataDog/azure-log-forwarding-orchestration/forwarder/cmd/forwarder	17.341s
