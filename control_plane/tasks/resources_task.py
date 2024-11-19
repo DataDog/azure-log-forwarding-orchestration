@@ -23,9 +23,9 @@ from tasks.common import (
     FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
-    collect,
     now,
 )
+from tasks.concurrency import collect
 from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
