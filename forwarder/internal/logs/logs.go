@@ -16,6 +16,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
@@ -75,6 +76,8 @@ func getTags(id *arm.ResourceID) []string {
 		"resource_group:" + id.ResourceGroupName,
 		"source:" + strings.Replace(id.ResourceType.String(), "/", ".", -1),
 		"forwarder:lfo",
+		"control_plane_id:" + environment.GetEnvVar(environment.CONTROL_PLANE_ID),
+		"config_id:" + environment.GetEnvVar(environment.CONFIG_ID),
 	}
 }
 
