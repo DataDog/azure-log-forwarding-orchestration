@@ -166,6 +166,7 @@ func mapFromJSON(data []byte) (map[string]any, error) {
 	return objectLiteralToMap(objectLiteral)
 }
 
+// BytesFromJSON converts bytes representing a JavaScript object to bytes representing a JSON object.
 func BytesFromJSON(data []byte) ([]byte, error) {
 	logMap, err := mapFromJSON(data)
 	if err != nil {
@@ -308,6 +309,7 @@ func (c *Client) shouldFlush(log *Log) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
 }
 
+// ParseLogs reads logs from a reader and parses them into Log objects.
 func ParseLogs(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
