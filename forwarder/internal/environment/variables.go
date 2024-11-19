@@ -1,6 +1,8 @@
 package environment
 
-import "os"
+import (
+	"os"
+)
 
 // Environment variable names
 const (
@@ -19,7 +21,7 @@ func Enabled(environmentVariable string) bool {
 }
 
 func APMEnabled() bool {
-	return GetEnvVar(APM_ENABLED) == "true"
+	return Enabled(APM_ENABLED)
 }
 
 func GetEnvVar(varName string) string {
