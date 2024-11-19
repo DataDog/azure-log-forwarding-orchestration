@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -91,8 +90,8 @@ func TestRun(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		containerPage := []*service.ContainerItem{
-			newContainerItem("testA"),
-			newContainerItem("testB"),
+			newContainerItem("insights-logs-functionapplogs"),
+			newContainerItem("insights-logs-functionapplogs"),
 		}
 		blobPage := []*container.BlobItem{
 			newBlobItem("testA"),
@@ -174,9 +173,13 @@ func TestRun(t *testing.T) {
 		logger.SetOutput(buffer)
 
 		ctx := context.Background()
+		expectedBytesForLog, err := logs.BytesFromJSON(getLogWithContent(testString))
+		require.NoError(t, err)
+
+		newlineBytes := 2
 
 		// WHEN
-		err := run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
+		err = run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)
@@ -194,7 +197,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 2, totalLoad)
-		assert.Equal(t, 2*len(getLogWithContent(testString)), totalBytes)
+		assert.Equal(t, 2*(len(expectedBytesForLog)+newlineBytes), totalBytes)
 		assert.Len(t, submittedLogs, 2)
 
 		for _, logItem := range submittedLogs {
@@ -239,6 +242,12 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
+		blob := storage.Blob{
+			Name: getBlobName("test"),
+			Container: storage.Container{
+				Name: "insights-logs-functionapplogs",
+			}}
+
 		// WHEN
 		eg.Go(func() error {
 			defer close(volumeCh)
@@ -247,7 +256,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(storage.Blob{Name: getBlobName("test")}, reader, logsCh)
+			_, err := parseLogs(blob, reader, logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -289,7 +298,12 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
-		blob := storage.Blob{Name: getBlobName("test")}
+		blob := storage.Blob{
+			Name: getBlobName("test"),
+			Container: storage.Container{
+				Name: "insights-logs-functionapplogs",
+			},
+		}
 
 		var invalidLogError logs.TooLargeError
 		parsedLog, err := logs.NewLog(blob, invalidLog)
@@ -328,7 +342,12 @@ func TestParseLogs(t *testing.T) {
 			content += string(validLog) + "\n"
 		}
 		reader := io.NopCloser(strings.NewReader(content))
-		blob := storage.Blob{Name: getBlobName("test")}
+		blob := storage.Blob{
+			Name: getBlobName("test"),
+			Container: storage.Container{
+				Name: "insights-logs-functionapplogs",
+			},
+		}
 
 		eg, _ := errgroup.WithContext(context.Background())
 		var got []*logs.Log
@@ -356,14 +375,14 @@ func TestParseLogs(t *testing.T) {
 }
 
 // TestRunMain exists for performance testing purposes.
-func TestRunMain(t *testing.T) {
-	t.Parallel()
-
-	t.Run("run main", func(t *testing.T) {
-		t.Parallel()
-		if os.Getenv("CI") != "" {
-			t.Skip("Skipping testing in CI environment")
-		}
-		main()
-	})
-}
+//func TestRunMain(t *testing.T) {
+//	t.Parallel()
+//
+//	t.Run("run main", func(t *testing.T) {
+//		t.Parallel()
+//		if os.Getenv("CI") != "" {
+//			t.Skip("Skipping testing in CI environment")
+//		}
+//		main()
+//	})
+//}

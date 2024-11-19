@@ -17,6 +17,8 @@ import (
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/dop251/goja/ast"
+	"github.com/dop251/goja/parser"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -106,12 +108,82 @@ func (l *azureLog) ToLog() (*Log, error) {
 // ErrIncompleteLog is an error for when a log is incomplete.
 var ErrIncompleteLog = errors.New("received a partial log")
 
+func astToAny(node any) (any, error) {
+	switch v := node.(type) {
+	case *ast.StringLiteral:
+		return string(v.Value), nil
+	case *ast.ObjectLiteral:
+		valueMap, err := objectLiteralToMap(v)
+		if err != nil {
+			return nil, err
+		}
+		return valueMap, nil
+	case *ast.NumberLiteral:
+		return v.Value, nil
+	case *ast.ArrayLiteral:
+		items := make([]any, 0, len(v.Value))
+		for _, item := range v.Value {
+			parsedItem, err := astToAny(item)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, parsedItem)
+		}
+		return items, nil
+	case *ast.BooleanLiteral:
+		return v.Value, nil
+	case *ast.NullLiteral:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unexpected value type: %T", v)
+	}
+}
+
+func objectLiteralToMap(objectLiteral *ast.ObjectLiteral) (map[string]any, error) {
+	message := make(map[string]any)
+	for idx := range objectLiteral.Value {
+		propertyKeyed := objectLiteral.Value[idx].(*ast.PropertyKeyed)
+		keyLiteral := propertyKeyed.Key.(*ast.StringLiteral)
+		key := string(keyLiteral.Value)
+		value, err := astToAny(propertyKeyed.Value)
+		if err != nil {
+			return nil, err
+		}
+		message[key] = value
+	}
+	return message, nil
+}
+
+func mapFromJSON(data []byte) (map[string]any, error) {
+	program, err := parser.ParseFile(nil, "", "a = "+string(data)+";", 0)
+	if err != nil {
+		return nil, err
+	}
+	body := program.Body[0]
+	statement := body.(*ast.ExpressionStatement)
+	expression := statement.Expression.(*ast.AssignExpression)
+	objectLiteral := expression.Right.(*ast.ObjectLiteral)
+	return objectLiteralToMap(objectLiteral)
+}
+
+func BytesFromJSON(data []byte) ([]byte, error) {
+	logMap, err := mapFromJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(logMap)
+}
+
 // NewLog creates a new Log from the given log bytes.
 func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
 	var err error
 	var currLog *azureLog
+
 	if blob.Container.Name == functionAppContainer {
-		logBytes = bytes.ReplaceAll(logBytes, []byte("'"), []byte("\""))
+		logBytes, err = BytesFromJSON(logBytes)
+		if err != nil {
+			return nil, err
+		}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(logBytes))
 	err = decoder.Decode(&currLog)
