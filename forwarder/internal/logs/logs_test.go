@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	// 3p
@@ -27,8 +28,6 @@ func getLogWithContent(content string) []byte {
 
 const functionAppContainer = "insights-logs-functionapplogs"
 
-const oneHundredAs = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-
 func TestAddLog(t *testing.T) {
 	t.Parallel()
 
@@ -36,14 +35,11 @@ func TestAddLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var payload []*logs.Log
-		prefix := "{\"category\":\"a\",\"resourceId\":\"/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo-qa/providers/Microsoft.Web/sites/loggya/appServices\",\"key\":\"a"
-		suffix := "a\"}"
-		targetSize := logs.MaxPayloadSize/2 - len(suffix) - 3
-		logString := fmt.Sprintf("%s%s", prefix, oneHundredAs)
-		for len(logString) < targetSize {
-			logString += oneHundredAs
-		}
-		logBytes := []byte(logString[:targetSize] + suffix)
+		prefix := "{\"category\":\"a\",\"resourceId\":\"/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo-qa/providers/Microsoft.Web/sites/loggya/appServices\",\"key\":\""
+		suffix := "\"}"
+		targetSize := logs.MaxPayloadSize/2 - len(prefix) - len(suffix) - 3
+		logString := fmt.Sprintf("%s%s%s", prefix, strings.Repeat("a", targetSize), suffix)
+		logBytes := []byte(logString)
 		for range 3 {
 			currLog, err := logs.NewLog(logBytes, functionAppContainer)
 			require.NoError(t, err)
@@ -198,10 +194,7 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns false for an invalid log", func(t *testing.T) {
 		t.Parallel()
 		// Given
-		var content string
-		for range logs.MaxPayloadSize / 100 {
-			content += oneHundredAs
-		}
+		content := strings.Repeat("a", logs.MaxPayloadSize)
 		l, err := logs.NewLog(getLogWithContent(content), functionAppContainer)
 		require.NoError(t, err)
 
