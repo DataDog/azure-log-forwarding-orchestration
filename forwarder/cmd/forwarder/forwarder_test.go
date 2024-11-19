@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -242,12 +243,6 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
-		blob := storage.Blob{
-			Name: getBlobName("test"),
-			Container: storage.Container{
-				Name: "insights-logs-functionapplogs",
-			}}
-
 		// WHEN
 		eg.Go(func() error {
 			defer close(volumeCh)
@@ -256,7 +251,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(blob, reader, logsCh)
+			_, err := parseLogs(reader, "insights-logs-functionapplogs", logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -298,15 +293,10 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
-		blob := storage.Blob{
-			Name: getBlobName("test"),
-			Container: storage.Container{
-				Name: "insights-logs-functionapplogs",
-			},
-		}
+		containerName := "insights-logs-functionapplogs"
 
 		var invalidLogError logs.TooLargeError
-		parsedLog, err := logs.NewLog(blob, invalidLog)
+		parsedLog, err := logs.NewLog(invalidLog, containerName)
 		require.NoError(t, err)
 
 		// WHEN
@@ -317,7 +307,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(blob, reader, logsCh)
+			_, err := parseLogs(reader, containerName, logsCh)
 			return err
 		})
 
@@ -342,12 +332,6 @@ func TestParseLogs(t *testing.T) {
 			content += string(validLog) + "\n"
 		}
 		reader := io.NopCloser(strings.NewReader(content))
-		blob := storage.Blob{
-			Name: getBlobName("test"),
-			Container: storage.Container{
-				Name: "insights-logs-functionapplogs",
-			},
-		}
 
 		eg, _ := errgroup.WithContext(context.Background())
 		var got []*logs.Log
@@ -363,7 +347,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, err := parseLogs(blob, reader, logsChannel)
+			_, err := parseLogs(reader, "insights-logs-functionapplogs", logsChannel)
 			return err
 		})
 		err := eg.Wait()
@@ -375,14 +359,14 @@ func TestParseLogs(t *testing.T) {
 }
 
 // TestRunMain exists for performance testing purposes.
-//func TestRunMain(t *testing.T) {
-//	t.Parallel()
-//
-//	t.Run("run main", func(t *testing.T) {
-//		t.Parallel()
-//		if os.Getenv("CI") != "" {
-//			t.Skip("Skipping testing in CI environment")
-//		}
-//		main()
-//	})
-//}
+func TestRunMain(t *testing.T) {
+	t.Parallel()
+
+	t.Run("run main", func(t *testing.T) {
+		t.Parallel()
+		if os.Getenv("CI") != "" {
+			t.Skip("Skipping testing in CI environment")
+		}
+		main()
+	})
+}

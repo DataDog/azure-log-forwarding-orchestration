@@ -23,9 +23,6 @@ import (
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
-	// project
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
 // maxBufferSize is the maximum buffer to use for scanning logs.
@@ -175,11 +172,11 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
+func NewLog(logBytes []byte, containerName string) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
-	if blob.Container.Name == functionAppContainer {
+	if containerName == functionAppContainer {
 		logBytes, err = BytesFromJSON(logBytes)
 		if err != nil {
 			return nil, err
@@ -306,7 +303,7 @@ func (c *Client) shouldFlush(log *Log) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
 }
 
-func ParseLogs(blob storage.Blob, reader io.ReadCloser) iter.Seq2[*Log, error] {
+func ParseLogs(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -316,7 +313,7 @@ func ParseLogs(blob storage.Blob, reader io.ReadCloser) iter.Seq2[*Log, error] {
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(blob, currBytes)
+			currLog, err := NewLog(currBytes, containerName)
 			if err != nil {
 				if !yield(nil, err) {
 					return

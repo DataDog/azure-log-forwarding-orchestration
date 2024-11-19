@@ -25,6 +25,8 @@ func getLogWithContent(content string) []byte {
 	return []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 }
 
+const functionAppContainer = "insights-logs-functionapplogs"
+
 const oneHundredAs = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 func TestAddLog(t *testing.T) {
@@ -43,10 +45,7 @@ func TestAddLog(t *testing.T) {
 		}
 		logBytes := []byte(logString[:targetSize] + suffix)
 		for range 3 {
-			currLog, err := logs.NewLog(storage.Blob{
-				Container: storage.Container{Name: "insights-logs-functionapplogs"},
-				Name:      "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
-			}, logBytes)
+			currLog, err := logs.NewLog(logBytes, functionAppContainer)
 			require.NoError(t, err)
 			payload = append(payload, currLog)
 		}
@@ -73,7 +72,7 @@ func TestAddLog(t *testing.T) {
 var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
 var validBlob = storage.Blob{
-	Container:     storage.Container{Name: "insights-logs-functionapplogs"},
+	Container:     storage.Container{Name: functionAppContainer},
 	Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
 	ContentLength: int64(len(validLog)),
 }
@@ -86,7 +85,7 @@ func TestNewLog(t *testing.T) {
 		// GIVEN
 
 		// WHEN
-		log, err := logs.NewLog(validBlob, validLog)
+		log, err := logs.NewLog(validLog, functionAppContainer)
 
 		// THEN
 		assert.NoError(t, err)
@@ -102,14 +101,8 @@ func TestNewLog(t *testing.T) {
 		// GIVEN
 		var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':['app1', 'app2'],'roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
-		var validBlob = storage.Blob{
-			Container:     storage.Container{Name: "insights-logs-functionapplogs"},
-			Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
-			ContentLength: int64(len(validLog)),
-		}
-
 		// WHEN
-		log, err := logs.NewLog(validBlob, validLog)
+		log, err := logs.NewLog(validLog, functionAppContainer)
 
 		// THEN
 		assert.NoError(t, err)
@@ -125,14 +118,8 @@ func TestNewLog(t *testing.T) {
 		// GIVEN
 		var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':[{'app1': null, 'app2': true}, {'app3': 3.0}],'roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
-		var validBlob = storage.Blob{
-			Container:     storage.Container{Name: "insights-logs-functionapplogs"},
-			Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
-			ContentLength: int64(len(validLog)),
-		}
-
 		// WHEN
-		log, err := logs.NewLog(validBlob, validLog)
+		log, err := logs.NewLog(validLog, functionAppContainer)
 
 		// THEN
 		assert.NoError(t, err)
@@ -143,10 +130,21 @@ func TestNewLog(t *testing.T) {
 
 	})
 
-	t.Run("returns custom error on incomplete json", func(t *testing.T) {
+	t.Run("returns custom error on incomplete json for standard logs", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog(validBlob, []byte("{ \"time\": \"2024-08-21T15:12:24Z\", "))
+		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "), "something normal")
+
+		// THEN
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, logs.ErrIncompleteLog)
+		assert.Nil(t, log)
+	})
+
+	t.Run("returns custom error on incomplete json for function apps", func(t *testing.T) {
+		t.Parallel()
+		// WHEN
+		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "), functionAppContainer)
 
 		// THEN
 		assert.Error(t, err)
@@ -157,14 +155,22 @@ func TestNewLog(t *testing.T) {
 	t.Run("returns error on invalid resource id", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		var invalidBlob = storage.Blob{
-			Container:     storage.Container{Name: "insights-logs-functionapplogs"},
-			Name:          "resourceId=/something/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
-			ContentLength: int64(len(validLog)),
-		}
 		invalidResourceId := []byte("{ \"resourceId\": \"something\"}")
 		// WHEN
-		log, err := logs.NewLog(invalidBlob, invalidResourceId)
+		log, err := logs.NewLog(invalidResourceId, "something normal")
+
+		// THEN
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid resource ID")
+		assert.Nil(t, log)
+	})
+
+	t.Run("returns error on invalid resource id for function apps", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		invalidResourceId := []byte("{ \"resourceId\": \"something\"}")
+		// WHEN
+		log, err := logs.NewLog(invalidResourceId, functionAppContainer)
 
 		// THEN
 		assert.Error(t, err)
@@ -179,7 +185,7 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns true for a valid log", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		l, err := logs.NewLog(validBlob, getLogWithContent("test"))
+		l, err := logs.NewLog(getLogWithContent("test"), "insights-logs-functionapplogs")
 		require.NoError(t, err)
 
 		// WHEN
@@ -196,7 +202,7 @@ func TestValid(t *testing.T) {
 		for range logs.MaxPayloadSize / 100 {
 			content += oneHundredAs
 		}
-		l, err := logs.NewLog(validBlob, getLogWithContent(content))
+		l, err := logs.NewLog(getLogWithContent(content), functionAppContainer)
 		require.NoError(t, err)
 
 		// WHEN
@@ -222,20 +228,10 @@ func TestParseLogs(t *testing.T) {
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
-		container := storage.Container{
-			Name: "insights-logs-kube-audit",
-		}
-
-		blob := storage.Blob{
-			Container:     container,
-			ContentLength: int64(len(data)),
-			Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/MIKE-AZURE/PROVIDERS/MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/MIKE-AZURE-AKS/y=2024/m=11/d=15/h=21/m=00/PT1H.json",
-		}
-
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.ParseLogs(blob, closer) {
+		for currLog, err := range logs.ParseLogs(closer, "insights-logs-kube-audit") {
 			require.NoError(t, err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, "", currLog.ResourceId)
@@ -259,20 +255,10 @@ func TestParseLogs(t *testing.T) {
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
-		container := storage.Container{
-			Name: "insights-logs-functionapplogs",
-		}
-
-		blob := storage.Blob{
-			Container:     container,
-			ContentLength: int64(len(data)),
-			Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/RG-FUNCTIONS-WITH-GO/PROVIDERS/MICROSOFT.WEB/SITES/SIMPLEAPI-FIN-WITH-GO-2024/y=2024/m=11/d=11/h=19/m=00/PT1H.json",
-		}
-
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.ParseLogs(blob, closer) {
+		for currLog, err := range logs.ParseLogs(closer, functionAppContainer) {
 			require.NoError(t, err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, "", currLog.ResourceId)

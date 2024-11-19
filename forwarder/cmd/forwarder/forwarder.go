@@ -54,7 +54,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	writtenBytes, err := parseLogs(blob, content.Reader, logsChannel)
+	writtenBytes, err := parseLogs(content.Reader, blob.Container.Name, logsChannel)
 
 	// we have processed and submitted logs up to currentOffset+int64(writtenBytes) whether the error is nil or not
 	cursors.SetCursor(blob.Container.Name, blob.Name, currentOffset+int64(writtenBytes))
@@ -62,12 +62,12 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	return err
 }
 
-func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs.Log) (int64, error) {
+func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *logs.Log) (int64, error) {
 	var processedBytes int64
 
 	var currLog *logs.Log
 	var err error
-	for currLog, err = range logs.ParseLogs(blob, reader) {
+	for currLog, err = range logs.ParseLogs(reader, containerName) {
 		if err != nil {
 			break
 		}

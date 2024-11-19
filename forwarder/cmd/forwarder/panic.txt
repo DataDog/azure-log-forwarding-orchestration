@@ -1,0 +1,150 @@
+2024/11/04 16:31:24 Datadog Tracer v1.65.1 INFO: DATADOG TRACER CONFIGURATION {"date":"2024-11-04T16:31:24-05:00","os_name":"darwin","os_version":"14.7","version":"v1.65.1","lang":"Go","lang_version":"go1.23.2","env":"mattop","service":"forwarder","agent_url":"http://localhost:8136/v0.4/traces","agent_error":"","debug":false,"analytics_enabled":false,"sample_rate":"NaN","sample_rate_limit":"disabled","trace_sampling_rules":null,"span_sampling_rules":null,"sampling_rules_error":"","service_mappings":null,"tags":{"runtime-id":"6a97ed65-7ce7-433f-a4d3-ae4c7f8b0f8c"},"runtime_metrics_enabled":false,"health_metrics_enabled":false,"profiler_code_hotspots_enabled":true,"profiler_endpoints_enabled":true,"dd_version":"0.0.1","architecture":"arm64","global_service":"forwarder","lambda_mode":"false","appsec":false,"agent_features":{"DropP0s":true,"Stats":true,"DataStreams":true,"StatsdPort":0},"integrations":{"AWS SDK":{"instrumented":false,"available":false,"available_version":""},"AWS SDK v2":{"instrumented":false,"available":false,"available_version":""},"BuntDB":{"instrumented":false,"available":false,"available_version":""},"Cassandra":{"instrumented":false,"available":false,"available_version":""},"Consul":{"instrumented":false,"available":false,"available_version":""},"Elasticsearch v3":{"instrumented":false,"available":false,"available_version":""},"Elasticsearch v5":{"instrumented":false,"available":false,"available_version":""},"Elasticsearch v6":{"instrumented":false,"available":false,"available_version":""},"FastHTTP":{"instrumented":false,"available":false,"available_version":""},"Fiber":{"instrumented":false,"available":false,"available_version":""},"Gin":{"instrumented":false,"available":false,"available_version":""},"Goji":{"instrumented":false,"available":false,"available_version":""},"Google API":{"instrumented":false,"available":false,"available_version":""},"Gorilla Mux":{"instrumented":false,"available":false,"available_version":""},"Gorm":{"instrumented":false,"available":false,"available_version":""},"Gorm (gopkg)":{"instrumented":false,"available":false,"available_version":""},"Gorm v1":{"instrumented":false,"available":false,"available_version":""},"GraphQL":{"instrumented":false,"available":false,"available_version":""},"HTTP":{"instrumented":false,"available":false,"available_version":""},"HTTP Router":{"instrumented":false,"available":false,"available_version":""},"HTTP Treemux":{"instrumented":false,"available":false,"available_version":""},"IBM sarama":{"instrumented":false,"available":false,"available_version":""},"Kafka (confluent)":{"instrumented":false,"available":false,"available_version":""},"Kafka (confluent) v2":{"instrumented":false,"available":false,"available_version":""},"Kafka v0":{"instrumented":false,"available":false,"available_version":""},"Kubernetes":{"instrumented":false,"available":false,"available_version":""},"LevelDB":{"instrumented":false,"available":false,"available_version":""},"Logrus":{"instrumented":false,"available":true,"available_version":"v1.9.3"},"Memcache":{"instrumented":false,"available":false,"available_version":""},"MongoDB":{"instrumented":false,"available":false,"available_version":""},"MongoDB (mgo)":{"instrumented":false,"available":false,"available_version":""},"Negroni":{"instrumented":false,"available":false,"available_version":""},"Pub/Sub":{"instrumented":false,"available":false,"available_version":""},"Redigo":{"instrumented":false,"available":false,"available_version":""},"Redigo (dep)":{"instrumented":false,"available":false,"available_version":""},"Redis":{"instrumented":false,"available":false,"available_version":""},"Redis v7":{"instrumented":false,"available":false,"available_version":""},"Redis v8":{"instrumented":false,"available":false,"available_version":""},"Redis v9":{"instrumented":false,"available":false,"available_version":""},"SQL":{"instrumented":false,"available":false,"available_version":""},"SQLx":{"instrumented":false,"available":false,"available_version":""},"Shopify sarama":{"instrumented":false,"available":false,"available_version":""},"Twirp":{"instrumented":false,"available":false,"available_version":""},"Vault":{"instrumented":false,"available":false,"available_version":""},"chi":{"instrumented":false,"available":false,"available_version":""},"chi v5":{"instrumented":false,"available":false,"available_version":""},"echo":{"instrumented":false,"available":false,"available_version":""},"echo v4":{"instrumented":false,"available":false,"available_version":""},"gRPC":{"instrumented":false,"available":false,"available_version":""},"gRPC v12":{"instrumented":false,"available":false,"available_version":""},"go-pg v10":{"instrumented":false,"available":false,"available_version":""},"go-restful":{"instrumented":false,"available":false,"available_version":""},"go-restful v3":{"instrumented":false,"available":false,"available_version":""},"gqlgen":{"instrumented":false,"available":false,"available_version":""},"miekg/dns":{"instrumented":false,"available":false,"available_version":""}},"partial_flush_enabled":false,"partial_flush_min_spans":1000,"orchestrion":{"enabled":false},"feature_flags":[]}
+2024/11/04 16:31:24 Datadog Tracer v1.65.1 INFO: Profiler configuration: {"agentless":false,"block_profile_rate":100000000,"cpu_duration":"1m0s","cpu_profile_rate":0,"custom_profiler_label_keys":null,"date":"2024-11-04T16:31:24-05:00","delta_profiles":true,"enabled_profiles":["metrics","cpu","heap","block","mutex","goroutine"],"endpoint_count_enabled":false,"env":"mattop","execution_trace_enabled":true,"execution_trace_period":"15m0s","execution_trace_size_limit":5242880,"hostname":"COMP-YKCRHKQPFM","lang":"Go","lang_version":"go1.23.2","max_goroutines_wait":1000,"mutex_profile_fraction":10,"os_name":"darwin","os_version":"14.7","profile_period":"1m0s","service":"forwarder","tags":["process_id:37528","profiler_version:v1.65.1","runtime_version:1.23.2","runtime_compiler:gc","runtime_arch:arm64","runtime_os:darwin","runtime-id:6a97ed65-7ce7-433f-a4d3-ae4c7f8b0f8c"],"target_url":"http://localhost:8136/profiling/v1/input","upload_timeout":"10s","version":"v1.65.1"}
+{"level":"info","msg":"Start time: 2024-11-04 16:31:24.726349 -0500 EST m=+0.081348126","service":"forwarder","time":"2024-11-04T16:31:24-05:00"}
+2024/11/04 16:32:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:31 EST)
+2024/11/04 16:33:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:32 EST)
+2024/11/04 16:33:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:32 EST)
+2024/11/04 16:34:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:33 EST)
+2024/11/04 16:34:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:33 EST)
+2024/11/04 16:35:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:34 EST)
+2024/11/04 16:35:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:34 EST)
+2024/11/04 16:36:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:35 EST)
+2024/11/04 16:36:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:35 EST)
+2024/11/04 16:37:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:36 EST)
+2024/11/04 16:37:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:36 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4667477
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4681145
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4715818
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4549115
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4573805
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4479766
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4540928
+2024/11/04 16:38:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:37 EST)
+2024/11/04 16:38:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:37 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4661497
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4888373
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4699401
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4677264
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4929442
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4475250
+Error:  413 Request Entity Too Large
+LogsBuffer:  998
+CurrentSize:  4986184
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4906780
+2024/11/04 16:39:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:38 EST)
+2024/11/04 16:39:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:38 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  994
+CurrentSize:  4999403
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4609261
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4599762
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4753626
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4752278
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4635350
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4809473
+Error:  413 Request Entity Too Large
+LogsBuffer:  995
+CurrentSize:  4999216
+2024/11/04 16:40:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:39 EST)
+2024/11/04 16:40:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:39 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4777472
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4711805
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4777627
+Error:  413 Request Entity Too Large
+LogsBuffer:  983
+CurrentSize:  4986242
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4544097
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4609921
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4704714
+2024/11/04 16:41:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:40 EST)
+2024/11/04 16:41:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:40 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4886227
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4941129
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4688261
+2024/11/04 16:42:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:41 EST)
+2024/11/04 16:42:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:41 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  883
+CurrentSize:  4993694
+2024/11/04 16:43:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:42 EST)
+2024/11/04 16:43:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:42 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4571899
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4738614
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4781916
+2024/11/04 16:44:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:43 EST)
+2024/11/04 16:44:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:43 EST)
+Error:  413 Request Entity Too Large
+LogsBuffer:  999
+CurrentSize:  4663737
+2024/11/04 16:45:24 Datadog Tracer v1.65.1 ERROR: Failed to upload profile: 403 Forbidden (occurred: 04 Nov 24 16:44 EST)
+2024/11/04 16:45:24 Datadog Tracer v1.65.1 ERROR: Error getting cpu profile: cpu profiling already in use; skipping. (occurred: 04 Nov 24 16:44 EST)
+{"level":"info","msg":"Finished processing 2918604 logs","service":"forwarder","time":"2024-11-04T16:46:17-05:00"}
+{"level":"info","msg":"Run time: 14m53.056623959s","service":"forwarder","time":"2024-11-04T16:46:17-05:00"}
+{"level":"info","msg":"Final time: 2024-11-04 16:46:17.758635 -0500 EST m=+893.138260210","service":"forwarder","time":"2024-11-04T16:46:17-05:00"}
+{"level":"fatal","msg":"error while running: 413 Request Entity Too Large\n413 Request Entity Too Large\n413 Request Entity Too Large\n413 Request Entity Too Large\n413 Request Entity Too Large\n413 Request Entity Too Large\n413 Request Entity Too Large\n413 Request Entity Too Large","service":"forwarder","time":"2024-11-04T16:46:17-05:00"}
+exit status 1
+FAIL	github.com/DataDog/azure-log-forwarding-orchestration/forwarder/cmd/forwarder	893.823s
