@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -84,6 +83,64 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
+func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse) ([]datadogV2.HTTPLogItem, []byte, error) {
+	ctrl := gomock.NewController(t)
+	mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
+
+	containerHandler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containers}, nil, getListContainersResponse)
+	containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
+	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
+
+	blobHandler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobs}, nil, getListBlobsFlatResponse)
+	blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
+	mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(len(blobs))
+
+	mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+		if blobName == cursor.BlobName {
+			return cursorResp, nil
+		}
+		if strings.Contains(blobName, "metrics_") {
+			resp := azblob.DownloadStreamResponse{}
+			resp.Body = io.NopCloser(strings.NewReader(""))
+			return resp, nil
+		}
+		return getDownloadResp(o), nil
+	})
+
+	var uploadedMetrics []byte
+	mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+			if strings.Contains(blobName, "metrics_") {
+				uploadedMetrics = append(uploadedMetrics, content...)
+			}
+			return azblob.UploadBufferResponse{}, nil
+		}).Times(len(blobs))
+
+	var resp azblob.CreateContainerResponse
+	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).Times(2)
+
+	client := storage.NewClient(mockClient)
+
+	var submittedLogs []datadogV2.HTTPLogItem
+	mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
+	mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+		submittedLogs = append(submittedLogs, body...)
+		return nil, nil, nil
+	})
+
+	logClient := logs.NewClient(mockDDClient)
+
+	var output []byte
+	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
+
+	ctx := context.Background()
+
+	err := run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
+	return submittedLogs, uploadedMetrics, err
+}
+
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -101,85 +158,22 @@ func TestRun(t *testing.T) {
 
 		testString := "test"
 
-		ctrl := gomock.NewController(t)
-		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
-
-		containerHandler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
-		containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
-		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
-
-		blobHandler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
-		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
-		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(2)
-
-		mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-			if strings.Contains(blobName, "metrics_") {
-				resp := azblob.DownloadStreamResponse{}
-				resp.Body = io.NopCloser(strings.NewReader(""))
-				return resp, nil
-			}
-			validLog := getLogWithContent(testString)
+		validLog := getLogWithContent(testString)
+		getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
 			resp := azblob.DownloadStreamResponse{}
 			resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
-			return resp, nil
-		})
+			return resp
+		}
 
-		var uploadedMetrics []byte
-		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-			func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
-				if strings.Contains(blobName, "metrics_") {
-					uploadedMetrics = append(uploadedMetrics, content...)
-				}
-				return azblob.UploadBufferResponse{}, nil
-			}).Times(2)
+		cursorResp := azblob.DownloadStreamResponse{}
+		cursorResp.Body = io.NopCloser(strings.NewReader(""))
 
-		reader := ioutil.NopCloser(strings.NewReader("\n"))
-
-		var downloadResp azblob.DownloadStreamResponse
-		downloadResp.Body = reader
-
-		rawCursors := cursor.NewCursors(nil)
-		cursorData, cursorError := rawCursors.Bytes()
-		require.NoError(t, cursorError)
-		cursorReader := strings.NewReader(string(cursorData))
-		cursorCloser := ioutil.NopCloser(cursorReader)
-
-		var cursorResp azblob.DownloadStreamResponse
-		cursorResp.Body = cursorCloser
-
-		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-			if blobName == cursor.BlobName {
-				return cursorResp, nil
-			}
-			return downloadResp, nil
-		})
-
-		var resp azblob.CreateContainerResponse
-		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).Times(2)
-
-		client := storage.NewClient(mockClient)
-
-		var submittedLogs []datadogV2.HTTPLogItem
-		mockDDClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
-			submittedLogs = append(submittedLogs, body...)
-			return nil, nil, nil
-		})
-
-		logClient := logs.NewClient(mockDDClient)
-
-		var output []byte
-		buffer := bytes.NewBuffer(output)
-		logger := log.New()
-		logger.SetOutput(buffer)
-
-		ctx := context.Background()
 		expectedBytesForLog := getLogWithContent(testString)
 
 		newlineBytes := 2
 
 		// WHEN
-		err := run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
+		submittedLogs, uploadedMetrics, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp)
 
 		// THEN
 		assert.NoError(t, err)
