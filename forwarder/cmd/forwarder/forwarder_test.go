@@ -148,8 +148,8 @@ func TestRun(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		containerPage := []*service.ContainerItem{
-			newContainerItem("testA"),
-			newContainerItem("testB"),
+			newContainerItem("insights-logs-functionapplogs"),
+			newContainerItem("insights-logs-functionapplogs"),
 		}
 		blobPage := []*container.BlobItem{
 			newBlobItem("testA"),
@@ -167,6 +167,10 @@ func TestRun(t *testing.T) {
 
 		cursorResp := azblob.DownloadStreamResponse{}
 		cursorResp.Body = io.NopCloser(strings.NewReader(""))
+
+		expectedBytesForLog := getLogWithContent(testString)
+
+		newlineBytes := 2
 
 		// WHEN
 		submittedLogs, uploadedMetrics, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp)
@@ -187,7 +191,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, 2, totalLoad)
-		assert.Equal(t, 2*len(getLogWithContent(testString)), totalBytes)
+		assert.Equal(t, 2*(len(expectedBytesForLog)+newlineBytes), totalBytes)
 		assert.Len(t, submittedLogs, 2)
 
 		for _, logItem := range submittedLogs {
@@ -240,7 +244,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(storage.Blob{Name: getBlobName("test")}, reader, logsCh)
+			_, err := parseLogs(reader, "insights-logs-functionapplogs", logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -282,10 +286,10 @@ func TestProcessLogs(t *testing.T) {
 		logger := log.New()
 		logger.SetOutput(buffer)
 
-		blob := storage.Blob{Name: getBlobName("test")}
+		containerName := "insights-logs-functionapplogs"
 
 		var invalidLogError logs.TooLargeError
-		parsedLog, err := logs.NewLog(blob, invalidLog)
+		parsedLog, err := logs.NewLog(invalidLog, containerName)
 		require.NoError(t, err)
 
 		// WHEN
@@ -296,7 +300,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, err := parseLogs(blob, reader, logsCh)
+			_, err := parseLogs(reader, containerName, logsCh)
 			return err
 		})
 
@@ -321,7 +325,6 @@ func TestParseLogs(t *testing.T) {
 			content += string(validLog) + "\n"
 		}
 		reader := io.NopCloser(strings.NewReader(content))
-		blob := storage.Blob{Name: getBlobName("test")}
 
 		eg, _ := errgroup.WithContext(context.Background())
 		var got []*logs.Log
@@ -337,7 +340,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, err := parseLogs(blob, reader, logsChannel)
+			_, err := parseLogs(reader, "insights-logs-functionapplogs", logsChannel)
 			return err
 		})
 		err := eg.Wait()

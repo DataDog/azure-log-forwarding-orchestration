@@ -2,12 +2,10 @@ package main
 
 import (
 	// stdlib
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"strconv"
 	"time"
 
@@ -35,17 +33,6 @@ import (
 // serviceName is the service tag used for APM and logs about this forwarder.
 const serviceName = "dd-azure-forwarder"
 
-// maxBufferSize is the maximum buffer to use for scanning logs.
-// Logs greater than this buffer will be dropped by bufio.Scanner.
-// The buffer is defaulted to the maximum value of an integer.
-const maxBufferSize = math.MaxInt32
-
-// initialBufferSize is the initial buffer size to use for scanning logs.
-const initialBufferSize = 1024 * 1024 * 5
-
-// newlineBytes is the number of bytes in a newline character in utf-8.
-const newlineBytes = 2
-
 // resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
 type resourceBytes struct {
 	resourceId string
@@ -66,7 +53,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	writtenBytes, err := parseLogs(blob, content.Reader, logsChannel)
+	writtenBytes, err := parseLogs(content.Reader, blob.Container.Name, logsChannel)
 
 	// we have processed and submitted logs up to currentOffset+int64(writtenBytes) whether the error is nil or not
 	cursors.SetCursor(blob.Container.Name, blob.Name, currentOffset+int64(writtenBytes))
@@ -74,26 +61,21 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	return err
 }
 
-func parseLogs(blob storage.Blob, reader io.ReadCloser, logsChannel chan<- *logs.Log) (int, error) {
-	var processedBytes int
-	scanner := bufio.NewScanner(reader)
+func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *logs.Log) (int64, error) {
+	var processedBytes int64
 
-	// set buffer size so we can process logs bigger than 65kb
-	buffer := make([]byte, initialBufferSize)
-	scanner.Buffer(buffer, maxBufferSize)
-
-	for scanner.Scan() {
-		currBytes := scanner.Bytes()
-		currLog, err := logs.NewLog(blob, currBytes)
+	var currLog *logs.Log
+	var err error
+	for currLog, err = range logs.ParseLogs(reader, containerName) {
 		if err != nil {
-			return processedBytes, err
+			break
 		}
 
 		// bufio.Scanner consumes the new line character so we need to add it back
-		processedBytes += len(currBytes) + newlineBytes
+		processedBytes += currLog.ByteSize
 		logsChannel <- currLog
 	}
-	return processedBytes, nil
+	return processedBytes, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {

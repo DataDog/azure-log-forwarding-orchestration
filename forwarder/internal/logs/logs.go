@@ -2,14 +2,23 @@ package logs
 
 import (
 	// stdlib
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"iter"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/dop251/goja/ast"
+	"github.com/dop251/goja/parser"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -17,57 +26,186 @@ import (
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
+
+// maxBufferSize is the maximum buffer to use for scanning logs.
+// Logs greater than this buffer will be dropped by bufio.Scanner.
+// The buffer is defaulted to the maximum value of an integer.
+const maxBufferSize = math.MaxInt32
+
+// initialBufferSize is the initial buffer size to use for scanning logs.
+const initialBufferSize = 1024 * 1024 * 5
+
+// newlineBytes is the number of bytes in a newline character in utf-8.
+const newlineBytes = 2
+
+const functionAppContainer = "insights-logs-functionapplogs"
 
 // Log represents a log to send to Datadog.
 type Log struct {
-	content    []byte
-	ResourceId string
-	Category   string
+	content    *[]byte
+	ByteSize   int64
 	Tags       []string
+	Category   string
+	ResourceId string
+	Time       time.Time
+	Level      string
 }
 
 // IsValid checks if the log is valid to send to Datadog.
 func (l *Log) IsValid() bool {
-	return len(l.content) < MaxPayloadSize
+	return l.ByteSize < MaxPayloadSize
 }
 
 // Content converts the log content to a string.
 func (l *Log) Content() string {
-	return string(l.content)
+	return string(*l.content)
 }
 
 // Length returns the length of the log content.
-func (l *Log) Length() int {
-	return len(l.content)
+func (l *Log) Length() int64 {
+	return l.ByteSize
+}
+
+type azureLog struct {
+	Raw             *[]byte
+	ByteSize        int64
+	Category        string    `json:"category"`
+	ResourceIdLower string    `json:"resourceId,omitempty"`
+	ResourceIdUpper string    `json:"ResourceId,omitempty"`
+	Time            time.Time `json:"time"`
+	Level           string    `json:"level,omitempty"`
+}
+
+func (l *azureLog) ResourceId() string {
+	if l.ResourceIdLower != "" {
+		return l.ResourceIdLower
+	}
+	return l.ResourceIdUpper
+}
+
+func (l *azureLog) ToLog() (*Log, error) {
+	parsedId, err := arm.ParseResourceID(l.ResourceId())
+	if err != nil {
+		return nil, err
+	}
+
+	if l.Level == "" {
+		l.Level = "Informational"
+	}
+
+	return &Log{
+		content:    l.Raw,
+		ByteSize:   l.ByteSize,
+		Category:   l.Category,
+		ResourceId: l.ResourceId(),
+		Time:       l.Time,
+		Level:      l.Level,
+		Tags:       getTags(parsedId),
+	}, nil
 }
 
 // ErrIncompleteLog is an error for when a log is incomplete.
 var ErrIncompleteLog = errors.New("received a partial log")
 
+func astToAny(node any) (any, error) {
+	switch v := node.(type) {
+	case *ast.StringLiteral:
+		return string(v.Value), nil
+	case *ast.ObjectLiteral:
+		valueMap, err := objectLiteralToMap(v)
+		if err != nil {
+			return nil, err
+		}
+		return valueMap, nil
+	case *ast.NumberLiteral:
+		return v.Value, nil
+	case *ast.ArrayLiteral:
+		items := make([]any, 0, len(v.Value))
+		for _, item := range v.Value {
+			parsedItem, err := astToAny(item)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, parsedItem)
+		}
+		return items, nil
+	case *ast.BooleanLiteral:
+		return v.Value, nil
+	case *ast.NullLiteral:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("unexpected value type: %T", v)
+	}
+}
+
+func objectLiteralToMap(objectLiteral *ast.ObjectLiteral) (map[string]any, error) {
+	message := make(map[string]any)
+	for idx := range objectLiteral.Value {
+		propertyKeyed := objectLiteral.Value[idx].(*ast.PropertyKeyed)
+		keyLiteral := propertyKeyed.Key.(*ast.StringLiteral)
+		key := string(keyLiteral.Value)
+		value, err := astToAny(propertyKeyed.Value)
+		if err != nil {
+			return nil, err
+		}
+		message[key] = value
+	}
+	return message, nil
+}
+
+func mapFromJSON(data []byte) (map[string]any, error) {
+	javascriptExpression := fmt.Sprintf("a = %s;", data)
+	program, err := parser.ParseFile(nil, "", javascriptExpression, 0)
+	if err != nil {
+		return nil, err
+	}
+	body := program.Body[0]
+	statement := body.(*ast.ExpressionStatement)
+	expression := statement.Expression.(*ast.AssignExpression)
+	objectLiteral := expression.Right.(*ast.ObjectLiteral)
+	return objectLiteralToMap(objectLiteral)
+}
+
+// BytesFromJSON converts bytes representing a JavaScript object to bytes representing a JSON object.
+func BytesFromJSON(data []byte) ([]byte, error) {
+	logMap, err := mapFromJSON(data)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(logMap)
+}
+
 // NewLog creates a new Log from the given log bytes.
-func NewLog(blob storage.Blob, logBytes []byte) (*Log, error) {
-	if logBytes[len(logBytes)-1] != '}' {
-		return nil, ErrIncompleteLog
-	}
+func NewLog(logBytes []byte, containerName string) (*Log, error) {
+	var err error
+	var currLog *azureLog
 
-	resourceId, err := blob.ResourceId()
+	logSize := len(logBytes) + newlineBytes
+
+	if containerName == functionAppContainer {
+		logBytes, err = BytesFromJSON(logBytes)
+		if err != nil {
+			if strings.Contains(err.Error(), "Unexpected token ;") {
+				return nil, ErrIncompleteLog
+			}
+			return nil, err
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(logBytes))
+	err = decoder.Decode(&currLog)
+
 	if err != nil {
+		if errors.Is(err, io.ErrUnexpectedEOF) {
+			return nil, ErrIncompleteLog
+		}
 		return nil, err
 	}
 
-	parsedId, err := arm.ParseResourceID(resourceId)
-	if err != nil {
-		return nil, err
-	}
+	currLog.ByteSize = int64(logSize)
+	currLog.Raw = &logBytes
 
-	return &Log{
-		Category:   blob.Container.Category(),
-		content:    logBytes,
-		ResourceId: resourceId,
-		Tags:       getTags(parsedId),
-	}, nil
+	return currLog.ToLog()
 }
 
 func getTags(id *arm.ResourceID) []string {
@@ -125,7 +263,7 @@ type DatadogLogsSubmitter interface {
 type Client struct {
 	logsSubmitter DatadogLogsSubmitter
 	logsBuffer    []*Log
-	currentSize   int
+	currentSize   int64
 }
 
 // NewClient creates a new Client.
@@ -175,4 +313,29 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
+}
+
+// ParseLogs reads logs from a reader and parses them into Log objects.
+func ParseLogs(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error] {
+	scanner := bufio.NewScanner(reader)
+
+	// set buffer size so we can process logs bigger than 65kb
+	buffer := make([]byte, initialBufferSize)
+	scanner.Buffer(buffer, maxBufferSize)
+
+	return func(yield func(*Log, error) bool) {
+		for scanner.Scan() {
+			currBytes := scanner.Bytes()
+			currLog, err := NewLog(currBytes, containerName)
+			if err != nil {
+				if !yield(nil, err) {
+					return
+				}
+			}
+			if !yield(currLog, nil) {
+				return
+			}
+		}
+	}
+
 }
