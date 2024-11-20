@@ -155,7 +155,8 @@ func objectLiteralToMap(objectLiteral *ast.ObjectLiteral) (map[string]any, error
 }
 
 func mapFromJSON(data []byte) (map[string]any, error) {
-	program, err := parser.ParseFile(nil, "", "a = "+string(data)+";", 0)
+	javascriptExpression := fmt.Sprintf("a = %s;", data)
+	program, err := parser.ParseFile(nil, "", javascriptExpression, 0)
 	if err != nil {
 		return nil, err
 	}
