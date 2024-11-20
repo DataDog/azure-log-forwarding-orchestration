@@ -174,13 +174,12 @@ func TestRun(t *testing.T) {
 		logger.SetOutput(buffer)
 
 		ctx := context.Background()
-		expectedBytesForLog, err := logs.BytesFromJSON(getLogWithContent(testString))
-		require.NoError(t, err)
+		expectedBytesForLog := getLogWithContent(testString)
 
 		newlineBytes := 2
 
 		// WHEN
-		err = run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
+		err := run(ctx, client, []*logs.Client{logClient}, log.NewEntry(logger), time.Now)
 
 		// THEN
 		assert.NoError(t, err)

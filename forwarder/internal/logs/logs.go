@@ -181,6 +181,8 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
+	logSize := len(logBytes) + newlineBytes
+
 	if containerName == functionAppContainer {
 		logBytes, err = BytesFromJSON(logBytes)
 		if err != nil {
@@ -200,7 +202,7 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 		return nil, err
 	}
 
-	currLog.ByteSize = int64(len(logBytes) + newlineBytes)
+	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
 
 	return currLog.ToLog()
