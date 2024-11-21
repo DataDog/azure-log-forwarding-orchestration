@@ -274,6 +274,7 @@ type Client struct {
 
 // NewClient creates a new Client.
 func NewClient(logsApi DatadogLogsSubmitter) *Client {
+
 	return &Client{
 		logsSubmitter: logsApi,
 	}
