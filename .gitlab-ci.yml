@@ -190,6 +190,13 @@ forwarder-vet:
   script:
     - cd forwarder
     - go vet ./...
+forwarder-format:
+  image: $CI_IMAGE
+  stage: ci-image
+  tags: ["arch:amd64"]
+  script:
+    - cd forwarder
+    - go fmt ./...
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
