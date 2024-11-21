@@ -242,10 +242,16 @@ func ptr[T any](v T) *T {
 }
 
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
+	additionalProperties := map[string]string{
+		"time":  log.Time.Format(time.RFC3339),
+		"level": log.Level,
+	}
+
 	logItem := datadogV2.HTTPLogItem{
-		Ddsource: ptr("azure"),
-		Ddtags:   ptr(strings.Join(log.Tags, ",")),
-		Message:  log.Content(),
+		Ddsource:             ptr("azure"),
+		Ddtags:               ptr(strings.Join(log.Tags, ",")),
+		Message:              log.Content(),
+		AdditionalProperties: additionalProperties,
 	}
 	return logItem
 }
