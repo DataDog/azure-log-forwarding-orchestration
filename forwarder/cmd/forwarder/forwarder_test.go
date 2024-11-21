@@ -397,7 +397,7 @@ func TestCursors(t *testing.T) {
 
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
-					lastCursor, err = cursor.FromBytes(content, log.NewEntry(logger))
+					lastCursor = cursor.FromBytes(content, log.NewEntry(logger))
 					require.NoError(t, err)
 				}
 				return azblob.UploadBufferResponse{}, nil
@@ -469,7 +469,7 @@ func TestCursors(t *testing.T) {
 
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
-					lastCursor, err = cursor.FromBytes(content, log.NewEntry(logger))
+					lastCursor = cursor.FromBytes(content, log.NewEntry(logger))
 					require.NoError(t, err)
 				}
 				return azblob.UploadBufferResponse{}, nil
