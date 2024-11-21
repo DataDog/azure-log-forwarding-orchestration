@@ -43,14 +43,6 @@ const functionAppContainer = "insights-logs-functionapplogs"
 
 // Log represents a log to send to Datadog.
 type Log struct {
-
-
-
-//yayayayayayay
-
-
-
-
 	content    *[]byte
 	ByteSize   int64
 	Tags       []string
