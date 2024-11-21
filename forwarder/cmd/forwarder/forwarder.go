@@ -48,21 +48,24 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	if currentOffset > blob.ContentLength {
 		return fmt.Errorf("cursor is ahead of blob length for %s", blob.Name)
 	}
-	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
+	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset, blob.ContentLength)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
 	processedBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, logsChannel)
 
-	// newlines are sometimes 1 byte and sometimes 2 bytes
+	// linux newlines are 1 byte, but windows newlines are 2
+	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
+	// we know we have hit the end and can safely set our cursor to the end of the file.
 	if processedBytes+processedLogs+currentOffset == blob.ContentLength {
 		processedBytes = blob.ContentLength - currentOffset
 	}
 
-	// calculation of writtenBytes is not always accurate
 	if processedBytes+currentOffset > blob.ContentLength {
-		processedBytes = blob.ContentLength - currentOffset
+		// we have processed more bytes than expected
+		// unsafe to save cursor
+		return errors.Join(err, fmt.Errorf("processed more bytes than expected for %s", blob.Name))
 	}
 
 	// we have processed and submitted logs up to currentOffset+processedBytes whether the error is nil or not
@@ -224,7 +227,11 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 				continue
 			}
 			downloadEg.Go(func() error {
-				return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+				err := getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+				if err != nil {
+					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, err))
+				}
+				return err
 			})
 		}
 	}
