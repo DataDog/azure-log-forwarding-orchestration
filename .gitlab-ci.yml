@@ -197,6 +197,7 @@ forwarder-format:
   script:
     - cd forwarder
     - go fmt ./...
+    - git diff --exit-code
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
