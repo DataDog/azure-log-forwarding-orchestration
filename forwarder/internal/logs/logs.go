@@ -86,6 +86,7 @@ func (l *azureLog) ResourceId() string {
 
 func (l *azureLog) ToLog() (*Log, error) {
 	parsedId, err := arm.ParseResourceID(l.ResourceId())
+
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +275,6 @@ type Client struct {
 
 // NewClient creates a new Client.
 func NewClient(logsApi DatadogLogsSubmitter) *Client {
-
 	return &Client{
 		logsSubmitter: logsApi,
 	}
@@ -319,6 +319,16 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
+
+
+
+
+
+
+
+
+
+
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
 }
 
