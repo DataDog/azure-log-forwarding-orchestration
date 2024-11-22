@@ -48,21 +48,35 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	if currentOffset > blob.ContentLength {
 		return fmt.Errorf("cursor is ahead of blob length for %s", blob.Name)
 	}
-	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset)
+	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset, blob.ContentLength)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	writtenBytes, err := parseLogs(content.Reader, blob.Container.Name, logsChannel)
+	processedBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, logsChannel)
 
-	// we have processed and submitted logs up to currentOffset+int64(writtenBytes) whether the error is nil or not
-	cursors.SetCursor(blob.Container.Name, blob.Name, currentOffset+int64(writtenBytes))
+	// linux newlines are 1 byte, but windows newlines are 2
+	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
+	// we know we have hit the end and can safely set our cursor to the end of the file.
+	if processedBytes+processedLogs+currentOffset == blob.ContentLength {
+		processedBytes = blob.ContentLength - currentOffset
+	}
+
+	if processedBytes+currentOffset > blob.ContentLength {
+		// we have processed more bytes than expected
+		// unsafe to save cursor
+		return errors.Join(err, fmt.Errorf("processed more bytes than expected for %s", blob.Name))
+	}
+
+	// we have processed and submitted logs up to currentOffset+processedBytes whether the error is nil or not
+	cursors.SetCursor(blob.Container.Name, blob.Name, currentOffset+processedBytes)
 
 	return err
 }
 
-func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *logs.Log) (int64, error) {
+func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *logs.Log) (int64, int64, error) {
 	var processedBytes int64
+	var processedLogs int64
 
 	var currLog *logs.Log
 	var err error
@@ -71,11 +85,11 @@ func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *l
 			break
 		}
 
-		// bufio.Scanner consumes the new line character so we need to add it back
 		processedBytes += currLog.ByteSize
+		processedLogs += 1
 		logsChannel <- currLog
 	}
-	return processedBytes, err
+	return processedBytes, processedLogs, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
@@ -213,7 +227,11 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 				continue
 			}
 			downloadEg.Go(func() error {
-				return getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+				err := getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+				if err != nil {
+					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, err))
+				}
+				return err
 			})
 		}
 	}

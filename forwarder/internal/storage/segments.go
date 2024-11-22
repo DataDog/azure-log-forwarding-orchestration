@@ -23,12 +23,15 @@ type BlobSegment struct {
 }
 
 // DownloadSegment downloads a segment of a blob starting from an offset
-func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64) (BlobSegment, error) {
+func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64, contentLength int64) (BlobSegment, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
 	defer span.Finish()
 
 	options := &azblob.DownloadStreamOptions{
-		Range: azblob.HTTPRange{Offset: offset},
+		Range: azblob.HTTPRange{
+			Offset: offset,
+			Count:  contentLength - offset,
+		},
 	}
 
 	resp, err := c.azBlobClient.DownloadStream(ctx, blob.Container.Name, blob.Name, options)

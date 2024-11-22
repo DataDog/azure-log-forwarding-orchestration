@@ -37,7 +37,7 @@ const maxBufferSize = math.MaxInt32
 const initialBufferSize = 1024 * 1024 * 5
 
 // newlineBytes is the number of bytes in a newline character in utf-8.
-const newlineBytes = 2
+const newlineBytes = 1
 
 const functionAppContainer = "insights-logs-functionapplogs"
 

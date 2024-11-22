@@ -91,11 +91,15 @@ func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry)
 		}
 		return nil, fmt.Errorf("failed to download cursor: %w", err)
 	}
+	return FromBytes(data, logger), nil
+}
+
+func FromBytes(data []byte, logger *log.Entry) *Cursors {
 	var cursorMap map[string]int64
-	err = json.Unmarshal(data, &cursorMap)
+	err := json.Unmarshal(data, &cursorMap)
 	if err != nil {
 		logger.Errorf(fmt.Errorf("could not unmarshal log cursors: %w", err).Error())
-		return NewCursors(nil), nil
+		return NewCursors(nil)
 	}
-	return NewCursors(cursorMap), nil
+	return NewCursors(cursorMap)
 }

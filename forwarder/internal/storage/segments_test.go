@@ -39,14 +39,16 @@ func TestDownloadSegment(t *testing.T) {
 
 		client := storage.NewClient(mockClient)
 
+		contentLength := int64(len(want))
+
 		blob := storage.Blob{
 			Container:     storage.Container{Name: containerName},
 			Name:          blobName,
-			ContentLength: int64(len(want)),
+			ContentLength: contentLength,
 		}
 
 		// WHEN
-		segment, err := client.DownloadSegment(context.Background(), blob, 0)
+		segment, err := client.DownloadSegment(context.Background(), blob, 0, contentLength)
 		require.NoError(t, err)
 		got := make([]byte, len(want))
 		_, err = segment.Reader.Read(got)
@@ -72,14 +74,16 @@ func TestDownloadSegment(t *testing.T) {
 
 		client := storage.NewClient(mockClient)
 
+		contentLength := int64(5)
+
 		blob := storage.Blob{
 			Container:     storage.Container{Name: containerName},
 			Name:          blobName,
-			ContentLength: 5,
+			ContentLength: contentLength,
 		}
 
 		// WHEN
-		_, got := client.DownloadSegment(context.Background(), blob, 0)
+		_, got := client.DownloadSegment(context.Background(), blob, 0, contentLength)
 
 		// THEN
 		assert.NotNil(t, got)
