@@ -212,7 +212,7 @@ func getTags(id *arm.ResourceID) []string {
 	return []string{
 		fmt.Sprintf("subscription_id:%s", id.SubscriptionID),
 		fmt.Sprintf("resource_group:%s", id.ResourceGroupName),
-		fmt.Sprintf("azure_support_case:%s", "2411210040009104"),
+		fmt.Sprintf("azure_support_case:%s", "2411210040009104a"),
 		fmt.Sprintf("source:%s", strings.Replace(id.ResourceType.String(), "/", ".", -1)),
 		fmt.Sprintf("forwarder:%s", "lfo"),
 		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
