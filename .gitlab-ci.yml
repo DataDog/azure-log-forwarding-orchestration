@@ -91,17 +91,22 @@ publish-tasks:
     - ci/scripts/control_plane/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
-# arm-template-publish-qa:
-#   image: $CI_IMAGE
-#   stage: publish
-#   tags: ["arch:amd64"]
-#   only:
-#     refs:
-#       - main
-#   dependencies:
-#     - build-tasks
-#   script:
-#     - ci/scripts/arm-template/gen-template.py
+arm-template-publish-qa:
+  image: $CI_IMAGE
+  stage: ci-image # altan - set to publish
+  tags: ["arch:amd64"]
+  # only:
+  #   refs:
+  #     - main
+  #   dependencies:
+  #     - build-tasks
+  script: 
+    - cd deploy
+    - ../scripts/arm-template/gen-template.py
+    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - ../scripts/arm-template/upload.sh https://lfoqa.blob.core.windows.net
 # arm-template-publish:
 #   image: $CI_IMAGE
 #   stage: publish
