@@ -83,13 +83,11 @@ publish-tasks:
     - build-tasks
 arm-template-publish-qa:
   image: $CI_IMAGE
-  stage: ci-image # altan - set to publish
+  stage: publish
   tags: ["arch:amd64"]
-  # only:
-  #   refs:
-  #     - main
-  #   dependencies:
-  #     - build-tasks
+  only:
+    refs:
+      - main
   script: 
     - cd deploy
     - ../scripts/arm-template/gen-template.py

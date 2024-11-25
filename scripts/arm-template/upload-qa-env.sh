@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# Uploads ARM template files (createUiDefinition.json & azureDeploy.json) as blobs to LFO QA storage account
+
 set -euo pipefail
 
 AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
