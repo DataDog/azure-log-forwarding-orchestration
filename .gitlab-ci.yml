@@ -68,16 +68,6 @@ build-tasks:
       - dist/diagnostic_settings_task.zip
       - dist/resources_task.zip
       - dist/scaling_task.zip
-build-arm-template:
-  image: $CI_IMAGE
-  stage: ci-image # altan - set to build
-  tags: ["arch:amd64"]
-  # only:
-  #   refs:
-  #     - main
-  script: 
-    - cd deploy
-    - ../scripts/arm-template/gen-template.py
 publish-tasks:
   image: $CI_IMAGE
   stage: publish
@@ -103,11 +93,7 @@ arm-template-publish-qa:
   script: 
     - cd deploy
     - ../scripts/arm-template/gen-template.py
-    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export connection=https://lfoqa.blob.core.windows.net
-    - ../scripts/arm-template/upload.sh
+    - ../scripts/arm-template/upload-qa-env.sh
 # arm-template-publish:
 #   image: $CI_IMAGE
 #   stage: publish
