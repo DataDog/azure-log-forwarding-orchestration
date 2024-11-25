@@ -4,8 +4,10 @@ import json
 from subprocess import run
 from os import chdir, environ, mkdir, path
 
-# CI will start from LFO folder
-# chdir(path.join(environ["HOME"], "dd", "azure-log-forwarding-orchestration", "deploy")) 
+isDevMachine = "CI_IMAGE" not in environ
+
+if isDevMachine:
+    chdir(path.join(environ["HOME"], "dd", "azure-log-forwarding-orchestration", "deploy"))
 
 BUILD_DIR = "build"
 TEMPLATE_FILE = "azuredeploy.json"
