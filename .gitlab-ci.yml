@@ -92,6 +92,9 @@ arm-template-publish-qa:
   #     - build-tasks
   script: 
     - cd deploy
+    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - ../scripts/arm-template/gen-template.py
     - ../scripts/arm-template/upload-qa-env.sh
 # arm-template-publish:
