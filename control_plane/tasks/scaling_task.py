@@ -138,7 +138,10 @@ class ScalingTask(Task):
             await gather(
                 *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),
                 *(self.delete_region(client, subscription_id, region) for region in regions_to_remove),
-                *(self.scale_region(client, subscription_id, region) for region in regions_to_check_scaling),
+                *(
+                    self.maintain_existing_region(client, subscription_id, region)
+                    for region in regions_to_check_scaling
+                ),
             )
 
             if self.background_tasks:
@@ -202,7 +205,7 @@ class ScalingTask(Task):
             # delete if we haven't already cleaned it up
             self.assignment_cache.get(subscription_id, {}).pop(region, None)
 
-    async def scale_region(
+    async def maintain_existing_region(
         self,
         client: LogForwarderClient,
         subscription_id: str,
@@ -247,9 +250,9 @@ class ScalingTask(Task):
         ASSUMPTION: Assignment cache is pruned before we execute this. (see `prune_assignment_cache`)"""
         region_config = self.assignment_cache[subscription_id][region]
         if not region_config["configurations"]:
+            # TODO we should do as little as possible, probably just exit out and clear the cache
             log.warning("No forwarders found in cache for region %s, recreating", region)
             self.assignment_cache[subscription_id].pop(region)
-            await self.set_up_region(client, subscription_id, region)
             return False
         # fetch log resources
         forwarder_resources_list = await gather(
@@ -263,9 +266,9 @@ class ScalingTask(Task):
 
         # if all forwarders have been deleted, we need to recreate a forwarder, choose the first forwarder for now
         if all(not all(resources) for resources in forwarder_resources.values()):
-            log.warning("All forwarders gone in region %s, setting up region again", region)
+            # TODO we should just nuke the region and wait until next time
+            log.warning("All forwarders gone in region %s", region)
             self.assignment_cache[subscription_id].pop(region)
-            await self.set_up_region(client, subscription_id, region)
             return False
 
         # if there are some partially missing forwarders, delete them from
