@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-
-# Uploads ARM template files (createUiDefinition.json & azureDeploy.json) as blobs to LFO QA storage account
+# Uploads LFO ARM template files as blobs to LFO QA storage account
 
 set -euo pipefail
 
