@@ -81,28 +81,6 @@ publish-tasks:
     - ci/scripts/control_plane/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
-arm-template-publish-qa:
-  image: $CI_IMAGE
-  stage: publish
-  tags: ["arch:amd64"]
-  only:
-    refs:
-      - main
-  script: 
-    - cd deploy
-    - ../scripts/arm-template/gen-template.py
-    - ../scripts/arm-template/upload-qa-env.sh
-# arm-template-publish:
-#   image: $CI_IMAGE
-#   stage: publish
-#   tags: ["arch:amd64"]
-#   rules:
-#     - if: $CI_COMMIT_BRANCH == "main"
-#       when: manual
-#   dependencies:
-#     - build-tasks
-#   script:
-#     - cd helloWorld
 publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish
@@ -117,12 +95,38 @@ publish-tasks-qa:
     - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
+arm-template-publish-qa:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ["arch:amd64"]
+  only:
+    refs:
+      - main
+  script: 
+    - cd deploy
+    - ../scripts/arm-template/gen-template.py
+    - ../scripts/arm-template/upload-qa-env.sh
+arm-template-publish:
+  image: $CI_IMAGE
+  stage: ci-image
+  tags: ["arch:amd64"]
+  # rules:
+  #   - if: $CI_COMMIT_BRANCH == "main"
+  #     when: manual
+  # dependencies:
+  #   - build-tasks
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
+  script:
+    - cd deploy
+    - ../scripts/arm-template/gen-template.py
+    - ../scripts/arm-template/upload-public.sh
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
-      - main    #altan - you'll need to comment this out when uploading for first time because overwrite will fail otherwise
+      - main
   tags: ["arch:amd64"]
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
