@@ -250,7 +250,7 @@ class ScalingTask(Task):
         ASSUMPTION: Assignment cache is pruned before we execute this. (see `prune_assignment_cache`)"""
         region_config = self.assignment_cache[subscription_id][region]
         if not region_config["configurations"]:
-            # TODO we should do as little as possible, probably just exit out and clear the cache
+            # TODO(AZINTS-2968) we should do as little as possible, probably just exit out and clear the cache
             log.warning("No forwarders found in cache for region %s, recreating", region)
             self.assignment_cache[subscription_id].pop(region)
             return False
@@ -266,7 +266,7 @@ class ScalingTask(Task):
 
         # if all forwarders have been deleted, we need to recreate a forwarder, choose the first forwarder for now
         if all(not all(resources) for resources in forwarder_resources.values()):
-            # TODO we should just nuke the region and wait until next time
+            # TODO(AZINTS-2968) we should just nuke the region and wait until next time
             log.warning("All forwarders gone in region %s", region)
             self.assignment_cache[subscription_id].pop(region)
             return False
