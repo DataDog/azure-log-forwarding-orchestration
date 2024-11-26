@@ -27,10 +27,8 @@ fi
 resource_group=$1
 set -u
 
-subscription_id=$(az account show --query id --output tsv)
 
 cd ./control_plane
-cache_name=$(python -c "from cache.common import BLOB_STORAGE_CACHE; print(BLOB_STORAGE_CACHE, end='')")
 tasks=$(python -m tasks)
 cd ..
 
@@ -43,7 +41,7 @@ for task in $tasks; do
         echo "Task $task has not been built, skipping."
         continue
     fi
-    function_app_name=$((grep "${task//_/-}" <<<"$existing_functions") | cut -d$'\n' -f1)
+    function_app_name=$( (grep "${task//_/-}" <<<"$existing_functions") | cut -d$'\n' -f1 )
 
     # Deploying function app code
     cd ./dist/$task
