@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uploads LFO ARM template files as blobs to public-facing storage account
+# Uploads LFO ARM template files as blobs to public-facing storage account - https://ddazurelfo.core.blob.windows.net
 
 set -euxo pipefail
 

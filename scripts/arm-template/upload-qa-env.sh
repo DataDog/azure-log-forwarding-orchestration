@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Uploads LFO ARM template files as blobs to LFO QA storage account
+# Uploads LFO ARM template files as blobs to LFO QA storage account - https://lfoqa.blob.core.windows.net
 
 set -euo pipefail
 
@@ -9,7 +9,10 @@ AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure
 
 az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
 
-connection=$(az storage account show-connection-string --resource-group lfo-qa --name lfoqa --query connectionString)
+# connection=$(az storage account show-connection-string --resource-group lfo-qa --name lfoqa --query connectionString)
 
-az storage blob upload --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --connection-string $connection --overwrite
-az storage blob upload --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --connection-string $connection --overwrite
+# az storage blob upload --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --connection-string $connection --overwrite
+# az storage blob upload --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --connection-string $connection --overwrite
+
+az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --overwrite
+az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --overwrite

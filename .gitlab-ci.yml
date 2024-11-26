@@ -97,26 +97,26 @@ publish-tasks-qa:
     - build-tasks
 arm-template-publish-qa:
   image: $CI_IMAGE
-  stage: publish
+  stage: ci-image
   tags: ["arch:amd64"]
-  only:
-    refs:
-      - main
+  # only:
+  #   refs:
+  #     - main
   script: 
     - cd deploy
     - ../scripts/arm-template/gen-template.py
     - ../scripts/arm-template/upload-qa-env.sh
-arm-template-publish:
-  image: $CI_IMAGE
-  stage: ci-image
-  tags: ["arch:amd64"]
-  # rules:
-  #   - if: $CI_COMMIT_BRANCH == "main"
-  #     when: manual
-  # dependencies:
-  #   - build-tasks
-  variables:
-    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
+# arm-template-publish:
+#   image: $CI_IMAGE
+#   stage: ci-image
+#   tags: ["arch:amd64"]
+#   rules:
+#     - if: $CI_COMMIT_BRANCH == "main"
+#       when: manual
+#   dependencies:
+#     - build-tasks
+#   variables:
+#     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
     - cd deploy
     - ../scripts/arm-template/gen-template.py
