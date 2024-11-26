@@ -102,6 +102,8 @@ arm-template-publish-qa:
   only:
     refs:
       - main
+  dependencies:
+    - build-tasks
   script: 
     - cd deploy
     - ../scripts/arm-template/gen-template.py
