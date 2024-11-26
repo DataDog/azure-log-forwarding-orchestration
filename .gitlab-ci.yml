@@ -97,15 +97,16 @@ publish-tasks-qa:
     - build-tasks
 arm-template-publish-qa:
   image: $CI_IMAGE
-  stage: publish
+  stage: ci-image
   tags: ["arch:amd64"]
-  only:
-    refs:
-      - main
-  dependencies:
-    - build-tasks
+  # only:
+  #   refs:
+  #     - main
+  # dependencies:
+  #   - build-tasks
   script: 
     - cd deploy
+    - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' azuredeploy.bicep
     - ../scripts/arm-template/gen-template.py
     - ../scripts/arm-template/upload-qa-env.sh
 arm-template-publish:
