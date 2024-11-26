@@ -9,5 +9,7 @@ AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure
 
 az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
 
+az storage container create --account-name lfoqa --auth-mode login --name templates 
+
 az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --overwrite
 az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --overwrite
