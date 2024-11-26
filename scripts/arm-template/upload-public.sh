@@ -5,7 +5,7 @@ set -euxo pipefail
 
 az login --identity
 
-az storage container create --name templates --account-name ddazurelfo --public-access blob --auth-mode login
+az storage container create --name templates --account-name ddazurelfo --auth-mode login --public-access blob 
 
-az storage blob upload --account-name ddazurelfo --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --overwrite 
-az storage blob upload --account-name ddazurelfo --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --overwrite 
+az storage blob upload --account-name ddazurelfo --auth-mode login --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --overwrite 
+az storage blob upload --account-name ddazurelfo --auth-mode login --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --overwrite 
