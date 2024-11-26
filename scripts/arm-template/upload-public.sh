@@ -7,5 +7,5 @@ az login --identity
 
 az storage container create --name templates --account-name ddazurelfo --public-access blob --auth-mode login
 
-az storage blob upload --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --overwrite
-az storage blob upload --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --overwrite
+az storage blob upload --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --auth-mode login --overwrite 
+az storage blob upload --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --auth-mode login --overwrite 
