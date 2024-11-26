@@ -97,18 +97,18 @@ publish-tasks-qa:
     - build-tasks
 arm-template-publish-qa:
   image: $CI_IMAGE
-  stage: ci-image
+  stage: publish
   tags: ["arch:amd64"]
-  # only:
-  #   refs:
-  #     - main
-  # dependencies:
-  #   - build-tasks
+  only:
+    refs:
+      - main
   script: 
     - cd deploy
     - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' azuredeploy.bicep
     - ../scripts/arm-template/gen-template.py
     - ../scripts/arm-template/upload-qa-env.sh
+  dependencies:
+    - build-tasks
 arm-template-publish:
   image: $CI_IMAGE
   stage: publish
@@ -116,14 +116,14 @@ arm-template-publish:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
-  dependencies:
-    - build-tasks
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
     - cd deploy
     - ../scripts/arm-template/gen-template.py
     - ../scripts/arm-template/upload-public.sh
+  dependencies:
+    - build-tasks
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
