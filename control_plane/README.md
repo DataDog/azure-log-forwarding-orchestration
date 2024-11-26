@@ -45,4 +45,4 @@ Once you have built the tasks, you can deploy to the control plane as follows:
 
 Use the arm template to make the initial deploy, then use the `deploy-control-plane.sh` script to update the function apps.
 
-DISCLAIMER: Using the script will break the deployer task, so only deploy to control plane instances you are using for testing.
+DISCLAIMER: Using the script will break the deployer task's ability to deploy, so only deploy to control plane instances you are using for testing.
