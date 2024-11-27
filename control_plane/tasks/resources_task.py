@@ -26,7 +26,7 @@ from tasks.common import (
     now,
 )
 from tasks.concurrency import collect
-from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES, ALLOWED_RESOURCE_QUERY_FILTER
+from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_QUERY_FILTER, ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
