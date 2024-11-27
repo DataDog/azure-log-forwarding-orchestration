@@ -152,8 +152,6 @@ ALLOWED_RESOURCE_TYPES = {
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 }
 
-ALLOWED_RESOURCE_QUERY_FILTER = " or ".join([f"resourceType eq '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
-
 ALLOWED_REGIONS = {
     "northcentralusstage",
     "westus2",
