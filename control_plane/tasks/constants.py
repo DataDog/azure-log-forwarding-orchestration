@@ -151,6 +151,7 @@ ALLOWED_RESOURCE_TYPES = {
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 }
 
+
 ALLOWED_REGIONS = {
     "northcentralusstage",
     "westus2",
