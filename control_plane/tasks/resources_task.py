@@ -26,7 +26,7 @@ from tasks.common import (
     now,
 )
 from tasks.concurrency import collect
-from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
+from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES, ALLOWED_RESOURCE_QUERY_FILTER
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
@@ -86,7 +86,7 @@ class ResourcesTask(Task):
         async with ResourceManagementClient(self.credential, subscription_id) as client:
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
-            async for r in client.resources.list():
+            async for r in client.resources.list(ALLOWED_RESOURCE_QUERY_FILTER):
                 region = cast(str, r.location).casefold()
                 if should_ignore_resource(region, cast(str, r.type).casefold(), cast(str, r.name).casefold()):
                     continue
