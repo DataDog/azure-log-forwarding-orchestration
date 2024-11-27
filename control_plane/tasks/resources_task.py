@@ -70,7 +70,7 @@ class ResourcesTask(Task):
 
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
-    
+
     @staticmethod
     def resource_query_filter(resource_types: set[str]) -> str:
         return " or ".join([f"resourceType eq '{rt}'" for rt in resource_types])
