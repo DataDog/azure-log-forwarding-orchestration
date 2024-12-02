@@ -161,6 +161,21 @@ class ScalingTask(Task):
                 log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
             return None
 
+    @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
+    async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> str | None:
+        """Creates a log forwarder env for the given subscription and region and returns the resource id.
+        Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
+        config_id = generate_unique_id()
+        try:
+            config_type = await client.create_log_forwarder(region, config_id)
+            return LogForwarder(config_id, config_type)
+        except Exception:
+            log.exception("Failed to create log forwarder %s, cleaning up", config_id)
+            success = await client.delete_log_forwarder(config_id, raise_error=False)
+            if not success:
+                log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
+            return None
+
     async def set_up_region(
         self,
         client: LogForwarderClient,
@@ -172,7 +187,13 @@ class ScalingTask(Task):
 
         Will never raise an exception.
         """
-        log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
+        env_exists = await self.ensure_region_forwarder_env(client, region)
+        if not env_exists:
+            log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
+            log_forwarder_env = await self.create_log_forwarder_env(client, region)
+            if log_forwarder_env is None:
+                return
+
         log_forwarder = await self.create_log_forwarder(client, region)
         if log_forwarder is None:
             return
@@ -214,6 +235,10 @@ class ScalingTask(Task):
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
+
+        env_exists = await self.ensure_region_forwarder_env(client, region)
+        if not env_exists:
+            return
 
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
         if not all_forwarders_exist:
@@ -286,6 +311,11 @@ class ScalingTask(Task):
         for broken_forwarder in broken_forwarders:
             region_config["configurations"].pop(broken_forwarder)
 
+        return False
+
+    async def ensure_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
+        """Checks to see if the forwarder env exists for a given region"""
+        # forwarder_env = await client.get_log_forwarder_managed_environment(region)
         return False
 
     async def collect_region_forwarder_metrics(
