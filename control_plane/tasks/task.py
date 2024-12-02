@@ -30,11 +30,7 @@ class Task(AbstractAsyncContextManager["Task"]):
     ) -> None:
         if exc_type is None and exc_value is None and traceback is None:
             await self.write_caches()
-            await self.write_audit_logs()
         await self.credential.__aexit__(exc_type, exc_value, traceback)
 
     @abstractmethod
     async def write_caches(self) -> None: ...
-
-    @abstractmethod
-    async def write_audit_logs(self) -> None: ...
