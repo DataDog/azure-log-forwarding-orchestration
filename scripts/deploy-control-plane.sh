@@ -17,7 +17,7 @@ command -v az >/dev/null 2>&1 || {
 command -v func >/dev/null 2>&1 || {
     echo installing azure-functions-core-tools...
     brew tap azure/functions
-    brew install brew install azure-functions-core-tools@4
+    brew install azure-functions-core-tools@4
 }
 
 if [ -z "$1" ]; then
@@ -54,7 +54,6 @@ for task in $tasks; do
         sleep 5
     done
     cd ../..
-
 done
 
 echo All Done!
