@@ -13,6 +13,7 @@ param datadogApiKey string
 param datadogSite string
 
 param imageRegistry string = 'datadoghq.azurecr.io'
+param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
 module controlPlaneSubscription './subscription.bicep' = {
   name: 'createControlPlaneResourceGroup'
@@ -48,6 +49,7 @@ module controlPlaneResourceGroup './control_plane.bicep' = {
     datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
     imageRegistry: imageRegistry
+    storageAccountUrl: storageAccountUrl
   }
   dependsOn: [
     controlPlaneSubscription
