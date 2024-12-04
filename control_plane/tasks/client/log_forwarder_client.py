@@ -68,7 +68,6 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
-    FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
     get_container_app_name,
@@ -380,7 +379,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if poller:
                 await poller.result()
 
-            await gather(delete_storage_account_task, poller.result())
+                await gather(delete_storage_account_task, poller.result())
             log.info("Deleted log forwarder %s", forwarder_id)
 
         try:
@@ -507,17 +506,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:
-        jobs, envs, storage_accounts = await gather(
+        jobs, storage_accounts = await gather(
             collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group)),
-            collect(self.container_apps_client.managed_environments.list_by_resource_group(self.resource_group)),
             collect(self.storage_client.storage_accounts.list_by_resource_group(self.resource_group)),
         )
 
         def _get_forwarder_config_ids(it: Iterable[Resource], prefix: str) -> set[str]:
             return {resource.name.removeprefix(prefix) for resource in it if resource.name.startswith(prefix)}
 
-        return (
-            _get_forwarder_config_ids(cast(Iterable[Resource], jobs), FORWARDER_CONTAINER_APP_PREFIX)
-            | _get_forwarder_config_ids(cast(Iterable[Resource], envs), FORWARDER_MANAGED_ENVIRONMENT_PREFIX)
-            | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), FORWARDER_STORAGE_ACCOUNT_PREFIX)
-        )
+        return _get_forwarder_config_ids(
+            cast(Iterable[Resource], jobs), FORWARDER_CONTAINER_APP_PREFIX
+        ) | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), FORWARDER_STORAGE_ACCOUNT_PREFIX)
