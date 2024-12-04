@@ -9,6 +9,7 @@ param controlPlaneResourceGroupName string
 param monitoredSubscriptions string
 
 param imageRegistry string
+param storageAccountUrl string
 
 @description('Datadog API Key')
 @secure()
@@ -194,6 +195,7 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'DD_API_KEY', secretRef: 'dd-api-key' }
             { name: 'DD_APP_KEY', secretRef: 'dd-app-key' }
             { name: 'DD_SITE', value: datadogSite }
+            { name: 'STORAGE_ACCOUNT_URL', value: storageAccountUrl }
           ]
         }
       ]

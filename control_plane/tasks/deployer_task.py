@@ -4,6 +4,7 @@ from asyncio import gather, run
 from collections.abc import Iterable
 from json import dumps
 from logging import INFO, basicConfig, getLogger
+from os import environ
 from types import TracebackType
 from typing import NamedTuple, Self, cast
 
@@ -63,7 +64,8 @@ class DeployerTask(Task):
         self.subscription_id = get_config_option("SUBSCRIPTION_ID")
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.region = get_config_option("REGION")
-        self.public_storage_client = ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER)
+        storage_account_url = environ.get("STORAGE_ACCOUNT_URL", PUBLIC_STORAGE_ACCOUNT_URL)
+        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
         self.storage_client = StorageManagementClient(self.credential, self.subscription_id)

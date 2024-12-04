@@ -1,12 +1,8 @@
-## Getting Started
+# Getting Started with the Control Plane
 
-### One time setup
+All commands assume you are in the repository root.
 
-<!-- Install the Core Tools package:
-```bash
-brew tap azure/functions
-brew install azure-functions-core-tools@4
-``` -->
+## One time setup
 
 Set up Local Dev Environment:
 ```bash
@@ -18,52 +14,35 @@ pip install -e '.[dev]'
 pre-commit install
 ```
 
-<!-- ### For each function app
-
-```bash
-cp local.settings.example.json local.settings.json
-```
-
-## Publishing and Running
-Publish to function app in azure:
-
-Either in the command pallete "Azure Functions: Deploy to Function App..."
-
-or via the cli:
-```bash
-func azure functionapp publish <function-app-name> --build remote
-``` -->
-
 
 ## Running Tests
 
 Just run pytest:
 
 ```bash
-pytest .
+pytest ./control_plane
 ```
 
 ## Checking Code Coverage
 
 ```bash
-coverage run -m pytest . > /dev/null ; coverage report -m
+coverage run -m pytest ./control_plane > /dev/null ; coverage report -m
 ```
 
 ## Building and Deploying Function Apps Locally
 
 ### Building
 ```bash
-cd ~/dd/azure-log-forwarding-orchestration
-docker run -v "$(pwd):/src" registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest bash -c "cd /src/; ./ci/scripts/control_plane/build_tasks.sh"
+./ci/scripts/control_plane/build_tasks.sh
 ```
 
 ### Deploying
-Currently the main known happy path is to use the azure functions cli (`brew install azure-functions-core-tools@4`):
+Once you have built the tasks, you can deploy to the control plane as follows:
 
 ```bash
-cd ~/dd/azure-log-forwarding-orchestration/dist/
-cd '<the function app you want to deploy, eg: resources_task>'
-func azure functionapp publish your-function-name
+./scripts/deploy-control-plane.sh <control plane resource group>
 ```
 
-Note: There are other methods to deploy but you may end up banging your head against a wall so be warned.
+Use the arm template to make the initial deploy, then use the `deploy-control-plane.sh` script to update the function apps.
+
+DISCLAIMER: Using the script will break the deployer task's ability to deploy, so only deploy to control plane instances you are using for testing.

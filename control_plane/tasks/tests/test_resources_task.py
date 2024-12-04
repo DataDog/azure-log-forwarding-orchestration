@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 # project
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from tasks.constants import ALLOWED_RESOURCE_TYPES
 from tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
 from tasks.tests.common import TaskTestCase, UnexpectedException, async_generator, mock
 
@@ -242,3 +243,11 @@ class TestResourcesTask(TaskTestCase):
                 sub_id2: {"southafricanorth": {"res3"}},
             },
         )
+
+    async def test_resource_query_filter(self):
+        queryFilter = ResourcesTask.resource_query_filter(ALLOWED_RESOURCE_TYPES)
+
+        for rt in ALLOWED_RESOURCE_TYPES:
+            self.assertTrue(f"resourceType eq '{rt}'" in queryFilter)
+
+        self.assertEqual(queryFilter.count("or resourceType"), len(ALLOWED_RESOURCE_TYPES) - 1)
