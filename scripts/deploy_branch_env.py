@@ -38,7 +38,7 @@ def get_name(name: str, max_length: int) -> str:
             name = f"{name[:max_length - len(name_md5)]}{name_md5}"
         else:
             name = f"{name[:12]}{name_md5}"[:max_length]
-    return name
+    return name.lower()
 
 
 # shared variables
