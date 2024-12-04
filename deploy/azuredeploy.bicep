@@ -16,7 +16,7 @@ param imageRegistry string = 'datadoghq.azurecr.io'
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
 module controlPlaneSubscription './subscription.bicep' = {
-  name: 'createControlPlaneResourceGroup'
+  name: controlPlaneResourceGroupName
   scope: subscription(controlPlaneSubscriptionId)
   params: {
     controlPlaneResourceGroup: controlPlaneResourceGroupName
