@@ -33,6 +33,7 @@ SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
 WEST_US = "westus"
 RG1 = "test_lfo"
+CONTROL_PLANE_ID = "5a095f74c60a"
 
 
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
@@ -67,7 +68,7 @@ class TestScalingTask(TaskTestCase):
 
         self.log = self.patch("log")
         self.generate_unique_id = self.patch("generate_unique_id")
-        p = patch.dict(environ, {"RESOURCE_GROUP": RG1})
+        p = patch.dict(environ, {"RESOURCE_GROUP": RG1, "CONTROL_PLANE_ID": CONTROL_PLANE_ID})
         p.start()
         self.addCleanup(p.stop)
         self.generate_unique_id.return_value = NEW_LOG_FORWARDER_ID
@@ -99,7 +100,7 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state={},
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -141,7 +142,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         self.client.delete_log_forwarder.assert_called_once_with(OLD_LOG_FORWARDER_ID)
 
         expected_cache: AssignmentCache = {
@@ -244,7 +245,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         self.client.delete_log_forwarder.assert_not_awaited()
         expected_cache: AssignmentCache = {
             SUB_ID1: {
@@ -440,7 +441,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         self.client.delete_log_forwarder.assert_not_awaited()
         self.assertEqual(
             self.cache,
@@ -545,7 +546,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         self.client.delete_log_forwarder.assert_not_awaited()
 
         expected_cache: AssignmentCache = {
@@ -659,7 +660,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         self.client.delete_log_forwarder.assert_not_awaited()
 
         expected_cache: AssignmentCache = {
