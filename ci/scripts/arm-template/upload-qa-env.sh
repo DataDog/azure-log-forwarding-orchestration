@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Uploads LFO ARM template files as blobs to LFO QA storage account - https://lfoqa.blob.core.windows.net
+# Run from LFO root folder
 
 set -euo pipefail
 
@@ -11,5 +12,5 @@ az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --t
 
 az storage container create --account-name lfoqa --auth-mode login --name templates 
 
-az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./createUiDefinition.json --name createUiDefinition.json --overwrite
-az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./build/azuredeploy.json --name azuredeploy.json --overwrite
+az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./deploy/createUiDefinition.json --name createUiDefinition.json --overwrite
+az storage blob upload --account-name lfoqa --auth-mode login --container-name templates --file ./deploy/build/azuredeploy.json --name azuredeploy.json --overwrite
