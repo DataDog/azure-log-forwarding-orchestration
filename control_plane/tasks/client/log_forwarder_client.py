@@ -161,7 +161,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder_env(self, region: str, control_plane_id: str) -> None:
+    async def create_log_forwarder_env(self, region: str, control_plane_id: str) -> str:
         managed_env_name = get_managed_env_name(region, control_plane_id)
 
         maybe_error: tuple[Any, ...] = await gather(
@@ -170,7 +170,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         )
         log_errors("Failed to create managed environment", *maybe_error, reraise=True)
 
-        return
+        return managed_env_name
 
     async def create_log_forwarder(self, region: str, config_id: str, control_plane_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
