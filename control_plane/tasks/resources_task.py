@@ -71,6 +71,10 @@ class ResourcesTask(Task):
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
 
+    @staticmethod
+    def resource_query_filter(resource_types: set[str]) -> str:
+        return " or ".join([f"resourceType eq '{rt}'" for rt in resource_types])
+
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = await collect(
@@ -86,7 +90,8 @@ class ResourcesTask(Task):
         async with ResourceManagementClient(self.credential, subscription_id) as client:
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
-            async for r in client.resources.list():
+            resource_filter = ResourcesTask.resource_query_filter(ALLOWED_RESOURCE_TYPES)
+            async for r in client.resources.list(resource_filter):
                 region = cast(str, r.location).casefold()
                 if should_ignore_resource(region, cast(str, r.type).casefold(), cast(str, r.name).casefold()):
                     continue
