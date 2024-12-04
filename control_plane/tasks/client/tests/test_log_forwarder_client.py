@@ -39,11 +39,12 @@ EAST_US = "eastus"
 config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
-managed_env_name = FORWARDER_MANAGED_ENVIRONMENT_PREFIX + config_id
+control_plane_id = "e90ecb54476d"
+managed_env_name = FORWARDER_MANAGED_ENVIRONMENT_PREFIX + control_plane_id + "-" + EAST_US + "-env"
 container_app_name = FORWARDER_CONTAINER_APP_PREFIX + config_id
 storage_account_name = FORWARDER_STORAGE_ACCOUNT_PREFIX + config_id
 rg1 = "test_lfo"
-control_plane_id = "e90ecb54476d"
+
 
 containerAppSettings: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
@@ -138,7 +139,7 @@ class TestLogForwarderClient(AsyncTestCase):
             AzureModelMatcher(
                 {
                     "location": EAST_US,
-                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-d6fc2c757f9c",
+                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus-env",
                     "configuration": {
                         "secrets": [
                             {"name": "dd-api-key", "value": "123123"},
@@ -635,7 +636,7 @@ class TestLogForwarderClient(AsyncTestCase):
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
-            await self.client.create_log_forwarder(EAST_US, config_id, control_plane_id)
+            await self.client.create_log_forwarder_env(EAST_US, control_plane_id)
 
         # managed environment
         asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update
@@ -643,60 +644,3 @@ class TestLogForwarderClient(AsyncTestCase):
             rg1, managed_env_name, AzureModelMatcher({"location": EAST_US, "zone_redundant": False})
         )
         (await asp_create()).result.assert_awaited_once_with()
-        # storage account
-        storage_create: AsyncMock = self.client.storage_client.storage_accounts.begin_create
-        storage_create.assert_awaited_once_with(
-            rg1,
-            storage_account_name,
-            AzureModelMatcher(
-                {
-                    "sku": {"name": "Standard_LRS"},
-                    "kind": "StorageV2",
-                    "location": EAST_US,
-                    "public_network_access": "Enabled",
-                }
-            ),
-        )
-        (await storage_create()).result.assert_awaited_once_with()
-        # container job
-        function_create: AsyncMock = self.client.container_apps_client.jobs.begin_create_or_update
-        function_create.assert_awaited_once_with(
-            rg1,
-            container_app_name,
-            AzureModelMatcher(
-                {
-                    "location": EAST_US,
-                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-d6fc2c757f9c",
-                    "configuration": {
-                        "secrets": [
-                            {"name": "dd-api-key", "value": "123123"},
-                            {
-                                "name": "connection-string",
-                                "value": "DefaultEndpointsProtocol=https;AccountName=ddlogstoraged6fc2c757f9c;AccountKey=key;EndpointSuffix=core.windows.net",
-                            },
-                        ],
-                        "trigger_type": "Schedule",
-                        "replica_timeout": 1800,
-                        "replica_retry_limit": 1,
-                        "schedule_trigger_config": {"cron_expression": "* * * * *"},
-                    },
-                    "template": {
-                        "containers": [
-                            {
-                                "image": "ddlfo.azurecr.io/blobforwarder:latest",
-                                "name": "forwarder",
-                                "env": [
-                                    {"name": "AzureWebJobsStorage", "secret_ref": "connection-string"},
-                                    {"name": "DD_API_KEY", "secret_ref": "dd-api-key"},
-                                    {"name": "DD_SITE", "value": "datadoghq.com"},
-                                    {"name": "CONTROL_PLANE_ID", "value": "e90ecb54476d"},
-                                    {"name": "CONFIG_ID", "value": "d6fc2c757f9c"},
-                                ],
-                                "resources": {"cpu": 2.0, "memory": "4Gi"},
-                            }
-                        ]
-                    },
-                }
-            ),
-        )
-        (await function_create()).result.assert_awaited_once_with()
