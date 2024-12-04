@@ -13,7 +13,7 @@ az bicep install
 
 ## Development:
 
-To build the bicep into a valid ARM template, run `../scripts/arm-template/gen-template.py` in this directory.
+To build the bicep into a valid ARM template, run `../scripts/arm-template/gen-template.sh` in this directory.
 
 Then, the two components (createUiDefinition.json and azuredeploy.json) need to be uploaded to a storage bucket. Generate a connection string and run `scripts/arm-template/upload.sh`:
 ```bash
