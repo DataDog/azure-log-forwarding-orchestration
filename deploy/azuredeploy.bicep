@@ -15,7 +15,7 @@ param datadogSite string
 param imageRegistry string = 'datadoghq.azurecr.io'
 
 module controlPlaneSubscription './subscription.bicep' = {
-  name: 'createControlPlaneResourceGroup'
+  name: controlPlaneResourceGroupName
   scope: subscription(controlPlaneSubscriptionId)
   params: {
     controlPlaneResourceGroup: controlPlaneResourceGroupName
