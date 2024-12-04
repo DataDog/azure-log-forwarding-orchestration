@@ -42,15 +42,15 @@ def get_container_app_id(subscription_id: str, resource_group: str, config_id: s
     ).casefold()
 
 
-def get_managed_env_name(config_id: str) -> str:
-    return FORWARDER_MANAGED_ENVIRONMENT_PREFIX + config_id
+def get_managed_env_name(region: str, control_plane_id: str) -> str:
+    return f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{region}-env"
 
 
-def get_managed_env_id(subscription_id: str, resource_group: str, config_id: str) -> str:
+def get_managed_env_id(subscription_id: str, resource_group: str, region: str, control_plane_id: str) -> str:
     return (
         get_resource_group_id(subscription_id, resource_group)
         + "/providers/microsoft.app/managedenvironments/"
-        + get_managed_env_name(config_id)
+        + get_managed_env_name(region, control_plane_id)
     ).casefold()
 
 
