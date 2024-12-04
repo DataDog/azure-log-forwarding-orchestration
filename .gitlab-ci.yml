@@ -107,8 +107,6 @@ arm-template-publish-qa:
     - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' azuredeploy.bicep
     - ../scripts/arm-template/gen-template.sh
     - ../scripts/arm-template/upload-qa-env.sh
-  dependencies:
-    - build-tasks
 arm-template-publish:
   image: $CI_IMAGE
   stage: publish
@@ -122,8 +120,6 @@ arm-template-publish:
     - cd deploy
     - ../scripts/arm-template/gen-template.sh
     - ../scripts/arm-template/upload-public.sh
-  dependencies:
-    - build-tasks
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
