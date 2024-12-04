@@ -5,6 +5,7 @@ from json import loads
 from os import environ
 from re import sub
 from subprocess import Popen, PIPE
+from sys import exit
 from time import sleep
 
 # azure
@@ -77,9 +78,6 @@ except ResourceNotFoundError:
     print(f"Resource group {resource_group_name} does not exist, will be created")
 
 
-# if resource group exists, clear out if clear flag present
-
-
 # if resource group does not exist, create it
 if not resource_group:
     resource_group = resource_client.resource_groups.create_or_update(
@@ -104,15 +102,11 @@ if availability_result.name_available:
         {"location": LOCATION, "kind": "StorageV2", "sku": {"name": "Standard_LRS"}},
     )
 
-    # Long-running operations return a poller object; calling poller.result()
-    # waits for completion.
     account_result = poller.result()
     print(f"Created storage account {account_result.name}")
 
-    # set the allow_blob_public_access settings here
+    # set the allow_blob_public_access settings
     public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
-
-    # then use update method to update this feature
     storage_client.storage_accounts.update(
         resource_group_name, storage_account_name, public_params
     )
@@ -130,9 +124,7 @@ connection_string = f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows
 blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
 
-# check if container exists
 container_client = blob_service_client.get_container_client(CONTAINER_NAME)
-
 
 # if container does not exist, create it
 if not container_client.exists():
@@ -140,8 +132,11 @@ if not container_client.exists():
         container_client = blob_service_client.create_container(
             CONTAINER_NAME, public_access="container"
         )
-    except Exception as e:
-        print(f"Error creating storage container {CONTAINER_NAME}: {e}")
+    except Exception:
+        print(
+            f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
+        )
+        exit(1)
     print(f"Created storage container {CONTAINER_NAME}")
 
 
@@ -231,56 +226,9 @@ forwarder_build_output = Popen(
 )
 forwarder_build_output.wait()
 
-# ============
-# BEGIN LOGGY DEPLOYMENT
-# ============
-
-# deploy loggy if not already deployed
-# (need to create script to execute current branch loggy deployment)
-# loggy_base = f"{branch}loggy"
-# loggy_name = get_name(loggy_base, FUNCTION_APP_MAX_LENGTH)
-# loggy_storage_name = get_name(loggy_base, STORAGE_ACCOUNT_MAX_LENGTH)
-# loggy_availability_result = storage_client.storage_accounts.check_name_availability(
-#     { "name": loggy_storage_name }
-# )
-
-# print(f"Checking if storage app {loggy_storage_name} exists...")
-
-# # if storage account does not exist, create it
-# if loggy_availability_result.name_available:
-#     # should probably try python. somthing is weird here.
-#     print(f"Attempting to create storage account {loggy_storage_name}...")
-#     loggy_storage_poller = storage_client.storage_accounts.begin_create(resource_group_name, loggy_storage_name,
-#         {
-#             "location" : LOCATION,
-#             "kind": "StorageV2",
-#             "sku": {"name": "Standard_LRS"}
-#         }
-#     )
-
-#     loggy_result = loggy_storage_poller.result()
-#     print(f"Created storage account {loggy_result.name}")
-#     print(loggy_name)
-#     print(f"Creating function app {loggy_name}...")
-#     function_create_output = Popen(["az", "functionapp", "create", "--resource-group", resource_group_name, "--consumption-plan-location", LOCATION, "--runtime", "node", "--runtime-version", "20", "--functions-version", "4", "--name", loggy_name, "--os-type", "linux", "--storage-account" ,loggy_storage_name], cwd=lfo_dir, stdout=PIPE)
-#     function_create_output.wait()
-#     print(f"{loggy_name} created. Waiting for it to be available...")
-#     sleep(20)
-
-#     print(f"Uploading to function app {loggy_name}...")
-#     function_upload_output = Popen(["func", "azure", "functionapp", "publish", loggy_name], cwd=f"{lfo_dir}/loggy", stdout=PIPE)
-#     function_upload_output.wait()
-#     print(f"{loggy_name} has been deployed.")
-
-
-# ============
-# END LOGGY DEPLOYMENT
-# ============
-
 
 # build current version of tasks
 Popen([f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh"], cwd=lfo_dir).wait()
-
 
 # upload current version of tasks to storage account
 raw_publish_output = Popen(
@@ -294,9 +242,6 @@ raw_publish_output = Popen(
 )
 raw_publish_output.wait()
 print(raw_publish_output.stdout.readline().decode("utf-8"))
-
-
-# build and push current images to ACR
 
 
 lfo_resource_group_name = get_name(f"{branch}lfo", RESOURCE_GROUP_MAX_LENGTH)
@@ -354,7 +299,6 @@ if not lfo_resource_group:
     )
     deploy_output.wait()
 
-# add logging for function apps
 
 # execute deployer
 job_found = False
@@ -399,5 +343,3 @@ while not job_found:
             deployer_output.wait()
             print(f"Deployer executed for job {job.get('name')}")
             break
-
-# stretch goal: azure automation to clean up on the weekends
