@@ -3,5 +3,6 @@
 
 set -euxo pipefail
 
+cd deploy
 mkdir -p build
 az bicep build -f azuredeploy.bicep --outdir ./build

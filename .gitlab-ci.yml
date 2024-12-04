@@ -103,8 +103,7 @@ arm-template-publish-qa:
     refs:
       - main
   script: 
-    - cd deploy
-    - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' azuredeploy.bicep
+    - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
     - ../scripts/arm-template/gen-template.sh
     - ../scripts/arm-template/upload-qa-env.sh
 arm-template-publish:
@@ -117,7 +116,6 @@ arm-template-publish:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - cd deploy
     - ../scripts/arm-template/gen-template.sh
     - ../scripts/arm-template/upload-public.sh
 deployer-build-qa:
