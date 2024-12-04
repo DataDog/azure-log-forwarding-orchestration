@@ -97,7 +97,7 @@ publish-tasks-qa:
     - build-tasks
 arm-template-publish-qa:
   image: $CI_IMAGE
-  stage: ci-image
+  stage: publish
   tags: ["arch:amd64"]
   only:
     refs:
@@ -108,7 +108,7 @@ arm-template-publish-qa:
     - ./ci/scripts/arm-template/upload-qa-env.sh
 arm-template-publish:
   image: $CI_IMAGE
-  stage: ci-image
+  stage: publish
   tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
