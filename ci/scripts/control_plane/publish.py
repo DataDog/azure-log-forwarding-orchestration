@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# usage: publish.py <public_storage_account_url> [connection_string]
 
 # stdlib
 from concurrent.futures import ThreadPoolExecutor
@@ -9,7 +10,7 @@ import sys
 
 # 3p
 from azure.identity import DefaultAzureCredential
-from azure.storage.blob import ContainerClient
+from azure.storage.blob import ContainerClient, BlobServiceClient
 
 from cache.manifest_cache import (
     ManifestCache,
@@ -25,7 +26,7 @@ if len(sys.argv) < 2:
     print("Usage: publish.py <public_storage_account_url>")
     sys.exit(1)
 
-PUBLIC_STORAGE_ACCOUNT_URL = sys.argv[1]
+storage_account_url = sys.argv[1]
 
 basicConfig(level=INFO)
 log = getLogger("publish")
@@ -47,19 +48,26 @@ hashes: ManifestCache = {
 
 log.info(
     "Uploading the following zip files to %s/%s:\n%s",
-    PUBLIC_STORAGE_ACCOUNT_URL,
+    storage_account_url,
     TASKS_CONTAINER,
     "\n".join(zips),
 )
 
+cred = DefaultAzureCredential()
+
+
+client = ContainerClient(storage_account_url, TASKS_CONTAINER, cred)
+if len(sys.argv) >= 3:
+    blob_client = BlobServiceClient.from_connection_string(sys.argv[2])
+    client = blob_client.get_container_client(TASKS_CONTAINER)
+
+
 with (
-    DefaultAzureCredential() as cred,
-    ContainerClient(PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER, cred) as client,
     ThreadPoolExecutor() as executor,
 ):
     if not client.exists():
         log.warning("Container %s does not exist, creating it...", TASKS_CONTAINER)
-        client.create_container()
+        client.create_container(public_access="container")
     futures = [
         executor.submit(client.upload_blob, zip, data, overwrite=True)
         for zip, data in zips.items()
@@ -75,6 +83,4 @@ with (
     if exceptions:
         raise SystemExit(1)
 
-log.info(
-    "Done uploading zip files to %s/%s", PUBLIC_STORAGE_ACCOUNT_URL, TASKS_CONTAINER
-)
+log.info("Done uploading zip files to %s/%s", storage_account_url, TASKS_CONTAINER)
