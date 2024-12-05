@@ -40,9 +40,9 @@ config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
 control_plane_id = "e90ecb54476d"
-managed_env_name = FORWARDER_MANAGED_ENVIRONMENT_PREFIX + control_plane_id + "-" + EAST_US + "-env"
-container_app_name = FORWARDER_CONTAINER_APP_PREFIX + config_id
-storage_account_name = FORWARDER_STORAGE_ACCOUNT_PREFIX + config_id
+managed_env_name = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{EAST_US}-env"
+container_app_name = f"{FORWARDER_CONTAINER_APP_PREFIX}{config_id}"
+storage_account_name = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{config_id}"
 rg1 = "test_lfo"
 
 
