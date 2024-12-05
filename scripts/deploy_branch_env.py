@@ -5,7 +5,6 @@ from json import loads
 from os import environ
 from re import sub
 from subprocess import Popen, PIPE
-from sys import exit
 from time import sleep
 
 # azure
@@ -136,7 +135,7 @@ if not container_client.exists():
         print(
             f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
         )
-        exit(1)
+        raise SystemExit(1)
     print(f"Created storage container {CONTAINER_NAME}")
 
 
@@ -231,7 +230,7 @@ forwarder_build_output.wait()
 Popen([f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh"], cwd=lfo_dir).wait()
 
 # upload current version of tasks to storage account
-raw_publish_output = Popen(
+Popen(
     [
         f"{lfo_dir}/ci/scripts/control_plane/publish.py",
         f"https://{storage_account_name}.blob.core.windows.net",
@@ -239,9 +238,7 @@ raw_publish_output = Popen(
     ],
     cwd=lfo_dir,
     stdout=PIPE,
-)
-raw_publish_output.wait()
-print(raw_publish_output.stdout.readline().decode("utf-8"))
+).wait()
 
 
 lfo_resource_group_name = get_name(f"{branch}lfo", RESOURCE_GROUP_MAX_LENGTH)
@@ -301,8 +298,7 @@ if not lfo_resource_group:
 
 
 # execute deployer
-job_found = False
-while not job_found:
+while True:
     list_jobs_output = Popen(
         [
             "az",
@@ -325,7 +321,6 @@ while not job_found:
     print("execute deployer")
     for job in jobs:
         if "deployer-task" in job.get("name"):
-            job_found = True
             print(f"Executing deployer for job {job.get('name')}...")
             deployer_output = Popen(
                 [
@@ -342,4 +337,4 @@ while not job_found:
             )
             deployer_output.wait()
             print(f"Deployer executed for job {job.get('name')}")
-            break
+            raise SystemExit(0)
