@@ -121,6 +121,14 @@ class TestScalingTask(TaskTestCase):
     async def test_new_regions_are_added_second_run(self):
         # GIVEN
         self.client.get_log_forwarder_managed_environment.return_value = True
+        initial_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                }
+            }
+        }
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -133,7 +141,7 @@ class TestScalingTask(TaskTestCase):
         # WHEN
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
-            assignment_cache_state={},
+            assignment_cache_state=initial_cache,
         )
 
         # THEN

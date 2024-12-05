@@ -130,7 +130,10 @@ class ScalingTask(Task):
         await gather(*(self.process_subscription(sub_id, control_plane_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str, control_plane_id: str) -> None:
-        previous_region_assignments = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
+        previous_region_assignments = set()
+        for key, value in self._assignment_cache_initial_state.get(subscription_id, {}).items():
+            if value.get("configurations"):
+                previous_region_assignments.add(key)
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
         regions_to_add = current_regions - previous_region_assignments
         regions_to_remove = previous_region_assignments - current_regions
