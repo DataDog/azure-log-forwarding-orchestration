@@ -10,7 +10,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import Any, cast
 
 # 3p
-from tenacity import RetryError, retry, retry_if_result, stop_after_attempt
+from tenacity import retry, retry_if_result, stop_after_attempt
 
 # project
 from cache.assignment_cache import (
@@ -204,11 +204,7 @@ class ScalingTask(Task):
         env_exists = await self.ensure_region_forwarder_env(client, region, control_plane_id)
         if not env_exists:
             log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
-            try:
-                await self.create_log_forwarder_env(client, region, control_plane_id)
-            except RetryError:
-                return
-
+            await self.create_log_forwarder_env(client, region, control_plane_id)
             # log forwarder environments take multiple minutes to be ready, so we should wait until the next run
             return
 
@@ -258,6 +254,7 @@ class ScalingTask(Task):
 
         env_exists = await self.ensure_region_forwarder_env(client, region, control_plane_id)
         if not env_exists:
+            log.error("Log forwarder env missing for subscription %s in region %s", subscription_id, region)
             return
 
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)

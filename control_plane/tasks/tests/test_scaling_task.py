@@ -7,6 +7,11 @@ from typing import Any
 from unittest import TestCase
 from unittest.mock import AsyncMock, Mock, call, patch
 
+from pytest import raises
+
+# 3rd party
+from tenacity import RetryError
+
 # project
 from cache.assignment_cache import (
     ASSIGNMENT_CACHE_BLOB,
@@ -188,6 +193,42 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder_env.assert_has_calls(expected_create_calls)
         self.client.delete_log_forwarder_env.assert_has_calls(expected_delete_calls)
         self.assertEqual(self.cache, expected_cache)
+
+    async def test_errors_raised_when_forwarder_creation_fails(self):
+        # GIVEN
+        def side_effect():
+            raise Exception("Test")
+
+        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.create_log_forwarder.side_effect = side_effect
+        expected_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                }
+            }
+        }
+
+        expected_calls = [
+            call(NEW_LOG_FORWARDER_ID, raise_error=False),
+            call().__bool__(),
+            call(NEW_LOG_FORWARDER_ID, raise_error=False),
+            call().__bool__(),
+            call(NEW_LOG_FORWARDER_ID, raise_error=False),
+            call().__bool__(),
+        ]
+
+        # WHEN
+        with raises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+                assignment_cache_state=expected_cache,
+            )
+
+        # THEN
+        self.client.create_log_forwarder_env.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_has_calls(expected_calls)
 
     async def test_gone_regions_are_deleted(self):
         await self.run_scaling_task(
