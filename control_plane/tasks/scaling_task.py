@@ -201,12 +201,12 @@ class ScalingTask(Task):
         if not env_exists:
             log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
             try:
-                log_forwarder_env = await self.create_log_forwarder_env(client, region, control_plane_id)
+                await self.create_log_forwarder_env(client, region, control_plane_id)
             except RetryError:
                 return
 
-            if log_forwarder_env is None:
-                return
+            # log forwarder environments take multiple minutes to be ready, so we should wait until the next run
+            return
 
         log_forwarder = await self.create_log_forwarder(client, region, control_plane_id)
         if log_forwarder is None:
