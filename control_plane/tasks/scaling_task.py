@@ -143,11 +143,10 @@ class ScalingTask(Task):
                     for region in regions_to_check_scaling
                 ),
             )
+            await self.clean_up_orphaned_forwarders(client, subscription_id)
 
             if self.background_tasks:
                 await wait(self.background_tasks)
-
-            await self.clean_up_orphaned_forwarders(client, subscription_id)
 
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
@@ -184,6 +183,7 @@ class ScalingTask(Task):
             "configurations": {config_id: config_type},
             "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
         }
+        await self.write_caches()
 
     async def delete_region(
         self,
@@ -204,6 +204,7 @@ class ScalingTask(Task):
         if not errors:
             # delete if we haven't already cleaned it up
             self.assignment_cache.get(subscription_id, {}).pop(region, None)
+            await self.write_caches()
 
     async def maintain_existing_region(
         self,
@@ -228,6 +229,7 @@ class ScalingTask(Task):
             return
 
         self.onboard_new_resources(subscription_id, region, forwarder_metrics)
+        await self.write_caches()
 
         # count the number of resources after we have onboarded new resources
         config_ids = list(region_config["resources"].values())
@@ -237,11 +239,13 @@ class ScalingTask(Task):
         did_scale = await self.scale_up_forwarders(
             client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics
         )
+        await self.write_caches()
         # if we don't scale up, we can check for scaling down
         if did_scale:
             return
 
         await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
+        await self.write_caches()
 
     async def ensure_region_forwarders(self, client: LogForwarderClient, subscription_id: str, region: str) -> bool:
         """Ensures that all forwarders cache still exist, making the necessary adjustments to `self.assignment_cache`
@@ -253,6 +257,7 @@ class ScalingTask(Task):
             # TODO(AZINTS-2968) we should do as little as possible, probably just exit out and clear the cache
             log.warning("No forwarders found in cache for region %s, recreating", region)
             self.assignment_cache[subscription_id].pop(region)
+            await self.write_caches()
             return False
         # fetch log resources
         forwarder_resources_list = await gather(
@@ -264,11 +269,13 @@ class ScalingTask(Task):
             # everything is there!
             return True
 
-        # if all forwarders have been deleted, we need to recreate a forwarder, choose the first forwarder for now
+        # if all forwarders have been deleted, we should delete the region from the cache and exit
+        # it will be recreated next time
         if all(not all(resources) for resources in forwarder_resources.values()):
             # TODO(AZINTS-2968) we should just nuke the region and wait until next time
             log.warning("All forwarders gone in region %s", region)
             self.assignment_cache[subscription_id].pop(region)
+            await self.write_caches()
             return False
 
         # if there are some partially missing forwarders, delete them from
@@ -289,6 +296,7 @@ class ScalingTask(Task):
         for broken_forwarder in broken_forwarders:
             region_config["configurations"].pop(broken_forwarder)
 
+        await self.write_caches()
         return False
 
     async def collect_region_forwarder_metrics(

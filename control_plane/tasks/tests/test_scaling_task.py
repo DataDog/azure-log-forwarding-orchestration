@@ -760,6 +760,15 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
+    async def test_write_to_cache_partway_through(self):
+        self.client.list_log_forwarder_ids.side_effect = ValueError("meow")
+        with self.assertRaises(ValueError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+                assignment_cache_state={},
+            )
+        self.write_cache.assert_awaited()
+
 
 class TestScalingTaskHelpers(TestCase):
     def test_metrics_over_threshold(self):
