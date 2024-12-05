@@ -134,6 +134,7 @@ class ScalingTask(Task):
         for key, value in self._assignment_cache_initial_state.get(subscription_id, {}).items():
             if value.get("configurations"):
                 previous_region_assignments.add(key)
+
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
         regions_to_add = current_regions - previous_region_assignments
         regions_to_remove = previous_region_assignments - current_regions

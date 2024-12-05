@@ -230,9 +230,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
-    async def create_log_forwarder_managed_environment(self, region: str, env_name: str):
+    async def create_log_forwarder_managed_environment(self, region: str, env_name: str) -> None:
         log.info("Creating managed environment %s for region %s", env_name, region)
-        item = await self.container_apps_client.managed_environments.begin_create_or_update(
+        poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
             ManagedEnvironment(
@@ -240,8 +240,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 zone_redundant=False,
             ),
         )
-        breakpoint()
-        return item
+        if not poller:
+            raise Exception("Invalid state. Failed to create managed environment.")
+        await poller.result()
+        return
 
     async def get_log_forwarder_managed_environment(self, region: str, control_plane_id: str) -> str | None:
         env_name = get_managed_env_name(region, control_plane_id)
