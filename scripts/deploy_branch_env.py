@@ -5,7 +5,6 @@ from json import loads
 from os import environ
 from re import sub
 from subprocess import Popen, PIPE
-from sys import exit
 from time import sleep
 
 # azure
@@ -44,11 +43,13 @@ def get_name(name: str, max_length: int) -> str:
 # shared variables
 home = environ.get("HOME")
 user = environ.get("USER")
+lfo_base_name = environ.get("LFO_BASE_NAME", f"lfo{user}")
 lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
 subscription_id = environ.get("AZURE_SUBSCRIPTION_ID")
 credential = AzureCliCredential()
 resource_client = ResourceManagementClient(credential, subscription_id)
 storage_client = StorageManagementClient(credential, subscription_id)
+initial_deploy = False
 
 
 # set az cli to look at the correct subscription
@@ -58,19 +59,12 @@ set_subscription_output = Popen(
 set_subscription_output.wait()
 
 
-# generate name from branch
-raw_branch_output = Popen(
-    ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=lfo_dir, stdout=PIPE
-)
-branch = raw_branch_output.stdout.readline().decode("utf-8").strip()
-if user.lower() in branch.lower():
-    branch = branch.replace(user, "")
-branch = sub(r"\W+", "", branch)
-
-resource_group_name = get_name(branch, RESOURCE_GROUP_MAX_LENGTH)
+# generate name
+lfo_base_name = sub(r"\W+", "", lfo_base_name)
+resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
 
 
-# check if resource group exists for branch
+# check if resource group exists
 resource_group = None
 try:
     resource_group = resource_client.resource_groups.get(resource_group_name)
@@ -83,11 +77,12 @@ if not resource_group:
     resource_group = resource_client.resource_groups.create_or_update(
         resource_group_name, {"location": LOCATION}
     )
+    initial_deploy = True
     print(f"Created resource group {resource_group.name}")
 
 
-# check if staging storage account exists for branch
-storage_account_name = get_name(branch, STORAGE_ACCOUNT_MAX_LENGTH)
+# check if staging storage account exists
+storage_account_name = get_name(lfo_base_name, STORAGE_ACCOUNT_MAX_LENGTH)
 availability_result = storage_client.storage_accounts.check_name_availability(
     {"name": storage_account_name}
 )
@@ -136,12 +131,12 @@ if not container_client.exists():
         print(
             f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
         )
-        exit(1)
+        raise SystemExit(1)
     print(f"Created storage container {CONTAINER_NAME}")
 
 
-# check if ACR exists for branch
-container_registry_name = get_name(branch, CONTAINER_REGISTRY_MAX_LENGTH)
+# check if ACR exists
+container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
 list_acr_output = Popen(
     ["az", "acr", "list", "--resource-group", resource_group_name, "--output", "json"],
     cwd=lfo_dir,
@@ -231,7 +226,7 @@ forwarder_build_output.wait()
 Popen([f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh"], cwd=lfo_dir).wait()
 
 # upload current version of tasks to storage account
-raw_publish_output = Popen(
+Popen(
     [
         f"{lfo_dir}/ci/scripts/control_plane/publish.py",
         f"https://{storage_account_name}.blob.core.windows.net",
@@ -239,26 +234,12 @@ raw_publish_output = Popen(
     ],
     cwd=lfo_dir,
     stdout=PIPE,
-)
-raw_publish_output.wait()
-print(raw_publish_output.stdout.readline().decode("utf-8"))
-
-
-lfo_resource_group_name = get_name(f"{branch}lfo", RESOURCE_GROUP_MAX_LENGTH)
-
-# check if a deployment has already happened
-lfo_resource_group = None
-try:
-    lfo_resource_group = resource_client.resource_groups.get(lfo_resource_group_name)
-except ResourceNotFoundError:
-    print(
-        f"Resource group {lfo_resource_group_name} does not exist, will proceed with LFO deployment"
-    )
+).wait()
 
 
 # deployment has not happened, deploy LFO
-if not lfo_resource_group:
-    print(f"Deploying LFO to {lfo_resource_group_name}...")
+if initial_deploy:
+    print(f"Deploying LFO to {resource_group_name}...")
     app_key = environ.get("DD_APP_KEY")
     api_key = environ.get("DD_API_KEY")
     deploy_output = Popen(
@@ -272,7 +253,7 @@ if not lfo_resource_group:
             "--location",
             LOCATION,
             "--name",
-            lfo_resource_group_name,
+            resource_group_name,
             "--template-file",
             "./deploy/azuredeploy.bicep",
             "--parameters",
@@ -282,7 +263,7 @@ if not lfo_resource_group:
             "--parameters",
             f"controlPlaneSubscriptionId={subscription_id}",
             "--parameters",
-            f"controlPlaneResourceGroupName={lfo_resource_group_name}",
+            f"controlPlaneResourceGroupName={resource_group_name}",
             "--parameters",
             f"datadogApplicationKey={app_key}",
             "--parameters",
@@ -301,8 +282,7 @@ if not lfo_resource_group:
 
 
 # execute deployer
-job_found = False
-while not job_found:
+while True:
     list_jobs_output = Popen(
         [
             "az",
@@ -310,7 +290,7 @@ while not job_found:
             "job",
             "list",
             "--resource-group",
-            lfo_resource_group_name,
+            resource_group_name,
             "--output",
             "json",
         ],
@@ -325,7 +305,6 @@ while not job_found:
     print("execute deployer")
     for job in jobs:
         if "deployer-task" in job.get("name"):
-            job_found = True
             print(f"Executing deployer for job {job.get('name')}...")
             deployer_output = Popen(
                 [
@@ -334,7 +313,7 @@ while not job_found:
                     "job",
                     "start",
                     "--resource-group",
-                    lfo_resource_group_name,
+                    resource_group_name,
                     "--name",
                     job.get("name"),
                 ],
@@ -342,4 +321,4 @@ while not job_found:
             )
             deployer_output.wait()
             print(f"Deployer executed for job {job.get('name')}")
-            break
+            raise SystemExit(0)
