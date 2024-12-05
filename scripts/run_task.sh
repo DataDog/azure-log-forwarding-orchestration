@@ -9,16 +9,18 @@ fi
 
 task_name="$1"
 export RESOURCE_GROUP="$2"
-subscription_id=`az account show --query id -o tsv`
+export SUBSCRIPTION_ID=`az account show --query id -o tsv`
 
 # Env Vars
 storage_account_prefix="lfostorage"
 storage_account_id=`az storage account list --resource-group $RESOURCE_GROUP --query "[?starts_with(name, '$storage_account_prefix')].id" -o tsv`
 storage_account_name=`echo $storage_account_id | cut -d'/' -f 9`
 export AzureWebJobsStorage=`az storage account show-connection-string --ids $storage_account_id --query connectionString -o tsv`
-export MONITORED_SUBSCRIPTIONS="[\"$subscription_id\"]"
+export MONITORED_SUBSCRIPTIONS="[\"$SUBSCRIPTION_ID\"]"
 export CONTROL_PLANE_ID=${storage_account_name#"$storage_account_prefix"}
 export CONTROL_PLANE_REGION=`az group show --name $RESOURCE_GROUP --query location -o tsv`
+export REGION=$CONTROL_PLANE_REGION
+export STORAGE_ACCOUNT_URL='https://ddazurelfo.blob.core.windows.net'
 
 # Set default vars
 if [ -z "${DD_API_KEY+x}" ]; then
