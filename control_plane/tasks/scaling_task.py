@@ -441,6 +441,7 @@ class ScalingTask(Task):
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
     ) -> None:
+        # Phase 1: Move resources from the forwarder pairs which are overscaled onto just one of them
         forwarders_to_collapse = sorted(
             [
                 config_id
@@ -449,13 +450,21 @@ class ScalingTask(Task):
                 and num_resources_by_forwarder[config_id] > 0
             ]
         )
+        # Phase 2: Delete forwarders with no resources and no metrics
         forwarders_to_delete = [
-            config_id for config_id, num_resources in num_resources_by_forwarder.items() if num_resources == 0
+            config_id
+            for config_id, num_resources in num_resources_by_forwarder.items()
+            # delete forwarders with no resources and no metrics
+            if num_resources == 0
+            and (
+                not forwarder_metrics.get(config_id)
+                or all(not m["resource_log_volume"] for m in forwarder_metrics[config_id])
+            )
         ]
 
         maybe_errors = await gather(
             *(
-                self.collapse_forwarders(client, region_config, config_1, config_2)
+                self.collapse_forwarders(region_config, config_1, config_2)
                 for config_1, config_2 in chunks(forwarders_to_collapse, 2)
             ),
             *(self.delete_log_forwarder(client, region_config, config_id) for config_id in forwarders_to_delete),
@@ -464,10 +473,9 @@ class ScalingTask(Task):
         log_errors("Errors during scaling down", *maybe_errors)
 
     async def collapse_forwarders(
-        self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
+        self, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
     ) -> None:
-        """Collapses two forwarders into one, moving resources from config_2 to config_1"""
-        await self.delete_log_forwarder(client, region_config, config_2)
+        """Collapses two forwarders into one, moving resources from config_2 to config_1. Deletion of the forwarder will happen once it is empty"""
         resources_to_move = {
             resource_id: config_1
             for resource_id, config_id in region_config["resources"].items()
