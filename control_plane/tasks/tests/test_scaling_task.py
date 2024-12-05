@@ -65,6 +65,7 @@ class TestScalingTask(TaskTestCase):
         self.client = AsyncMockClient()
         self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
+        self.client.create_log_forwarder_env.return_value = CONTROL_PLANE_ID
 
         self.log = self.patch("log")
         self.generate_unique_id = self.patch("generate_unique_id")
@@ -94,13 +95,32 @@ class TestScalingTask(TaskTestCase):
         self.write_cache.assert_not_awaited()
         self.log.warning.assert_called_once_with("Assignment Cache is in an invalid format, task will reset the cache")
 
-    async def test_new_regions_are_added(self):
+    async def test_new_regions_are_added_first_run(self):
+        # GIVEN
+        self.client.get_log_forwarder_managed_environment.return_value = False
+        expected_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                }
+            }
+        }
+
+        # WHEN
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={},
         )
 
-        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
+        # THEN
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.create_log_forwarder_env.assert_called_once_with(EAST_US, CONTROL_PLANE_ID)
+        self.assertEqual(self.cache, expected_cache)
+
+    async def test_new_regions_are_added_second_run(self):
+        # GIVEN
+        self.client.get_log_forwarder_managed_environment.return_value = True
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -109,6 +129,15 @@ class TestScalingTask(TaskTestCase):
                 }
             }
         }
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={},
+        )
+
+        # THEN
+        self.client.create_log_forwarder.assert_called_once_with(EAST_US, NEW_LOG_FORWARDER_ID, CONTROL_PLANE_ID)
         self.assertEqual(self.cache, expected_cache)
 
     async def test_gone_regions_are_deleted(self):
