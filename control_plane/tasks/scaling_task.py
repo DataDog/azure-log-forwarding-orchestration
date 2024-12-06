@@ -34,7 +34,9 @@ from tasks.task import Task
 
 SCALING_TASK_NAME = "scaling_task"
 
-METRIC_COLLECTION_PERIOD_MINUTES = 5
+SCALING_METRIC_PERIOD_MINUTES = 5
+DELETION_METRIC_PERIOD_MINUTES = 15
+METRIC_COLLECTION_PERIOD_MINUTES = DELETION_METRIC_PERIOD_MINUTES  # longer of the two periods^
 
 SCALE_UP_EXECUTION_SECONDS = 25
 SCALE_DOWN_EXECUTION_SECONDS = 3
@@ -44,12 +46,12 @@ log.setLevel(DEBUG)
 
 
 def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
-    """Check if the runtime is consistently over the threshold for the given duration"""
+    """Check if the runtime is consistently over the threshold"""
     return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
 
 
 def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
-    """Check if the runtime is consistently under the threshold for the given duration"""
+    """Check if the runtime is consistently under the threshold"""
     return bool(metrics and all(metric["runtime_seconds"] < threshold for metric in metrics))
 
 
@@ -222,13 +224,12 @@ class ScalingTask(Task):
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
         if not all_forwarders_exist:
             return
-        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
-
-        if not any(forwarder_metrics.values()):
+        all_forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
+        if not any(all_forwarder_metrics.values()):
             log.warning("No valid metrics found for forwarders in region %s", region)
             return
 
-        self.onboard_new_resources(subscription_id, region, forwarder_metrics)
+        self.onboard_new_resources(subscription_id, region, all_forwarder_metrics)
         await self.write_caches()
 
         # count the number of resources after we have onboarded new resources
@@ -236,15 +237,22 @@ class ScalingTask(Task):
         num_resources_by_forwarder = {
             config_id: config_ids.count(config_id) for config_id in region_config["configurations"]
         }
+        scaling_metric_cutoff = (self.now - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
+        scaling_forwarder_metrics = {
+            f: [m for m in metrics if m["timestamp"] > scaling_metric_cutoff]
+            for f, metrics in all_forwarder_metrics.items()
+        }
         did_scale = await self.scale_up_forwarders(
-            client, subscription_id, region, num_resources_by_forwarder, forwarder_metrics
+            client, subscription_id, region, num_resources_by_forwarder, scaling_forwarder_metrics
         )
         await self.write_caches()
         # if we don't scale up, we can check for scaling down
         if did_scale:
             return
 
-        await self.scale_down_forwarders(client, region_config, num_resources_by_forwarder, forwarder_metrics)
+        await self.scale_down_forwarders(
+            client, region_config, num_resources_by_forwarder, scaling_forwarder_metrics, all_forwarder_metrics
+        )
         await self.write_caches()
 
     async def ensure_region_forwarders(self, client: LogForwarderClient, subscription_id: str, region: str) -> bool:
@@ -439,7 +447,8 @@ class ScalingTask(Task):
         client: LogForwarderClient,
         region_config: RegionAssignmentConfiguration,
         num_resources_by_forwarder: dict[str, int],
-        forwarder_metrics: dict[str, list[MetricBlobEntry]],
+        scaling_forwarder_metrics: dict[str, list[MetricBlobEntry]],
+        all_forwarder_metrics: dict[str, list[MetricBlobEntry]],
     ) -> None:
         """
         Implements a two phased approach to scaling down forwarders:
@@ -457,7 +466,7 @@ class ScalingTask(Task):
         forwarders_to_collapse = sorted(
             [
                 config_id
-                for config_id, metrics in forwarder_metrics.items()
+                for config_id, metrics in scaling_forwarder_metrics.items()
                 if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS)
                 and num_resources_by_forwarder[config_id] > 0
             ]
@@ -469,8 +478,8 @@ class ScalingTask(Task):
             # delete forwarders with no resources and no metrics
             if num_resources == 0
             and (
-                not forwarder_metrics.get(config_id)
-                or all(not m["resource_log_volume"] for m in forwarder_metrics[config_id])
+                not all_forwarder_metrics.get(config_id)
+                or all(not m["resource_log_volume"] for m in all_forwarder_metrics[config_id])
             )
         ]
 
