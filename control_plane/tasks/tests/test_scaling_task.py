@@ -50,7 +50,7 @@ def generate_metrics(
 ) -> list[MetricBlobEntry]:
     return [
         {
-            "runtime_seconds": runtime if isinstance(runtime, float | int) else runtime(i),
+            "runtime_seconds": runtime(i) if callable(runtime) else runtime,
             "timestamp": minutes_ago(i + offset_mins),
             "resource_log_volume": resource_log_volume.copy(),
         }
