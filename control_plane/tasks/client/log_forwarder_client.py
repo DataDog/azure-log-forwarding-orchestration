@@ -156,6 +156,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         await gather(
+            self.resource_client.__aexit__(exc_type, exc_val, exc_tb),
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
