@@ -109,12 +109,12 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client = AsyncMockClient()
         self.container_client.get_blob_client.return_value = self.blob_client
 
-    async def test_create_log_forwarder(self):
+    async def test_create_log_forwarder_creates_resources(self):
         # set up blob forwarder data
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
-            await self.client.create_log_forwarder(EAST_US, config_id, control_plane_id)
+            await self.client.create_log_forwarder(EAST_US, config_id)
 
         # storage account
         storage_create: AsyncMock = self.client.storage_client.storage_accounts.begin_create
@@ -178,7 +178,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
         with self.assertRaises(ValueError) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, config_id, control_plane_id)
+                await self.client.create_log_forwarder(EAST_US, config_id)
         self.assertIn("No keys found for storage account", str(ctx.exception))
 
     async def test_create_log_forwarder_managed_env_failure(self):
@@ -187,7 +187,7 @@ class TestLogForwarderClient(AsyncTestCase):
         ).result.side_effect = Exception("400: ASP creation failed")
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder_env(EAST_US, control_plane_id)
+                await self.client.create_log_forwarder_env(EAST_US)
         self.assertIn("400: ASP creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_storage_account_failure(self):
@@ -196,7 +196,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, config_id, control_plane_id)
+                await self.client.create_log_forwarder(EAST_US, config_id)
         self.assertIn("400: Storage Account creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_container_app_failure(self):
@@ -205,7 +205,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, config_id, control_plane_id)
+                await self.client.create_log_forwarder(EAST_US, config_id)
         self.assertIn("400: Function App creation failed", str(ctx.exception))
 
     async def test_delete_log_forwarder(self):
@@ -257,7 +257,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
         # WHEN
         async with self.client as client:
-            success = await client.delete_log_forwarder_env(EAST_US, control_plane_id)
+            success = await client.delete_log_forwarder_env(EAST_US)
 
         # THEN
         self.assertTrue(success)
@@ -265,15 +265,12 @@ class TestLogForwarderClient(AsyncTestCase):
 
     async def test_delete_log_forwarder_env_ignore_resource_not_found(self):
         # GIVEN
-        def side_effect(*args, **kwargs):
-            raise ResourceNotFoundError()
-
         env_name = get_managed_env_name(EAST_US, control_plane_id)
-        self.client.container_apps_client.managed_environments.begin_delete.side_effect = side_effect
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = ResourceNotFoundError()
 
         # WHEN
         async with self.client as client:
-            success = await client.delete_log_forwarder_env(EAST_US, control_plane_id)
+            success = await client.delete_log_forwarder_env(EAST_US)
 
         # THEN
         self.assertTrue(success)
@@ -286,7 +283,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
         # WHEN
         async with self.client as client:
-            success = await client.delete_log_forwarder_env(EAST_US, control_plane_id, raise_error=False)
+            success = await client.delete_log_forwarder_env(EAST_US, raise_error=False)
 
         # THEN
         self.assertFalse(success)
@@ -300,7 +297,7 @@ class TestLogForwarderClient(AsyncTestCase):
         # WHEN
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
-                await client.delete_log_forwarder_env(EAST_US, control_plane_id, max_attempts=5)
+                await client.delete_log_forwarder_env(EAST_US, max_attempts=5)
 
         # THEN
         self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(529))
@@ -312,28 +309,24 @@ class TestLogForwarderClient(AsyncTestCase):
         # GIVEN
         env_id = "fake_id"
 
-        class FakeManagedEnvironment:
-            id = env_id
+        mocked_env = Mock(id=env_id)
 
-        self.client.container_apps_client.managed_environments.get.return_value = FakeManagedEnvironment()
+        self.client.container_apps_client.managed_environments.get.return_value = mocked_env
 
         # WHEN
         async with self.client as client:
-            result = await client.get_log_forwarder_managed_environment(EAST_US, "control_plane_id")
+            result = await client.get_log_forwarder_managed_environment(EAST_US)
 
         # THEN
         self.assertEqual(result, env_id)
 
     async def test_get_log_forwarder_managed_environment_returns_none_on_failure(self):
         # GIVEN
-        def side_effect(*args, **kwargs):
-            raise ResourceNotFoundError()
-
-        self.client.container_apps_client.managed_environments.get.side_effect = side_effect
+        self.client.container_apps_client.managed_environments.get.side_effect = ResourceNotFoundError()
 
         # WHEN
         async with self.client as client:
-            result = await client.get_log_forwarder_managed_environment(EAST_US, "control_plane_id")
+            result = await client.get_log_forwarder_managed_environment(EAST_US)
 
         # THEN
         self.assertIsNone(result)
@@ -723,7 +716,7 @@ class TestLogForwarderClient(AsyncTestCase):
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
-            await self.client.create_log_forwarder_env(EAST_US, control_plane_id)
+            await self.client.create_log_forwarder_env(EAST_US)
 
         # managed environment
         asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update

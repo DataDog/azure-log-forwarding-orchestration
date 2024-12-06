@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Any, Self, TypeAlias, TypeVar, cast
+from typing import Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -161,22 +161,17 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder_env(self, region: str, control_plane_id: str) -> str:
-        managed_env_name = get_managed_env_name(region, control_plane_id)
-        await self.create_log_forwarder_managed_environment(region, managed_env_name)
-        return managed_env_name
+    async def create_log_forwarder_env(self, region: str) -> str:
+        await self.create_log_forwarder_managed_environment(region)
+        return get_managed_env_name(region, self.control_plane_id)
 
-    async def create_log_forwarder(self, region: str, config_id: str, control_plane_id: str) -> LogForwarderType:
+    async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
 
-        maybe_errors: tuple[Any, ...] = await gather(
-            wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name)),
-            return_exceptions=True,
-        )
-        log_errors("Failed to create storage account", *maybe_errors, reraise=True)
+        await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
         maybe_errors = await gather(
-            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id, control_plane_id)),
+            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -230,7 +225,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
-    async def create_log_forwarder_managed_environment(self, region: str, env_name: str) -> None:
+    async def create_log_forwarder_managed_environment(self, region: str) -> None:
+        env_name = get_managed_env_name(region, self.control_plane_id)
         log.info("Creating managed environment %s for region %s", env_name, region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
@@ -242,8 +238,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         )
         await poller.result()
 
-    async def get_log_forwarder_managed_environment(self, region: str, control_plane_id: str) -> str | None:
-        env_name = get_managed_env_name(region, control_plane_id)
+    async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
+        env_name = get_managed_env_name(region, self.control_plane_id)
         log.info("Getting managed environment %s for resource group %s", env_name, self.resource_group)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
@@ -251,9 +247,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return None
         return str(managed_env.id)
 
-    async def create_log_forwarder_container_app(
-        self, region: str, config_id: str, control_plane_id: str
-    ) -> ResourcePoller[Job]:
+    async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
         connection_string = await self.get_connection_string(get_storage_account_name(config_id))
         job_name = get_container_app_name(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
@@ -261,7 +255,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             job_name,
             Job(
                 location=region,
-                environment_id=get_managed_env_id(self.subscription_id, self.resource_group, region, control_plane_id),
+                environment_id=get_managed_env_id(
+                    self.subscription_id, self.resource_group, region, self.control_plane_id
+                ),
                 configuration=JobConfiguration(
                     trigger_type="Schedule",
                     schedule_trigger_config=JobConfigurationScheduleTriggerConfig(cron_expression="* * * * *"),
@@ -383,27 +379,27 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 raise
             return False
 
-    async def delete_log_forwarder_env(
-        self, region: str, control_plane_id: str, *, raise_error: bool = True, max_attempts: int = 3
-    ) -> bool:
+    async def delete_log_forwarder_env(self, region: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
         """Deletes the Log forwarder env, returns True if successful, False otherwise"""
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder_env() -> None:
             log.info(
-                "Attempting to delete log forwarder env for region %s and control plane %s", region, control_plane_id
+                "Attempting to delete log forwarder env for region %s and control plane %s",
+                region,
+                self.control_plane_id,
             )
 
             poller = await ignore_exception_type(
                 ResourceNotFoundError,
                 self.container_apps_client.managed_environments.begin_delete(
-                    self.resource_group, get_managed_env_name(region, control_plane_id)
+                    self.resource_group, get_managed_env_name(region, self.control_plane_id)
                 ),
             )
             if poller:
                 await poller.result()
 
-            log.info("Deleted log forwarder env for region %s and control plane %s", region, control_plane_id)
+            log.info("Deleted log forwarder env for region %s and control plane %s", region, self.control_plane_id)
 
         try:
             await _delete_forwarder_env()
