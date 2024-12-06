@@ -230,7 +230,7 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
-        if not self._assignment_cache_initial_state.get(subscription_id, {}).get(region, {})["configurations"]:
+        if "configurations" not in self._assignment_cache_initial_state.get(subscription_id, {}).get(region, {}):
             log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
             await client.delete_log_forwarder_env(region, raise_error=False)
 

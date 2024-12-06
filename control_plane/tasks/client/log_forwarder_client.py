@@ -222,7 +222,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
-    async def create_log_forwarder_managed_environment(self, region: str, wait=False) -> None:
+    async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
         env_name = get_managed_env_name(region, self.control_plane_id)
         log.info("Creating managed environment %s for region %s", env_name, region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
