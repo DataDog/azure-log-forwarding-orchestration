@@ -441,6 +441,18 @@ class ScalingTask(Task):
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
     ) -> None:
+        """
+        Implements a two phased approach to scaling down forwarders:
+        1. Move resources from the forwarder pairs which are overscaled onto just one of them
+        2. Delete forwarders which have no resources and are not submitting logs
+
+        These phases will not both happen to the same forwarder in the same run,
+        as the requirements are mutually exclusive.
+
+        This is required to ensure we don't delete forwarders that are still receiving logs,
+        as doing so would result in log loss.
+        """
+
         # Phase 1: Move resources from the forwarder pairs which are overscaled onto just one of them
         forwarders_to_collapse = sorted(
             [
