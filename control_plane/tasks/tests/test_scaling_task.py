@@ -200,7 +200,18 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder_env.assert_not_awaited()
         self.client.delete_log_forwarder.assert_has_calls(expected_calls)
 
-    async def test_gone_regions_are_deleted(self):
+    async def test_empty_regions_have_forwarders_deleted(self):
+        # GIVEN
+        expected_cache_state = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                }
+            },
+        }
+
+        # WHEN
         await self.run_scaling_task(
             resource_cache_state={},
             assignment_cache_state={
@@ -213,10 +224,33 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
+        # THEN
         self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
+        self.assertEqual(self.cache, expected_cache_state)
 
-        self.assertEqual(self.cache, {})
+    async def test_empty_regions_with_no_configs_have_forwarder_env_deleted(self):
+        # GIVEN
+        initial_cache_state: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                }
+            },
+        }
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state=initial_cache_state,
+        )
+
+        # THEN
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
+        self.assertEqual(self.cache, {SUB_ID1: {}})
 
     async def test_regions_added_and_deleted(self):
         await self.run_scaling_task(
@@ -239,7 +273,11 @@ class TestScalingTask(TaskTestCase):
                 WEST_US: {
                     "resources": {"resource1": NEW_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
                     "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
-                }
+                },
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                },
             }
         }
         self.assertEqual(self.cache, expected_cache)

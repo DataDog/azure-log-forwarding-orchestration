@@ -85,10 +85,18 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
         }
         return current_region_config
 
-    return {
+    pruned_cache = {
         sub_id: {region: _prune_region_config(sub_id, region) for region in region_resources}
         for sub_id, region_resources in resource_cache.items()
     }
+
+    for sub_id, region_resources in assignment_cache.items():
+        for region in region_resources:
+            if region not in pruned_cache.get(sub_id, {}):
+                empty_config: RegionAssignmentConfiguration = {"configurations": {}, "resources": {}}
+                pruned_cache.setdefault(sub_id, {})[region] = empty_config
+
+    return pruned_cache
 
 
 class ScalingTask(Task):
@@ -136,8 +144,13 @@ class ScalingTask(Task):
         }
 
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
+        empty_regions = {
+            key
+            for key, value in self._assignment_cache_initial_state.get(subscription_id, {}).items()
+            if not value.get("configurations")
+        }
         regions_to_add = current_regions - previous_region_assignments
-        regions_to_remove = previous_region_assignments - current_regions
+        regions_to_remove = (previous_region_assignments - current_regions) | (empty_regions - current_regions)
         regions_to_check_scaling = current_regions & previous_region_assignments
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             await gather(
@@ -216,6 +229,14 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
+        if not self._assignment_cache_initial_state.get(subscription_id, {}).get(region, {})["configurations"]:
+            log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
+            await client.delete_log_forwarder_env(region, raise_error=False)
+
+            # delete if we haven't already cleaned it up
+            self.assignment_cache.get(subscription_id, {}).pop(region, None)
+            return
+
         log.info("Deleting log forwarders for subscription %s in region %s", subscription_id, region)
         maybe_errors = await gather(
             *(
@@ -224,14 +245,16 @@ class ScalingTask(Task):
             ),
             return_exceptions=True,
         )
-        errors = log_errors("Failed to delete region", *maybe_errors)
+        log_errors("Failed to delete region", *maybe_errors)
 
-        if not errors:
-            log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
-            await client.delete_log_forwarder_env(region, raise_error=False)
-
-            # delete if we haven't already cleaned it up
-            self.assignment_cache.get(subscription_id, {}).pop(region, None)
+        # clear configuration and resource assignments for the region
+        config: RegionAssignmentConfiguration = {
+            "configurations": {},
+            "resources": {},
+        }
+        if subscription_id not in self.assignment_cache:
+            self.assignment_cache[subscription_id] = {}
+        self.assignment_cache[subscription_id][region] = config
 
     async def maintain_existing_region(self, client: LogForwarderClient, subscription_id: str, region: str) -> None:
         """Checks the performance/scaling of a region and determines/performs scaling as needed
