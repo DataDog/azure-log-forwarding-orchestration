@@ -161,14 +161,6 @@ class TestScalingTask(TaskTestCase):
         self.client.get_log_forwarder_managed_environment.return_value = False
         self.client.create_log_forwarder_env.side_effect = side_effect
         initial_cache: AssignmentCache = {}
-        expected_cache: AssignmentCache = {
-            SUB_ID1: {
-                EAST_US: {
-                    "resources": {},
-                    "configurations": {},
-                }
-            }
-        }
         expected_create_calls = [
             call(EAST_US, CONTROL_PLANE_ID),
             call(EAST_US, CONTROL_PLANE_ID),
@@ -184,15 +176,15 @@ class TestScalingTask(TaskTestCase):
         ]
 
         # WHEN
-        await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
-            assignment_cache_state=initial_cache,
-        )
+        with raises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+                assignment_cache_state=initial_cache,
+            )
 
         # THEN
         self.client.create_log_forwarder_env.assert_has_calls(expected_create_calls)
         self.client.delete_log_forwarder_env.assert_has_calls(expected_delete_calls)
-        self.assertEqual(self.cache, expected_cache)
 
     async def test_errors_raised_when_forwarder_creation_fails(self):
         # GIVEN
