@@ -120,6 +120,10 @@ async def is_exception_retryable(state: RetryCallState) -> bool:
 ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
 
 
+class AzureClientInvalidReturnException(Exception):
+    pass
+
+
 def get_datetime_str(time: datetime) -> str:
     return f"{time:%Y-%m-%d-%H}"
 
@@ -241,7 +245,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         )
         if not poller:
-            raise Exception("Invalid state. Failed to create managed environment.")
+            raise AzureClientInvalidReturnException("Invalid state. Potentially failed to create managed environment.")
         await poller.result()
         return
 
