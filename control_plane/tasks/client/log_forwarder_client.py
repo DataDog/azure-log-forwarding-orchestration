@@ -161,10 +161,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
-    async def create_log_forwarder_env(self, region: str) -> str:
-        await self.create_log_forwarder_managed_environment(region)
-        return get_managed_env_name(region, self.control_plane_id)
-
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
 
@@ -225,7 +221,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
-    async def create_log_forwarder_managed_environment(self, region: str) -> None:
+    async def create_log_forwarder_managed_environment(self, region: str, wait=False) -> None:
         env_name = get_managed_env_name(region, self.control_plane_id)
         log.info("Creating managed environment %s for region %s", env_name, region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
@@ -236,11 +232,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 zone_redundant=False,
             ),
         )
-        await poller.result()
+        if wait:
+            await poller.result()
 
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
         env_name = get_managed_env_name(region, self.control_plane_id)
-        log.info("Getting managed environment %s for resource group %s", env_name, self.resource_group)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
@@ -368,7 +364,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if poller:
                 await poller.result()
 
-                await gather(delete_storage_account_task, poller.result())
+                await delete_storage_account_task
             log.info("Deleted log forwarder %s", forwarder_id)
 
         try:

@@ -171,7 +171,7 @@ class ScalingTask(Task):
 
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> str | None:
         """Creates a log forwarder env for the given subscription and region and returns the resource id.
-        Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
+        If the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
         try:
             await client.create_log_forwarder_managed_environment(region)
             return region

@@ -187,7 +187,7 @@ class TestLogForwarderClient(AsyncTestCase):
         ).result.side_effect = Exception("400: ASP creation failed")
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder_env(EAST_US)
+                await self.client.create_log_forwarder_managed_environment(EAST_US, wait=True)
         self.assertIn("400: ASP creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_storage_account_failure(self):
@@ -716,7 +716,7 @@ class TestLogForwarderClient(AsyncTestCase):
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
-            await self.client.create_log_forwarder_env(EAST_US)
+            await self.client.create_log_forwarder_managed_environment(EAST_US, wait=True)
 
         # managed environment
         asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update
