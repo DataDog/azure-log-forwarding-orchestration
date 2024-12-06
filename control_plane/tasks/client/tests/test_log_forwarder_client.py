@@ -251,6 +251,93 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertCalledTimesWith(self.client.container_apps_client.jobs.begin_delete, 5, rg1, container_app_name)
         self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 5, rg1, storage_account_name)
 
+    async def test_delete_log_forwarder_env_calls_delete(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(EAST_US, control_plane_id)
+
+        # THEN
+        self.assertTrue(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(rg1, env_name)
+
+    async def test_delete_log_forwarder_env_ignore_resource_not_found(self):
+        # GIVEN
+        def side_effect(*args, **kwargs):
+            raise ResourceNotFoundError()
+
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = side_effect
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(EAST_US, control_plane_id)
+
+        # THEN
+        self.assertTrue(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(rg1, env_name)
+
+    async def test_delete_log_forwarder_env_does_not_raise_error_when_raise_error_false(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = FakeHttpError(400)
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(EAST_US, control_plane_id, raise_error=False)
+
+        # THEN
+        self.assertFalse(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(rg1, env_name)
+
+    async def test_delete_log_forwarder_env_makes_5_retryable_attempts(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = FakeHttpError(529)
+
+        # WHEN
+        with self.assertRaises(RetryError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder_env(EAST_US, control_plane_id, max_attempts=5)
+
+        # THEN
+        self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(529))
+        self.assertCalledTimesWith(
+            self.client.container_apps_client.managed_environments.begin_delete, 5, rg1, env_name
+        )
+
+    async def test_get_log_forwarder_managed_environment_returns_id_on_success(self):
+        # GIVEN
+        env_id = "fake_id"
+
+        class FakeManagedEnvironment:
+            id = env_id
+
+        self.client.container_apps_client.managed_environments.get.return_value = FakeManagedEnvironment()
+
+        # WHEN
+        async with self.client as client:
+            result = await client.get_log_forwarder_managed_environment(EAST_US, "control_plane_id")
+
+        # THEN
+        self.assertEqual(result, env_id)
+
+    async def test_get_log_forwarder_managed_environment_returns_none_on_failure(self):
+        # GIVEN
+        def side_effect(*args, **kwargs):
+            raise ResourceNotFoundError()
+
+        self.client.container_apps_client.managed_environments.get.side_effect = side_effect
+
+        # WHEN
+        async with self.client as client:
+            result = await client.get_log_forwarder_managed_environment(EAST_US, "control_plane_id")
+
+        # THEN
+        self.assertIsNone(result)
+
     async def test_delete_log_forwarder_doesnt_retry_after_second_unretryable(self):
         self.client.container_apps_client.jobs.begin_delete.side_effect = [FakeHttpError(429), FakeHttpError(400)]
         self.client.storage_client.storage_accounts.delete.side_effect = ResourceNotFoundError()
@@ -628,7 +715,7 @@ class TestLogForwarderClient(AsyncTestCase):
             # just checking that it gets checked when we use the client
             pass
         self.client.resource_client.resource_groups.create_or_update.assert_awaited_once_with(
-            rg1, AzureModelMatcher({"location": "eastus"})
+            rg1, AzureModelMatcher({"location": EAST_US})
         )
 
     async def test_create_log_forwarder_managed_env(self):

@@ -397,10 +397,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 "Attempting to delete log forwarder env for region %s and control plane %s", region, control_plane_id
             )
 
-            poller = await self.container_apps_client.managed_environments.begin_delete(
-                self.resource_group, get_managed_env_name(region, control_plane_id)
+            poller = await ignore_exception_type(
+                ResourceNotFoundError,
+                self.container_apps_client.managed_environments.begin_delete(
+                    self.resource_group, get_managed_env_name(region, control_plane_id)
+                ),
             )
-            await poller.result()
+            if poller:
+                await poller.result()
 
             log.info("Deleted log forwarder env for region %s and control plane %s", region, control_plane_id)
 
