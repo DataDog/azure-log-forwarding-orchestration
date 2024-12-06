@@ -169,12 +169,12 @@ class ScalingTask(Task):
                 log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
             return None
 
-    @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> str | None:
         """Creates a log forwarder env for the given subscription and region and returns the resource id.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
         try:
-            return await client.create_log_forwarder_env(region)
+            await client.create_log_forwarder_managed_environment(region)
+            return region
         except Exception:
             log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
             success = await client.delete_log_forwarder_env(region, raise_error=False)
