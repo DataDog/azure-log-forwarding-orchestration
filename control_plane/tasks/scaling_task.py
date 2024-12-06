@@ -90,6 +90,7 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
         for sub_id, region_resources in resource_cache.items()
     }
 
+    # add any regions that are in the assignment cache but not in the resource cache
     for sub_id, region_resources in assignment_cache.items():
         for region in region_resources:
             if region not in pruned_cache.get(sub_id, {}):
