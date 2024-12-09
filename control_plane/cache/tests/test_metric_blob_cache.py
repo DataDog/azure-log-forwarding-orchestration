@@ -20,12 +20,14 @@ class TestMetricBlobCache(TestCase):
                 "timestamp": self.current_time,
                 "runtime_seconds": 2.11,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
             }
         )
         expected_dict = {
             "timestamp": self.current_time,
             "runtime_seconds": 2.11,
             "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+            "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
         }
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNotNone(returned_dict)
@@ -38,6 +40,7 @@ class TestMetricBlobCache(TestCase):
                 "timestamp": self.old_time,
                 "runtime_seconds": 2.11,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
             }
         )
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
@@ -49,12 +52,14 @@ class TestMetricBlobCache(TestCase):
                 "timestamp": self.oldest_legal_time.timestamp(),
                 "runtime_seconds": 2.11,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
             }
         )
         expected_dict = {
             "timestamp": self.oldest_legal_time.timestamp(),
             "runtime_seconds": 2.11,
             "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+            "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
         }
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
         self.assertIsNotNone(returned_dict)
@@ -66,6 +71,7 @@ class TestMetricBlobCache(TestCase):
             {
                 "runtime_seconds": 2.11,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
             }
         )
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
@@ -78,6 +84,7 @@ class TestMetricBlobCache(TestCase):
                 "runtime_seconds": 2.11,
                 "hello": "my_friend",
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 40, "93a5885365f5": 60},
             }
         )
         returned_dict = deserialize_blob_metric_entry(blob_dict_str, self.oldest_legal_time.timestamp())
