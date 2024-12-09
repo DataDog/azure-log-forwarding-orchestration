@@ -23,6 +23,7 @@ from cache.resources_cache import ResourceCache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
+    SCALING_METRIC_PERIOD_MINUTES,
     SCALING_TASK_NAME,
     ScalingTask,
     is_consistently_over_threshold,
@@ -710,6 +711,38 @@ class TestScalingTask(TaskTestCase):
                 }
             },
         )
+
+    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
+    async def test_forwarders_are_not_deleted_with_old_metrics(self, collect_forwarder_metrics: AsyncMock):
+        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+            {
+                OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
+                NEW_LOG_FORWARDER_ID: generate_metrics(
+                    0.5, {"resource3": 100}, offset_mins=SCALING_METRIC_PERIOD_MINUTES + 1
+                ),
+            }
+        )
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {
+                            "resource1": OLD_LOG_FORWARDER_ID,
+                            "resource2": OLD_LOG_FORWARDER_ID,
+                            "resource3": OLD_LOG_FORWARDER_ID,
+                        },
+                        "configurations": {
+                            OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                            NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        },
+                    }
+                },
+            },
+        )
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
+        self.write_cache.assert_not_awaited()
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_forwarders_are_coalesced_not_deleted(self, collect_forwarder_metrics: AsyncMock):
