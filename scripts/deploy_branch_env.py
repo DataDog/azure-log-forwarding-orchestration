@@ -43,7 +43,7 @@ def get_name(name: str, max_length: int) -> str:
 # shared variables
 home = environ.get("HOME")
 user = environ.get("USER")
-lfo_base_name = environ.get("LFO_BASE_NAME", f"lfo{user}")
+lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}"))
 lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
 subscription_id = environ.get("AZURE_SUBSCRIPTION_ID")
 credential = AzureCliCredential()
@@ -60,7 +60,6 @@ set_subscription_output.wait()
 
 
 # generate name
-lfo_base_name = sub(r"\W+", "", lfo_base_name)
 resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
 
 
