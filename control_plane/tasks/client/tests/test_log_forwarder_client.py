@@ -59,10 +59,7 @@ containerAppSettings: dict[str, str] = {
 class FakeHttpError(HttpResponseError):
     def __init__(self, status_code: int) -> None:
         self.status_code = status_code
-
-    @property
-    def message(self):
-        return {"code": f"something related to {self.status_code}"}
+        self.message = str({"code": f"something related to {self.status_code}"})
 
     reason = None
     error = None

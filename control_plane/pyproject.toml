@@ -20,7 +20,7 @@ scaling_task = [
     "azure-mgmt-resource==23.0.1",
     "azure-mgmt-storage==21.2.1",
     "datadog-api-client==2.26.0",
-    "aiosonic==0.15.0", # old version required by datadog-api-client
+    "aiosonic==0.15.0",                # old version required by datadog-api-client
     "tenacity==9.0.0",
 ]
 deployer_task = [
@@ -36,10 +36,10 @@ dev = [
     "coverage==7.4.4",
     "pycobertura==3.3.2",
     "stickytape==0.2.1",
-    "mypy==1.10",
-    "ruff==0.6.9",
+    "pyright==1.1.390",
+    "ruff==0.8.2",
     "types-jsonschema==4.23.0.20240813",
-    "types-requests==2.32.0.20240602"
+    "types-requests==2.32.0.20240602",
 ]
 
 [build-system]
@@ -69,19 +69,9 @@ quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 
-[tool.mypy]
-strict = true
-check_untyped_defs = true
-disable_error_code = [
-    "import-untyped",
-    "unused-ignore",   # used for incompatibilities with pyright and mypy
-    "no-untyped-call", # datadog api library problems
-]
-# exclude test files and config directory
-exclude = ".*test.*|config/"
+[tool.pyright]
+include = ["tasks", "cache"]
+exclude = ["**/__pycache__", "build/"]
 
-
-[[tool.mypy.overrides]]
-module = "azure.mgmt.*"
-# azure mgmt modules are very slow and we do not have control, we should skip those
-follow_imports = "skip"
+reportMissingImports = "error"
+reportMissingTypeStubs = false
