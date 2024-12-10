@@ -32,7 +32,7 @@ resource monitoringContributorRole 'Microsoft.Authorization/roleDefinitions@2022
 }
 
 resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('resourceTask', controlPlaneId)
+  name: guid(subscription().id, 'resourceTask', controlPlaneId)
   properties: {
     roleDefinitionId: monitoringReaderRole.id
     principalId: resourceTaskPrincipalId
@@ -40,7 +40,7 @@ resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 }
 
 resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('monitor', 'diagnosticSettings', controlPlaneId)
+  name: guid(subscription().id, 'monitor', 'diagnosticSettings', controlPlaneId)
   properties: {
     roleDefinitionId: monitoringContributorRole.id
     principalId: diagnosticSettingsTaskPrincipalId
