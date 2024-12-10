@@ -63,10 +63,10 @@ var scalingTaskPrincipalId = controlPlane.outputs.scalingTaskPrincipalId
 
 module forwarderResourceGroups './forwarder_resource_groups.bicep' = [
   for subscriptionId in json(monitoredSubscriptions): {
-    name: 'forwarderResourceGroups'
+    name: 'forwarderResourceGroup-${subscriptionId}'
     scope: subscription(subscriptionId)
     params: {
-      resourceGroupName: 'datadog-forwarder'
+      resourceGroupName: controlPlaneResourceGroupName
       location: controlPlaneLocation
       controlPlaneId: controlPlaneId
       resourceTaskPrincipalId: resourceTaskPrincipalId
