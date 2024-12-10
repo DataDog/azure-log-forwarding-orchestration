@@ -2,6 +2,7 @@
 from asyncio import gather, run
 from json import dumps
 from logging import DEBUG, basicConfig, getLogger
+from os import getenv
 from typing import Final, cast
 
 # 3p
@@ -9,7 +10,7 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
-from cache.common import get_config_option, read_cache, write_cache
+from cache.common import read_cache, write_cache
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -58,7 +59,7 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
-        self.monitored_subscriptions = deserialize_monitored_subscriptions(get_config_option("MONITORED_SUBSCRIPTIONS"))
+        self.monitored_subscriptions = deserialize_monitored_subscriptions(getenv("MONITORED_SUBSCRIPTIONS") or "")
         resource_cache = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             log.warning("Resource Cache is in an invalid format, task will reset the cache")
