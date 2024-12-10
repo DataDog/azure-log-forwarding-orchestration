@@ -54,6 +54,7 @@ def generate_metrics(
             "runtime_seconds": runtime(i) if callable(runtime) else runtime,
             "timestamp": minutes_ago(i + offset_mins),
             "resource_log_volume": resource_log_volume.copy(),
+            "resource_log_bytes": {k: v * 10 for k, v in resource_log_volume.items()},
         }
         for i in range(METRIC_COLLECTION_PERIOD_MINUTES)
     ]
