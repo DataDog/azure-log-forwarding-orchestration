@@ -27,9 +27,6 @@ class TestResourcesTask(TaskTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.patch("get_config_option").side_effect = {
-            "MONITORED_SUBSCRIPTIONS": '["a062baee-fdd3-4784-beb4-d817f591422c", "77602a31-36b2-4417-a27c-9071107ca3e6"]'
-        }.__getitem__
         self.sub_client: AsyncMock = self.patch("SubscriptionClient").return_value.__aenter__.return_value
         self.resource_client = self.patch("ResourceManagementClient")
         self.resource_client_mapping: dict[str, AsyncIterableFunc] = {}
@@ -199,6 +196,9 @@ class TestResourcesTask(TaskTestCase):
 
     async def test_unmonitored_subscriptions_ignored(self):
         sub_id3 = "6522f787-edd0-4005-a901-d61c0ee60cb8"
+        self.patch("getenv").side_effect = {
+            "MONITORED_SUBSCRIPTIONS": '["a062baee-fdd3-4784-beb4-d817f591422c", "77602a31-36b2-4417-a27c-9071107ca3e6"]'
+        }.__getitem__
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, Mock(subscription_id=sub_id3)))
         self.resource_client_mapping = {
             sub_id1: Mock(return_value=async_generator(resource1, resource2)),
