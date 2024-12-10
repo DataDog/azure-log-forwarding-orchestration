@@ -203,7 +203,20 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
   }
 }
 
+var websiteContributorRole = managementGroupResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  'de139f84-1756-47ae-9be6-808fbbe84772'
+)
+
+resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('deployer', controlPlaneId)
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: websiteContributorRole
+    principalId: deployerTask.identity.principalId
+  }
+}
+
 output resourceTaskPrincipalId string = resourceTask.identity.principalId
 output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
 output scalingTaskPrincipalId string = scalingTask.identity.principalId
-output deployerTaskPrincipalId string = deployerTask.identity.principalId
