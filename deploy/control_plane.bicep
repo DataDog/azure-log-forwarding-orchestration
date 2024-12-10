@@ -203,7 +203,7 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
   }
 }
 
-resource websiteContributorRoleDefinition 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+resource websiteContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   scope: resourceGroup()
   name: 'de139f84-1756-47ae-9be6-808fbbe84772'
 }
@@ -212,7 +212,7 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   name: guid('deployer', controlPlaneId)
   scope: resourceGroup()
   properties: {
-    roleDefinitionId: websiteContributorRoleDefinition.id
+    roleDefinitionId: websiteContributorRole.id
     principalId: deployerTask.identity.principalId
   }
 }
