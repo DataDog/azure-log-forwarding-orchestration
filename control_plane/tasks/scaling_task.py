@@ -153,7 +153,7 @@ class ScalingTask(Task):
             if not value.get("configurations")
         }
         regions_to_add = current_regions - previous_region_assignments
-        regions_to_remove = (previous_region_assignments - current_regions) | (empty_regions - current_regions)
+        regions_to_remove = (previous_region_assignments | empty_regions) - current_regions
         regions_to_check_scaling = current_regions & previous_region_assignments
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             await gather(
