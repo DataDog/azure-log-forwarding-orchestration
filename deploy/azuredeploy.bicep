@@ -13,6 +13,7 @@ param datadogApiKey string
 param datadogSite string
 
 param imageRegistry string = 'datadoghq.azurecr.io'
+#disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
 module controlPlaneSubscription './subscription.bicep' = {
@@ -59,7 +60,6 @@ module controlPlaneResourceGroup './control_plane.bicep' = {
 var resourceTaskPrincipalId = controlPlaneResourceGroup.outputs.resourceTaskPrincipalId
 var diagnosticSettingsTaskPrincipalId = controlPlaneResourceGroup.outputs.diagnosticSettingsTaskPrincipalId
 var scalingTaskPrincipalId = controlPlaneResourceGroup.outputs.scalingTaskPrincipalId
-var deployerTaskPrincipalId = controlPlaneResourceGroup.outputs.deployerTaskPrincipalId
 
 var contributorRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
@@ -76,10 +76,6 @@ var monitoringContributorRole = managementGroupResourceId(
 var readerAndDataAccessRole = managementGroupResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'c12c1c16-33a1-487b-954d-41c89c60f349'
-)
-var websiteContributorRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'de139f84-1756-47ae-9be6-808fbbe84772'
 )
 
 resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -111,13 +107,5 @@ resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
   properties: {
     roleDefinitionId: contributorRole
     principalId: scalingTaskPrincipalId
-  }
-}
-
-resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('deployer', controlPlaneId)
-  properties: {
-    roleDefinitionId: websiteContributorRole
-    principalId: deployerTaskPrincipalId
   }
 }
