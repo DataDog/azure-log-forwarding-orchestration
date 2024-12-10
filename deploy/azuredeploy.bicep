@@ -61,31 +61,6 @@ var resourceTaskPrincipalId = controlPlane.outputs.resourceTaskPrincipalId
 var diagnosticSettingsTaskPrincipalId = controlPlane.outputs.diagnosticSettingsTaskPrincipalId
 var scalingTaskPrincipalId = controlPlane.outputs.scalingTaskPrincipalId
 
-var monitoringReaderRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  '43d0d8ad-25c7-4714-9337-8ba259a9fe05'
-)
-var monitoringContributorRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  '749f88d5-cbae-40b8-bcfc-e573ddc772fa'
-)
-
-resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('resourceTask', controlPlaneId)
-  properties: {
-    roleDefinitionId: monitoringReaderRole
-    principalId: resourceTaskPrincipalId
-  }
-}
-
-resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('monitor', 'diagnosticSettings', controlPlaneId)
-  properties: {
-    roleDefinitionId: monitoringContributorRole
-    principalId: diagnosticSettingsTaskPrincipalId
-  }
-}
-
 module forwarderResourceGroups './forwarder_resource_groups.bicep' = [
   for subscriptionId in json(monitoredSubscriptions): {
     name: 'forwarderResourceGroups'
@@ -94,8 +69,12 @@ module forwarderResourceGroups './forwarder_resource_groups.bicep' = [
       resourceGroupName: 'datadog-forwarder'
       location: controlPlaneLocation
       controlPlaneId: controlPlaneId
+      resourceTaskPrincipalId: resourceTaskPrincipalId
       diagnosticSettingsTaskPrincipalId: diagnosticSettingsTaskPrincipalId
       scalingTaskPrincipalId: scalingTaskPrincipalId
     }
+    dependsOn: [
+      controlPlane
+    ]
   }
 ]
