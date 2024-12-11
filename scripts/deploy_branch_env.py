@@ -40,12 +40,26 @@ def get_name(name: str, max_length: int) -> str:
     return name.lower()
 
 
+def run(cmd: str) -> str:
+    """Runs the command and returns the stdout, stripping any newlines"""
+    output = Popen(cmd.split(), stdout=PIPE, text=True)
+    output.wait()
+    if not output.stdout:
+        return ""
+    if output.returncode != 0:
+        err = "" if not output.stderr else output.stderr.read()
+        raise Exception(f"Error running command {cmd}: {err}")
+    return output.stdout.read().strip()
+
+
 # shared variables
 home = environ.get("HOME")
 user = environ.get("USER")
 lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}"))
 lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
-subscription_id = environ.get("AZURE_SUBSCRIPTION_ID")
+subscription_id = environ.get("AZURE_SUBSCRIPTION_ID") or run(
+    "az account show --query id -o tsv"
+)
 credential = AzureCliCredential()
 resource_client = ResourceManagementClient(credential, subscription_id)
 storage_client = StorageManagementClient(credential, subscription_id)
@@ -239,8 +253,8 @@ Popen(
 # deployment has not happened, deploy LFO
 if initial_deploy:
     print(f"Deploying LFO to {resource_group_name}...")
-    app_key = environ.get("DD_APP_KEY")
-    api_key = environ.get("DD_API_KEY")
+    app_key = environ["DD_APP_KEY"]
+    api_key = environ["DD_API_KEY"]
     deploy_output = Popen(
         [
             "az",
@@ -281,7 +295,9 @@ if initial_deploy:
 
 
 # execute deployer
+print("Waiting for deployer to be ready..", end="")
 while True:
+    print(".", end="", flush=True)
     list_jobs_output = Popen(
         [
             "az",
@@ -297,14 +313,12 @@ while True:
     )
     list_jobs_output.wait()
     jobs_json = list_jobs_output.stdout.read().decode("utf-8")
-    if not jobs_json:
+    if not jobs_json or not (jobs := loads(jobs_json)):
         sleep(5)
         continue
-    jobs = loads(jobs_json)
-    print("execute deployer")
     for job in jobs:
         if "deployer-task" in job.get("name"):
-            print(f"Executing deployer for job {job.get('name')}...")
+            print(f"\nDeployer Ready, Executing deployer for job {job.get('name')}...")
             deployer_output = Popen(
                 [
                     "az",
