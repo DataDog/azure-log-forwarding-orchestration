@@ -73,8 +73,5 @@ module forwarderResourceGroups './forwarder_resource_groups.bicep' = [
       diagnosticSettingsTaskPrincipalId: diagnosticSettingsTaskPrincipalId
       scalingTaskPrincipalId: scalingTaskPrincipalId
     }
-    dependsOn: [
-      controlPlane
-    ]
   }
 ]
