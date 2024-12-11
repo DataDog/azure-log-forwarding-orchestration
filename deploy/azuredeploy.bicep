@@ -25,6 +25,15 @@ module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
   }
 }
 
+module validateAPIKey './validate_key.bicep' = {
+  name: 'validateAPIKey'
+  scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
+  params: {
+    datadogApiKey: datadogApiKey
+    datadogSite: datadogSite
+  }
+}
+
 // sub-uuid for the control plane is based on the identifiers below.
 // This is to be consistent if there are multiple deploys, while still making a unique id.
 // - the management group
