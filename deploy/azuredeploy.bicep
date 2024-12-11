@@ -32,6 +32,9 @@ module validateAPIKey './validate_key.bicep' = {
     datadogApiKey: datadogApiKey
     datadogSite: datadogSite
   }
+  dependsOn: [
+    controlPlaneResourceGroup
+  ]
 }
 
 // sub-uuid for the control plane is based on the identifiers below.
@@ -63,6 +66,7 @@ module controlPlane './control_plane.bicep' = {
   }
   dependsOn: [
     controlPlaneResourceGroup
+    validateAPIKey
   ]
 }
 
