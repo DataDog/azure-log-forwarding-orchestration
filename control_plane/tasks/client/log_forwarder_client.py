@@ -256,6 +256,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                     schedule_trigger_config=JobConfigurationScheduleTriggerConfig(
                         cron_expression="* * * * *",
                         parallelism=1,
+                        replica_completion_count=1,
                     ),
                     replica_timeout=1800,  # 30 minutes
                     replica_retry_limit=1,
