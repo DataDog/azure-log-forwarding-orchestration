@@ -205,6 +205,7 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
 
 resource websiteContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   scope: resourceGroup()
+  // Details: https://www.azadvertizer.net/azrolesadvertizer/de139f84-1756-47ae-9be6-808fbbe84772.html
   name: 'de139f84-1756-47ae-9be6-808fbbe84772'
 }
 
