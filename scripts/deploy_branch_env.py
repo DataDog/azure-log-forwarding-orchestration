@@ -25,6 +25,8 @@ MD5_LENGTH = 32
 LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
+APP_KEY = environ["DD_APP_KEY"]
+API_KEY = environ["DD_API_KEY"]
 
 
 # functions
@@ -203,8 +205,6 @@ run(
 # deployment has not happened, deploy LFO
 if initial_deploy:
     print(f"Deploying LFO to {resource_group_name}...")
-    app_key = environ["DD_APP_KEY"]
-    api_key = environ["DD_API_KEY"]
     run(
         f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION}"
         + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
@@ -212,8 +212,8 @@ if initial_deploy:
         + f"--parameters controlPlaneLocation={LOCATION} "
         + f"--parameters controlPlaneSubscriptionId={subscription_id} "
         + f"--parameters controlPlaneResourceGroupName={resource_group_name} "
-        + f"--parameters datadogApplicationKey={app_key} "
-        + f"--parameters datadogApiKey={api_key} --parameters datadogSite=datadoghq.com "
+        + f"--parameters datadogApplicationKey={APP_KEY} "
+        + f"--parameters datadogApiKey={API_KEY} --parameters datadogSite=datadoghq.com "
         + f"--parameters imageRegistry={container_registry_name}.azurecr.io "
         + f"--parameters storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
         cwd=lfo_dir,
