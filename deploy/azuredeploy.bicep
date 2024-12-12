@@ -17,7 +17,7 @@ param imageRegistry string = 'datadoghq.azurecr.io'
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
 module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
-  name: controlPlaneResourceGroupName
+  name: 'controlPlaneResourceGroup'
   scope: subscription(controlPlaneSubscriptionId)
   params: {
     controlPlaneResourceGroup: controlPlaneResourceGroupName
@@ -38,7 +38,7 @@ var controlPlaneId = toLower(substring(
 ))
 
 module controlPlane './control_plane.bicep' = {
-  name: 'controlPlaneResourceGroup'
+  name: 'controlPlane'
   scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
   params: {
     controlPlaneId: controlPlaneId
