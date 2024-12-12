@@ -25,8 +25,6 @@ MD5_LENGTH = 32
 LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
-APP_KEY = environ["DD_APP_KEY"]
-API_KEY = environ["DD_API_KEY"]
 
 
 # functions
@@ -90,6 +88,8 @@ if not resource_group:
     resource_group = resource_client.resource_groups.create_or_update(
         resource_group_name, {"location": LOCATION}
     )
+    APP_KEY = environ["DD_APP_KEY"]
+    API_KEY = environ["DD_API_KEY"]
     initial_deploy = True
     print(f"Created resource group {resource_group.name}")
 
