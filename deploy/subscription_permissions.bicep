@@ -7,7 +7,7 @@ param resourceTaskPrincipalId string
 param diagnosticSettingsTaskPrincipalId string
 param scalingTaskPrincipalId string
 
-// create all the resource groups for the forwarders
+// create the resource group for the forwarders in this subscription
 resource forwarderResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
   location: location
