@@ -23,6 +23,8 @@ param datadogSite string
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
 var forwarderImage = '${imageRegistry}/forwarder:latest'
 
+// CONTROL PLANE RESOURCES
+
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: 'control-plane-asp-${controlPlaneId}'
   location: controlPlaneLocation
@@ -216,27 +218,53 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-resource deployerTaskScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
-  name: 'deployerTaskScript'
-  location: resourceGroup().location
+output resourceTaskPrincipalId string = resourceTask.identity.principalId
+output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
+output scalingTaskPrincipalId string = scalingTask.identity.principalId
+
+// DEPLOYER TASK INITIAL RUN
+
+resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
+  name: 'runInitialDeployIdentity'
+  location: controlPlaneLocation
+}
+
+resource containerAppsContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
+  scope: resourceGroup()
+  // Details: https://www.azadvertizer.net/azrolesadvertizer/358470bc-b998-42bd-ab17-a7e34c199c0f.html
+  name: '358470bc-b998-42bd-ab17-a7e34c199c0f'
+}
+
+resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneId)
+  properties: {
+    roleDefinitionId: containerAppsContributorRole.id
+    principalId: runInitialDeployIdentity.properties.principalId
+  }
+}
+
+resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+  name: 'runInitialDeploy'
+  location: controlPlaneLocation
   kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${runInitialDeployIdentity.id}': {} }
+  }
   properties: {
     storageAccountSettings: {
       // reuse the storage account from before
       storageAccountName: storageAccount.name
       storageAccountKey: storageAccountKey
     }
-    azCliVersion: '2.67.0'
-    scriptContent: 'az containerapp job start --name ${deployerTaskName} --resource-group ${controlPlaneResourceGroupName}'
+    azCliVersion: '2.64.0'
+    scriptContent: 'set -e; az extension add --name containerapp; az containerapp job start --name ${deployerTaskName} --resource-group ${controlPlaneResourceGroupName}'
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
   }
   dependsOn: [
+    runInitialDeployIdentityRoleAssignment
     deployerTaskRole
   ]
 }
-
-output resourceTaskPrincipalId string = resourceTask.identity.principalId
-output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
-output scalingTaskPrincipalId string = scalingTask.identity.principalId
