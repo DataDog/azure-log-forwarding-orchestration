@@ -258,7 +258,7 @@ resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
       storageAccountKey: storageAccountKey
     }
     azCliVersion: '2.64.0'
-    scriptContent: 'set -e; az extension add --name containerapp; az containerapp job start --name ${deployerTaskName} --resource-group ${controlPlaneResourceGroupName}'
+    scriptContent: 'set -e; az extension add --name containerapp --allow-preview true; az containerapp job start --name ${deployerTaskName} --resource-group ${controlPlaneResourceGroupName}'
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
