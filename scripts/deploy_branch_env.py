@@ -6,6 +6,7 @@ from os import environ
 from re import sub
 from subprocess import Popen, PIPE
 from time import sleep
+from typing import Any
 
 # azure
 from azure.core.exceptions import ResourceNotFoundError
@@ -40,9 +41,9 @@ def get_name(name: str, max_length: int) -> str:
     return name.lower()
 
 
-def run(cmd: str) -> str:
+def run(cmd: str, **kwargs: Any) -> str:
     """Runs the command and returns the stdout, stripping any newlines"""
-    output = Popen(cmd.split(), stdout=PIPE, text=True)
+    output = Popen(cmd.split(), stdout=PIPE, text=True, **kwargs)
     output.wait()
     if not output.stdout:
         return ""
@@ -67,10 +68,7 @@ initial_deploy = False
 
 
 # set az cli to look at the correct subscription
-set_subscription_output = Popen(
-    ["az", "account", "set", "--subscription", subscription_id], stdout=PIPE
-)
-set_subscription_output.wait()
+run(f"az account set --subscription {subscription_id}")
 
 
 # generate name
@@ -150,188 +148,93 @@ if not container_client.exists():
 
 # check if ACR exists
 container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
-list_acr_output = Popen(
-    ["az", "acr", "list", "--resource-group", resource_group_name, "--output", "json"],
+acr_list = run(
+    f"az acr list --resource-group {resource_group_name} --output json",
     cwd=lfo_dir,
-    stdout=PIPE,
 )
-list_acr_output.wait()
-acr_list = list_acr_output.stdout.read().decode("utf-8")
 
 # if ACR does not exist, create it
 if not acr_list or container_registry_name not in acr_list:
     print(f"Attempting to create container registry {container_registry_name}...")
-    acr_create_ouput = Popen(
-        [
-            "az",
-            "acr",
-            "create",
-            "--resource-group",
-            resource_group_name,
-            "--name",
-            container_registry_name,
-            "--sku",
-            "Standard",
-        ],
+    run(
+        f"az acr create --resource-group {resource_group_name} --name {container_registry_name} --sku Standard",
         cwd=lfo_dir,
-        stdout=PIPE,
     )
-    acr_create_ouput.wait()
     print("Created container registry, updating to allow public access...")
-    acr_update_output = Popen(
-        [
-            "az",
-            "acr",
-            "update",
-            "--name",
-            container_registry_name,
-            "--anonymous-pull-enabled",
-        ],
+    run(
+        f"az acr update --name {container_registry_name} --anonymous-pull-enabled",
         cwd=lfo_dir,
-        stdout=PIPE,
     )
     print("Waiting for settings to take effect...")
     sleep(20)
 
 
 # login to ACR
-login_output = Popen(
-    ["az", "acr", "login", "--name", container_registry_name], cwd=lfo_dir, stdout=PIPE
+login_output = run(
+    f"az acr login --name {container_registry_name}",
+    cwd=lfo_dir,
 )
-login_output.wait()
-print(login_output.stdout.readline().decode("utf-8"))
+print(login_output)
 
 
 # build and push deployer
-deployer_build_output = Popen(
-    [
-        "docker",
-        "buildx",
-        "build",
-        "--platform=linux/amd64",
-        "--tag",
-        f"{container_registry_name}.azurecr.io/deployer:latest",
-        "-f",
-        f"{lfo_dir}/ci/deployer-task/Dockerfile",
-        "./control_plane",
-        "--push",
-    ],
+run(
+    f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
+    + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
     cwd=lfo_dir,
-    stdout=PIPE,
 )
-deployer_build_output.wait()
-
 
 # build and push forwarder
-forwarder_build_output = Popen(
-    [
-        "ci/scripts/forwarder/build_and_push.sh",
-        f"{container_registry_name}.azurecr.io",
-        "latest",
-    ],
+run(
+    f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
     cwd=lfo_dir,
-    stdout=PIPE,
 )
-forwarder_build_output.wait()
 
 
 # build current version of tasks
-Popen([f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh"], cwd=lfo_dir).wait()
+run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
 
 # upload current version of tasks to storage account
-Popen(
-    [
-        f"{lfo_dir}/ci/scripts/control_plane/publish.py",
-        f"https://{storage_account_name}.blob.core.windows.net",
-        connection_string,
-    ],
+run(
+    f"{lfo_dir}/ci/scripts/control_plane/publish.py https://{storage_account_name}.blob.core.windows.net {connection_string}",
     cwd=lfo_dir,
-    stdout=PIPE,
-).wait()
-
+)
 
 # deployment has not happened, deploy LFO
 if initial_deploy:
     print(f"Deploying LFO to {resource_group_name}...")
     app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
-    deploy_output = Popen(
-        [
-            "az",
-            "deployment",
-            "mg",
-            "create",
-            "--management-group-id",
-            "Azure-Integrations-Mg",
-            "--location",
-            LOCATION,
-            "--name",
-            resource_group_name,
-            "--template-file",
-            "./deploy/azuredeploy.bicep",
-            "--parameters",
-            f'monitoredSubscriptions=["{subscription_id}"]',
-            "--parameters",
-            f"controlPlaneLocation={LOCATION}",
-            "--parameters",
-            f"controlPlaneSubscriptionId={subscription_id}",
-            "--parameters",
-            f"controlPlaneResourceGroupName={resource_group_name}",
-            "--parameters",
-            f"datadogApplicationKey={app_key}",
-            "--parameters",
-            f"datadogApiKey={api_key}",
-            "--parameters",
-            "datadogSite=datadoghq.com",
-            "--parameters",
-            f"imageRegistry={container_registry_name}.azurecr.io",
-            "--parameters",
-            f"storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
-        ],
+    run(
+        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION}"
+        + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
+        + f'--parameters monitoredSubscriptions=["{subscription_id}"] '
+        + f"--parameters controlPlaneLocation={LOCATION} "
+        + f"--parameters controlPlaneSubscriptionId={subscription_id} "
+        + f"--parameters controlPlaneResourceGroupName={resource_group_name} "
+        + f"--parameters datadogApplicationKey={app_key} "
+        + f"--parameters datadogApiKey={api_key} --parameters datadogSite=datadoghq.com "
+        + f"--parameters imageRegistry={container_registry_name}.azurecr.io "
+        + f"--parameters storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
         cwd=lfo_dir,
-        stdout=PIPE,
     )
-    deploy_output.wait()
 
 
 # execute deployer
 print("Waiting for deployer to be ready..", end="")
 while True:
     print(".", end="", flush=True)
-    list_jobs_output = Popen(
-        [
-            "az",
-            "containerapp",
-            "job",
-            "list",
-            "--resource-group",
-            resource_group_name,
-            "--output",
-            "json",
-        ],
-        stdout=PIPE,
+    jobs_json = run(
+        f"az containerapp job list --resource-group {resource_group_name} --output json"
     )
-    list_jobs_output.wait()
-    jobs_json = list_jobs_output.stdout.read().decode("utf-8")
     if not jobs_json or not (jobs := loads(jobs_json)):
         sleep(5)
         continue
     for job in jobs:
         if "deployer-task" in job.get("name"):
             print(f"\nDeployer Ready, Executing deployer for job {job.get('name')}...")
-            deployer_output = Popen(
-                [
-                    "az",
-                    "containerapp",
-                    "job",
-                    "start",
-                    "--resource-group",
-                    resource_group_name,
-                    "--name",
-                    job.get("name"),
-                ],
-                stdout=PIPE,
+            run(
+                f"az containerapp job start --resource-group {resource_group_name} --name {job.get('name')}",
             )
-            deployer_output.wait()
             print(f"Deployer executed for job {job.get('name')}")
             raise SystemExit(0)
