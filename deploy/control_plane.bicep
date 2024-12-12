@@ -62,7 +62,8 @@ resource cacheContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
   properties: {}
 }
 
-var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
+var storageAccountKey = listKeys(storageAccount.id, '2019-06-01').keys[0].value
+var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccountKey}'
 
 var commonAppSettings = [
   { name: 'AzureWebJobsStorage', value: connectionString }
@@ -213,6 +214,27 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
     roleDefinitionId: websiteContributorRole.id
     principalId: deployerTask.identity.principalId
   }
+}
+
+resource deployerTaskScript 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+  name: 'deployerTaskScript'
+  location: resourceGroup().location
+  kind: 'AzureCLI'
+  properties: {
+    storageAccountSettings: {
+      // reuse the storage account from before
+      storageAccountName: storageAccount.name
+      storageAccountKey: storageAccountKey
+    }
+    azCliVersion: '2.67.0'
+    scriptContent: 'az containerapp job start --name ${deployerTaskName} --resource-group ${controlPlaneResourceGroupName}'
+    timeout: 'PT30M'
+    retentionInterval: 'PT1H'
+    cleanupPreference: 'OnSuccess'
+  }
+  dependsOn: [
+    deployerTaskRole
+  ]
 }
 
 output resourceTaskPrincipalId string = resourceTask.identity.principalId
