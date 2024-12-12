@@ -9,7 +9,6 @@ from time import sleep
 from typing import Any
 
 # azure
-from azure.core.exceptions import ResourceNotFoundError
 from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
@@ -75,21 +74,12 @@ run(f"az account set --subscription {subscription_id}")
 resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
 
 
-# check if resource group exists
-resource_group = None
-try:
-    resource_group = resource_client.resource_groups.get(resource_group_name)
-except ResourceNotFoundError:
-    print(f"Resource group {resource_group_name} does not exist, will be created")
-
-
 # if resource group does not exist, create it
-if not resource_group:
+if not resource_client.resource_groups.check_existence(resource_group_name):
+    print(f"Resource group {resource_group_name} does not exist, will be created")
     resource_group = resource_client.resource_groups.create_or_update(
         resource_group_name, {"location": LOCATION}
     )
-    APP_KEY = environ["DD_APP_KEY"]
-    API_KEY = environ["DD_API_KEY"]
     initial_deploy = True
     print(f"Created resource group {resource_group.name}")
 
@@ -205,6 +195,8 @@ run(
 # deployment has not happened, deploy LFO
 if initial_deploy:
     print(f"Deploying LFO to {resource_group_name}...")
+    app_key = environ["DD_APP_KEY"]
+    api_key = environ["DD_API_KEY"]
     run(
         f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION}"
         + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
@@ -212,8 +204,8 @@ if initial_deploy:
         + f"--parameters controlPlaneLocation={LOCATION} "
         + f"--parameters controlPlaneSubscriptionId={subscription_id} "
         + f"--parameters controlPlaneResourceGroupName={resource_group_name} "
-        + f"--parameters datadogApplicationKey={APP_KEY} "
-        + f"--parameters datadogApiKey={API_KEY} --parameters datadogSite=datadoghq.com "
+        + f"--parameters datadogApplicationKey={app_key} "
+        + f"--parameters datadogApiKey={api_key} --parameters datadogSite=datadoghq.com "
         + f"--parameters imageRegistry={container_registry_name}.azurecr.io "
         + f"--parameters storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
         cwd=lfo_dir,
