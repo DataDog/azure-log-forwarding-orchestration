@@ -198,7 +198,7 @@ if initial_deploy:
     app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
     run(
-        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION}"
+        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION} "
         + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
         + f'--parameters monitoredSubscriptions=["{subscription_id}"] '
         + f"--parameters controlPlaneLocation={LOCATION} "
