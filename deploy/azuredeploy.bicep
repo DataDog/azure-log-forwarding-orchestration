@@ -61,9 +61,10 @@ var resourceTaskPrincipalId = controlPlane.outputs.resourceTaskPrincipalId
 var diagnosticSettingsTaskPrincipalId = controlPlane.outputs.diagnosticSettingsTaskPrincipalId
 var scalingTaskPrincipalId = controlPlane.outputs.scalingTaskPrincipalId
 
-module forwarderResourceGroups './forwarder_resource_groups.bicep' = [
+// create the subscription level permissions, as well as the resource group for forwarders and the permissions on that resource group
+module subscriptionPermissions './subscription_permissions.bicep' = [
   for subscriptionId in json(monitoredSubscriptions): {
-    name: 'forwarderResourceGroup-${subscriptionId}'
+    name: 'subscriptionPermissions-${subscriptionId}'
     scope: subscription(subscriptionId)
     params: {
       resourceGroupName: controlPlaneResourceGroupName

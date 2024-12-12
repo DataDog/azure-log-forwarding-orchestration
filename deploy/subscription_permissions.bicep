@@ -7,13 +7,15 @@ param resourceTaskPrincipalId string
 param diagnosticSettingsTaskPrincipalId string
 param scalingTaskPrincipalId string
 
+// create all the resource groups for the forwarders
 resource forwarderResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
   location: location
 }
 
-module forwarderResourceGroupPermissions './forwarder_resource_group_permissions.bicep' = {
-  name: 'forwarderResourceGroupPermissions'
+// assign the resource group level permissions
+module resourceGroupPermissions './resource_group_permissions.bicep' = {
+  name: 'resourceGroupPermissions'
   scope: forwarderResourceGroup
   params: {
     controlPlaneId: controlPlaneId
