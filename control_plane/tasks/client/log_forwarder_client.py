@@ -253,7 +253,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 environment_id=get_managed_env_id(self.subscription_id, self.resource_group, config_id),
                 configuration=JobConfiguration(
                     trigger_type="Schedule",
-                    schedule_trigger_config=JobConfigurationScheduleTriggerConfig(cron_expression="* * * * *"),
+                    schedule_trigger_config=JobConfigurationScheduleTriggerConfig(
+                        cron_expression="* * * * *",
+                        parallelism=1,
+                    ),
                     replica_timeout=1800,  # 30 minutes
                     replica_retry_limit=1,
                     secrets=[
