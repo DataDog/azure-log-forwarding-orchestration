@@ -9,7 +9,6 @@ from time import sleep
 from typing import Any
 
 # azure
-from azure.core.exceptions import ResourceNotFoundError
 from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
@@ -75,16 +74,9 @@ run(f"az account set --subscription {subscription_id}")
 resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
 
 
-# check if resource group exists
-resource_group = None
-try:
-    resource_group = resource_client.resource_groups.get(resource_group_name)
-except ResourceNotFoundError:
-    print(f"Resource group {resource_group_name} does not exist, will be created")
-
-
 # if resource group does not exist, create it
-if not resource_group:
+if not resource_client.resource_groups.check_existence(resource_group_name):
+    print(f"Resource group {resource_group_name} does not exist, will be created")
     resource_group = resource_client.resource_groups.create_or_update(
         resource_group_name, {"location": LOCATION}
     )
@@ -206,7 +198,7 @@ if initial_deploy:
     app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
     run(
-        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION}"
+        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION} "
         + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
         + f'--parameters monitoredSubscriptions=["{subscription_id}"] '
         + f"--parameters controlPlaneLocation={LOCATION} "
