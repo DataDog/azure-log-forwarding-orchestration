@@ -152,7 +152,11 @@ class TestLogForwarderClient(AsyncTestCase):
                         "trigger_type": "Schedule",
                         "replica_timeout": 1800,
                         "replica_retry_limit": 1,
-                        "schedule_trigger_config": {"cron_expression": "* * * * *"},
+                        "schedule_trigger_config": {
+                            "cron_expression": "* * * * *",
+                            "parallelism": 1,
+                            "replica_completion_count": 1,
+                        },
                     },
                     "template": {
                         "containers": [
