@@ -225,7 +225,7 @@ output scalingTaskPrincipalId string = scalingTask.identity.principalId
 // DEPLOYER TASK INITIAL RUN
 
 resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
-  name: 'runInitialDeployIdentity'
+  name: 'runInitialDeployIdentity-${controlPlaneId}'
   location: controlPlaneLocation
 }
 
@@ -257,8 +257,31 @@ resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
       storageAccountName: storageAccount.name
       storageAccountKey: storageAccountKey
     }
-    azCliVersion: '2.64.0'
-    scriptContent: 'set -e; az extension add --name containerapp --allow-preview true; az containerapp job start --name ${deployerTaskName} --resource-group ${controlPlaneResourceGroupName}'
+    azCliVersion: '2.63.0'
+    environmentVariables: [
+      { name: 'resource_group', value: controlPlaneResourceGroupName }
+      { name: 'deployer_task', value: deployerTaskName }
+      { name: 'max_retries', value: '5' }
+      { name: 'retry_count', value: '0' }
+      { name: 'wait_time', value: '30' }
+    ]
+    scriptContent: '''
+az extension add --name containerapp --allow-preview true
+
+while [ $retry_count -lt $max_retries ]; do
+  az containerapp job start --name $deployer_task --resource-group $resource_group && break
+  retry_count=$((retry_count + 1))
+  echo "retry $retry_count/$max_retries failed. waiting $wait_time seconds..."
+  sleep $wait_time
+done
+
+if [ $retry_count -eq $max_retries ]; then
+  echo "Deploy failed after $max_retries attempts."
+  exit 1
+fi
+
+echo "Started Deploy"
+'''
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
