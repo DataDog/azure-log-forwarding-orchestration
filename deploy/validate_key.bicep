@@ -9,7 +9,7 @@ resource validateAPIKeyScript 'Microsoft.Resources/deploymentScripts@2020-10-01'
   location: resourceGroup().location
   kind: 'AzureCLI'
   properties: {
-    azCliVersion: '2.64.0'
+    azCliVersion: '2.0.80'
     environmentVariables: [
       { name: 'DD_API_KEY', secureValue: datadogApiKey }
       { name: 'DD_SITE', value: datadogSite }
@@ -19,7 +19,7 @@ resource validateAPIKeyScript 'Microsoft.Resources/deploymentScripts@2020-10-01'
         -H "Accept: application/json" \
         -H "DD-API-KEY: ${DD_API_KEY}" 2>/dev/null)
       if [ "$(jq .valid <<<"$response")" != 'true' ]; then
-        echo "{\"Result\": {\"error\": \"Unable to validate API Key against Site '${DD_SITE}'. Please check that the correct Datadog host site was used and that the key is a valid Datadog API key found at https://app.datadoghq.com/organization-settings/api-keys\", \"response\": $response}}" | jq >"$AZ_SCRIPTS_OUTPUT_PATH"
+        echo "{\"Result\": {\"error\": \"Unable to validate API Key against Site '${DD_SITE}'. Please check that the correct Datadog host site was used and that the key is a valid Datadog API key found at https://app.datadoghq.com/organization-settings/api-keys\", \"response\": $response}}" | jq | tee "$AZ_SCRIPTS_OUTPUT_PATH"
         exit 1
       fi
     '''
