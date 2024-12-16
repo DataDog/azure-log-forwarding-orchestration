@@ -1,0 +1,16 @@
+.coverage
+README.md
+htmlcov
+.mypy_cache
+.ruff_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyi
+
+*.egg-info
+*.dist-info
+./build
+./dist
+tests

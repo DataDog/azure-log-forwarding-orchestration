@@ -148,7 +148,11 @@ class TestLogForwarderClient(AsyncTestCase):
                         "trigger_type": "Schedule",
                         "replica_timeout": 1800,
                         "replica_retry_limit": 1,
-                        "schedule_trigger_config": {"cron_expression": "* * * * *"},
+                        "schedule_trigger_config": {
+                            "cron_expression": "* * * * *",
+                            "parallelism": 1,
+                            "replica_completion_count": 1,
+                        },
                     },
                     "template": {
                         "containers": [
@@ -405,11 +409,13 @@ class TestLogForwarderClient(AsyncTestCase):
                 "timestamp": 1723040910,
                 "runtime_seconds": 280,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
             {
                 "timestamp": 1723040911,
                 "runtime_seconds": 281,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
         ]
         self.client.metrics_client.submit_metrics.return_value = {}
@@ -449,11 +455,13 @@ class TestLogForwarderClient(AsyncTestCase):
                 "timestamp": 1723040910,
                 "runtime_seconds": 2.80,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
             {
                 "timestamp": 1723040911,
                 "runtime_seconds": 2.81,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
         ]
         self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
@@ -495,11 +503,13 @@ class TestLogForwarderClient(AsyncTestCase):
                 "timestamp": 1723040910,
                 "runtime_seconds": 2.80,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
             {
                 "timestamp": 1723040911,
                 "runtime_seconds": 2.81,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
         ]
         self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
@@ -542,11 +552,13 @@ class TestLogForwarderClient(AsyncTestCase):
                 "timestamp": 1723040910,
                 "runtime_seconds": 2.80,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
             {
                 "timestamp": 1723040911,
                 "runtime_seconds": 2.81,
                 "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
             },
         ]
         self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
@@ -590,7 +602,15 @@ class TestLogForwarderClient(AsyncTestCase):
         }
         async with self.client as client:
             await client.submit_log_forwarder_metrics(
-                "test", [{"runtime_seconds": 2.80, "resource_log_volume": {}, "timestamp": 1723040910}]
+                "test",
+                [
+                    {
+                        "runtime_seconds": 2.80,
+                        "resource_log_volume": {},
+                        "timestamp": 1723040910,
+                        "resource_log_bytes": {},
+                    }
+                ],
             )
 
         self.log.error.assert_called_once_with("oops something went wrong")

@@ -13,15 +13,28 @@ param datadogApiKey string
 param datadogSite string
 
 param imageRegistry string = 'datadoghq.azurecr.io'
+#disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
-module controlPlaneSubscription './subscription.bicep' = {
-  name: controlPlaneResourceGroupName
+module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
+  name: 'controlPlaneResourceGroup'
   scope: subscription(controlPlaneSubscriptionId)
   params: {
     controlPlaneResourceGroup: controlPlaneResourceGroupName
     controlPlaneLocation: controlPlaneLocation
   }
+}
+
+module validateAPIKey './validate_key.bicep' = {
+  name: 'validateAPIKey'
+  scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
+  params: {
+    datadogApiKey: datadogApiKey
+    datadogSite: datadogSite
+  }
+  dependsOn: [
+    controlPlaneResourceGroup
+  ]
 }
 
 // sub-uuid for the control plane is based on the identifiers below.
@@ -36,8 +49,8 @@ var controlPlaneId = toLower(substring(
   12
 ))
 
-module controlPlaneResourceGroup './control_plane.bicep' = {
-  name: 'controlPlaneResourceGroup'
+module controlPlane './control_plane.bicep' = {
+  name: 'controlPlane'
   scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
   params: {
     controlPlaneId: controlPlaneId
@@ -52,72 +65,27 @@ module controlPlaneResourceGroup './control_plane.bicep' = {
     storageAccountUrl: storageAccountUrl
   }
   dependsOn: [
-    controlPlaneSubscription
+    controlPlaneResourceGroup
+    validateAPIKey
   ]
 }
 
-var resourceTaskPrincipalId = controlPlaneResourceGroup.outputs.resourceTaskPrincipalId
-var diagnosticSettingsTaskPrincipalId = controlPlaneResourceGroup.outputs.diagnosticSettingsTaskPrincipalId
-var scalingTaskPrincipalId = controlPlaneResourceGroup.outputs.scalingTaskPrincipalId
-var deployerTaskPrincipalId = controlPlaneResourceGroup.outputs.deployerTaskPrincipalId
+var resourceTaskPrincipalId = controlPlane.outputs.resourceTaskPrincipalId
+var diagnosticSettingsTaskPrincipalId = controlPlane.outputs.diagnosticSettingsTaskPrincipalId
+var scalingTaskPrincipalId = controlPlane.outputs.scalingTaskPrincipalId
 
-var contributorRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'b24988ac-6180-42a0-ab88-20f7382dd24c'
-)
-var monitoringReaderRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  '43d0d8ad-25c7-4714-9337-8ba259a9fe05'
-)
-var monitoringContributorRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  '749f88d5-cbae-40b8-bcfc-e573ddc772fa'
-)
-var readerAndDataAccessRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'c12c1c16-33a1-487b-954d-41c89c60f349'
-)
-var websiteContributorRole = managementGroupResourceId(
-  'Microsoft.Authorization/roleDefinitions',
-  'de139f84-1756-47ae-9be6-808fbbe84772'
-)
-
-resource resourceTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('resourceTask', controlPlaneId)
-  properties: {
-    roleDefinitionId: monitoringReaderRole
-    principalId: resourceTaskPrincipalId
+// create the subscription level permissions, as well as the resource group for forwarders and the permissions on that resource group
+module subscriptionPermissions './subscription_permissions.bicep' = [
+  for subscriptionId in json(monitoredSubscriptions): {
+    name: 'subscriptionPermissions-${subscriptionId}'
+    scope: subscription(subscriptionId)
+    params: {
+      resourceGroupName: controlPlaneResourceGroupName
+      location: controlPlaneLocation
+      controlPlaneId: controlPlaneId
+      resourceTaskPrincipalId: resourceTaskPrincipalId
+      diagnosticSettingsTaskPrincipalId: diagnosticSettingsTaskPrincipalId
+      scalingTaskPrincipalId: scalingTaskPrincipalId
+    }
   }
-}
-
-resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('monitor', 'diagnosticSettings', controlPlaneId)
-  properties: {
-    roleDefinitionId: monitoringContributorRole
-    principalId: diagnosticSettingsTaskPrincipalId
-  }
-}
-
-resource diagnosticSettingsTaskStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('storage', 'diagnosticSettings', controlPlaneId)
-  properties: {
-    roleDefinitionId: readerAndDataAccessRole
-    principalId: diagnosticSettingsTaskPrincipalId
-  }
-}
-
-resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('scaling', controlPlaneId)
-  properties: {
-    roleDefinitionId: contributorRole
-    principalId: scalingTaskPrincipalId
-  }
-}
-
-resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('deployer', controlPlaneId)
-  properties: {
-    roleDefinitionId: websiteContributorRole
-    principalId: deployerTaskPrincipalId
-  }
-}
+]

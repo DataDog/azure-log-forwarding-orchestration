@@ -58,6 +58,7 @@ def generate_metrics(
             "runtime_seconds": runtime(i) if callable(runtime) else runtime,
             "timestamp": minutes_ago(i + offset_mins),
             "resource_log_volume": resource_log_volume.copy(),
+            "resource_log_bytes": {k: v * 10 for k, v in resource_log_volume.items()},
         }
         for i in range(METRIC_COLLECTION_PERIOD_MINUTES)
     ]
@@ -348,7 +349,7 @@ class TestScalingTask(TaskTestCase):
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = generate_metrics(
-            lambda i: 29.045 - (i * 0.2), {"resource1": 4000, "resource2": 6000}
+            lambda i: 49.045 - (i * 0.2), {"resource1": 4000, "resource2": 6000}
         )
 
         await self.run_scaling_task(
@@ -573,7 +574,7 @@ class TestScalingTask(TaskTestCase):
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_scaling_up_based_on_resource_load_with_onboarding(self, collect_forwarder_metrics: AsyncMock):
         collect_forwarder_metrics.return_value = generate_metrics(
-            lambda i: 35 + i, {"resource1": 1000, "resource2": 10000, "resource3": 3000, "resource4": 50}
+            lambda i: 55 + i, {"resource1": 1000, "resource2": 10000, "resource3": 3000, "resource4": 50}
         )
         await self.run_scaling_task(
             resource_cache_state={
@@ -619,7 +620,7 @@ class TestScalingTask(TaskTestCase):
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_scaling_up_with_only_one_resource(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(38, {"resource1": 90000})
+        collect_forwarder_metrics.return_value = generate_metrics(58, {"resource1": 90000})
         initial_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -663,7 +664,7 @@ class TestScalingTask(TaskTestCase):
 
     @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
     async def test_no_resource_metrics_split_in_half(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(37, {})
+        collect_forwarder_metrics.return_value = generate_metrics(57, {})
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -942,11 +943,13 @@ class TestScalingTaskHelpers(TestCase):
                         "runtime_seconds": 24,
                         "timestamp": minutes_ago(4),
                         "resource_log_volume": {"resource1": 4200, "resource2": 6100},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
                     },
                     {
                         "runtime_seconds": 28,
                         "timestamp": minutes_ago(3),
                         "resource_log_volume": {"resource1": 4300, "resource2": 6400},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
                     },
                 ],
                 threshold=20,
@@ -961,22 +964,25 @@ class TestScalingTaskHelpers(TestCase):
             is_consistently_over_threshold(
                 metrics=[
                     {
-                        "runtime_seconds": 23,
+                        "runtime_seconds": 43,
                         "timestamp": minutes_ago(5.5),
                         "resource_log_volume": {"resource1": 4000, "resource2": 6000},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
                     },
                     {
-                        "runtime_seconds": 24,
+                        "runtime_seconds": 44,
                         "timestamp": minutes_ago(4),
                         "resource_log_volume": {"resource1": 4200, "resource2": 6100},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
                     },
                     {
-                        "runtime_seconds": 28,
+                        "runtime_seconds": 48,
                         "timestamp": minutes_ago(3),
                         "resource_log_volume": {"resource1": 4300, "resource2": 6400},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
                     },
                 ],
-                threshold=25,
+                threshold=45,
             )
         )
 
@@ -984,9 +990,14 @@ class TestScalingTaskHelpers(TestCase):
         self.assertTrue(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime_seconds": 26, "timestamp": minutes_ago(3), "resource_log_volume": {"resource1": 5670}},
+                    {
+                        "runtime_seconds": 46,
+                        "timestamp": minutes_ago(3),
+                        "resource_log_volume": {"resource1": 5670},
+                        "resource_log_bytes": {"resource1": 42000},
+                    },
                 ],
-                threshold=25,
+                threshold=45,
             )
         )
 
@@ -996,9 +1007,14 @@ class TestScalingTaskHelpers(TestCase):
         self.assertFalse(
             is_consistently_over_threshold(
                 metrics=[
-                    {"runtime_seconds": 25, "timestamp": minutes_ago(3), "resource_log_volume": {"resource1": 5600}},
+                    {
+                        "runtime_seconds": 45,
+                        "timestamp": minutes_ago(3),
+                        "resource_log_volume": {"resource1": 5600},
+                        "resource_log_bytes": {"resource1": 42000},
+                    },
                 ],
-                threshold=25,
+                threshold=45,
             )
         )
 

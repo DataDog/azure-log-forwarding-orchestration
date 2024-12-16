@@ -1,6 +1,7 @@
 # stdlib
 from asyncio import gather, run
 from logging import ERROR, INFO, basicConfig, getLogger
+from random import shuffle
 from typing import NamedTuple, cast
 
 # 3p
@@ -97,7 +98,12 @@ class DiagnosticSettingsTask(Task):
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
-
+            resources = [
+                (resource, DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]))
+                for region_config in self.assignment_cache[sub_id].values()
+                for resource, config_id in region_config["resources"].items()
+            ]
+            shuffle(resources)
             await gather(
                 self.update_subscription_settings(sub_id, client),
                 *(
@@ -105,10 +111,9 @@ class DiagnosticSettingsTask(Task):
                         client,
                         sub_id,
                         resource,
-                        DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
+                        ds,
                     )
-                    for region_config in self.assignment_cache[sub_id].values()
-                    for resource, config_id in region_config["resources"].items()
+                    for resource, ds in resources
                 ),
             )
 

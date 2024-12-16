@@ -15,7 +15,9 @@ class MetricBlobEntry(TypedDict, total=True):
     runtime_seconds: float
     "The number of seconds taken for the forwarder to run"
     resource_log_volume: dict[str, int]
-    "A mapping of resource id ->log volume in bytes"
+    "A mapping of resource id ->log volume in number of logs"
+    resource_log_bytes: dict[str, int]
+    "A mapping of resource id ->log volume in number of bytes"
 
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
@@ -24,8 +26,9 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
         "timestamp": {"type": "number"},
         "runtime_seconds": {"type": "number"},
         "resource_log_volume": {"type": "object", "additionalProperties": {"type": "number"}},
+        "resource_log_bytes": {"type": "object", "additionalProperties": {"type": "number"}},
     },
-    "required": ["timestamp", "runtime_seconds", "resource_log_volume"],
+    "required": ["timestamp", "runtime_seconds", "resource_log_volume", "resource_log_bytes"],
     "additionalProperties": False,
 }
 
