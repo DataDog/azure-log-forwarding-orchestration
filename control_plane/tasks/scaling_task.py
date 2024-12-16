@@ -252,13 +252,10 @@ class ScalingTask(Task):
         log_errors("Failed to delete region", *maybe_errors)
 
         # clear configuration and resource assignments for the region
-        config: RegionAssignmentConfiguration = {
+        self.assignment_cache.setdefault(subscription_id, {})[region] = {
             "configurations": {},
             "resources": {},
         }
-        if subscription_id not in self.assignment_cache:
-            self.assignment_cache[subscription_id] = {}
-        self.assignment_cache[subscription_id][region] = config
         await self.write_caches()
 
     async def maintain_existing_region(self, client: LogForwarderClient, subscription_id: str, region: str) -> None:
