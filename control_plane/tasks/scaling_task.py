@@ -208,7 +208,7 @@ class ScalingTask(Task):
 
         Will never raise an exception.
         """
-        env_exists = await self.get_region_forwarder_env(client, region)
+        env_exists = await self.check_region_forwarder_env(client, region)
         if not env_exists:
             log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
             await self.create_log_forwarder_env(client, region)
@@ -266,7 +266,7 @@ class ScalingTask(Task):
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        env_exists = await self.get_region_forwarder_env(client, region)
+        env_exists = await self.check_region_forwarder_env(client, region)
         if not env_exists:
             log.error("Log forwarder env missing for subscription %s in region %s", subscription_id, region)
             return
@@ -357,7 +357,7 @@ class ScalingTask(Task):
         await self.write_caches()
         return False
 
-    async def get_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
+    async def check_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
         """Checks to see if the forwarder env exists for a given region"""
         return bool(await client.get_log_forwarder_managed_environment(region))
 
