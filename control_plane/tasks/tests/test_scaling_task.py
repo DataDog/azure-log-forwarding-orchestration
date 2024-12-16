@@ -191,7 +191,13 @@ class TestScalingTask(TaskTestCase):
             }
         }
 
-        expected_calls = [
+        expected_create_calls = [
+            call(EAST_US, NEW_LOG_FORWARDER_ID),
+            call(EAST_US, NEW_LOG_FORWARDER_ID),
+            call(EAST_US, NEW_LOG_FORWARDER_ID),
+        ]
+
+        expected_delete_calls = [
             call(NEW_LOG_FORWARDER_ID, raise_error=False),
             call().__bool__(),
             call(NEW_LOG_FORWARDER_ID, raise_error=False),
@@ -209,7 +215,8 @@ class TestScalingTask(TaskTestCase):
 
         # THEN
         self.client.create_log_forwarder_env.assert_not_awaited()
-        self.client.delete_log_forwarder.assert_has_calls(expected_calls)
+        self.client.create_log_forwarder.assert_has_calls(expected_create_calls)
+        self.client.delete_log_forwarder.assert_has_calls(expected_delete_calls)
 
     async def test_empty_regions_have_forwarders_deleted(self):
         # GIVEN
