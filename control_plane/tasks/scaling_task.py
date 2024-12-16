@@ -141,16 +141,16 @@ class ScalingTask(Task):
 
     async def process_subscription(self, subscription_id: str) -> None:
         previous_region_assignments = {
-            key
-            for key, value in self._assignment_cache_initial_state.get(subscription_id, {}).items()
-            if value.get("configurations")
+            region
+            for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
+            if region_config.get("configurations")
         }
 
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
         empty_regions = {
-            key
-            for key, value in self._assignment_cache_initial_state.get(subscription_id, {}).items()
-            if not value.get("configurations")
+            region
+            for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
+            if not region_config.get("configurations")
         }
         regions_to_add = current_regions - previous_region_assignments
         regions_to_remove = (previous_region_assignments | empty_regions) - current_regions
