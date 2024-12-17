@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Any, Self, TypeAlias, TypeVar, cast
+from typing import Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -68,7 +68,6 @@ from cache.common import (
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
-    FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
     get_container_app_name,
@@ -165,14 +164,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
-        managed_env_name = get_managed_env_name(config_id)
 
-        maybe_errors: tuple[Any, ...] = await gather(
-            wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name)),
-            wait_for_resource(*await self.create_log_forwarder_managed_environment(region, managed_env_name)),
-            return_exceptions=True,
-        )
-        log_errors("Failed to create storage account and/or managed environment", *maybe_errors, reraise=True)
+        await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
         maybe_errors = await gather(
             wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
@@ -229,18 +222,27 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
-    async def create_log_forwarder_managed_environment(
-        self, region: str, env_name: str
-    ) -> ResourcePoller[ManagedEnvironment]:
+    async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
+        env_name = get_managed_env_name(region, self.control_plane_id)
         log.info("Creating managed environment %s for region %s", env_name, region)
-        return await self.container_apps_client.managed_environments.begin_create_or_update(
+        poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
             ManagedEnvironment(
                 location=region,
                 zone_redundant=False,
             ),
-        ), lambda: self.container_apps_client.managed_environments.get(self.resource_group, env_name)
+        )
+        if wait:
+            await poller.result()
+
+    async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
+        env_name = get_managed_env_name(region, self.control_plane_id)
+        try:
+            managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
+        except ResourceNotFoundError:
+            return None
+        return str(managed_env.id)
 
     async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
         connection_string = await self.get_connection_string(get_storage_account_name(config_id))
@@ -250,7 +252,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             job_name,
             Job(
                 location=region,
-                environment_id=get_managed_env_id(self.subscription_id, self.resource_group, config_id),
+                environment_id=get_managed_env_id(
+                    self.subscription_id, self.resource_group, region, self.control_plane_id
+                ),
                 configuration=JobConfiguration(
                     trigger_type="Schedule",
                     schedule_trigger_config=JobConfigurationScheduleTriggerConfig(
@@ -365,15 +369,41 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if poller:
                 await poller.result()
 
-            poller = await self.container_apps_client.managed_environments.begin_delete(
-                self.resource_group, get_managed_env_name(forwarder_id)
-            )
-
-            await gather(delete_storage_account_task, poller.result())
+                await delete_storage_account_task
             log.info("Deleted log forwarder %s", forwarder_id)
 
         try:
             await _delete_forwarder()
+            return True
+        except Exception:
+            if raise_error:
+                raise
+            return False
+
+    async def delete_log_forwarder_env(self, region: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
+        """Deletes the Log forwarder env, returns True if successful, False otherwise"""
+
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
+        async def _delete_forwarder_env() -> None:
+            log.info(
+                "Attempting to delete log forwarder env for region %s and control plane %s",
+                region,
+                self.control_plane_id,
+            )
+
+            poller = await ignore_exception_type(
+                ResourceNotFoundError,
+                self.container_apps_client.managed_environments.begin_delete(
+                    self.resource_group, get_managed_env_name(region, self.control_plane_id)
+                ),
+            )
+            if poller:
+                await poller.result()
+
+            log.info("Deleted log forwarder env for region %s and control plane %s", region, self.control_plane_id)
+
+        try:
+            await _delete_forwarder_env()
             return True
         except Exception:
             if raise_error:
@@ -470,17 +500,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:
-        jobs, envs, storage_accounts = await gather(
+        jobs, storage_accounts = await gather(
             collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group)),
-            collect(self.container_apps_client.managed_environments.list_by_resource_group(self.resource_group)),
             collect(self.storage_client.storage_accounts.list_by_resource_group(self.resource_group)),
         )
 
         def _get_forwarder_config_ids(it: Iterable[Resource], prefix: str) -> set[str]:
             return {resource.name.removeprefix(prefix) for resource in it if resource.name.startswith(prefix)}
 
-        return (
-            _get_forwarder_config_ids(cast(Iterable[Resource], jobs), FORWARDER_CONTAINER_APP_PREFIX)
-            | _get_forwarder_config_ids(cast(Iterable[Resource], envs), FORWARDER_MANAGED_ENVIRONMENT_PREFIX)
-            | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), FORWARDER_STORAGE_ACCOUNT_PREFIX)
-        )
+        return _get_forwarder_config_ids(
+            cast(Iterable[Resource], jobs), FORWARDER_CONTAINER_APP_PREFIX
+        ) | _get_forwarder_config_ids(cast(Iterable[Resource], storage_accounts), FORWARDER_STORAGE_ACCOUNT_PREFIX)

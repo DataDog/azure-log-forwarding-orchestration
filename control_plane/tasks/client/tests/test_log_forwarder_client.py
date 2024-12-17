@@ -39,10 +39,12 @@ EAST_US = "eastus"
 config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
-managed_env_name = FORWARDER_MANAGED_ENVIRONMENT_PREFIX + config_id
-container_app_name = FORWARDER_CONTAINER_APP_PREFIX + config_id
-storage_account_name = FORWARDER_STORAGE_ACCOUNT_PREFIX + config_id
+control_plane_id = "e90ecb54476d"
+managed_env_name = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{EAST_US}-env"
+container_app_name = f"{FORWARDER_CONTAINER_APP_PREFIX}{config_id}"
+storage_account_name = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{config_id}"
 rg1 = "test_lfo"
+
 
 containerAppSettings: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
@@ -104,19 +106,13 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client = AsyncMockClient()
         self.container_client.get_blob_client.return_value = self.blob_client
 
-    async def test_create_log_forwarder(self):
+    async def test_create_log_forwarder_creates_resources(self):
         # set up blob forwarder data
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
             await self.client.create_log_forwarder(EAST_US, config_id)
 
-        # managed environment
-        asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update
-        asp_create.assert_awaited_once_with(
-            rg1, managed_env_name, AzureModelMatcher({"location": EAST_US, "zone_redundant": False})
-        )
-        (await asp_create()).result.assert_awaited_once_with()
         # storage account
         storage_create: AsyncMock = self.client.storage_client.storage_accounts.begin_create
         storage_create.assert_awaited_once_with(
@@ -140,7 +136,7 @@ class TestLogForwarderClient(AsyncTestCase):
             AzureModelMatcher(
                 {
                     "location": EAST_US,
-                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-d6fc2c757f9c",
+                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus-env",
                     "configuration": {
                         "secrets": [
                             {"name": "dd-api-key", "value": "123123"},
@@ -192,7 +188,7 @@ class TestLogForwarderClient(AsyncTestCase):
         ).result.side_effect = Exception("400: ASP creation failed")
         with self.assertRaises(Exception) as ctx:
             async with self.client:
-                await self.client.create_log_forwarder(EAST_US, config_id)
+                await self.client.create_log_forwarder_managed_environment(EAST_US, wait=True)
         self.assertIn("400: ASP creation failed", str(ctx.exception))
 
     async def test_create_log_forwarder_storage_account_failure(self):
@@ -255,6 +251,86 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(529))
         self.assertCalledTimesWith(self.client.container_apps_client.jobs.begin_delete, 5, rg1, container_app_name)
         self.assertCalledTimesWith(self.client.storage_client.storage_accounts.delete, 5, rg1, storage_account_name)
+
+    async def test_delete_log_forwarder_env_calls_delete(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(EAST_US)
+
+        # THEN
+        self.assertTrue(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(rg1, env_name)
+
+    async def test_delete_log_forwarder_env_ignore_resource_not_found(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = ResourceNotFoundError()
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(EAST_US)
+
+        # THEN
+        self.assertTrue(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(rg1, env_name)
+
+    async def test_delete_log_forwarder_env_does_not_raise_error_when_raise_error_false(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = FakeHttpError(400)
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(EAST_US, raise_error=False)
+
+        # THEN
+        self.assertFalse(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(rg1, env_name)
+
+    async def test_delete_log_forwarder_env_makes_5_retryable_attempts(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, control_plane_id)
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = FakeHttpError(529)
+
+        # WHEN
+        with self.assertRaises(RetryError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder_env(EAST_US, max_attempts=5)
+
+        # THEN
+        self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(529))
+        self.assertCalledTimesWith(
+            self.client.container_apps_client.managed_environments.begin_delete, 5, rg1, env_name
+        )
+
+    async def test_get_log_forwarder_managed_environment_returns_id_on_success(self):
+        # GIVEN
+        env_id = "fake_id"
+
+        mocked_env = Mock(id=env_id)
+
+        self.client.container_apps_client.managed_environments.get.return_value = mocked_env
+
+        # WHEN
+        async with self.client as client:
+            result = await client.get_log_forwarder_managed_environment(EAST_US)
+
+        # THEN
+        self.assertEqual(result, env_id)
+
+    async def test_get_log_forwarder_managed_environment_returns_none_on_failure(self):
+        # GIVEN
+        self.client.container_apps_client.managed_environments.get.side_effect = ResourceNotFoundError()
+
+        # WHEN
+        async with self.client as client:
+            result = await client.get_log_forwarder_managed_environment(EAST_US)
+
+        # THEN
+        self.assertIsNone(result)
 
     async def test_delete_log_forwarder_doesnt_retry_after_second_unretryable(self):
         self.client.container_apps_client.jobs.begin_delete.side_effect = [FakeHttpError(429), FakeHttpError(400)]
@@ -594,7 +670,7 @@ class TestLogForwarderClient(AsyncTestCase):
             return_value=async_generator(mock(name=get_container_app_name(config_id)))
         )
         self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
-            return_value=async_generator(mock(name=get_managed_env_name(config_id)))
+            return_value=async_generator(mock(name=get_managed_env_name(EAST_US, control_plane_id)))
         )
         self.client.storage_client.storage_accounts.list_by_resource_group = Mock(
             return_value=async_generator(mock(name=get_storage_account_name(config_id)))
@@ -611,7 +687,8 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
             return_value=async_generator(
-                mock(name=get_managed_env_name(config_id)), mock(name=get_storage_account_name(config_id2))
+                mock(name=get_managed_env_name(EAST_US, control_plane_id)),
+                mock(name=get_storage_account_name(config_id2)),
             )
         )
         self.client.storage_client.storage_accounts.list_by_resource_group = Mock(
@@ -628,7 +705,9 @@ class TestLogForwarderClient(AsyncTestCase):
             return_value=async_generator(mock(name=get_container_app_name(config_id)), mock(name="other_job"))
         )
         self.client.container_apps_client.managed_environments.list_by_resource_group = Mock(
-            return_value=async_generator(mock(name=get_managed_env_name(config_id)), mock(name="other_env"))
+            return_value=async_generator(
+                mock(name=get_managed_env_name(EAST_US, control_plane_id)), mock(name="other_env")
+            )
         )
         self.client.storage_client.storage_accounts.list_by_resource_group = Mock(
             return_value=async_generator(
@@ -646,5 +725,19 @@ class TestLogForwarderClient(AsyncTestCase):
             # just checking that it gets checked when we use the client
             pass
         self.client.resource_client.resource_groups.create_or_update.assert_awaited_once_with(
-            rg1, AzureModelMatcher({"location": "eastus"})
+            rg1, AzureModelMatcher({"location": EAST_US})
         )
+
+    async def test_create_log_forwarder_managed_env(self):
+        # set up blob forwarder data
+        (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
+
+        async with self.client:
+            await self.client.create_log_forwarder_managed_environment(EAST_US, wait=True)
+
+        # managed environment
+        asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update
+        asp_create.assert_awaited_once_with(
+            rg1, managed_env_name, AzureModelMatcher({"location": EAST_US, "zone_redundant": False})
+        )
+        (await asp_create()).result.assert_awaited_once_with()

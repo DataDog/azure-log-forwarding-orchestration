@@ -87,10 +87,19 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
         }
         return current_region_config
 
-    return {
+    pruned_cache = {
         sub_id: {region: _prune_region_config(sub_id, region) for region in region_resources}
         for sub_id, region_resources in resource_cache.items()
     }
+
+    # add any regions that are in the assignment cache but not in the resource cache
+    for sub_id, region_resources in assignment_cache.items():
+        for region in region_resources:
+            if region not in pruned_cache.get(sub_id, {}):
+                empty_config: RegionAssignmentConfiguration = {"configurations": {}, "resources": {}}
+                pruned_cache.setdefault(sub_id, {})[region] = empty_config
+
+    return pruned_cache
 
 
 class ScalingTask(Task):
@@ -131,10 +140,20 @@ class ScalingTask(Task):
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
-        previous_region_assignments = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
+        previous_region_assignments = {
+            region
+            for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
+            if region_config.get("configurations")
+        }
+
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
+        empty_regions = {
+            region
+            for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
+            if not region_config.get("configurations")
+        }
         regions_to_add = current_regions - previous_region_assignments
-        regions_to_remove = previous_region_assignments - current_regions
+        regions_to_remove = (previous_region_assignments | empty_regions) - current_regions
         regions_to_check_scaling = current_regions & previous_region_assignments
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             await gather(
@@ -165,6 +184,19 @@ class ScalingTask(Task):
                 log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
             return None
 
+    async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> str | None:
+        """Creates a log forwarder env for the given subscription and region and returns the resource id.
+        If the creation fails, the forwarder is (attempted to be) deleted and None is returned"""
+        try:
+            await client.create_log_forwarder_managed_environment(region)
+            return region
+        except Exception:
+            log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
+            success = await client.delete_log_forwarder_env(region, raise_error=False)
+            if not success:
+                log.error("Failed to clean up log forwarder env for region %s, manual intervention required", region)
+            return None
+
     async def set_up_region(
         self,
         client: LogForwarderClient,
@@ -176,7 +208,13 @@ class ScalingTask(Task):
 
         Will never raise an exception.
         """
-        log.info("Creating log forwarder for subscription %s in region %s", subscription_id, region)
+        env_exists = await self.check_region_forwarder_env(client, region)
+        if not env_exists:
+            log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
+            await self.create_log_forwarder_env(client, region)
+            # log forwarder environments take multiple minutes to be ready, so we should wait until the next run
+            return
+
         log_forwarder = await self.create_log_forwarder(client, region)
         if log_forwarder is None:
             return
@@ -194,7 +232,16 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
-        log.info("Deleting log forwarder for subscription %s in region %s", subscription_id, region)
+        if not self._assignment_cache_initial_state.get(subscription_id, {}).get(region, {}).get("configurations"):
+            log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
+            await client.delete_log_forwarder_env(region, raise_error=False)
+
+            # delete if we haven't already cleaned it up
+            self.assignment_cache.get(subscription_id, {}).pop(region, None)
+            await self.write_caches()
+            return
+
+        log.info("Deleting log forwarders for subscription %s in region %s", subscription_id, region)
         maybe_errors = await gather(
             *(
                 client.delete_log_forwarder(forwarder_id)
@@ -202,24 +249,32 @@ class ScalingTask(Task):
             ),
             return_exceptions=True,
         )
-        errors = log_errors("Failed to delete region", *maybe_errors)
-        if not errors:
-            # delete if we haven't already cleaned it up
-            self.assignment_cache.get(subscription_id, {}).pop(region, None)
-            await self.write_caches()
+        log_errors("Failed to delete region", *maybe_errors)
 
-    async def maintain_existing_region(
-        self,
-        client: LogForwarderClient,
-        subscription_id: str,
-        region: str,
-    ) -> None:
+        # clear configuration and resource assignments for the region
+        self.assignment_cache.setdefault(subscription_id, {})[region] = {
+            "configurations": {},
+            "resources": {},
+        }
+        await self.write_caches()
+
+    async def maintain_existing_region(self, client: LogForwarderClient, subscription_id: str, region: str) -> None:
         """Checks the performance/scaling of a region and determines/performs scaling as needed
 
         Additionally assigns new resources to the least busy forwarder
         and reassigns resources based on the new scaling"""
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
+
+        env_exists = await self.check_region_forwarder_env(client, region)
+        if not env_exists:
+            log.error(
+                "Log forwarder env missing for subscription %s in region %s. Setting up new one.",
+                subscription_id,
+                region,
+            )
+            await self.create_log_forwarder_env(client, region)
+            return
 
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
         if not all_forwarders_exist:
@@ -306,6 +361,10 @@ class ScalingTask(Task):
 
         await self.write_caches()
         return False
+
+    async def check_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
+        """Checks to see if the forwarder env exists for a given region"""
+        return bool(await client.get_log_forwarder_managed_environment(region))
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, log_forwarders: Iterable[str]

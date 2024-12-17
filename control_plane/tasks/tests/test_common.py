@@ -23,6 +23,7 @@ from tasks.deploy_common import wait_for_resource
 sub1 = "sub1"
 rg1 = "rg1"
 config1 = "config1"
+region = "region"
 
 
 class MockPoller(AsyncLROPoller):
@@ -84,10 +85,10 @@ class TestCommon(IsolatedAsyncioTestCase):
 
     def test_get_managed_env_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-config1",
-            get_managed_env_id(sub1, rg1, config1),
+            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-config1-region-env",
+            get_managed_env_id(sub1, rg1, region, config1),
         )
-        self.assertTrue(get_managed_env_id("UpperCaseSub", "SomeUpperCaseRG", config1).islower())
+        self.assertTrue(get_managed_env_id("UpperCaseSub", "SomeUpperCaseRG", region, config1).islower())
 
     def test_get_storage_account_id(self):
         self.assertEqual(
