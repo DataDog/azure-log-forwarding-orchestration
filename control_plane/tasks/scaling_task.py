@@ -268,7 +268,12 @@ class ScalingTask(Task):
 
         env_exists = await self.check_region_forwarder_env(client, region)
         if not env_exists:
-            log.error("Log forwarder env missing for subscription %s in region %s", subscription_id, region)
+            log.error(
+                "Log forwarder env missing for subscription %s in region %s. Setting up new one.",
+                subscription_id,
+                region,
+            )
+            await self.create_log_forwarder_env(client, region)
             return
 
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
