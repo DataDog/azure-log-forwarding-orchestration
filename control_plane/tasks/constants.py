@@ -17,11 +17,7 @@ ALLOWED_TYPES_PER_PROVIDER = {
     "Microsoft.Batch": {"batchaccounts"},
     "microsoft.botservice": {"botservices"},
     "Microsoft.Cache": {"redis", "redisEnterprise/databases"},
-    "Microsoft.Cdn": {
-        "cdnwebapplicationfirewallpolicies",
-        "profiles",
-        "profiles/endpoints",
-    },
+    "Microsoft.Cdn": {"cdnwebapplicationfirewallpolicies", "profiles", "profiles/endpoints"},
     "Microsoft.Chaos": {"experiments"},
     "Microsoft.ClassicNetwork": {"networksecuritygroups"},
     "Microsoft.CodeSigning": {"codesigningaccounts"},
@@ -30,11 +26,7 @@ ALLOWED_TYPES_PER_PROVIDER = {
     "microsoft.community": {"communityTrainings"},
     "Microsoft.Compute": {"virtualMachines"},
     "Microsoft.ConfidentialLedger": {"ManagedCCF", "ManagedCCFs"},
-    "Microsoft.ConnectedCache": {
-        "CacheNodes",
-        "enterpriseMccCustomers",
-        "ispCustomers",
-    },
+    "Microsoft.ConnectedCache": {"CacheNodes", "enterpriseMccCustomers", "ispCustomers"},
     "Microsoft.ConnectedVehicle": {"platformAccounts"},
     "Microsoft.ContainerInstance": {"containerGroups"},
     "Microsoft.ContainerRegistry": {"registries"},
@@ -64,14 +56,7 @@ ALLOWED_TYPES_PER_PROVIDER = {
     "Microsoft.DevOpsInfrastructure": {"pools"},
     "Microsoft.DigitalTwins": {"digitalTwinsInstances"},
     "Microsoft.DocumentDB": {"cassandraClusters", "DatabaseAccounts", "mongoClusters"},
-    "Microsoft.EventGrid": {
-        "domains",
-        "namespaces",
-        "partnerNamespaces",
-        "partnerTopics",
-        "systemTopics",
-        "topics",
-    },
+    "Microsoft.EventGrid": {"domains", "namespaces", "partnerNamespaces", "partnerTopics", "systemTopics", "topics"},
     "Microsoft.EventHub": {"Namespaces"},
     "Microsoft.HardwareSecurityModules": {"cloudHsmClusters"},
     "Microsoft.HealthcareApis": {
@@ -92,12 +77,7 @@ ALLOWED_TYPES_PER_PROVIDER = {
         "IntegrationAccounts",
         "Workflows",
     },
-    "Microsoft.MachineLearningServices": {
-        "",
-        "registries",
-        "workspaces",
-        "workspaces/onlineEndpoints",
-    },
+    "Microsoft.MachineLearningServices": {"", "registries", "workspaces", "workspaces/onlineEndpoints"},
     "Microsoft.ManagedNetworkFabric": {"networkDevices"},
     "Microsoft.Media": {
         "mediaservices",
@@ -106,10 +86,7 @@ ALLOWED_TYPES_PER_PROVIDER = {
         "videoanalyzers",
     },
     "Microsoft.Monitor": {"accounts"},
-    "Microsoft.NetApp": {
-        "netAppAccounts/capacityPools",
-        "netAppAccounts/capacityPools/volumes",
-    },
+    "Microsoft.NetApp": {"netAppAccounts/capacityPools", "netAppAccounts/capacityPools/volumes"},
     "Microsoft.Network": {
         "applicationgateways",
         "azureFirewalls",
@@ -127,19 +104,9 @@ ALLOWED_TYPES_PER_PROVIDER = {
         "trafficManagerProfiles",
         "virtualNetworks",
     },
-    "microsoft.network": {
-        "bastionHosts",
-        "p2svpngateways",
-        "virtualnetworkgateways",
-        "vpngateways",
-    },
+    "microsoft.network": {"bastionHosts", "p2svpngateways", "virtualnetworkgateways", "vpngateways"},
     "Microsoft.NetworkAnalytics": {"DataProducts"},
-    "Microsoft.NetworkCloud": {
-        "bareMetalMachines",
-        "clusterManagers",
-        "clusters",
-        "storageAppliances",
-    },
+    "Microsoft.NetworkCloud": {"bareMetalMachines", "clusterManagers", "clusters", "storageAppliances"},
     "Microsoft.NetworkFunction": {"azureTrafficCollectors"},
     "Microsoft.NotificationHubs": {"namespaces", "namespaces/notificationHubs"},
     "MICROSOFT.OPENENERGYPLATFORM": {"ENERGYSERVICES"},
@@ -156,18 +123,9 @@ ALLOWED_TYPES_PER_PROVIDER = {
     "Microsoft.Security": {"antiMalwareSettings", "defenderForStorageSettings"},
     "Microsoft.ServiceBus": {"Namespaces"},
     "Microsoft.ServiceNetworking": {"trafficControllers"},
-    "Microsoft.SignalRService": {
-        "SignalR",
-        "SignalR/replicas",
-        "WebPubSub",
-        "WebPubSub/replicas",
-    },
+    "Microsoft.SignalRService": {"SignalR", "SignalR/replicas", "WebPubSub", "WebPubSub/replicas"},
     "microsoft.singularity": {"accounts"},
-    "Microsoft.Sql": {
-        "managedInstances",
-        "managedInstances/databases",
-        "servers/databases",
-    },
+    "Microsoft.Sql": {"managedInstances", "managedInstances/databases", "servers/databases"},
     "Microsoft.Storage": {
         "storageAccounts/blobServices",
         "storageAccounts/fileServices",
@@ -190,7 +148,7 @@ ALLOWED_TYPES_PER_PROVIDER = {
     "NGINX.NGINXPLUS": {"nginxDeployment"},
 }
 ALLOWED_RESOURCE_TYPES = {
-    f"{rp}/{rt}".lower() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
+    f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 }
 
 
