@@ -132,7 +132,7 @@ class DiagnosticSettingsTask(Task):
         try:
             current_diagnostic_settings = await collect(client.diagnostic_settings.list(resource_id))
         except HttpResponseError as e:
-            if e.error and e.error.code and e.error.code.casefold() == "resourcetypenotsupported":
+            if e.error and e.error.code and e.error.code.lower() == "resourcetypenotsupported":
                 log.warning("Resource type for %s unsupported, skipping", resource_id)
                 return
             log.exception("Failed to get diagnostic settings for resource %s", resource_id)
@@ -149,7 +149,7 @@ class DiagnosticSettingsTask(Task):
         if (
             current_setting
             and current_setting.storage_account_id
-            and current_setting.storage_account_id.casefold()
+            and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
             return  # it is set up properly already
@@ -197,9 +197,7 @@ class DiagnosticSettingsTask(Task):
                 return
             if "reused in different settings on the same category for the same resource" in str(e):
                 log.error(
-                    "Resource %s already has a diagnostic setting with the same configuration: %s",
-                    resource_id,
-                    config,
+                    "Resource %s already has a diagnostic setting with the same configuration: %s", resource_id, config
                 )
                 return
 

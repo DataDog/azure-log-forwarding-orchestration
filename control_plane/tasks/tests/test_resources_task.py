@@ -185,7 +185,7 @@ class TestResourcesTask(TaskTestCase):
         await self.run_resources_task(
             {
                 sub_id1: {"norwayeast": {"res1", "res2"}},
-                sub_id2: {"southafricanorth": {"ress3"}},
+                sub_id2: {"southafricanorth": {"reß3"}},
             }
         )
 
@@ -193,7 +193,7 @@ class TestResourcesTask(TaskTestCase):
             self.cache,
             {
                 sub_id1: {"norwayeast": {"res1", "res2"}},
-                sub_id2: {"southafricanorth": {"ress3", "res4"}},
+                sub_id2: {"southafricanorth": {"reß3", "res4"}},
             },
         )
 

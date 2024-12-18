@@ -80,7 +80,7 @@ class ResourcesTask(Task):
             subscriptions = await collect(
                 sub_id
                 async for sub in subscription_client.subscriptions.list()
-                if (sub_id := cast(str, sub.subscription_id).casefold()) in self.monitored_subscriptions
+                if (sub_id := cast(str, sub.subscription_id).lower()) in self.monitored_subscriptions
             )
 
         await gather(*map(self.process_subscription, subscriptions))
@@ -92,10 +92,10 @@ class ResourcesTask(Task):
             resource_count = 0
             resource_filter = ResourcesTask.resource_query_filter(ALLOWED_RESOURCE_TYPES)
             async for r in client.resources.list(resource_filter):
-                region = cast(str, r.location).casefold()
-                if should_ignore_resource(region, cast(str, r.type).casefold(), cast(str, r.name).casefold()):
+                region = cast(str, r.location).lower()
+                if should_ignore_resource(region, cast(str, r.type).lower(), cast(str, r.name).lower()):
                     continue
-                resources_per_region.setdefault(region, set()).add(cast(str, r.id).casefold())
+                resources_per_region.setdefault(region, set()).add(cast(str, r.id).lower())
                 resource_count += 1
             log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
             self.resource_cache[subscription_id] = resources_per_region
