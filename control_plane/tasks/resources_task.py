@@ -97,11 +97,7 @@ class ResourcesTask(Task):
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id).lower())
                 resource_count += 1
-            log.debug(
-                "Subscription %s: Collected %s resources",
-                subscription_id,
-                resource_count,
-            )
+            log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
             self.resource_cache[subscription_id] = resources_per_region
 
     async def write_caches(self) -> None:

@@ -59,10 +59,7 @@ class DiagnosticSettingConfiguration(NamedTuple):
 
 
 def get_diagnostic_setting(
-    sub_id: str,
-    resource_group: str,
-    config: DiagnosticSettingConfiguration,
-    categories: list[str],
+    sub_id: str, resource_group: str, config: DiagnosticSettingConfiguration, categories: list[str]
 ) -> DiagnosticSettingsResource:
     log_settings = [LogSettings(category=category, enabled=True) for category in categories]
     if config.type == "eventhub":
@@ -102,10 +99,7 @@ class DiagnosticSettingsTask(Task):
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
             resources = [
-                (
-                    resource,
-                    DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
-                )
+                (resource, DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]))
                 for region_config in self.assignment_cache[sub_id].values()
                 for resource, config_id in region_config["resources"].items()
             ]
@@ -203,22 +197,14 @@ class DiagnosticSettingsTask(Task):
                 return
             if "reused in different settings on the same category for the same resource" in str(e):
                 log.error(
-                    "Resource %s already has a diagnostic setting with the same configuration: %s",
-                    resource_id,
-                    config,
+                    "Resource %s already has a diagnostic setting with the same configuration: %s", resource_id, config
                 )
                 return
 
-            log.error(
-                "Failed to add diagnostic setting for resource %s -- %s",
-                resource_id,
-                e.error,
-            )
+            log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
         except Exception:
             log.error(
-                "Unexpected error when trying to add diagnostic setting for resource %s",
-                resource_id,
-                exc_info=True,
+                "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
             )
 
     async def write_caches(self) -> None:
