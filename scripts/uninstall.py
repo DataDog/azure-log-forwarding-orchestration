@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # Remove DataDog Log Forwarding Orchestration from an Azure environment
 
-from asyncio import gather
+from asyncio import gather, run
 from logging import INFO, WARNING, basicConfig, getLogger
-# from os import environ
+from subprocess import Popen, PIPE
 from sys import argv
 from typing import Any
 import argparse
@@ -12,48 +12,73 @@ import subprocess
 
 # 3p
 # requires `pip install azure-mgmt-resource`
-# from azure.identity.aio import DefaultAzureCredential
-# from azure.mgmt.resource.resources.v2022_09_01.aio import ResourceManagementClient
-# from azure.mgmt.resource.resources.v2022_09_01.models import Resource
 # from tenacity import retry, stop_after_attempt
 
 getLogger("azure").setLevel(WARNING)
-log = getLogger("forwarder_cleanup")
+log = getLogger("uninstaller")
 
 DRY_RUN = True # altan - set to false when done testing
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX = "lfostorage"
 CONTROL_PLANE_CONTAINER_NAME = "control-plane-cache"
 RESOURCES_BLOB_NAME = "resources.json"
 
-def executePowershell(cmd: str) -> str:
+# ===== Command Execution ===== # 
+def pwsh(cmd: str) -> str:
     """
     Run a PowerShell command using subprocess.
     """
     try:
         result = subprocess.run(["pwsh", "-Command", cmd], check=True, text=True, capture_output=True)
+
+        print(result.stdout)
+        return result.stdout
     except subprocess.CalledProcessError as e:
         print(e.stderr)
+        return e.stderr
 
-    return result.stdout
-
-def execute(cmd: str) -> str:
+def az(cmd: str) -> str:
     """Runs the command and returns the stdout, stripping any newlines"""
+    
+    azCmd = f"az {cmd}"
+    
     try:
-        result = subprocess.run(cmd, shell=True, check=True, text=True, capture_output=True)
-        print(f"Azure CLI Output:\n{result.stdout}")
+        result = subprocess.run(azCmd, shell=True, check=True, text=True, capture_output=True)
+        # print(f"Azure CLI Output:\n{result.stdout}")
     except subprocess.CalledProcessError as e:
         print(f"Error running Azure CLI command:\n{e.stderr}")
 
     return result.stdout
 
-def newlineSpaced(s: str) -> str:
-    return f"\n{s}\n"
+# ===== Azure Utility ===== #
+def setSubscriptionScope(subId: str):
+    az(f"account set --subscription {subId}")
 
-def dryRunOf(s: str) -> str:
-    msg = s[0].lower() + s[1:]
-    return f"DRY RUN | Would be {msg}"
+def getControlPlaneStorageAccountName(lfoResourceGroupName: str) -> str:
+    log.info("Finding storage account with resource cache")
+    
+    cmd = f"storage account list --resource-group {lfoResourceGroupName} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')]\" --output json"
+    storageAccountsJson = json.loads(az(cmd))
+    accountName = storageAccountsJson[0]["name"] # altan - assume one account for now but technically could be multiple here
+    return accountName
 
-def deleteRoleAssignments(controlPlaneId: str):
+def getResourcesCacheJson(storageAccountName: str) -> dict:
+    log.info("Downloading resource cache")
+    
+    # download resources.json to cloud shell local storage
+    resourcesCopy = "resourceCache.json"
+    az(f"storage blob download -f ./{resourcesCopy} --account-name {storageAccountName} -c {CONTROL_PLANE_CONTAINER_NAME} -n {RESOURCES_BLOB_NAME}")
+    
+    log.info("Reading cache to discover tracked resources")
+    
+    resourcesJson = {}
+    with open(resourcesCopy, "r") as file:
+        resourcesJson = json.load(file)
+
+    return resourcesJson
+
+def deleteRoleAssignments(accountName: str):
+    controlPlaneId = accountName[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
+    
     servicePrincipalFilter =  f'''
     displayname eq 'scaling-task-{controlPlaneId}' or 
     displayname eq 'diagnostic-settings-task-{controlPlaneId}' or
@@ -61,115 +86,57 @@ def deleteRoleAssignments(controlPlaneId: str):
     displayname eq 'deployer-task-{controlPlaneId}'
     '''
 
-    lfoIdentitiesJson = json.loads(execute(f"az ad sp list --filter {servicePrincipalFilter}"))
-    roleDict = {lfoIdentity["appId"]: lfoIdentity["displayName"] for lfoIdentity in lfoIdentitiesJson}
-    principalIds = roleDict.keys()
-    
-    roleSummary = newlineSpaced("\n".join(f"{id}: {roleDict[id]}" for id in principalIds))
-    roleDeletionLog = f"Deleting all role assignments for following principals:{roleSummary}"
+    lfoIdentitiesJson = json.loads(az(f"ad sp list --filter \"{servicePrincipalFilter}\""))
+    roleDict = {lfoIdentity["appId"]: lfoIdentity["displayName"] for lfoIdentity in lfoIdentitiesJson}    
+    roleSummary = dictNewlineSpaced(roleDict)
 
+    roleDeletionLog = f"Deleting all role assignments for following principals:{roleSummary}"
     if DRY_RUN:
-        print(dryRunOf(roleDeletionLog))
+        log.info(dryRunOf(roleDeletionLog))
         return
     
     print(roleDeletionLog)
-    for id in principalIds:
-        execute(f"az role assignment delete --assignee {id}")
+    # for id in principalIds:
+    #     az(f"role assignment delete --assignee {id}")
 
-def deleteUnknownRoles():
-    unknownsDeletionLog = "Deleting all unknown role assignments"
+def deleteUnknownRoleAsignments():
+    unknownsDeletionLog = "Deleting all Unknown role assignments"
     
+    log.info(unknownsDeletionLog)
+
     if DRY_RUN:
-        print(dryRunOf(unknownsDeletionLog))
+        log.info(dryRunOf(unknownsDeletionLog))
         return
     
-    print(unknownsDeletionLog)
-    script = "Get-AzRoleAssignment | where-object {$_.ObjectType -eq 'Unknown'} | Remove-AzRoleAssignment"
-    executePowershell(script)
+    pwsh("Get-AzRoleAssignment | where-object {$_.ObjectType -eq 'Unknown'} | Remove-AzRoleAssignment")
+    
 
 def deleteResourceGroup(subId: str, resourceGroupName: str):
-    rgDeletionLog = f"Deleting resource group {resourceGroupName} in subscription {subId}"
+    rgDeletionLog = f"Deleting resource group {resourceGroupName}"
     if DRY_RUN:
-        print(dryRunOf(rgDeletionLog))
+        log.info(dryRunOf(rgDeletionLog))
         return
     
-    print(rgDeletionLog)
-    execute(f"az group delete --name {resourceGroupName} --subscription {subId} --yes")
+    log.info(rgDeletionLog)
+    az(f"group delete --name {resourceGroupName} --subscription {subId} --yes")
+    
 
 def deleteDiagnosticSettings(subId: str, resourceIds: set):
     for resourceId in resourceIds:
-        dsJson = json.loads(execute(f"az monitor diagnostic-settings list --resource {resourceId} --query \"[?starts_with(name,'datadog_log_forwarding')]\""))
-        dsName = dsJson["name"]
-        execute(f"az monitor diagnostic-settings delete --name {dsName} --resource {resourceId} --subscription {subId}")
+        log.info(f"Looking for diagnostic settings to delete for resource {resourceId}")
+        
+        dsJson = json.loads(az(f"monitor diagnostic-settings list --resource {resourceId} --query \"[?starts_with(name,'datadog_log_forwarding')]\""))
+        
+        for ds in dsJson:
+            dsName = ds["name"]
+            dsDeletionLog = f"Deleting diagnostic setting {dsName}"
+            if DRY_RUN:
+                log.info(f"{dryRunOf(dsDeletionLog)}")
+                return
 
-    # ResourceNotFoundError: The Resource '<resource-id>' was not found within subscription '<current-subscription-id>'.
-
-async def main():
-    # altan - Parse out subscription ID and resource group name from script invocation? 
-    # altan - Provide dry-run CLI flag 
-
-    controlPlaneSubId = input("Enter the subscription ID that holds the control plane")
-    lfoResourceGroupName = input("Enter the resource group name that holds the control plane")
-
-    sub_id = "0b62a232-b8db-4380-9da6-640f7272ed6d"
-
-    # altan - verify these things exist
-    
-    # sets subscription context
-    execute(f"az account set --subscription {controlPlaneSubId}")
-
-    # grab storage account with control plane cache
-    # altan - assume one account for now but technically could be multiple here
-    storageAccountsJson = json.loads(execute(f"az storage account list --resource-group {lfoResourceGroupName} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')]\" --output json"))
-    accountName = storageAccountsJson["name"]
-    controlPlaneId = accountName[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
-
-    # download resources.json to cloud shell local storage
-    resourcesCopy = "resourceCache.json"
-    execute(f"az storage blob download -f ./{resourcesCopy} --account-name {accountName} -c {CONTROL_PLANE_CONTAINER_NAME} -n {RESOURCES_BLOB_NAME}")
-    
-    with open(resourcesCopy, "r") as file:
-        resourcesJson = json.load(file)
-
-    monitoredSubIds = list(resourcesJson.keys())
-    resourceIds = parseResourceIds(resourcesJson)
-
-
-    # we have rg name, monitored subs and resource IDs now. Run some deletions
-    
-    deleteRoleAssignments(controlPlaneId)
-    for subId in monitoredSubIds:
-        deleteResourceGroup(subId, lfoResourceGroupName)
-        deleteDiagnosticSettings(subId, resourceIds) #can pass JSON blob into here and parse resources out based on sub ID 
-    
-     
-    
-    # resource_group: str | None = "lfo"
-    # async with DefaultAzureCredential() as cred, ResourceManagementClient(
-    #     cred, sub_id
-    # ) as client:
-    #     resources = client.resources.list()
-    #     jobs, everything_else = partition_resources(
-    #         [
-    #             resource
-    #             async for resource in resources
-    #             if should_delete(resource, resource_group)
-    #         ]
-    #     )
-
-    #     # delete any function apps before we delete the rest to avoid conflicts
-    #     for i in range(0, len(jobs), BATCH_SIZE):
-    #         await gather(
-    #             *[delete_resource(client, r) for r in jobs[i : i + BATCH_SIZE]]
-    #         )
-
-    #     for i in range(0, len(everything_else), BATCH_SIZE):
-    #         await gather(
-    #             *[
-    #                 delete_resource(client, r)
-    #                 for r in everything_else[i : i + BATCH_SIZE]
-    #             ]
-    #         )
+            log.info(dsDeletionLog)
+            az(f"monitor diagnostic-settings delete --name {dsName} --resource {resourceId} --subscription {subId}")
+            # ResourceNotFoundError: The Resource '<resource-id>' was not found within subscription '<current-subscription-id>'.
 
 def parseResourceIds(resourcesJson):
     resourceIds = set() 
@@ -179,11 +146,60 @@ def parseResourceIds(resourcesJson):
 
     return resourceIds
 
+# ===== String Utility ===== #
+def commaSeparatedAndQuoted(set: set) -> str:
+    return ", ".join(f"\"{i}\"" for i in set)
+
+def setNewlineSpaced(set: set) -> str:
+    formatted = "\n".join(f"\t{item}" for item in set)
+    return f"\n{formatted}\n"
+
+def dictNewlineSpaced(dict: dict) -> str:
+    keys = dict.keys()
+    formatted = "\n".join(f"\t{key}: {dict[key]}" for key in keys)
+    return f"\n{formatted}\n"
+
+def dryRunOf(s: str) -> str:
+    msg = s[0].lower() + s[1:]
+    return f"DRY RUN | Would be {msg}"
+
+async def main():
+    # altan - Parse out subscription ID and resource group name from script invocation? 
+    # altan - Provide dry-run CLI flag 
+
+    # sub_id = input("Enter the subscription ID that holds the control plane")
+    # lfoResourceGroupName = input("Enter the resource group name that holds the control plane")
+
+    subId = "0b62a232-b8db-4380-9da6-640f7272ed6d"
+    lfoResourceGroupName = "altan-test"
+
+    setSubscriptionScope(subId)
+
+    # altan - verify these things exist
+    accountName = getControlPlaneStorageAccountName(lfoResourceGroupName)
+    
+
+    resourcesJson = getResourcesCacheJson(accountName)
+
+    monitoredSubIds = set(resourcesJson.keys())
+    log.info(f"Looking for artifacts to uninstall in following subscriptions: {setNewlineSpaced(monitoredSubIds)}")
+
+    resourceIds = parseResourceIds(resourcesJson)
+
+    # deleteRoleAssignments(accountName)
+    deleteUnknownRoleAsignments()
+
+    # for subId in monitoredSubIds:
+    #     log.info(f"Looking for resource group and diagnostic settings to delete in subscription {subId}")
+    #     deleteResourceGroup(subId, lfoResourceGroupName)
+    #     deleteDiagnosticSettings(subId, resourceIds) #can pass JSON blob into here and parse resources out based on sub ID 
+
+
 if __name__ == "__main__":
     basicConfig(level=INFO)
     DRY_RUN = True #"--dry-run" in argv
     if DRY_RUN:
-        log.info("Dry run, no changes will be made")
+        log.info("Dry run enabled, no changes will be made")
     run(main())
     
 
