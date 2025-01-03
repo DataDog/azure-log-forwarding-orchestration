@@ -263,12 +263,12 @@ resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
       { name: 'resource_group', value: controlPlaneResourceGroupName }
       { name: 'deployer_task', value: deployerTaskName }
       { name: 'max_retries', value: '5' }
-      { name: 'retry_count', value: '0' }
       { name: 'wait_seconds', value: '60' }
     ]
     scriptContent: '''
 az extension add --name containerapp --allow-preview true 2>/dev/null
 
+retry_count=0
 while [ $retry_count -lt $max_retries ]; do
   az containerapp job start --name $deployer_task --resource-group $resource_group && break
   retry_count=$((retry_count + 1))
