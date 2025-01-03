@@ -9,12 +9,13 @@ resource validateAPIKeyScript 'Microsoft.Resources/deploymentScripts@2020-10-01'
   location: resourceGroup().location
   kind: 'AzureCLI'
   properties: {
-    azCliVersion: '2.0.80'
+    azCliVersion: '2.64.0'
     environmentVariables: [
       { name: 'DD_API_KEY', secureValue: datadogApiKey }
       { name: 'DD_SITE', value: datadogSite }
     ]
     scriptContent: '''
+      tdnf install -y jq
       response=$(curl -X GET "https://api.${DD_SITE}/api/v1/validate" \
         -H "Accept: application/json" \
         -H "DD-API-KEY: ${DD_API_KEY}" 2>/dev/null)
