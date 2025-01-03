@@ -240,6 +240,7 @@ resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAss
   properties: {
     roleDefinitionId: containerAppsContributorRole.id
     principalId: runInitialDeployIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
