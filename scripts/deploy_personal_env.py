@@ -5,6 +5,7 @@ from json import loads
 from os import environ
 from re import sub
 from subprocess import Popen, PIPE
+from sys import argv
 from time import sleep
 from typing import Any
 
@@ -24,6 +25,9 @@ MD5_LENGTH = 32
 LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
+
+# options
+SKIP_DOCKER = "--skip-docker" in argv
 
 
 # functions
@@ -161,26 +165,26 @@ if not acr_list or container_registry_name not in acr_list:
     sleep(20)
 
 
-# login to ACR
-login_output = run(
-    f"az acr login --name {container_registry_name}",
-    cwd=lfo_dir,
-)
-print(login_output)
+if not SKIP_DOCKER:
+    # login to ACR
+    login_output = run(
+        f"az acr login --name {container_registry_name}",
+        cwd=lfo_dir,
+    )
+    print(login_output)
 
+    # build and push deployer
+    run(
+        f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
+        + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
+        cwd=lfo_dir,
+    )
 
-# build and push deployer
-run(
-    f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
-    + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
-    cwd=lfo_dir,
-)
-
-# build and push forwarder
-run(
-    f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
-    cwd=lfo_dir,
-)
+    # build and push forwarder
+    run(
+        f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
+        cwd=lfo_dir,
+    )
 
 
 # build current version of tasks
