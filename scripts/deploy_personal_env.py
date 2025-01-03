@@ -5,6 +5,7 @@ from json import loads
 from os import environ
 from re import sub
 from subprocess import Popen, PIPE
+from sys import argv
 from time import sleep
 from typing import Any
 
@@ -24,6 +25,9 @@ MD5_LENGTH = 32
 LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
+
+# options
+SKIP_DOCKER = "--skip-docker" in argv
 
 
 # functions
@@ -169,18 +173,19 @@ login_output = run(
 print(login_output)
 
 
-# build and push deployer
-run(
-    f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
-    + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
-    cwd=lfo_dir,
-)
+if not SKIP_DOCKER:
+    # build and push deployer
+    run(
+        f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
+        + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
+        cwd=lfo_dir,
+    )
 
-# build and push forwarder
-run(
-    f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
-    cwd=lfo_dir,
-)
+    # build and push forwarder
+    run(
+        f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
+        cwd=lfo_dir,
+    )
 
 
 # build current version of tasks
