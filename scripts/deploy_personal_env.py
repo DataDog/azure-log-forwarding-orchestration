@@ -165,15 +165,14 @@ if not acr_list or container_registry_name not in acr_list:
     sleep(20)
 
 
-# login to ACR
-login_output = run(
-    f"az acr login --name {container_registry_name}",
-    cwd=lfo_dir,
-)
-print(login_output)
-
-
 if not SKIP_DOCKER:
+    # login to ACR
+    login_output = run(
+        f"az acr login --name {container_registry_name}",
+        cwd=lfo_dir,
+    )
+    print(login_output)
+
     # build and push deployer
     run(
         f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
