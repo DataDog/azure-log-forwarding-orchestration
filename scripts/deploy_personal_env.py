@@ -28,6 +28,7 @@ STORAGE_ACCOUNT_MAX_LENGTH = 24
 
 # options
 SKIP_DOCKER = "--skip-docker" in argv
+FORCE_ARM_DEPLOY = "--force-arm-deploy" in argv
 
 
 # functions
@@ -197,7 +198,7 @@ run(
 )
 
 # deployment has not happened, deploy LFO
-if initial_deploy:
+if initial_deploy or FORCE_ARM_DEPLOY:
     print(f"Deploying LFO to {resource_group_name}...")
     app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
