@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # Remove DataDog Log Forwarding Orchestration from an Azure environment
 
-from asyncio import gather, run
+from asyncio import run
 from logging import INFO, WARNING, basicConfig, getLogger
-from subprocess import Popen, PIPE
-from sys import argv
 from typing import Any
 import argparse
 import json 
 import subprocess
+import sys
 
 # 3p
 # requires `pip install azure-mgmt-resource`
@@ -23,18 +22,18 @@ CONTROL_PLANE_CONTAINER_NAME = "control-plane-cache"
 RESOURCES_BLOB_NAME = "resources.json"
 
 # ===== User Interaction =====  #
-def chooseSubscription() -> str:
+def choose_subscription() -> str:
     choice = input("Would you like to search another subscription? (y/n)")
     while choice.lower().strip() not in ["y", "n"]:
         choice = input("Please enter 'y' or 'n'")
 
     if choice == "n":
         log.info("Exiting.")            
-        exit()
+        sys.exit()
     
     log.info("Detecting all subscriptions accessible by the current user")
-    subIdNameMap = listAllSubscriptions()
-    log.info(f"Found the following subscriptions: {dictNewlineSpaced(subIdNameMap)}")
+    subIdNameMap = list_all_subscriptions()
+    log.info(f"Found the following subscriptions: {dict_newline_spaced(subIdNameMap)}")
     subId = input("Enter the subscription ID to search for DataDog log forwarding: ")
     while subId.strip() not in subIdNameMap.keys():
         subId = input("Please enter a valid subscription ID from the list above: ")
@@ -42,8 +41,8 @@ def chooseSubscription() -> str:
     return subId
     
 
-def chooseGroupToDelete(resourceGroupNames: set) -> str:
-    log.info(f"Detected log forwarding installation in the following resource groups: {setNewlineSpaced(resourceGroupNames)}")
+def choose_group_to_delete(resourceGroupNames: set) -> str:
+    log.info(f"Detected log forwarding installation in the following resource groups: {set_newline_spaced(resourceGroupNames)}")
     
     choice = input("Re-enter the resource group name to confirm uninstallation of the log forwarding instance. The resource group and everything within will be deleted: " )
     
@@ -53,7 +52,7 @@ def chooseGroupToDelete(resourceGroupNames: set) -> str:
     return choice
 
 
-def confirmUninstall(resourceGroupName: str) -> bool:
+def confirm_uninstall(resourceGroupName: str) -> bool:
     log.info(f"Detected log forwarding installation in resource group {resourceGroupName}. Resource group '{resourceGroupName}' and everything within will be deleted.")
 
     choice = input("Continue? (y/n): ")
@@ -91,18 +90,18 @@ def az(cmd: str) -> str:
         return e.stderr
 
 # ===== Azure Commands ===== #
-def getSubscriptionInfo() -> tuple[str, str]:
+def get_subscription_info() -> tuple[str, str]:
     subJson = json.loads(az("account show --output json"))
     return subJson["id"], subJson["name"]
 
-def setSubscriptionScope(subId: str):
+def set_subscription_scope(subId: str):
     az(f"account set --subscription {subId}")
 
-def listAllSubscriptions() -> dict:
+def list_all_subscriptions() -> dict:
     allSubsJson = json.loads(az("account list --output json"))
     return {sub["id"]: sub["name"] for sub in allSubsJson}
 
-def findControlPlanes() -> dict:
+def find_control_planes() -> dict:
     """Queries for all LFO control planes in a subscription, returns mapping of resource group to control plane storage account name"""
     
     cmd = f"storage account list --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')]\" --output json"
@@ -121,7 +120,7 @@ def findControlPlanes() -> dict:
 #     return accountName
 
 
-def getResourcesCacheJson(storageAccountName: str) -> dict:
+def get_resources_cache_json(storageAccountName: str) -> dict:
     log.info("Downloading resource cache")
     
     resourcesCopy = "resourceCache.json"
@@ -136,7 +135,7 @@ def getResourcesCacheJson(storageAccountName: str) -> dict:
     return resourcesJson
 
 
-def deleteRoleAssignments(accountName: str):
+def delete_role_assignments(accountName: str):
     controlPlaneId = accountName[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
     
     servicePrincipalFilter =  f'''
@@ -148,11 +147,11 @@ def deleteRoleAssignments(accountName: str):
 
     lfoIdentitiesJson = json.loads(az(f"ad sp list --filter \"{servicePrincipalFilter}\""))
     roleDict = {lfoIdentity["appId"]: lfoIdentity["displayName"] for lfoIdentity in lfoIdentitiesJson}    
-    roleSummary = dictNewlineSpaced(roleDict)
+    roleSummary = dict_newline_spaced(roleDict)
 
     roleDeletionLog = f"Deleting all role assignments for following principals:{roleSummary}"
     if DRY_RUN:
-        log.info(dryRunOf(roleDeletionLog))
+        log.info(dry_run_of(roleDeletionLog))
         return
     
     print(roleDeletionLog)
@@ -160,20 +159,20 @@ def deleteRoleAssignments(accountName: str):
         az(f"role assignment delete --assignee {id}")
 
 
-def deleteUnknownRoleAsignments():
+def delete_unknown_role_assignments():
     unknownsDeletionLog = "Deleting all 'Unknown' role assignments"
     
     log.info(unknownsDeletionLog)
 
     if DRY_RUN:
-        log.info(dryRunOf(unknownsDeletionLog))
+        log.info(dry_run_of(unknownsDeletionLog))
         return
     
     pwsh("Get-AzRoleAssignment | where-object {$_.ObjectType -eq 'Unknown'} | Remove-AzRoleAssignment")
     
 
-def deleteDiagnosticSettings(subId: str, resourcesJson: dict):
-    resourceIds = parseResourceIds(resourcesJson)
+def delete_diagnostic_settings(subId: str, resourcesJson: dict):
+    resourceIds = parse_resource_ids(resourcesJson)
     for resourceId in resourceIds:
         log.info(f"Looking for diagnostic settings to delete for resource {resourceId}")
         
@@ -183,23 +182,23 @@ def deleteDiagnosticSettings(subId: str, resourcesJson: dict):
             dsName = ds["name"]
             dsDeletionLog = f"Deleting diagnostic setting {dsName}"
             if DRY_RUN:
-                log.info(f"{dryRunOf(dsDeletionLog)}")
+                log.info(f"{dry_run_of(dsDeletionLog)}")
                 continue
 
             log.info(dsDeletionLog)
             az(f"monitor diagnostic-settings delete --name {dsName} --resource {resourceId} --subscription {subId}")
             # ResourceNotFoundError: The Resource '<resource-id>' was not found within subscription '<current-subscription-id>'.
 
-def deleteLogForwarder(subId: str, resourceGroupName: str):
+def delete_log_forwarder(subId: str, resourceGroupName: str):
     rgDeletionLog = f"Deleting log forwarder resource group {resourceGroupName}"
     if DRY_RUN:
-        log.info(dryRunOf(rgDeletionLog))
+        log.info(dry_run_of(rgDeletionLog))
         return
     
     log.info(rgDeletionLog)
     az(f"group delete --name {resourceGroupName} --subscription {subId} --yes")
 
-def parseResourceIds(resourcesJson: dict) -> set:
+def parse_resource_ids(resourcesJson: dict) -> set:
     resourceIds = set() 
     for _, regionDict in resourcesJson.items():
         for resourceId in regionDict.values():
@@ -208,18 +207,18 @@ def parseResourceIds(resourcesJson: dict) -> set:
     return resourceIds
 
 # ===== String Utility ===== #
-def dryRunOf(s: str) -> str:
+def dry_run_of(s: str) -> str:
     msg = s[0].lower() + s[1:]
     return f"DRY RUN | Would be {msg}"
 
-def commaSeparatedAndQuoted(set: set) -> str:
+def comma_separated_and_quoted(set: set) -> str:
     return ", ".join(f"\"{i}\"" for i in set)
 
-def setNewlineSpaced(set: set) -> str:
+def set_newline_spaced(set: set) -> str:
     formatted = "\n".join(f"\t{item}" for item in set)
     return f"\n{formatted}\n"
 
-def dictNewlineSpaced(dict: dict) -> str:
+def dict_newline_spaced(dict: dict) -> str:
     keys = dict.keys()
     formatted = "\n".join(f"\t{key} | {dict[key]}" for key in keys)
     return f"\n{formatted}\n"
@@ -233,38 +232,36 @@ async def main():
     resourceGroupToStorageMap = {} #findControlPlanes()
     while not resourceGroupToStorageMap:
         log.info("No log forwarding installs found.")
-        subId = chooseSubscription()
-        setSubscriptionScope(subId)
-        resourceGroupToStorageMap = findControlPlanes()
+        subId = choose_subscription()
+        set_subscription_scope(subId)
+        resourceGroupToStorageMap = find_control_planes()
     
     rgNames = set(resourceGroupToStorageMap.keys())
     lfoResourceGroupName = ""
     if len(rgNames) == 1:
         lfoResourceGroupName = rgNames.pop()
-        willContinue = confirmUninstall(lfoResourceGroupName)
+        willContinue = confirm_uninstall(lfoResourceGroupName)
         if not willContinue:
             log.info("Exiting.")
             return
     else:
-        lfoResourceGroupName = chooseGroupToDelete(rgNames)
-
-    return
+        lfoResourceGroupName = choose_group_to_delete(rgNames)
     
     lfoStorageAccountName = resourceGroupToStorageMap[lfoResourceGroupName]
 
-    resourcesJson = getResourcesCacheJson(lfoStorageAccountName)
+    resourcesJson = get_resources_cache_json(lfoStorageAccountName)
 
     monitoredSubIds = set(resourcesJson.keys())
     
-    deleteRoleAssignments(lfoStorageAccountName)
-    deleteUnknownRoleAsignments()
+    delete_role_assignments(lfoStorageAccountName)
+    delete_unknown_role_assignments()
 
-    log.info(f"Deleting log forwarders in the following monitored subscriptions: {setNewlineSpaced(monitoredSubIds)}")
+    log.info(f"Deleting log forwarders in the following monitored subscriptions: {set_newline_spaced(monitoredSubIds)}")
 
     for subId in monitoredSubIds:
         log.info(f"Looking for diagnostic settings and log forwarders to delete in subscription {subId}")
-        deleteDiagnosticSettings(subId, resourcesJson)
-        deleteLogForwarder(subId, lfoResourceGroupName)
+        delete_diagnostic_settings(subId, resourcesJson)
+        delete_log_forwarder(subId, lfoResourceGroupName)
 
     log.info("Done!")
 
