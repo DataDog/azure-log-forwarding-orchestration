@@ -22,7 +22,7 @@ CONTROL_PLANE_CONTAINER_NAME = "control-plane-cache"
 RESOURCES_BLOB_NAME = "resources.json"
 
 # ===== User Interaction =====  #
-def choose_subscription() -> str:
+def choose_subscription() -> tuple[str, str]:
     choice = input("Would you like to search another subscription? (y/n)")
     while choice.lower().strip() not in ["y", "n"]:
         choice = input("Please enter 'y' or 'n'")
@@ -32,13 +32,13 @@ def choose_subscription() -> str:
         sys.exit()
     
     log.info("Detecting all subscriptions accessible by the current user")
-    subIdNameMap = list_all_subscriptions()
-    log.info(f"Found the following subscriptions: {dict_newline_spaced(subIdNameMap)}")
-    subId = input("Enter the subscription ID to search for DataDog log forwarding: ")
-    while subId.strip() not in subIdNameMap.keys():
-        subId = input("Please enter a valid subscription ID from the list above: ")
+    sub_id_name_map = list_all_subscriptions()
+    log.info(f"Found the following subscriptions: {dict_newline_spaced(sub_id_name_map)}")
+    sub_id = input("Enter the subscription ID to search for DataDog log forwarding: ")
+    while sub_id.strip() not in sub_id_name_map.keys():
+        sub_id = input("Please enter a valid subscription ID from the list above: ")
 
-    return subId
+    return sub_id, sub_id_name_map[sub_id]
     
 
 def choose_group_to_delete(resource_group_names: set) -> str:
@@ -66,11 +66,10 @@ def confirm_uninstall(resource_group_name: str) -> bool:
 def pwsh(cmd: str) -> str:
     """Run PowerShell command, returns stdout"""
     
-    pwshCmd = f"pwsh -Command {cmd}"
+    pwsh_cmd = f"pwsh -Command {cmd}"
 
     try:
-        result = subprocess.run(pwshCmd, check=True, text=True, capture_output=True)
-        #print(result.stdout)
+        result = subprocess.run(pwsh_cmd, check=True, text=True, capture_output=True)
         return result.stdout
     except subprocess.CalledProcessError as e:
         print(e.stderr)
@@ -79,36 +78,36 @@ def pwsh(cmd: str) -> str:
 def az(cmd: str) -> str:
     """Runs az CLI command and returns stdout"""
     
-    azCmd = f"az {cmd}"
+    az_cmd = f"az {cmd}"
     
     try:
-        result = subprocess.run(azCmd, shell=True, check=True, text=True, capture_output=True)
+        result = subprocess.run(az_cmd, shell=True, check=True, text=True, capture_output=True)
         return result.stdout
-        # print(f"Azure CLI Output:\n{result.stdout}")
     except subprocess.CalledProcessError as e:
         print(f"Error running Azure CLI command:\n{e.stderr}")
         return e.stderr
 
 # ===== Azure Commands ===== #
 def get_subscription_info() -> tuple[str, str]:
-    subJson = json.loads(az("account show --output json"))
-    return subJson["id"], subJson["name"]
+    sub_json = json.loads(az("account show --output json"))
+    return sub_json["id"], sub_json["name"]
 
 def set_subscription_scope(sub_id: str):
     az(f"account set --subscription {sub_id}")
 
 def list_all_subscriptions() -> dict:
-    allSubsJson = json.loads(az("account list --output json"))
-    return {sub["id"]: sub["name"] for sub in allSubsJson}
+    all_subs_json = json.loads(az("account list --output json"))
+    return {sub["id"]: sub["name"] for sub in all_subs_json}
 
-def find_control_planes() -> dict:
-    """Queries for all LFO control planes in a subscription, returns mapping of resource group to control plane storage account name"""
+def find_control_planes(sub_id: str, sub_name: str) -> dict:
+    """Queries for all LFO control planes in currently scoped subscription, returns mapping of resource group name to control plane storage account name"""
     
+    log.info(f"Searching for log forwarding install in subscription '{sub_name}' ({sub_id})")
     cmd = f"storage account list --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')]\" --output json"
-    storageAccountsJson = json.loads(az(cmd))
+    storage_accounts_json = json.loads(az(cmd))
 
-    lfoInstallMap = {account["resourceGroup"] : account["name"] for account in storageAccountsJson} 
-    return lfoInstallMap
+    lfo_install_map = {account["resourceGroup"] : account["name"] for account in storage_accounts_json} 
+    return lfo_install_map
 
 # altan - need to specify resource group name for proper permissions? 
 # def getControlPlaneStorageAccountName(lfoResourceGroupName: str) -> str:
@@ -123,88 +122,88 @@ def find_control_planes() -> dict:
 def get_resources_cache_json(storage_account_name: str) -> dict:
     log.info("Downloading resource cache")
     
-    resourcesCopy = "resourceCache.json"
-    az(f"storage blob download --auth-mode login -f ./{resourcesCopy} --account-name {storage_account_name} -c {CONTROL_PLANE_CONTAINER_NAME} -n {RESOURCES_BLOB_NAME}")
+    resources_copy = "resourceCache.json"
+    az(f"storage blob download --auth-mode login -f ./{resources_copy} --account-name {storage_account_name} -c {CONTROL_PLANE_CONTAINER_NAME} -n {RESOURCES_BLOB_NAME}")
     
     log.info("Reading cache to discover tracked resources")
     
-    resourcesJson = {}
-    with open(resourcesCopy, "r") as file:
-        resourcesJson = json.load(file)
+    resources_json = {}
+    with open(resources_copy, "r") as file:
+        resources_json = json.load(file)
 
-    return resourcesJson
+    return resources_json
 
 
 def delete_role_assignments(account_name: str):
-    controlPlaneId = account_name[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
+    control_plane_id = account_name[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
     
-    servicePrincipalFilter =  f'''
-    displayname eq 'scaling-task-{controlPlaneId}' or 
-    displayname eq 'diagnostic-settings-task-{controlPlaneId}' or
-    displayname eq 'resources-task-{controlPlaneId}' or
-    displayname eq 'deployer-task-{controlPlaneId}'
+    service_principal_filter =  f'''
+    displayname eq 'scaling-task-{control_plane_id}' or 
+    displayname eq 'diagnostic-settings-task-{control_plane_id}' or
+    displayname eq 'resources-task-{control_plane_id}' or
+    displayname eq 'deployer-task-{control_plane_id}'
     '''
 
-    lfoIdentitiesJson = json.loads(az(f"ad sp list --filter \"{servicePrincipalFilter}\""))
-    roleDict = {lfoIdentity["appId"]: lfoIdentity["displayName"] for lfoIdentity in lfoIdentitiesJson}    
-    roleSummary = dict_newline_spaced(roleDict)
+    lfo_identities_json = json.loads(az(f"ad sp list --filter \"{service_principal_filter}\""))
+    role_dict = {lfoIdentity["appId"]: lfoIdentity["displayName"] for lfoIdentity in lfo_identities_json}    
+    role_summary = dict_newline_spaced(role_dict)
 
-    roleDeletionLog = f"Deleting all role assignments for following principals:{roleSummary}"
+    role_deletion_log = f"Deleting all role assignments for following principals:{role_summary}"
     if DRY_RUN:
-        log.info(dry_run_of(roleDeletionLog))
+        log.info(dry_run_of(role_deletion_log))
         return
     
-    print(roleDeletionLog)
-    for id in roleDict.keys():
+    print(role_deletion_log)
+    for id in role_dict.keys():
         az(f"role assignment delete --assignee {id}")
 
 
 def delete_unknown_role_assignments():
-    unknownsDeletionLog = "Deleting all 'Unknown' role assignments"
+    unknowns_deletion_log = "Deleting all 'Unknown' role assignments"
     
-    log.info(unknownsDeletionLog)
+    log.info(unknowns_deletion_log)
 
     if DRY_RUN:
-        log.info(dry_run_of(unknownsDeletionLog))
+        log.info(dry_run_of(unknowns_deletion_log))
         return
     
     pwsh("Get-AzRoleAssignment | where-object {$_.ObjectType -eq 'Unknown'} | Remove-AzRoleAssignment")
     
 
 def delete_diagnostic_settings(sub_id: str, resources_json: dict):
-    resourceIds = parse_resource_ids(resources_json)
-    for resourceId in resourceIds:
-        log.info(f"Looking for diagnostic settings to delete for resource {resourceId}")
+    resource_ids = parse_resource_ids(resources_json)
+    for resource_id in resource_ids:
+        log.info(f"Looking for diagnostic settings to delete for resource {resource_id}")
         
-        dsJson = json.loads(az(f"monitor diagnostic-settings list --resource {resourceId} --query \"[?starts_with(name,'datadog_log_forwarding')]\""))
+        ds_json = json.loads(az(f"monitor diagnostic-settings list --resource {resource_id} --query \"[?starts_with(name,'datadog_log_forwarding')]\""))
         
-        for ds in dsJson:
-            dsName = ds["name"]
-            dsDeletionLog = f"Deleting diagnostic setting {dsName}"
+        for ds in ds_json:
+            ds_name = ds["name"]
+            ds_deletion_log = f"Deleting diagnostic setting {ds_name}"
             if DRY_RUN:
-                log.info(f"{dry_run_of(dsDeletionLog)}")
+                log.info(f"{dry_run_of(ds_deletion_log)}")
                 continue
 
-            log.info(dsDeletionLog)
-            az(f"monitor diagnostic-settings delete --name {dsName} --resource {resourceId} --subscription {sub_id}")
+            log.info(ds_deletion_log)
+            az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
             # ResourceNotFoundError: The Resource '<resource-id>' was not found within subscription '<current-subscription-id>'.
 
 def delete_log_forwarder(sub_id: str, resource_group_name: str):
-    rgDeletionLog = f"Deleting log forwarder resource group {resource_group_name}"
+    rg_deletion_log = f"Deleting log forwarder resource group {resource_group_name}"
     if DRY_RUN:
-        log.info(dry_run_of(rgDeletionLog))
+        log.info(dry_run_of(rg_deletion_log))
         return
     
-    log.info(rgDeletionLog)
+    log.info(rg_deletion_log)
     az(f"group delete --name {resource_group_name} --subscription {sub_id} --yes")
 
 def parse_resource_ids(resources_json: dict) -> set:
-    resourceIds = set() 
-    for _, regionDict in resources_json.items():
-        for resourceId in regionDict.values():
-            resourceIds.update(resourceId)
+    resource_ids = set() 
+    for _, region_dict in resources_json.items():
+        for resource_id in region_dict.values():
+            resource_ids.update(resource_id)
 
-    return resourceIds
+    return resource_ids
 
 # ===== String Utility ===== #
 def dry_run_of(s: str) -> str:
@@ -226,42 +225,39 @@ def dict_newline_spaced(dict: dict) -> str:
 async def main():
     # altan - Provide dry-run CLI flag 
 
-    # subId, subName = getSubscriptionInfo()
+    sub_id, sub_name = get_subscription_info()
     
-    # log.info(f"Searching for log forwarding installs in default subscription {subName} ({subId})")
-    resourceGroupToStorageMap = {} #findControlPlanes()
-    while not resourceGroupToStorageMap:
-        log.info("No log forwarding installs found.")
-        subId = choose_subscription()
-        set_subscription_scope(subId)
-        resourceGroupToStorageMap = find_control_planes()
+    resource_group_storage_map = find_control_planes(sub_id, sub_name)
+    while not resource_group_storage_map:
+        log.info(f"No log forwarding installs found in subscription '{sub_name} ({sub_id})'.")
+        sub_id, sub_name = choose_subscription()
+        set_subscription_scope(sub_id)
+        resource_group_storage_map = find_control_planes(sub_id, sub_name)
     
-    rgNames = set(resourceGroupToStorageMap.keys())
-    lfoResourceGroupName = ""
-    if len(rgNames) == 1:
-        lfoResourceGroupName = rgNames.pop()
-        willContinue = confirm_uninstall(lfoResourceGroupName)
-        if not willContinue:
+    rg_names = set(resource_group_storage_map.keys())
+    lfo_resource_group_name = ""
+    if len(rg_names) == 1:
+        lfo_resource_group_name = rg_names.pop()
+        will_continue = confirm_uninstall(lfo_resource_group_name)
+        if not will_continue:
             log.info("Exiting.")
             return
     else:
-        lfoResourceGroupName = choose_group_to_delete(rgNames)
+        lfo_resource_group_name = choose_group_to_delete(rg_names)
     
-    lfoStorageAccountName = resourceGroupToStorageMap[lfoResourceGroupName]
-
-    resourcesJson = get_resources_cache_json(lfoStorageAccountName)
-
-    monitoredSubIds = set(resourcesJson.keys())
+    lfo_storage_account_name = resource_group_storage_map[lfo_resource_group_name]
+    resources_json = get_resources_cache_json(lfo_storage_account_name)
+    monitored_sub_ids = set(resources_json.keys())
     
-    delete_role_assignments(lfoStorageAccountName)
+    delete_role_assignments(lfo_storage_account_name)
     delete_unknown_role_assignments()
 
-    log.info(f"Deleting log forwarders in the following monitored subscriptions: {set_newline_spaced(monitoredSubIds)}")
+    log.info(f"Deleting log forwarders in the following monitored subscriptions: {set_newline_spaced(monitored_sub_ids)}")
 
-    for subId in monitoredSubIds:
-        log.info(f"Looking for diagnostic settings and log forwarders to delete in subscription {subId}")
-        delete_diagnostic_settings(subId, resourcesJson)
-        delete_log_forwarder(subId, lfoResourceGroupName)
+    for sub_id in monitored_sub_ids:
+        log.info(f"Looking for diagnostic settings and log forwarders to delete in subscription {sub_id}")
+        delete_diagnostic_settings(sub_id, resources_json)
+        delete_log_forwarder(sub_id, lfo_resource_group_name)
 
     log.info("Done!")
 
