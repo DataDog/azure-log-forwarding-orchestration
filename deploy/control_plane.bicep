@@ -6,8 +6,6 @@ param controlPlaneLocation string
 param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
 
-param monitoredSubscriptions string
-
 param imageRegistry string
 param storageAccountUrl string
 
@@ -87,7 +85,6 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
     siteConfig: {
       appSettings: union(commonAppSettings, [
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
-        { name: 'MONITORED_SUBSCRIPTIONS', value: monitoredSubscriptions }
       ])
       linuxFxVersion: 'Python|3.11'
     }

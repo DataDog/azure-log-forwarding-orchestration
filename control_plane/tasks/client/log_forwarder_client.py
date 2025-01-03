@@ -25,8 +25,6 @@ from azure.mgmt.appcontainers.models import (
     ManagedEnvironment,
     Secret,
 )
-from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
-from azure.mgmt.resource.resources.v2021_01_01.models import ResourceGroup
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2023_05_01.models import (
     BlobContainer,
@@ -135,7 +133,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
-        self.resource_client = ResourceManagementClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
         self.metrics_client = MetricsApi(self._datadog_client)
@@ -144,19 +141,16 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
     async def __aenter__(self) -> Self:
         await gather(
-            self.resource_client.__aenter__(),
             self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
             self._datadog_client.__aenter__(),
         )
-        await self.ensure_resource_group()
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
         await gather(
-            self.resource_client.__aexit__(exc_type, exc_val, exc_tb),
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
@@ -177,13 +171,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
-
-    async def ensure_resource_group(self) -> None:
-        exists = await self.resource_client.resource_groups.check_existence(self.resource_group)
-        if not exists:
-            await self.resource_client.resource_groups.create_or_update(
-                self.resource_group, ResourceGroup(location=self.control_plane_region)
-            )
 
     async def get_forwarder_resources(self, config_id: str) -> tuple[Job | None, StorageAccount | None]:
         # spawn them off at the same time
