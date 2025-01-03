@@ -41,19 +41,19 @@ def choose_subscription() -> str:
     return subId
     
 
-def choose_group_to_delete(resourceGroupNames: set) -> str:
-    log.info(f"Detected log forwarding installation in the following resource groups: {set_newline_spaced(resourceGroupNames)}")
+def choose_group_to_delete(resource_group_names: set) -> str:
+    log.info(f"Detected log forwarding installation in the following resource groups: {set_newline_spaced(resource_group_names)}")
     
     choice = input("Re-enter the resource group name to confirm uninstallation of the log forwarding instance. The resource group and everything within will be deleted: " )
     
-    while choice.strip() not in resourceGroupNames:
+    while choice.strip() not in resource_group_names:
         choice = input("Please choose a valid resource group name from the list above: ")
 
     return choice
 
 
-def confirm_uninstall(resourceGroupName: str) -> bool:
-    log.info(f"Detected log forwarding installation in resource group {resourceGroupName}. Resource group '{resourceGroupName}' and everything within will be deleted.")
+def confirm_uninstall(resource_group_name: str) -> bool:
+    log.info(f"Detected log forwarding installation in resource group {resource_group_name}. Resource group '{resource_group_name}' and everything within will be deleted.")
 
     choice = input("Continue? (y/n): ")
 
@@ -94,8 +94,8 @@ def get_subscription_info() -> tuple[str, str]:
     subJson = json.loads(az("account show --output json"))
     return subJson["id"], subJson["name"]
 
-def set_subscription_scope(subId: str):
-    az(f"account set --subscription {subId}")
+def set_subscription_scope(sub_id: str):
+    az(f"account set --subscription {sub_id}")
 
 def list_all_subscriptions() -> dict:
     allSubsJson = json.loads(az("account list --output json"))
@@ -120,11 +120,11 @@ def find_control_planes() -> dict:
 #     return accountName
 
 
-def get_resources_cache_json(storageAccountName: str) -> dict:
+def get_resources_cache_json(storage_account_name: str) -> dict:
     log.info("Downloading resource cache")
     
     resourcesCopy = "resourceCache.json"
-    az(f"storage blob download --auth-mode login -f ./{resourcesCopy} --account-name {storageAccountName} -c {CONTROL_PLANE_CONTAINER_NAME} -n {RESOURCES_BLOB_NAME}")
+    az(f"storage blob download --auth-mode login -f ./{resourcesCopy} --account-name {storage_account_name} -c {CONTROL_PLANE_CONTAINER_NAME} -n {RESOURCES_BLOB_NAME}")
     
     log.info("Reading cache to discover tracked resources")
     
@@ -135,8 +135,8 @@ def get_resources_cache_json(storageAccountName: str) -> dict:
     return resourcesJson
 
 
-def delete_role_assignments(accountName: str):
-    controlPlaneId = accountName[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
+def delete_role_assignments(account_name: str):
+    controlPlaneId = account_name[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX):]
     
     servicePrincipalFilter =  f'''
     displayname eq 'scaling-task-{controlPlaneId}' or 
@@ -171,8 +171,8 @@ def delete_unknown_role_assignments():
     pwsh("Get-AzRoleAssignment | where-object {$_.ObjectType -eq 'Unknown'} | Remove-AzRoleAssignment")
     
 
-def delete_diagnostic_settings(subId: str, resourcesJson: dict):
-    resourceIds = parse_resource_ids(resourcesJson)
+def delete_diagnostic_settings(sub_id: str, resources_json: dict):
+    resourceIds = parse_resource_ids(resources_json)
     for resourceId in resourceIds:
         log.info(f"Looking for diagnostic settings to delete for resource {resourceId}")
         
@@ -186,21 +186,21 @@ def delete_diagnostic_settings(subId: str, resourcesJson: dict):
                 continue
 
             log.info(dsDeletionLog)
-            az(f"monitor diagnostic-settings delete --name {dsName} --resource {resourceId} --subscription {subId}")
+            az(f"monitor diagnostic-settings delete --name {dsName} --resource {resourceId} --subscription {sub_id}")
             # ResourceNotFoundError: The Resource '<resource-id>' was not found within subscription '<current-subscription-id>'.
 
-def delete_log_forwarder(subId: str, resourceGroupName: str):
-    rgDeletionLog = f"Deleting log forwarder resource group {resourceGroupName}"
+def delete_log_forwarder(sub_id: str, resource_group_name: str):
+    rgDeletionLog = f"Deleting log forwarder resource group {resource_group_name}"
     if DRY_RUN:
         log.info(dry_run_of(rgDeletionLog))
         return
     
     log.info(rgDeletionLog)
-    az(f"group delete --name {resourceGroupName} --subscription {subId} --yes")
+    az(f"group delete --name {resource_group_name} --subscription {sub_id} --yes")
 
-def parse_resource_ids(resourcesJson: dict) -> set:
+def parse_resource_ids(resources_json: dict) -> set:
     resourceIds = set() 
-    for _, regionDict in resourcesJson.items():
+    for _, regionDict in resources_json.items():
         for resourceId in regionDict.values():
             resourceIds.update(resourceId)
 
