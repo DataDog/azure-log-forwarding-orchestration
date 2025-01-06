@@ -228,11 +228,14 @@ else:
             None,
         )
     ):
-        print("Deployer not found, exiting...")
+        print(
+            "Deployer not found, try re-running the script with `--force-arm-deploy` to ensure all resources are created"
+        )
         raise SystemExit(1)
 
-    print(f"\nDeployer Ready, Executing deployer for job {deployer_job}...")
     run(
-        f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}",
+        f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}"
     )
-    print(f"Deployer executed for job {deployer_job}")
+    print(
+        f"Deployer job {deployer_job} executed! In a minute or two, all tasks will be redeployed."
+    )
