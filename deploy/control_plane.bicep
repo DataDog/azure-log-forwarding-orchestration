@@ -229,16 +229,21 @@ resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentit
   location: controlPlaneLocation
 }
 
-resource containerAppsContributorRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
-  scope: resourceGroup()
-  // Details: https://www.azadvertizer.net/azrolesadvertizer/358470bc-b998-42bd-ab17-a7e34c199c0f.html
-  name: '358470bc-b998-42bd-ab17-a7e34c199c0f'
+resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: guid('containerAppStartRole')
+  properties: {
+    roleName: 'ContainerAppStartRole'
+    description: 'Custom role to start container app jobs'
+    type: 'customRole'
+    permissions: [{ actions: ['Microsoft.App/jobs/start/action'] }]
+    assignableScopes: [resourceGroup().id]
+  }
 }
 
 resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneId)
   properties: {
-    roleDefinitionId: containerAppsContributorRole.id
+    roleDefinitionId: containerAppStartRole.id
     principalId: runInitialDeployIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
@@ -247,7 +252,7 @@ resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAss
 resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: 'runInitialDeploy'
   location: controlPlaneLocation
-  kind: 'AzureCLI'
+  kind: 'AzurePowerShell'
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: { '${runInitialDeployIdentity.id}': {} }
@@ -258,35 +263,8 @@ resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       storageAccountName: storageAccount.name
       storageAccountKey: storageAccountKey
     }
-    azCliVersion: '2.64.0'
-    environmentVariables: [
-      { name: 'resource_group', value: controlPlaneResourceGroupName }
-      { name: 'deployer_task', value: deployerTaskName }
-      { name: 'max_retries', value: '5' }
-      { name: 'wait_seconds', value: '30' }
-    ]
-    scriptContent: '''
-#!/bin/bash
-set -e
-
-az extension add --name containerapp --allow-preview true 2>/dev/null
-
-retry_count=0
-while [ $retry_count -lt $max_retries ]; do
-  az login --identity > /dev/null
-  az containerapp job start --name $deployer_task --resource-group $resource_group && break
-  retry_count=$((retry_count + 1))
-  echo "retry $retry_count/$max_retries failed. waiting $wait_seconds seconds..."
-  sleep $wait_seconds
-done
-
-if [ $retry_count -eq $max_retries ]; then
-  echo "Deploy failed after $max_retries attempts."
-  exit 1
-fi
-
-echo "Started Deploy"
-'''
+    azPowerShellVersion: '12.3'
+    scriptContent: 'Start-AzContainerAppJob -Name ${deployerTaskName} -ResourceGroupName ${controlPlaneResourceGroupName}'
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
