@@ -34,7 +34,9 @@ from tasks.tests.common import AsyncMockClient, TaskTestCase
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
+EAST_US_2 = "eastus2"
 WEST_US = "westus"
+NEW_ZEALAND_NORTH = "newzealandnorth"
 RG1 = "test_lfo"
 CONTROL_PLANE_ID = "5a095f74c60a"
 
@@ -84,7 +86,13 @@ class TestScalingTask(TaskTestCase):
         self.log = self.patch("log")
         self.generate_unique_id = self.patch("generate_unique_id")
         p = patch.dict(
-            environ, {"RESOURCE_GROUP": RG1, "CONTROL_PLANE_ID": CONTROL_PLANE_ID, "SCALING_PERCENTAGE": "0.7"}
+            environ,
+            {
+                "RESOURCE_GROUP": RG1,
+                "CONTROL_PLANE_ID": CONTROL_PLANE_ID,
+                "CONTROL_PLANE_REGION": EAST_US_2,
+                "SCALING_PERCENTAGE": "0.7",
+            },
         )
         p.start()
         self.addCleanup(p.stop)
@@ -193,21 +201,6 @@ class TestScalingTask(TaskTestCase):
             }
         }
 
-        expected_create_calls = [
-            call(EAST_US, NEW_LOG_FORWARDER_ID),
-            call(EAST_US, NEW_LOG_FORWARDER_ID),
-            call(EAST_US, NEW_LOG_FORWARDER_ID),
-        ]
-
-        expected_delete_calls = [
-            call(NEW_LOG_FORWARDER_ID, raise_error=False),
-            call().__bool__(),
-            call(NEW_LOG_FORWARDER_ID, raise_error=False),
-            call().__bool__(),
-            call(NEW_LOG_FORWARDER_ID, raise_error=False),
-            call().__bool__(),
-        ]
-
         # WHEN
         with self.assertRaises(RetryError):
             await self.run_scaling_task(
@@ -217,8 +210,23 @@ class TestScalingTask(TaskTestCase):
 
         # THEN
         self.client.create_log_forwarder_env.assert_not_awaited()
-        self.client.create_log_forwarder.assert_has_calls(expected_create_calls)
-        self.client.delete_log_forwarder.assert_has_calls(expected_delete_calls)
+        self.client.create_log_forwarder.assert_has_calls(
+            [
+                call(EAST_US, NEW_LOG_FORWARDER_ID),
+                call(EAST_US, NEW_LOG_FORWARDER_ID),
+                call(EAST_US, NEW_LOG_FORWARDER_ID),
+            ]
+        )
+        self.client.delete_log_forwarder.assert_has_calls(
+            [
+                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call().__bool__(),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call().__bool__(),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call().__bool__(),
+            ]
+        )
 
     async def test_empty_regions_have_forwarders_deleted(self):
         # GIVEN
@@ -932,7 +940,7 @@ class TestScalingTask(TaskTestCase):
         self.write_cache.assert_awaited()
 
 
-class TestScalingTaskHelpers(TestCase):
+class TestIsConsistentlyOverThreshold(TestCase):
     def test_metrics_over_threshold(self):
         self.assertTrue(
             is_consistently_over_threshold(
@@ -1048,7 +1056,9 @@ class TestScalingTaskHelpers(TestCase):
             )
         )
 
-    def test_resources_to_move_by_load_exactly_half_load(self):
+
+class TestResourcesToMoveByLoad(TestCase):
+    def test_exactly_half_load(self):
         self.assertEqual(
             list(
                 resources_to_move_by_load(
@@ -1067,7 +1077,7 @@ class TestScalingTaskHelpers(TestCase):
             ["big_resource"],
         )
 
-    def test_resources_to_move_by_load_two_resources(self):
+    def test_two_resources(self):
         self.assertEqual(
             list(
                 resources_to_move_by_load(
@@ -1080,7 +1090,7 @@ class TestScalingTaskHelpers(TestCase):
             ["resource2"],
         )
 
-    def test_resources_to_move_by_load_four_resources(self):
+    def test_four_resources(self):
         self.assertEqual(
             list(
                 resources_to_move_by_load(
@@ -1095,7 +1105,7 @@ class TestScalingTaskHelpers(TestCase):
             ["resource2", "resource4"],
         )
 
-    def test_resources_to_move_by_load_three_resources(self):
+    def test_three_resources(self):
         self.assertEqual(
             list(
                 resources_to_move_by_load(
@@ -1109,7 +1119,7 @@ class TestScalingTaskHelpers(TestCase):
             ["resource3", "resource2"],
         )
 
-    def test_resources_to_move_by_load_all_the_same_load_prefer_second_partition(self):
+    def test_all_the_same_load_prefer_second_partition(self):
         self.assertEqual(
             list(
                 resources_to_move_by_load(
@@ -1125,10 +1135,10 @@ class TestScalingTaskHelpers(TestCase):
             ["resource3", "resource4", "resource5"],
         )
 
-    def test_resources_to_move_by_load_one_resource(self):
+    def test_one_resource(self):
         # this isnt a real use case since we only call this function when we have
         # more than one resource, but it is worth adding a unit test regardless
         self.assertEqual(list(resources_to_move_by_load({"resource1": 5000})), ["resource1"])
 
-    def test_resources_to_move_by_load_no_resources(self):
+    def test_no_resources(self):
         self.assertEqual(list(resources_to_move_by_load({})), [])

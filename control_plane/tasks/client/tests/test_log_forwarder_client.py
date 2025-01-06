@@ -39,6 +39,7 @@ from tasks.tests.test_scaling_task import generate_metrics, minutes_ago
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
+NEW_ZEALAND_NORTH = "newzealandnorth"
 CONFIG_ID1 = "d6fc2c757f9c"
 CONFIG_ID2 = "e8d5222d1c46"
 CONFIG_ID3 = "619fff16cae1"
@@ -129,8 +130,8 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         (await storage_create()).result.assert_awaited_once_with()
         # container job
-        function_create: AsyncMock = self.client.container_apps_client.jobs.begin_create_or_update
-        function_create.assert_awaited_once_with(
+        container_app_job_create: AsyncMock = self.client.container_apps_client.jobs.begin_create_or_update
+        container_app_job_create.assert_awaited_once_with(
             RESOURCE_GROUP_NAME,
             CONTAINER_APP_NAME,
             AzureModelMatcher(
@@ -173,7 +174,75 @@ class TestLogForwarderClient(AsyncTestCase):
                 }
             ),
         )
-        (await function_create()).result.assert_awaited_once_with()
+        (await container_app_job_create()).result.assert_awaited_once_with()
+
+    async def test_create_log_forwarder_in_different_regions_for_container_app_and_storage(self):
+        (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
+
+        async with self.client:
+            await self.client.create_log_forwarder(NEW_ZEALAND_NORTH, config_id=CONFIG_ID1)
+
+        # storage account
+        storage_create: AsyncMock = self.client.storage_client.storage_accounts.begin_create
+        storage_create.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME,
+            STORAGE_ACCOUNT_NAME,
+            AzureModelMatcher(
+                {
+                    "sku": {"name": "Standard_LRS"},
+                    "kind": "StorageV2",
+                    "location": NEW_ZEALAND_NORTH,
+                    "public_network_access": "Enabled",
+                }
+            ),
+        )
+        (await storage_create()).result.assert_awaited_once_with()
+        # container job
+        container_app_job_create: AsyncMock = self.client.container_apps_client.jobs.begin_create_or_update
+        container_app_job_create.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME,
+            CONTAINER_APP_NAME,
+            AzureModelMatcher(
+                {
+                    "location": EAST_US,
+                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus",
+                    "configuration": {
+                        "secrets": [
+                            {"name": "dd-api-key", "value": "123123"},
+                            {
+                                "name": "connection-string",
+                                "value": "DefaultEndpointsProtocol=https;AccountName=ddlogstoraged6fc2c757f9c;AccountKey=key;EndpointSuffix=core.windows.net",
+                            },
+                        ],
+                        "trigger_type": "Schedule",
+                        "replica_timeout": 1800,
+                        "replica_retry_limit": 1,
+                        "schedule_trigger_config": {
+                            "cron_expression": "* * * * *",
+                            "parallelism": 1,
+                            "replica_completion_count": 1,
+                        },
+                    },
+                    "template": {
+                        "containers": [
+                            {
+                                "image": "ddlfo.azurecr.io/blobforwarder:latest",
+                                "name": "forwarder",
+                                "env": [
+                                    {"name": "AzureWebJobsStorage", "secret_ref": "connection-string"},
+                                    {"name": "DD_API_KEY", "secret_ref": "dd-api-key"},
+                                    {"name": "DD_SITE", "value": "datadoghq.com"},
+                                    {"name": "CONTROL_PLANE_ID", "value": "e90ecb54476d"},
+                                    {"name": "CONFIG_ID", "value": "d6fc2c757f9c"},
+                                ],
+                                "resources": {"cpu": 2.0, "memory": "4Gi"},
+                            }
+                        ]
+                    },
+                }
+            ),
+        )
+        (await container_app_job_create()).result.assert_awaited_once_with()
 
     async def test_background_tasks_awaited(self):
         m = Mock()

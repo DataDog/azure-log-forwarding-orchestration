@@ -76,6 +76,7 @@ from tasks.common import (
     log_errors,
 )
 from tasks.concurrency import collect, create_task_from_awaitable
+from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
@@ -170,13 +171,20 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self._background_tasks.add(task)
         task.add_done_callback(_done_callback)
 
+    def get_container_app_region(self, region: str) -> str:
+        if region in ALLOWED_CONTAINER_APP_REGIONS:
+            return region
+        return self.control_plane_region
+
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
 
         await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
         maybe_errors = await gather(
-            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
+            wait_for_resource(
+                *await self.create_log_forwarder_container_app(self.get_container_app_region(region), config_id)
+            ),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -238,7 +246,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             await poller.result()
 
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
-        env_name = get_managed_env_name(region, self.control_plane_id)
+        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
