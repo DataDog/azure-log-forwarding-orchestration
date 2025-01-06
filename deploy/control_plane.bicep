@@ -224,7 +224,7 @@ output scalingTaskPrincipalId string = scalingTask.identity.principalId
 
 // DEPLOYER TASK INITIAL RUN
 
-resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2018-11-30' = {
+resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: 'runInitialDeployIdentity-${controlPlaneId}'
   location: controlPlaneLocation
 }
@@ -244,7 +244,7 @@ resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAss
   }
 }
 
-resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: 'runInitialDeploy'
   location: controlPlaneLocation
   kind: 'AzureCLI'
@@ -263,13 +263,17 @@ resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
       { name: 'resource_group', value: controlPlaneResourceGroupName }
       { name: 'deployer_task', value: deployerTaskName }
       { name: 'max_retries', value: '5' }
-      { name: 'wait_seconds', value: '60' }
+      { name: 'wait_seconds', value: '30' }
     ]
     scriptContent: '''
+#!/bin/bash
+set -e
+
 az extension add --name containerapp --allow-preview true 2>/dev/null
 
 retry_count=0
 while [ $retry_count -lt $max_retries ]; do
+  az login --identity > /dev/null
   az containerapp job start --name $deployer_task --resource-group $resource_group && break
   retry_count=$((retry_count + 1))
   echo "retry $retry_count/$max_retries failed. waiting $wait_seconds seconds..."
