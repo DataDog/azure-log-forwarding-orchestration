@@ -43,7 +43,7 @@ def get_container_app_id(subscription_id: str, resource_group: str, config_id: s
 
 
 def get_managed_env_name(region: str, control_plane_id: str) -> str:
-    return f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{region}-env"
+    return f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{region}"
 
 
 def get_managed_env_id(subscription_id: str, resource_group: str, region: str, control_plane_id: str) -> str:
