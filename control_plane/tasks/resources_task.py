@@ -2,6 +2,7 @@
 from asyncio import gather, run
 from json import dumps
 from logging import DEBUG, basicConfig, getLogger
+from os import getenv
 from typing import Final, cast
 
 # 3p
@@ -9,7 +10,7 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
-from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
+from cache.common import read_cache, write_cache
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -58,10 +59,7 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
-        monitored_subs = deserialize_monitored_subscriptions(get_config_option("MONITORED_SUBSCRIPTIONS"))
-        if not monitored_subs:
-            raise InvalidCacheError("Monitored Subscriptions Must be a valid non-empty list")
-        self.monitored_subscriptions = monitored_subs
+        self.monitored_subscriptions = deserialize_monitored_subscriptions(getenv("MONITORED_SUBSCRIPTIONS") or "")
         resource_cache = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             log.warning("Resource Cache is in an invalid format, task will reset the cache")
@@ -78,9 +76,10 @@ class ResourcesTask(Task):
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = await collect(
-                sub_id
+                cast(str, sub.subscription_id).lower()
                 async for sub in subscription_client.subscriptions.list()
-                if (sub_id := cast(str, sub.subscription_id).casefold()) in self.monitored_subscriptions
+                if self.monitored_subscriptions is None
+                or cast(str, sub.subscription_id).lower() in self.monitored_subscriptions
             )
 
         await gather(*map(self.process_subscription, subscriptions))
@@ -92,10 +91,10 @@ class ResourcesTask(Task):
             resource_count = 0
             resource_filter = ResourcesTask.resource_query_filter(ALLOWED_RESOURCE_TYPES)
             async for r in client.resources.list(resource_filter):
-                region = cast(str, r.location).casefold()
-                if should_ignore_resource(region, cast(str, r.type).casefold(), cast(str, r.name).casefold()):
+                region = cast(str, r.location).lower()
+                if should_ignore_resource(region, cast(str, r.type).lower(), cast(str, r.name).lower()):
                     continue
-                resources_per_region.setdefault(region, set()).add(cast(str, r.id).casefold())
+                resources_per_region.setdefault(region, set()).add(cast(str, r.id).lower())
                 resource_count += 1
             log.debug("Subscription %s: Collected %s resources", subscription_id, resource_count)
             self.resource_cache[subscription_id] = resources_per_region

@@ -31,7 +31,7 @@ def get_container_app_name(config_id: str) -> str:
 
 
 def get_resource_group_id(subscription_id: str, resource_group: str) -> str:
-    return f"/subscriptions/{subscription_id}/resourcegroups/{resource_group}".casefold()
+    return f"/subscriptions/{subscription_id}/resourcegroups/{resource_group}".lower()
 
 
 def get_container_app_id(subscription_id: str, resource_group: str, config_id: str) -> str:
@@ -39,7 +39,7 @@ def get_container_app_id(subscription_id: str, resource_group: str, config_id: s
         get_resource_group_id(subscription_id, resource_group)
         + "/providers/microsoft.app/jobs/"
         + get_container_app_name(config_id)
-    ).casefold()
+    ).lower()
 
 
 def get_managed_env_name(region: str, control_plane_id: str) -> str:
@@ -51,7 +51,7 @@ def get_managed_env_id(subscription_id: str, resource_group: str, region: str, c
         get_resource_group_id(subscription_id, resource_group)
         + "/providers/microsoft.app/managedenvironments/"
         + get_managed_env_name(region, control_plane_id)
-    ).casefold()
+    ).lower()
 
 
 def get_storage_account_name(config_id: str) -> str:
@@ -63,7 +63,7 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
         get_resource_group_id(subscription_id, resource_group)
         + "/providers/microsoft.storage/storageaccounts/"
         + get_storage_account_name(config_id)
-    ).casefold()
+    ).lower()
 
 
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover

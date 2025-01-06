@@ -14,7 +14,7 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 
 
 def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
-    return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.casefold() for sub in subs])
+    return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs])
 
 
 ResourceCache: TypeAlias = dict[str, dict[str, set[str]]]
