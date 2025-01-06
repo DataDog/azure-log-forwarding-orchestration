@@ -225,7 +225,7 @@ output scalingTaskPrincipalId string = scalingTask.identity.principalId
 // DEPLOYER TASK INITIAL RUN
 
 resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'runInitialDeployIdentity-${controlPlaneId}'
+  name: 'runInitialDeployIdentity'
   location: controlPlaneLocation
 }
 
@@ -241,7 +241,7 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
 }
 
 resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneId)
+  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneResourceGroupName)
   properties: {
     roleDefinitionId: containerAppStartRole.id
     principalId: runInitialDeployIdentity.properties.principalId
