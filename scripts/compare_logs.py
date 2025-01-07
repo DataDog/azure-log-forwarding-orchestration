@@ -66,10 +66,11 @@ def get_uuids(data) -> list:
     return curr_ids
 
 
-def get_start_time() -> datetime | None:
+def get_start_time() -> datetime:
     for storage_id in storage_ids:
         if storage_id in native_ids and storage_id in native_ids:
             return storage_id_map[storage_id]
+    raise Exception("No common start time found")
 
 
 def download_blob(blob_service_client: BlobServiceClient, blob_name: str) -> list:
@@ -258,6 +259,9 @@ endtime = get_dd_time(end)
 starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
 
 get_logs_from_storage_account(connection_string)
+if not storage_ids:
+    raise Exception("No logs found in storage account")
+
 native_logs = get_logs(query=native_query, from_time=starttime, to_time=endtime)
 # store_logs(native_logs, "native")
 native_ids = get_uuids(native_logs)
@@ -271,8 +275,6 @@ lfo_logs = get_logs(query=lfo_query, from_time=starttime, to_time=endtime)
 lfo_ids = get_uuids(lfo_logs)
 
 start = get_start_time()
-if not start:
-    raise Exception("No start time found")
 print(f"Start id: {start}, end id: {end}")
 native_truncated = truncate_list(native_ids, start, end)
 lfo_truncated = truncate_list(lfo_ids, start, end)
