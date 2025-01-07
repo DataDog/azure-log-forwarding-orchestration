@@ -305,6 +305,7 @@ class ScalingTask(Task):
             f: [m for m in metrics if m["timestamp"] > scaling_metric_cutoff]
             for f, metrics in all_forwarder_metrics.items()
         }
+
         did_scale = await self.scale_up_forwarders(
             client, subscription_id, region, num_resources_by_forwarder, scaling_forwarder_metrics
         )
@@ -314,7 +315,7 @@ class ScalingTask(Task):
             return
 
         await self.scale_down_forwarders(
-            client, region_config, num_resources_by_forwarder, scaling_forwarder_metrics, all_forwarder_metrics
+            client, region, region_config, num_resources_by_forwarder, scaling_forwarder_metrics, all_forwarder_metrics
         )
         await self.write_caches()
 
@@ -455,6 +456,8 @@ class ScalingTask(Task):
 
         # create a second forwarder for each forwarder that needs to scale up
         new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
+        if new_forwarders:
+            log.info("Scaled up %s forwarders in region %s", len(new_forwarders), region)
 
         for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
             if not new_forwarder:
@@ -512,6 +515,7 @@ class ScalingTask(Task):
     async def scale_down_forwarders(
         self,
         client: LogForwarderClient,
+        region: str,
         region_config: RegionAssignmentConfiguration,
         num_resources_by_forwarder: dict[str, int],
         scaling_forwarder_metrics: dict[str, list[MetricBlobEntry]],
@@ -559,6 +563,8 @@ class ScalingTask(Task):
             return_exceptions=True,
         )
         log_errors("Errors during scaling down", *maybe_errors)
+        if forwarders_to_delete:
+            log.info("Scaled down %s forwarders in region %s", len(forwarders_to_delete), region)
 
     async def collapse_forwarders(
         self, region_config: RegionAssignmentConfiguration, config_1: str, config_2: str
@@ -601,7 +607,6 @@ class ScalingTask(Task):
 
     async def write_caches(self) -> None:
         if self.assignment_cache == self._assignment_cache_initial_state:
-            log.info("Assignments have not changed, no update needed")
             return
         await write_cache(ASSIGNMENT_CACHE_BLOB, dumps(self.assignment_cache))
         log.info("Updated assignments stored in the cache")
