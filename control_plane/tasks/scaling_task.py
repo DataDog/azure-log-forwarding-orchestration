@@ -53,9 +53,12 @@ def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: fl
     return len(exceeded_metrics) * 1.0 / len(metrics) > percentage
 
 
-def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
+def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, percentage: float) -> bool:
     """Check if the runtime is consistently under the threshold"""
-    return bool(metrics and all(metric["runtime_seconds"] < threshold for metric in metrics))
+    if not metrics:
+        return False
+    exceeded_metrics = [metric for metric in metrics if metric["runtime_seconds"] < threshold]
+    return len(exceeded_metrics) * 1.0 / len(metrics) > percentage
 
 
 def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
@@ -531,7 +534,7 @@ class ScalingTask(Task):
             [
                 config_id
                 for config_id, metrics in scaling_forwarder_metrics.items()
-                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS)
+                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS, self.scaling_percentage)
                 and num_resources_by_forwarder[config_id] > 0
             ]
         )
