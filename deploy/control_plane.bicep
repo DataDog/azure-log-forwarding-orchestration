@@ -213,6 +213,7 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   name: guid('deployer', controlPlaneId)
   scope: resourceGroup()
   properties: {
+    description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: websiteContributorRole.id
     principalId: deployerTask.identity.principalId
   }
@@ -243,6 +244,7 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
 resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneResourceGroupName)
   properties: {
+    description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: containerAppStartRole.id
     principalId: runInitialDeployIdentity.properties.principalId
     principalType: 'ServicePrincipal'
