@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from itertools import chain
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
+from os import environ
 from typing import Any, cast
 
 # 3p
@@ -112,8 +113,8 @@ class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
         self.resource_group = get_config_option("RESOURCE_GROUP")
-        scaling_percentage_str = get_config_option("SCALING_PERCENTAGE")
-        self.scaling_percentage = float(scaling_percentage_str) if scaling_percentage_str else 90.0
+        scaling_percentage_str = environ.get("SCALING_PERCENTAGE", "")
+        self.scaling_percentage = float(scaling_percentage_str) if scaling_percentage_str else 0.8
 
         self.background_tasks: set[AsyncTask[Any]] = set()
         self.now = datetime.now()
