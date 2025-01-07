@@ -45,9 +45,12 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 
-def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
+def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, percentage: float) -> bool:
     """Check if the runtime is consistently over the threshold"""
-    return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
+    if not metrics:
+        return False
+    exceeded_metrics = [metric for metric in metrics if metric["runtime_seconds"] > threshold]
+    return len(exceeded_metrics) * 1.0 / len(metrics) > percentage
 
 
 def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
@@ -106,6 +109,8 @@ class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
         self.resource_group = get_config_option("RESOURCE_GROUP")
+        scaling_percentage_str = get_config_option("SCALING_PERCENTAGE")
+        self.scaling_percentage = float(scaling_percentage_str) if scaling_percentage_str else 90.0
 
         self.background_tasks: set[AsyncTask[Any]] = set()
         self.now = datetime.now()
@@ -438,7 +443,7 @@ class ScalingTask(Task):
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
-            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS)
+            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, self.scaling_percentage)
             and _has_enough_resources_to_scale_up(config_id)
         ]
 
