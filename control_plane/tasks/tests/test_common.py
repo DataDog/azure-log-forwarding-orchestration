@@ -85,7 +85,7 @@ class TestCommon(IsolatedAsyncioTestCase):
 
     def test_get_managed_env_id(self):
         self.assertEqual(
-            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-config1-region-env",
+            "/subscriptions/sub1/resourcegroups/rg1/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-config1-region",
             get_managed_env_id(sub1, rg1, region, config1),
         )
         self.assertTrue(get_managed_env_id("UpperCaseSub", "SomeUpperCaseRG", region, config1).islower())
