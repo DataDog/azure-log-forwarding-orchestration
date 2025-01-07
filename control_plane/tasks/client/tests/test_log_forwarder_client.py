@@ -40,7 +40,7 @@ config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
 control_plane_id = "e90ecb54476d"
-managed_env_name = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{EAST_US}-env"
+managed_env_name = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{EAST_US}"
 container_app_name = f"{FORWARDER_CONTAINER_APP_PREFIX}{config_id}"
 storage_account_name = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{config_id}"
 rg1 = "test_lfo"
@@ -133,7 +133,7 @@ class TestLogForwarderClient(AsyncTestCase):
             AzureModelMatcher(
                 {
                     "location": EAST_US,
-                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus-env",
+                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus",
                     "configuration": {
                         "secrets": [
                             {"name": "dd-api-key", "value": "123123"},
