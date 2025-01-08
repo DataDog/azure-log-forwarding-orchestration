@@ -40,7 +40,7 @@ config_id = "d6fc2c757f9c"
 config_id2 = "e8d5222d1c46"
 config_id3 = "619fff16cae1"
 control_plane_id = "e90ecb54476d"
-managed_env_name = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{EAST_US}-env"
+managed_env_name = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{control_plane_id}-{EAST_US}"
 container_app_name = f"{FORWARDER_CONTAINER_APP_PREFIX}{config_id}"
 storage_account_name = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{config_id}"
 rg1 = "test_lfo"
@@ -73,7 +73,6 @@ class FakeHttpError(HttpResponseError):
 class MockedLogForwarderClient(LogForwarderClient):
     """Used for typing since we know the underlying clients will be mocks"""
 
-    resource_client: AsyncMock
     container_apps_client: AsyncMock
     storage_client: AsyncMock
     _datadog_client: AsyncMock
@@ -89,8 +88,6 @@ class TestLogForwarderClient(AsyncTestCase):
             credential=AsyncMock(), subscription_id=sub_id1, resource_group=rg1
         )
         await self.client.__aexit__(None, None, None)
-        self.client.resource_client = AsyncMockClient()
-        self.client.resource_client.resource_groups.check_existence.return_value = True
         self.client.container_apps_client = AsyncMockClient()
         self.client.storage_client = AsyncMockClient()
         self.client._datadog_client = AsyncMockClient()
@@ -136,7 +133,7 @@ class TestLogForwarderClient(AsyncTestCase):
             AzureModelMatcher(
                 {
                     "location": EAST_US,
-                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus-env",
+                    "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus",
                     "configuration": {
                         "secrets": [
                             {"name": "dd-api-key", "value": "123123"},
@@ -717,16 +714,6 @@ class TestLogForwarderClient(AsyncTestCase):
         async with self.client as client:
             res = await client.list_log_forwarder_ids()
         self.assertEqual(res, {config_id, "way_more_than_twelve_chars"})
-
-    async def test_resource_group_not_existing_gets_created(self):
-        self.client.resource_client.resource_groups.check_existence.return_value = False
-        async with self.client:
-            # we dont actually care what operation would happen,
-            # just checking that it gets checked when we use the client
-            pass
-        self.client.resource_client.resource_groups.create_or_update.assert_awaited_once_with(
-            rg1, AzureModelMatcher({"location": EAST_US})
-        )
 
     async def test_create_log_forwarder_managed_env(self):
         # set up blob forwarder data
