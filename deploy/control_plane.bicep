@@ -23,6 +23,8 @@ param datadogSite string
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
 var forwarderImage = '${imageRegistry}/forwarder:latest'
 
+// CONTROL PLANE RESOURCES
+
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: 'control-plane-asp-${controlPlaneId}'
   location: controlPlaneLocation
@@ -62,7 +64,8 @@ resource cacheContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
   properties: {}
 }
 
-var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${listKeys(storageAccount.id,'2019-06-01').keys[0].value}'
+var storageAccountKey = listKeys(storageAccount.id, '2019-06-01').keys[0].value
+var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccountKey}'
 
 var commonAppSettings = [
   { name: 'AzureWebJobsStorage', value: connectionString }
@@ -210,6 +213,7 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   name: guid('deployer', controlPlaneId)
   scope: resourceGroup()
   properties: {
+    description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: websiteContributorRole.id
     principalId: deployerTask.identity.principalId
   }
@@ -218,3 +222,57 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 output resourceTaskPrincipalId string = resourceTask.identity.principalId
 output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
 output scalingTaskPrincipalId string = scalingTask.identity.principalId
+
+// DEPLOYER TASK INITIAL RUN
+
+resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'runInitialDeployIdentity'
+  location: controlPlaneLocation
+}
+
+resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
+  name: guid('containerAppStartRole')
+  properties: {
+    roleName: 'ContainerAppStartRole'
+    description: 'Custom role to start container app jobs'
+    type: 'customRole'
+    permissions: [{ actions: ['Microsoft.App/jobs/start/action'] }]
+    assignableScopes: [resourceGroup().id]
+  }
+}
+
+resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneResourceGroupName)
+  properties: {
+    description: 'ddlfo${controlPlaneId}'
+    roleDefinitionId: containerAppStartRole.id
+    principalId: runInitialDeployIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: 'runInitialDeploy'
+  location: controlPlaneLocation
+  kind: 'AzurePowerShell'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${runInitialDeployIdentity.id}': {} }
+  }
+  properties: {
+    storageAccountSettings: {
+      // reuse the storage account from before
+      storageAccountName: storageAccount.name
+      storageAccountKey: storageAccountKey
+    }
+    azPowerShellVersion: '12.3'
+    scriptContent: 'Start-AzContainerAppJob -Name ${deployerTaskName} -ResourceGroupName ${controlPlaneResourceGroupName}'
+    timeout: 'PT30M'
+    retentionInterval: 'PT1H'
+    cleanupPreference: 'OnSuccess'
+  }
+  dependsOn: [
+    runInitialDeployIdentityRoleAssignment
+    deployerTaskRole
+  ]
+}
