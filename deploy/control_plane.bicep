@@ -231,7 +231,7 @@ resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentit
 }
 
 resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
-  name: guid('containerAppStartRole')
+  name: guid('containerAppStartRole', resourceGroup().id)
   properties: {
     roleName: 'ContainerAppStartRole'
     description: 'Custom role to start container app jobs'
