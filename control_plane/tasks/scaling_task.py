@@ -7,7 +7,6 @@ from datetime import datetime, timedelta
 from itertools import chain
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
-from os import environ
 from typing import Any, cast
 
 # 3p
@@ -23,6 +22,7 @@ from cache.assignment_cache import (
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
+    cast_config_option,
     get_config_option,
     read_cache,
     write_cache,
@@ -38,6 +38,7 @@ SCALING_TASK_NAME = "scaling_task"
 SCALING_METRIC_PERIOD_MINUTES = 5
 DELETION_METRIC_PERIOD_MINUTES = 15
 METRIC_COLLECTION_PERIOD_MINUTES = DELETION_METRIC_PERIOD_MINUTES  # longer of the two periods^
+DEFAULT_SCALING_PERCENTAGE = 0.8
 
 SCALE_UP_EXECUTION_SECONDS = 45
 SCALE_DOWN_EXECUTION_SECONDS = 3
@@ -117,8 +118,7 @@ class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
         self.resource_group = get_config_option("RESOURCE_GROUP")
-        scaling_percentage_str = environ.get("SCALING_PERCENTAGE", "")
-        self.scaling_percentage = float(scaling_percentage_str) if scaling_percentage_str else 0.8
+        self.scaling_percentage = cast_config_option("SCALING_PERCENTAGE", float, DEFAULT_SCALING_PERCENTAGE)
 
         self.background_tasks: set[AsyncTask[Any]] = set()
         self.now = datetime.now()
