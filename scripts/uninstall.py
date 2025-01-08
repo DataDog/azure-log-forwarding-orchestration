@@ -23,6 +23,161 @@ DRY_RUN = True
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
 DIAGNOSTIC_SETTING_PREFIX: Final = "datadog_log_forwarding_"
 
+ALLOWED_TYPES_PER_PROVIDER = {
+    "Microsoft.AAD": {"DomainServices"},
+    "Microsoft.AgFoodPlatform": {"farmBeats"},
+    "Microsoft.AnalysisServices": {"servers"},
+    "Microsoft.ApiManagement": {"service"},
+    "Microsoft.App": {"managedEnvironments"},
+    "Microsoft.AppConfiguration": {"configurationStores"},
+    "Microsoft.AppPlatform": {"spring"},
+    "Microsoft.Attestation": {"attestationProviders"},
+    "Microsoft.Automation": {"automationAccounts"},
+    "Microsoft.AutonomousDevelopmentPlatform": {"accounts", "workspaces"},
+    "microsoft.avs": {"privateClouds"},
+    "Microsoft.AzureDataTransfer": {"connections/flows"},
+    "microsoft.azureplaywrightservice": {"accounts"},
+    "microsoft.azuresphere": {"catalogs"},
+    "Microsoft.Batch": {"batchaccounts"},
+    "microsoft.botservice": {"botservices"},
+    "Microsoft.Cache": {"redis", "redisEnterprise/databases"},
+    "Microsoft.Cdn": {"cdnwebapplicationfirewallpolicies", "profiles", "profiles/endpoints"},
+    "Microsoft.Chaos": {"experiments"},
+    "Microsoft.ClassicNetwork": {"networksecuritygroups"},
+    "Microsoft.CodeSigning": {"codesigningaccounts"},
+    "Microsoft.CognitiveServices": {"accounts"},
+    "Microsoft.Communication": {"CommunicationServices"},
+    "microsoft.community": {"communityTrainings"},
+    "Microsoft.Compute": {"virtualMachines"},
+    "Microsoft.ConfidentialLedger": {"ManagedCCF", "ManagedCCFs"},
+    "Microsoft.ConnectedCache": {"CacheNodes", "enterpriseMccCustomers", "ispCustomers"},
+    "Microsoft.ConnectedVehicle": {"platformAccounts"},
+    "Microsoft.ContainerInstance": {"containerGroups"},
+    "Microsoft.ContainerRegistry": {"registries"},
+    "Microsoft.ContainerService": {"fleets", "managedClusters"},
+    "Microsoft.CustomProviders": {"resourceproviders"},
+    "Microsoft.D365CustomerInsights": {"instances"},
+    "Microsoft.Dashboard": {"grafana"},
+    "Microsoft.Databricks": {"workspaces"},
+    "Microsoft.DataFactory": {"factories"},
+    "Microsoft.DataLakeAnalytics": {"accounts"},
+    "Microsoft.DataLakeStore": {"accounts"},
+    "Microsoft.DataProtection": {"BackupVaults"},
+    "Microsoft.DataShare": {"accounts"},
+    "Microsoft.DBforMariaDB": {"servers"},
+    "Microsoft.DBforMySQL": {"flexibleServers", "servers"},
+    "Microsoft.DBforPostgreSQL": {"flexibleServers", "servers", "serversv2"},
+    "Microsoft.DBForPostgreSQL": {"serverGroupsv2"},
+    "Microsoft.DesktopVirtualization": {
+        "appAttachPackages",
+        "applicationgroups",
+        "hostpools",
+        "scalingplans",
+        "workspaces",
+    },
+    "Microsoft.DevCenter": {"devcenters"},
+    "Microsoft.Devices": {"IotHubs", "provisioningServices"},
+    "Microsoft.DevOpsInfrastructure": {"pools"},
+    "Microsoft.DigitalTwins": {"digitalTwinsInstances"},
+    "Microsoft.DocumentDB": {"cassandraClusters", "DatabaseAccounts", "mongoClusters"},
+    "Microsoft.EventGrid": {"domains", "namespaces", "partnerNamespaces", "partnerTopics", "systemTopics", "topics"},
+    "Microsoft.EventHub": {"Namespaces"},
+    "Microsoft.HardwareSecurityModules": {"cloudHsmClusters"},
+    "Microsoft.HealthcareApis": {
+        "services",
+        "workspaces/dicomservices",
+        "workspaces/fhirservices",
+        "workspaces/iotconnectors",
+    },
+    "Microsoft.HealthDataAIServices": {"deidServices"},
+    "microsoft.insights": {"autoscalesettings", "components"},
+    "Microsoft.Insights": {"datacollectionrules"},
+    "microsoft.keyvault": {"managedhsms"},
+    "Microsoft.KeyVault": {"vaults"},
+    "microsoft.kubernetes": {"connectedClusters"},
+    "Microsoft.Kusto": {"clusters"},
+    "microsoft.loadtestservice": {"loadtests"},
+    "Microsoft.Logic": {
+        "IntegrationAccounts",
+        "Workflows",
+    },
+    "Microsoft.MachineLearningServices": {"", "registries", "workspaces", "workspaces/onlineEndpoints"},
+    "Microsoft.ManagedNetworkFabric": {"networkDevices"},
+    "Microsoft.Media": {
+        "mediaservices",
+        "mediaservices/liveEvents",
+        "mediaservices/streamingEndpoints",
+        "videoanalyzers",
+    },
+    "Microsoft.Monitor": {"accounts"},
+    "Microsoft.NetApp": {"netAppAccounts/capacityPools", "netAppAccounts/capacityPools/volumes"},
+    "Microsoft.Network": {
+        "applicationgateways",
+        "azureFirewalls",
+        "dnsResolverPolicies",
+        "expressRouteCircuits",
+        "frontdoors",
+        "loadBalancers",
+        "networkManagers",
+        "networkManagers/ipamPools",
+        "networksecuritygroups",
+        "networkSecurityPerimeters",
+        "networkSecurityPerimeters/profiles",
+        "publicIPAddresses",
+        "publicIPPrefixes",
+        "trafficManagerProfiles",
+        "virtualNetworks",
+    },
+    "microsoft.network": {"bastionHosts", "p2svpngateways", "virtualnetworkgateways", "vpngateways"},
+    "Microsoft.NetworkAnalytics": {"DataProducts"},
+    "Microsoft.NetworkCloud": {"bareMetalMachines", "clusterManagers", "clusters", "storageAppliances"},
+    "Microsoft.NetworkFunction": {"azureTrafficCollectors"},
+    "Microsoft.NotificationHubs": {"namespaces", "namespaces/notificationHubs"},
+    "MICROSOFT.OPENENERGYPLATFORM": {"ENERGYSERVICES"},
+    "Microsoft.OpenLogisticsPlatform": {"Workspaces"},
+    "Microsoft.OperationalInsights": {"workspaces"},
+    "Microsoft.PlayFab": {"titles"},
+    "Microsoft.PowerBI": {"tenants", "tenants/workspaces"},
+    "Microsoft.PowerBIDedicated": {"capacities"},
+    "Microsoft.ProviderHub": {"providerMonitorSettings", "providerRegistrations"},
+    "microsoft.purview": {"accounts"},
+    "Microsoft.RecoveryServices": {"Vaults"},
+    "Microsoft.Relay": {"namespaces"},
+    "Microsoft.Search": {"searchServices"},
+    "Microsoft.Security": {"antiMalwareSettings", "defenderForStorageSettings"},
+    "Microsoft.ServiceBus": {"Namespaces"},
+    "Microsoft.ServiceNetworking": {"trafficControllers"},
+    "Microsoft.SignalRService": {"SignalR", "SignalR/replicas", "WebPubSub", "WebPubSub/replicas"},
+    "microsoft.singularity": {"accounts"},
+    "Microsoft.Sql": {"managedInstances", "managedInstances/databases", "servers/databases"},
+    "Microsoft.Storage": {
+        "storageAccounts/blobServices",
+        "storageAccounts/fileServices",
+        "storageAccounts/queueServices",
+        "storageAccounts/tableServices",
+    },
+    "Microsoft.StorageCache": {"amlFilesystems", "caches"},
+    "Microsoft.StorageMover": {"storageMovers"},
+    "Microsoft.StreamAnalytics": {"streamingjobs"},
+    "Microsoft.Synapse": {
+        "workspaces",
+        "workspaces/bigDataPools",
+        "workspaces/kustoPools",
+        "workspaces/scopePools",
+        "workspaces/sqlPools",
+    },
+    "microsoft.videoindexer": {"accounts"},
+    "Microsoft.Web": {"hostingEnvironments", "sites", "sites/slots", "staticsites"},
+    "microsoft.workloads": {"sapvirtualinstances"},
+    "NGINX.NGINXPLUS": {"nginxDeployment"},
+}
+
+ALLOWED_RESOURCE_TYPES = [
+    f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
+]
+
+ALLOWED_RESOURCE_TYPES_FILTER = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
+
 # ===== Command Execution ===== # 
 def az(cmd: str) -> str:
     """Runs az command, returns stdout"""
@@ -47,7 +202,7 @@ def get_users_subscriptions() -> dict:
     return {sub["id"]: sub["name"] for sub in all_subs_json}
 
 def list_resources(sub_id: str) -> set:
-    resource_ids = json.loads(az(f"resource list --subscription {sub_id} --query \"[].id\" --output json"))
+    resource_ids = json.loads(az(f"resource list --subscription {sub_id} --query \"[?{ALLOWED_RESOURCE_TYPES_FILTER}].id\" --output json"))
     return set(resource_ids)
 
 def find_control_planes(sub_id: str, sub_name: str) -> dict[str,str]:
@@ -84,6 +239,10 @@ def find_lfo_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
 def delete_role_assignments(sub_id: str, control_plane_ids: set):
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
     role_assigments_ids = json.loads(az(f"role assignment list --all --subscription {sub_id} --query \"[?description != null && ({description_filter})].{{id: id, name: name}}\" --output json"))
+
+    if not role_assigments_ids:
+        log.info(f"Did not find any role assignments to delete in subscription {sub_id}")
+        return
 
     role_deletion_log = f"Deleting role assignments from subscription {sub_id}:\n{indented_log_of(role_assigments_ids)}"
     if DRY_RUN:
@@ -146,14 +305,17 @@ def dict_newline_spaced(dict: dict) -> str:
     return f"\n{formatted}\n"
 
 def uninstall_summary_for(sub_id_to_rgs: dict[str, list[str]], sub_id_to_name: dict[str,str]) -> str:
-    return "\n".join(f"Subscription '{sub_id_to_name[sub_id]}' ({sub_id}) \n {indented_log_of(rg_list)}" for sub_id, rg_list in sub_id_to_rgs.items())
+    log = ""
+    for sub_id, rg_list in sub_id_to_rgs.items():
+        for rg in rg_list:
+            log += f"'{rg}' from subscription '{sub_id_to_name[sub_id]}' ({sub_id})\n"
 
 # ===== User Interaction =====  #
 def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], sub_id_to_name: dict[str,str]) -> bool:
-    confirm_log = f"The following resource groups will be deleted as part of the uninstall process: {uninstall_summary_for(sub_to_rg_deletions, sub_id_to_name)}" 
+    confirm_log = f"The following resource groups will be deleted as part of the uninstall process:\n{uninstall_summary_for(sub_to_rg_deletions, sub_id_to_name)}" 
     log.info(confirm_log)
     
-    choice = input("Continue? (y/n): ").lower.strip()
+    choice = input("Continue? (y/n): ").lower().strip()
     while choice not in ["y", "n"]:
         choice = input("Continue? (y/n): ").lower().strip()
 
@@ -181,7 +343,7 @@ def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_grou
         log.info(f"Found single resource group with log forwarding artifact: '{resource_groups_in_sub[0]}'")
         return resource_groups_in_sub
     
-    log.info(f"Found multiple resource groups with log forwarding artifacts: '{indented_log_of(resource_groups_in_sub)}'")
+    log.info(f"Found multiple resource groups with log forwarding artifacts in '{sub_name}' ({sub_id}): {indented_log_of(resource_groups_in_sub)}")
     
     return choose_resource_groups_to_delete(resource_groups_in_sub)
 
