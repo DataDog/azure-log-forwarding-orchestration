@@ -309,6 +309,7 @@ def uninstall_summary_for(sub_id_to_rgs: dict[str, list[str]], sub_id_to_name: d
     for sub_id, rg_list in sub_id_to_rgs.items():
         for rg in rg_list:
             log += f"'{rg}' from subscription '{sub_id_to_name[sub_id]}' ({sub_id})\n"
+    return log
 
 # ===== User Interaction =====  #
 def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], sub_id_to_name: dict[str,str]) -> bool:
