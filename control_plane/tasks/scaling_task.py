@@ -47,19 +47,23 @@ log.setLevel(DEBUG)
 
 
 def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, percentage: float) -> bool:
-    """Check if the runtime is consistently over the threshold"""
+    """Check if the runtime is consistently over the threshold.
+    percentage is a float between 0 and 1, representing the percentage of metrics that need to exceed the threshold
+    """
     if not metrics:
         return False
     exceeded_metrics = [metric for metric in metrics if metric["runtime_seconds"] > threshold]
-    return len(exceeded_metrics) * 1.0 / len(metrics) > percentage
+    return float(len(exceeded_metrics)) / len(metrics) > percentage
 
 
 def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, percentage: float) -> bool:
-    """Check if the runtime is consistently under the threshold"""
+    """Check if the runtime is consistently under the threshold
+    percentage is a float between 0 and 1, representing the percentage of metrics that need to be under the threshold
+    """
     if not metrics:
         return False
-    exceeded_metrics = [metric for metric in metrics if metric["runtime_seconds"] < threshold]
-    return len(exceeded_metrics) * 1.0 / len(metrics) > percentage
+    under_threshold_metrics = [metric for metric in metrics if metric["runtime_seconds"] < threshold]
+    return float(len(under_threshold_metrics)) / len(metrics) > percentage
 
 
 def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
