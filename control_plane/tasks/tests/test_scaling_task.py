@@ -83,7 +83,9 @@ class TestScalingTask(TaskTestCase):
 
         self.log = self.patch("log")
         self.generate_unique_id = self.patch("generate_unique_id")
-        p = patch.dict(environ, {"RESOURCE_GROUP": RG1, "CONTROL_PLANE_ID": CONTROL_PLANE_ID})
+        p = patch.dict(
+            environ, {"RESOURCE_GROUP": RG1, "CONTROL_PLANE_ID": CONTROL_PLANE_ID, "SCALING_PERCENTAGE": "0.7"}
+        )
         p.start()
         self.addCleanup(p.stop)
         self.generate_unique_id.return_value = NEW_LOG_FORWARDER_ID
@@ -960,11 +962,12 @@ class TestScalingTaskHelpers(TestCase):
                     },
                 ],
                 threshold=20,
+                percentage=0.7,
             )
         )
 
     def test_no_metrics_not_over_threshold(self):
-        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0))
+        self.assertFalse(is_consistently_over_threshold(metrics=[], threshold=0, percentage=0.7))
 
     def test_metrics_partially_over_threshold(self):
         self.assertFalse(
@@ -990,6 +993,35 @@ class TestScalingTaskHelpers(TestCase):
                     },
                 ],
                 threshold=45,
+                percentage=0.7,
+            )
+        )
+
+    def test_metrics_partially_over_threshold_with_low_percentage_required(self):
+        self.assertTrue(
+            is_consistently_over_threshold(
+                metrics=[
+                    {
+                        "runtime_seconds": 43,
+                        "timestamp": minutes_ago(5.5),
+                        "resource_log_volume": {"resource1": 4000, "resource2": 6000},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
+                    },
+                    {
+                        "runtime_seconds": 44,
+                        "timestamp": minutes_ago(4),
+                        "resource_log_volume": {"resource1": 4200, "resource2": 6100},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
+                    },
+                    {
+                        "runtime_seconds": 48,
+                        "timestamp": minutes_ago(3),
+                        "resource_log_volume": {"resource1": 4300, "resource2": 6400},
+                        "resource_log_bytes": {"resource1": 42000, "resource2": 61000},
+                    },
+                ],
+                threshold=45,
+                percentage=0.2,
             )
         )
 
@@ -1005,6 +1037,7 @@ class TestScalingTaskHelpers(TestCase):
                     },
                 ],
                 threshold=45,
+                percentage=0.7,
             )
         )
 
@@ -1022,6 +1055,7 @@ class TestScalingTaskHelpers(TestCase):
                     },
                 ],
                 threshold=45,
+                percentage=0.7,
             )
         )
 
