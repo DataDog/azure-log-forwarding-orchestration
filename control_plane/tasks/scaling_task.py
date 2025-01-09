@@ -22,8 +22,8 @@ from cache.assignment_cache import (
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
-    cast_config_option,
     get_config_option,
+    parse_config_option,
     read_cache,
     write_cache,
 )
@@ -118,7 +118,7 @@ class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
         self.resource_group = get_config_option("RESOURCE_GROUP")
-        self.scaling_percentage = cast_config_option("SCALING_PERCENTAGE", float, DEFAULT_SCALING_PERCENTAGE)
+        self.scaling_percentage = parse_config_option("SCALING_PERCENTAGE", float, DEFAULT_SCALING_PERCENTAGE)
 
         self.background_tasks: set[AsyncTask[Any]] = set()
         self.now = datetime.now()
