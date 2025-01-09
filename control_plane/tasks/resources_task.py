@@ -101,17 +101,20 @@ class ResourcesTask(Task):
 
     async def write_caches(self) -> None:
         prune_resource_cache(self.resource_cache)
-        if self.resource_cache == self._resource_cache_initial_state:
-            log.info("Resources have not changed, no update needed")
-            return
-        # since sets cannot be json serialized, we convert them to lists before storing
-        await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
 
         subscription_count = len(self.resource_cache)
         region_count = sum(len(regions) for regions in self.resource_cache.values())
         resources_count = sum(
             len(resources) for regions in self.resource_cache.values() for resources in regions.values()
         )
+
+        if self.resource_cache == self._resource_cache_initial_state:
+            log.info("Resources have not changed, no update needed to %s resources", resources_count)
+            return
+
+        # since sets cannot be json serialized, we convert them to lists before storing
+        await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
+
         log.info(
             "Updated Resources, monitoring %s resources stored in the cache across %s regions across %s subscriptions",
             resources_count,
