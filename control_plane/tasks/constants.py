@@ -153,6 +153,8 @@ ALLOWED_RESOURCE_TYPES: Final = frozenset(
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 )
 
+# Azure Product Region Availability
+# https://azure.microsoft.com/en-us/explore/global-infrastructure/products-by-region/table
 
 ALLOWED_STORAGE_ACCOUNT_REGIONS: Final = frozenset(
     {
