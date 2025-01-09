@@ -177,7 +177,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         (await container_app_job_create()).result.assert_awaited_once_with()
 
-    async def test_create_log_forwarder_in_different_regions_for_container_app_and_storage(self):
+    async def test_create_log_forwarder_in_unsupported_region_falls_back_to_control_plane_region(self):
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
         async with self.client:
@@ -205,7 +205,7 @@ class TestLogForwarderClient(AsyncTestCase):
             CONTAINER_APP_NAME,
             AzureModelMatcher(
                 {
-                    "location": EAST_US,
+                    "location": rg1,
                     "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus",
                     "configuration": {
                         "secrets": [
