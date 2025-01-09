@@ -302,11 +302,7 @@ class ScalingTask(Task):
         }
 
         did_scale = await self.scale_up_forwarders(
-            client,
-            subscription_id,
-            region,
-            num_resources_by_forwarder,
-            scaling_forwarder_metrics,
+            client, subscription_id, region, num_resources_by_forwarder, scaling_forwarder_metrics
         )
         await self.write_caches()
         # if we don't scale up, we can check for scaling down
