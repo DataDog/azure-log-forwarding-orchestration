@@ -383,7 +383,7 @@ class TestScalingTask(TaskTestCase):
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     },
-                    EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
+                    NEW_ZEALAND_NORTH: {"configurations": {}, "resources": {}},  # to be cleaned up
                 },
             },
         )
