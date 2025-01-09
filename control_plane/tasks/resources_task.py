@@ -76,10 +76,18 @@ class ResourcesTask(Task):
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = await collect(
-                cast(str, sub.subscription_id).lower()
-                async for sub in subscription_client.subscriptions.list()
-                if self.monitored_subscriptions is None
-                or cast(str, sub.subscription_id).lower() in self.monitored_subscriptions
+                cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
+            )
+
+        log.info("Found %s subscriptions", len(subscriptions))
+
+        if self.monitored_subscriptions is not None:
+            all_subscription_count = len(subscriptions)
+            subscriptions = [sub for sub in subscriptions if sub in self.monitored_subscriptions]
+            log.info(
+                "Filterted %s subscriptions down to the monitored subscriptions list (%s subscriptions)",
+                all_subscription_count,
+                len(subscriptions),
             )
 
         await gather(*map(self.process_subscription, subscriptions))
