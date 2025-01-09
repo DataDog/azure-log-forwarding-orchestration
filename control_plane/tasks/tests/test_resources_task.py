@@ -300,9 +300,6 @@ class TestResourceTaskHelpers(TestCase):
         self.assertTrue(
             should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/managedEnvironments", "dd-log-forwarder-env-")
         )
-        self.assertTrue(
-            should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/managedEnvironments", "deployer-task-env-")
-        )
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-"))

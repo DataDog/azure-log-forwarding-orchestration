@@ -19,7 +19,6 @@ from cache.resources_cache import (
     prune_resource_cache,
 )
 from tasks.common import (
-    DEPLOYER_MANAGED_ENVIRONMENT_NAME,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
     FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     RESOURCES_TASK_PREFIX,
@@ -40,7 +39,6 @@ IGNORED_LFO_PREFIXES: Final = frozenset(
         SCALING_TASK_PREFIX,
         RESOURCES_TASK_PREFIX,
         DIAGNOSTIC_SETTINGS_TASK_PREFIX,
-        DEPLOYER_MANAGED_ENVIRONMENT_NAME,
         # STORAGE_ACCOUNT_PREFIX, # TODO (AZINTS-2763): add these in once we implement adding storage accounts
         # CONTROL_PLANE_STORAGE_PREFIX,
     }
