@@ -39,6 +39,7 @@ from tasks.tests.test_scaling_task import generate_metrics, minutes_ago
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
+WEST_US = "westus"
 NEW_ZEALAND_NORTH = "newzealandnorth"
 CONFIG_ID1 = "d6fc2c757f9c"
 CONFIG_ID2 = "e8d5222d1c46"
@@ -427,7 +428,7 @@ class TestLogForwarderClient(AsyncTestCase):
 
         # WHEN
         async with self.client as client:
-            result = await client.get_log_forwarder_managed_environment(EAST_US)
+            result = await client.get_log_forwarder_managed_environment(WEST_US)
 
         # THEN
         self.assertEqual(result, env_id)
@@ -438,10 +439,30 @@ class TestLogForwarderClient(AsyncTestCase):
 
         # WHEN
         async with self.client as client:
-            result = await client.get_log_forwarder_managed_environment(EAST_US)
+            result = await client.get_log_forwarder_managed_environment(WEST_US)
 
         # THEN
         self.assertIsNone(result)
+
+    async def test_get_log_forwarder_managed_env_unsupported_region_defaults_to_control_plane_region(self):
+        async with self.client:
+            res = await self.client.get_log_forwarder_managed_environment(NEW_ZEALAND_NORTH)
+
+        self.assertEqual(
+            f"/subscriptions/{sub_id1}/resourcegroups/{rg1}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{control_plane_id}-{EAST_US}",
+            res,
+        )
+        self.client.container_apps_client.managed_environments.get.assert_not_called()
+
+    async def test_get_log_forwarder_managed_env_control_plane_region_makes_no_api_call(self):
+        async with self.client:
+            res = await self.client.get_log_forwarder_managed_environment(EAST_US)
+
+        self.assertEqual(
+            f"/subscriptions/{sub_id1}/resourcegroups/{rg1}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{control_plane_id}-{EAST_US}",
+            res,
+        )
+        self.client.container_apps_client.managed_environments.get.assert_not_called()
 
     async def test_delete_log_forwarder_doesnt_retry_after_second_unretryable(self):
         self.client.container_apps_client.jobs.begin_delete.side_effect = [FakeHttpError(429), FakeHttpError(400)]

@@ -246,7 +246,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             await poller.result()
 
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
-        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
+        env_region = self.get_container_app_region(region)
+        if env_region == self.control_plane_region:  # we know this will always exist
+            return get_managed_env_id(self.subscription_id, self.resource_group, env_region, self.control_plane_id)
+        env_name = get_managed_env_name(env_region, self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
