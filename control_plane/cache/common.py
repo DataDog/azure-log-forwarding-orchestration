@@ -32,13 +32,17 @@ def get_config_option(name: str) -> str:
     raise MissingConfigOptionError(name)
 
 
-def parse_config_option(name: str, parse: Callable[[str], T | None], default: T | None = None) -> T | None:
+def parse_config_option(name: str, parse: Callable[[str], T | None], default: T) -> T:
     """Get a configuration option from the environment, parse it, or return a default"""
     try:
         value = environ.get(name)
         if value is None:
             return default
-        return parse(value)
+        result = parse(value)
+        if result is None:
+            log.error(f"Invalid value for configuration option {name}: {value}")
+            return default
+        return result
     except ValueError:
         log.error(f"Invalid value for configuration option {name}: {environ.get(name)}")
         return default
