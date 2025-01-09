@@ -202,7 +202,6 @@ class ScalingTask(Task):
 
         Will never raise an exception.
         """
-
         env_exists = await self.check_region_forwarder_env(client, region)
         if not env_exists:
             log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
