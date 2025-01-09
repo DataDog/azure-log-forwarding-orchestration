@@ -17,7 +17,7 @@ import subprocess
 getLogger("azure").setLevel(WARNING)
 log = getLogger("uninstaller")
 
-DRY_RUN = True
+DRY_RUN = False
 
 # ===== Constants ===== # 
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
@@ -192,9 +192,6 @@ def az(cmd: str) -> str:
         SystemExit(1)
 
 # ===== Azure Commands ===== #
-def set_subscription_scope(sub_id: str):
-    az(f"account set --subscription {sub_id}")
-
 def get_users_subscriptions() -> dict:
     log.info("Searching for all subscriptions accessible by the current user to find log forwarding installations")
     
@@ -235,50 +232,64 @@ def find_lfo_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
         
     return sub_to_rg, rg_to_storage
 
-# ===== Delete Behavior ===== #
-def delete_role_assignments(sub_id: str, control_plane_ids: set):
+def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> Any:
+    log.info(f"Looking for DataDog diagnostic settings to delete in {sub_name} ({sub_id})")
+    
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
-    role_assigments_ids = json.loads(az(f"role assignment list --all --subscription {sub_id} --query \"[?description != null && ({description_filter})].{{id: id, name: name}}\" --output json"))
+    return json.loads(az(f"role assignment list --all --subscription {sub_id} --query \"[?description != null && ({description_filter})].{{id: id, roleDefinitionName: roleDefinitionName, principalId: principalId}}\" --output json"))
 
-    if not role_assigments_ids:
+def delete_role_assignments(sub_id: str, role_assigments_json: Any):
+    ids = {role["id"] for role in role_assigments_json}
+    if not ids:
         log.info(f"Did not find any role assignments to delete in subscription {sub_id}")
-        return
+        return 
+    
+    role_infos = [f"Role: {role['roleDefinitionName']}, Principal: {role['principalId']}" for role in role_assigments_json]
+    role_deletion_log = f"Deleting role assignments from subscription {sub_id}:\n{indented_log_of(role_infos)}"
 
-    role_deletion_log = f"Deleting role assignments from subscription {sub_id}:\n{indented_log_of(role_assigments_ids)}"
     if DRY_RUN:
         log.info(dry_run_of(role_deletion_log))
         return
 
     # --include-inherited flag will also try to delete the role assignment from the management group scope if possible
-    az(f"role assignment delete --ids {space_separated(role_assigments_ids)} --subscription {sub_id} --include-inherited --yes")
+    log.info(role_deletion_log)
+    az(f"role assignment delete --ids {space_separated(ids)} --subscription {sub_id} --include-inherited --yes")
 
-
-def delete_diagnostic_settings(sub_id: str, resource_ids: set, control_plane_id_deletions: set):
-    for resource_id in resource_ids:
-        log.info(f"Looking for DataDog log forwarding diagnostic settings to delete for resource {resource_id}")
-        ds_names = json.loads(az(f"monitor diagnostic-settings list --resource {resource_id} --query \"[?starts_with(name,'{DIAGNOSTIC_SETTING_PREFIX}')].name\""))
-        
+def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set) -> dict[str, list[str]]:
+    log.info(f"Looking for DataDog diagnostic settings to delete in {sub_name} ({sub_id})")
+    
+    resource_ids = list_resources(sub_id)
+    resource_ds_map = defaultdict(list)     
+    
+    diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
+    for resource_id in resource_ids:        
+        ds_names = json.loads(az(f"monitor diagnostic-settings list --resource {resource_id} --query \"[?{diagnostic_settings_filter}].name\""))
         for ds_name in ds_names:
-            ds_control_plane_id = ds_name[len(DIAGNOSTIC_SETTING_PREFIX):]
-            if ds_control_plane_id not in control_plane_id_deletions:
-                continue
+            resource_ds_map[resource_id].append(ds_name)
+    
+    return resource_ds_map
+            
+def delete_diagnostic_settings(sub_id: str, resource_setting_map: dict[str,list[str]]):    
+    ds_deletion_log = f"Deleting DataDog diagnostic settings from {len(resource_setting_map)} resources in subscription {sub_id}"
+    if DRY_RUN:
+        log.info(f"{dry_run_of(ds_deletion_log)}")
+        return
 
-            ds_deletion_log = f"Deleting diagnostic setting {ds_name} within subscription {sub_id}"
-            if DRY_RUN:
-                log.info(f"{dry_run_of(ds_deletion_log)}")
-                continue
-
-            log.info(ds_deletion_log)
+    log.info(ds_deletion_log)
+    for resource_id, ds_names in resource_setting_map.items():
+        for ds_name in ds_names:
             az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
 
-def delete_resource_group(sub_id: str, resource_group_name: str):
-    rg_deletion_log = f"Deleting resource group {resource_group_name}"
-    if DRY_RUN:
-        log.info(dry_run_of(rg_deletion_log))
-        return
-    
-    log.info(rg_deletion_log)
-    az(f"group delete --subscription {sub_id} --name {resource_group_name} --yes")
+# ===== Resource Group Delete ===== #
+def delete_resource_group(sub_id: str, resource_group_list: list[str]):
+    for resource_group in resource_group_list:
+        rg_deletion_log = f"Deleting resource group {resource_group}"
+        if DRY_RUN:
+            log.info(dry_run_of(rg_deletion_log))
+            return
+        
+        log.info(rg_deletion_log)
+        az(f"group delete --subscription {sub_id} --name {resource_group} --yes")
 
 # ===== Dict Utility ===== #
 def firstKeyOf(d: dict[str,Any]) -> str:
@@ -304,17 +315,41 @@ def dict_newline_spaced(dict: dict) -> str:
     formatted = "\n".join(f"\t{key} | {value}" for key, value in items)
     return f"\n{formatted}\n"
 
-def uninstall_summary_for(sub_id_to_rgs: dict[str, list[str]], sub_id_to_name: dict[str,str]) -> str:
-    log = ""
-    for sub_id, rg_list in sub_id_to_rgs.items():
+def uninstall_summary(sub_to_rg_deletions: dict[str,list[str]], 
+                      sub_id_to_name: dict[str,str],
+                      role_assignment_deletions: dict[str, Iterable],
+                      resource_ds_map: dict[str, list[str]]) -> str:
+    deletionSummary = "The following role assignments, diagnostic settings, and resource groups will be deleted as part of the uninstallation process.\n"
+    
+    for sub_id, rg_list in sub_to_rg_deletions.items():
+        role_assignments = role_assignment_deletions[sub_id]
+        deletionSummary += f"=== From subscription {sub_id_to_name[sub_id]} ({sub_id}) === \n"
+        deletionSummary += "Role Assignments:\n"
+        deletionSummary += f"{indented_log_of(f"Role Assignment {role_assignment["id"]} ({role_assignment["roleDefinitionName"]} with principal {role_assignment["principalId"]})\n" for role_assignment in role_assignments)}"
+        deletionSummary += "Diagnostic Settings:\n"
+        
+        resource_list = resource_ds_map[sub_id]
+        num_ds = 0
+        for resource_id in resource_list:
+            ds_list = resource_ds_map[resource_id]
+            num_ds += len(ds_list)
+        
+        deletionSummary += f"{num_ds} diagnostic settings will be deleted from {len(resource_list)} resources\n"
+        
+        deletionSummary += "Resource Groups:\n"
         for rg in rg_list:
-            log += f"'{rg}' from subscription '{sub_id_to_name[sub_id]}' ({sub_id})\n"
-    return log
+            deletionSummary += f"Resource Group {rg}\n"
+    
+    return deletionSummary
 
 # ===== User Interaction =====  #
-def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], sub_id_to_name: dict[str,str]) -> bool:
-    confirm_log = f"The following resource groups will be deleted as part of the uninstall process:\n{uninstall_summary_for(sub_to_rg_deletions, sub_id_to_name)}" 
-    log.info(confirm_log)
+def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], 
+                      sub_id_to_name: dict[str,str],
+                      role_assignment_deletions: dict[str, Iterable],
+                      resource_ds_map: dict[str, list[str]]) -> bool:
+
+    summary = uninstall_summary(sub_to_rg_deletions, sub_id_to_name, role_assignment_deletions, resource_ds_map)
+    log.info(summary)
     
     choice = input("Continue? (y/n): ").lower().strip()
     while choice not in ["y", "n"]:
@@ -323,15 +358,22 @@ def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], sub_id_to_name: 
     return choice == 'y'
 
 def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[str]:
-    """Given list of resource groups, prompt the user to choose one to delete or all of them. Returns the list of resource groups selected"""
+    """Given list of resource groups, prompt the user to what to delete. Returns list of what was selected"""
     
-    chosen_rg = input("Copy/paste the resource group name you would like to remove. If you would like to uninstall everything, enter '*': ").strip().lower()
+    prompt = '''
+    Enter the resource group name you would like to remove
+    To remove all of them, enter *
+    To remove nothing, enter -
+    : '''
+    chosen_rg = input(prompt).strip().lower()
 
     while chosen_rg not in resource_groups_in_sub:
         if chosen_rg == "*":
             return resource_groups_in_sub
+        if chosen_rg == "-":
+            return []
 
-        chosen_rg = input("Please enter a valid resource group name from the list above or '*' to delete everything: ").strip().lower()        
+        chosen_rg = input("Please enter a valid resource group name from the list above, *, or - \n: ").strip().lower()        
 
     return [chosen_rg]
 
@@ -413,25 +455,40 @@ async def main():
     sub_id_to_rgs, rg_to_storage_account = find_lfo_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
-    if not sub_to_rg_deletions or sub_to_rg_deletions is None:
+    if not sub_to_rg_deletions or sub_to_rg_deletions is None or not any(sub_to_rg_deletions.values()):
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
-        SystemExit(0)
+        raise SystemExit(0)
     
-    confirmed = confirm_uninstall(sub_to_rg_deletions, sub_id_to_name)
+    control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_storage_account)    
+    role_assignment_deletions = defaultdict(Iterable) 
+    sub_diagnostic_setting_deletions = defaultdict(dict) 
+
+    for sub_id, rg_list in sub_to_rg_deletions.items():
+        sub_name = sub_id_to_name[sub_id]
+        role_assignment_json = find_role_assignments(sub_id, sub_name, control_plane_id_deletions)
+        if role_assignment_json:
+            role_assignment_deletions[sub_id] = role_assignment_json
+        
+        resource_ds_map = find_diagnostic_settings(sub_id, sub_name, control_plane_id_deletions)
+        if resource_ds_map:
+            sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
+        
+    if DRY_RUN:
+        return
+    
+    confirmed = confirm_uninstall(sub_to_rg_deletions, sub_id_to_name, role_assignment_deletions, resource_ds_map)
     if not confirmed:
         log.info("Exiting.")
-        SystemExit(0)
-
-    control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_storage_account)
+        raise SystemExit(0)
+    
+    for sub_id, role_assignment_deletions in role_assignment_deletions.items():
+        delete_role_assignments(sub_id, role_assignment_deletions)
+    
+    for sub_id, diagnostic_setting_deletions in sub_diagnostic_setting_deletions.items():
+        delete_diagnostic_settings(sub_id, diagnostic_setting_deletions)
     
     for sub_id, rg_list in sub_to_rg_deletions.items():
-        delete_role_assignments(sub_id, control_plane_id_deletions)
-        
-        resource_ids = list_resources(sub_id)
-        delete_diagnostic_settings(sub_id, resource_ids, control_plane_id_deletions)
-        
-        for resource_group in rg_list:
-            delete_resource_group(sub_id, resource_group)
+        delete_resource_group(sub_id, rg_list)
             
         
     log.info("Done!")
