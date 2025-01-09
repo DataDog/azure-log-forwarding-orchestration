@@ -26,7 +26,6 @@ from tasks.common import (
     SCALING_TASK_PREFIX,
     now,
 )
-from tasks.concurrency import collect
 from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
 from tasks.task import Task
 
@@ -75,9 +74,9 @@ class ResourcesTask(Task):
 
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
-            subscriptions = await collect(
+            subscriptions = [
                 cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
-            )
+            ]
 
         log.info("Found %s subscriptions", len(subscriptions))
 
