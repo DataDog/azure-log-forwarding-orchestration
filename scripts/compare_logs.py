@@ -219,8 +219,9 @@ def get_logs_from_storage_account(connection_string: str | None):
         raise Exception("No connection string found")
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container_client = blob_service_client.get_container_client(CONTAINER)
-    blob_list = container_client.list_blobs()
+    blob_iter = container_client.list_blobs()
     hours_ago = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES + 60)
+    blob_list = list(blob_iter)
     for blob in blob_list:
         # blob_client = container_client.get_blob_client(blob.name)
         if "loggya" not in blob.name.lower():
