@@ -23,6 +23,7 @@ from cache.common import (
     InvalidCacheError,
     LogForwarder,
     get_config_option,
+    parse_config_option,
     read_cache,
     write_cache,
 )
@@ -37,6 +38,7 @@ SCALING_TASK_NAME = "scaling_task"
 SCALING_METRIC_PERIOD_MINUTES = 5
 DELETION_METRIC_PERIOD_MINUTES = 15
 METRIC_COLLECTION_PERIOD_MINUTES = DELETION_METRIC_PERIOD_MINUTES  # longer of the two periods^
+DEFAULT_SCALING_PERCENTAGE = 0.8
 
 SCALE_UP_EXECUTION_SECONDS = 45
 SCALE_DOWN_EXECUTION_SECONDS = 3
@@ -45,14 +47,24 @@ log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
 
-def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
-    """Check if the runtime is consistently over the threshold"""
-    return bool(metrics and all(metric["runtime_seconds"] > threshold for metric in metrics))
+def is_consistently_over_threshold(metrics: list[MetricBlobEntry], threshold: float, percentage: float) -> bool:
+    """Check if the runtime is consistently over the threshold.
+    percentage is a float between 0 and 1, representing the percentage of metrics that need to exceed the threshold
+    """
+    if not metrics:
+        return False
+    exceeded_metrics = [metric for metric in metrics if metric["runtime_seconds"] > threshold]
+    return float(len(exceeded_metrics)) / len(metrics) > percentage
 
 
-def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float) -> bool:
-    """Check if the runtime is consistently under the threshold"""
-    return bool(metrics and all(metric["runtime_seconds"] < threshold for metric in metrics))
+def is_consistently_under_threshold(metrics: list[MetricBlobEntry], threshold: float, percentage: float) -> bool:
+    """Check if the runtime is consistently under the threshold
+    percentage is a float between 0 and 1, representing the percentage of metrics that need to be under the threshold
+    """
+    if not metrics:
+        return False
+    under_threshold_metrics = [metric for metric in metrics if metric["runtime_seconds"] < threshold]
+    return float(len(under_threshold_metrics)) / len(metrics) > percentage
 
 
 def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, None, None]:
@@ -106,6 +118,7 @@ class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
         self.resource_group = get_config_option("RESOURCE_GROUP")
+        self.scaling_percentage = parse_config_option("SCALING_PERCENTAGE", float, DEFAULT_SCALING_PERCENTAGE)
 
         self.background_tasks: set[AsyncTask[Any]] = set()
         self.now = datetime.now()
@@ -439,7 +452,7 @@ class ScalingTask(Task):
         forwarders_to_scale_up = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
-            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS)
+            if is_consistently_over_threshold(metrics, SCALE_UP_EXECUTION_SECONDS, self.scaling_percentage)
             and _has_enough_resources_to_scale_up(config_id)
         ]
 
@@ -530,7 +543,7 @@ class ScalingTask(Task):
             [
                 config_id
                 for config_id, metrics in scaling_forwarder_metrics.items()
-                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS)
+                if is_consistently_under_threshold(metrics, SCALE_DOWN_EXECUTION_SECONDS, self.scaling_percentage)
                 and num_resources_by_forwarder[config_id] > 0
             ]
         )
