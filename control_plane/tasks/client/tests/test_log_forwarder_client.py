@@ -205,7 +205,7 @@ class TestLogForwarderClient(AsyncTestCase):
             CONTAINER_APP_NAME,
             AzureModelMatcher(
                 {
-                    "location": rg1,
+                    "location": EAST_US,
                     "environment_id": "/subscriptions/decc348e-ca9e-4925-b351-ae56b0d9f811/resourcegroups/test_lfo/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-e90ecb54476d-eastus",
                     "configuration": {
                         "secrets": [
@@ -449,7 +449,7 @@ class TestLogForwarderClient(AsyncTestCase):
             res = await self.client.get_log_forwarder_managed_environment(NEW_ZEALAND_NORTH)
 
         self.assertEqual(
-            f"/subscriptions/{sub_id1}/resourcegroups/{rg1}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{control_plane_id}-{EAST_US}",
+            f"/subscriptions/{SUB_ID1}/resourcegroups/{RESOURCE_GROUP_NAME}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{CONTROL_PLANE_ID}-{EAST_US}",
             res,
         )
         self.client.container_apps_client.managed_environments.get.assert_not_called()
@@ -459,7 +459,7 @@ class TestLogForwarderClient(AsyncTestCase):
             res = await self.client.get_log_forwarder_managed_environment(EAST_US)
 
         self.assertEqual(
-            f"/subscriptions/{sub_id1}/resourcegroups/{rg1}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{control_plane_id}-{EAST_US}",
+            f"/subscriptions/{SUB_ID1}/resourcegroups/{RESOURCE_GROUP_NAME}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{CONTROL_PLANE_ID}-{EAST_US}",
             res,
         )
         self.client.container_apps_client.managed_environments.get.assert_not_called()

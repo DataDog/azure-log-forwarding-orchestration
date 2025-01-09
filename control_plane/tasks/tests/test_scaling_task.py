@@ -327,7 +327,7 @@ class TestScalingTask(TaskTestCase):
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     },
-                },
+                }
             },
         )
 
@@ -347,6 +347,59 @@ class TestScalingTask(TaskTestCase):
             }
         }
         self.assertEqual(self.cache, expected_cache)
+
+    async def test_container_app_env_in_control_plane_region_is_not_deleted_on_cleanup(self):
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    WEST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    },
+                    EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
+                },
+            },
+        )
+        self.client.delete_log_forwarder_env.assert_not_called()
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    WEST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                }
+            },
+        )
+
+    async def test_container_app_env_in_unsupported_region_is_not_deleted_on_cleanup(self):
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    WEST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    },
+                    EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
+                },
+            },
+        )
+
+        self.client.delete_log_forwarder_env.assert_not_called()
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    WEST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                }
+            },
+        )
 
     async def test_resource_task_deleted_resources_are_deleted(self):
         await self.run_scaling_task(
