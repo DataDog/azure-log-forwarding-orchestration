@@ -146,7 +146,7 @@ class ScalingTask(Task):
             if region_config.get("configurations")
         }
         regions_with_resources = set(self.resource_cache.get(subscription_id, {}).keys())
-        # regions with any forwarders/environments
+        # regions with any forwarders or environments
         provisioned_regions = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
 
         regions_to_add = regions_with_resources - regions_with_forwarders
