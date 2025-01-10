@@ -273,7 +273,7 @@ class TestScalingTask(TaskTestCase):
         self.assertEqual(self.cache, {SUB_ID1: {}})
 
     async def test_regions_added_and_deleted(self):
-        self.client.collect_forwarder_metrics.return_value = generate_metrics(2, {"resource1": 4000, "resource2": 6000})
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(runtime=2, resource_log_volume={})
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {WEST_US: {"resource3", "resource4"}}},
             assignment_cache_state={
@@ -287,6 +287,43 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+
+        expected_cache: AssignmentCache = {
+            SUB_ID1: {
+                WEST_US: {
+                    "resources": {"resource3": NEW_LOG_FORWARDER_ID, "resource4": NEW_LOG_FORWARDER_ID},
+                    "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                },
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                },
+            }
+        }
+        self.assertEqual(self.cache, expected_cache)
+
+    async def test_regions_to_be_cleaned_up_with_forwarder_metrics_arent_deleted(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            runtime=2, resource_log_volume={"resource1": 100}
+        )
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource3", "resource4"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    WEST_US: {
+                        "resources": {"resource3": NEW_LOG_FORWARDER_ID, "resource4": NEW_LOG_FORWARDER_ID},
+                        "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    },
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    },
+                },
+            },
+        )
+
+        self.client.create_log_forwarder.assert_not_called()
         self.client.delete_log_forwarder.assert_not_called()
 
         expected_cache: AssignmentCache = {

@@ -82,14 +82,13 @@ def resources_to_move_by_load(resource_loads: dict[str, int]) -> Generator[str, 
 
 def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: AssignmentCache) -> AssignmentCache:
     """Updates the assignment cache based on any deletions in the resource cache"""
+    assignment_cache = deepcopy(assignment_cache)
 
     def _prune_region_config(subscription_id: str, region: str) -> RegionAssignmentConfiguration:
         resources = resource_cache.get(subscription_id, {}).get(region, set())
-        current_region_config = deepcopy(
-            assignment_cache.get(subscription_id, {}).get(
-                region,
-                {"configurations": {}, "resources": {}},  # default empty region config
-            )
+        current_region_config = assignment_cache.get(subscription_id, {}).get(
+            region,
+            {"configurations": {}, "resources": {}},  # default empty region config
         )
         current_region_config["resources"] = {
             resource_id: config_id
@@ -104,11 +103,11 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
     }
 
     # add any regions that are in the assignment cache but not in the resource cache
-    for sub_id, region_resources in assignment_cache.items():
-        for region in region_resources:
+    for sub_id, region_configs in assignment_cache.items():
+        for region, config in region_configs.items():
             if region not in pruned_cache.get(sub_id, {}):
-                empty_config: RegionAssignmentConfiguration = {"configurations": {}, "resources": {}}
-                pruned_cache.setdefault(sub_id, {})[region] = empty_config
+                # clear just the resources, we still have forwarders to clean up
+                pruned_cache.setdefault(sub_id, {})[region] = {**config, "resources": {}}
 
     return pruned_cache
 
