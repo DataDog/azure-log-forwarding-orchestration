@@ -1,13 +1,12 @@
 # stdlib
-from asyncio import Task as AsyncTask
-from asyncio import create_task, gather, run, wait
-from collections.abc import Coroutine, Generator, Iterable
+from asyncio import gather, run
+from collections.abc import Generator, Iterable
 from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
 from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
-from typing import Any, cast
+from typing import cast
 
 # 3p
 from tenacity import retry, retry_if_result, stop_after_attempt
@@ -27,7 +26,7 @@ from cache.common import (
     read_cache,
     write_cache,
 )
-from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
+from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors, now
@@ -120,7 +119,6 @@ class ScalingTask(Task):
         self.resource_group = get_config_option("RESOURCE_GROUP")
         self.scaling_percentage = parse_config_option("SCALING_PERCENTAGE", float, DEFAULT_SCALING_PERCENTAGE)
 
-        self.background_tasks: set[AsyncTask[Any]] = set()
         self.now = datetime.now()
 
         # Resource Cache
@@ -136,16 +134,6 @@ class ScalingTask(Task):
             assignment_cache = {}
         self._assignment_cache_initial_state = assignment_cache
         self.assignment_cache = prune_assignment_cache(resource_cache, assignment_cache)
-
-    def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
-        def _done_callback(task: AsyncTask[Any]) -> None:
-            self.background_tasks.discard(task)
-            if e := task.exception():
-                log.error("Background task failed with an exception", exc_info=e)
-
-        task = create_task(coro)
-        self.background_tasks.add(task)
-        task.add_done_callback(_done_callback)
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
@@ -178,9 +166,6 @@ class ScalingTask(Task):
                 ),
             )
             await self.clean_up_orphaned_forwarders(client, subscription_id)
-
-            if self.background_tasks:
-                await wait(self.background_tasks)
 
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
@@ -386,31 +371,13 @@ class ScalingTask(Task):
         """Collects metrics for all forwarders in a region and returns them as a dictionary by config_id. Returns an empty dict on failure."""
         oldest_metric_timestamp = (self.now - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
         maybe_metrics = await gather(
-            *(
-                self.collect_forwarder_metrics(client, config_id, oldest_metric_timestamp)
-                for config_id in log_forwarders
-            ),
+            *(client.collect_forwarder_metrics(config_id, oldest_metric_timestamp) for config_id in log_forwarders),
             return_exceptions=True,
         )
         errors = log_errors("Failed to collect metrics for forwarders", *maybe_metrics, reraise=False)
         if errors:
             return {}
         return dict(zip(log_forwarders, cast(list[list[MetricBlobEntry]], maybe_metrics), strict=False))
-
-    async def collect_forwarder_metrics(
-        self, client: LogForwarderClient, config_id: str, oldest_valid_timestamp: float
-    ) -> list[MetricBlobEntry]:
-        """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
-        metric_lines = await client.get_blob_metrics_lines(config_id)
-        forwarder_metrics = [
-            metric_entry
-            for metric_line in metric_lines
-            if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
-        ]
-        if not forwarder_metrics:
-            log.warning("No valid metrics found for forwarder %s", config_id)
-        self.submit_background_task(client.submit_log_forwarder_metrics(config_id, forwarder_metrics))
-        return forwarder_metrics
 
     def onboard_new_resources(
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]

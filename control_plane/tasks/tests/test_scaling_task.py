@@ -1,12 +1,11 @@
 # stdlib
-from asyncio import sleep
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from json import dumps
 from os import environ
 from typing import Any
 from unittest import TestCase
-from unittest.mock import AsyncMock, Mock, call, patch
+from unittest.mock import ANY, call, patch
 
 # 3rd party
 from tenacity import RetryError
@@ -23,7 +22,6 @@ from cache.common import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache
-from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_METRIC_PERIOD_MINUTES,
@@ -53,6 +51,8 @@ def minutes_ago(minutes: float) -> float:
 def generate_metrics(
     runtime: float | Callable[[int], float], resource_log_volume: dict[str, int], *, offset_mins: float = 0.5
 ) -> list[MetricBlobEntry]:
+    """Generate a list of metric entries for a forwarder, starting at the offset
+    time in minutes, and going back for the full period expected by the scaling task"""
     return [
         {
             "runtime_seconds": runtime(i) if callable(runtime) else runtime,
@@ -66,8 +66,8 @@ def generate_metrics(
 
 def collect_metrics_side_effect(
     mapping: dict[str, list[MetricBlobEntry]],
-) -> Callable[[LogForwarderClient, str, float], list[MetricBlobEntry]]:
-    return lambda _c, config_id, _t: mapping.get(config_id, [])
+) -> Callable[[str, float], list[MetricBlobEntry]]:
+    return lambda config_id, _t: mapping.get(config_id, [])
 
 
 class TestScalingTask(TaskTestCase):
@@ -335,9 +335,8 @@ class TestScalingTask(TaskTestCase):
         )
 
     async def test_log_forwarder_metrics_collected(self):
-        self.client.get_blob_metrics_lines.return_value = list(
-            map(dumps, generate_metrics(100, {"resource1": 4, "resource2": 6}))
-        )
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(100, {"resource1": 4, "resource2": 6})
+
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -350,14 +349,13 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, ANY)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_log_forwarders_scale_up_when_underscaled(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(
+    async def test_log_forwarders_scale_up_when_underscaled(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
             lambda i: 49.045 - (i * 0.2), {"resource1": 4000, "resource2": 6000}
         )
 
@@ -389,8 +387,8 @@ class TestScalingTask(TaskTestCase):
         self.assertEqual(self.cache, expected_cache)
 
     async def test_log_forwarder_collected_with_old_metrics(self):
-        self.client.get_blob_metrics_lines.return_value = list(
-            map(dumps, generate_metrics(100, {"resource1": 4, "resource2": 6}, offset_mins=3))
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            100, {"resource1": 4, "resource2": 6}, offset_mins=3
         )
 
         await self.run_scaling_task(
@@ -405,14 +403,15 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, ANY)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_log_forwarders_dont_scale_when_under_threshold(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(22.2, {"resource1": 4000, "resource2": 6000})
+    async def test_log_forwarders_dont_scale_when_under_threshold(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            22.2, {"resource1": 4000, "resource2": 6000}
+        )
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -428,9 +427,10 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_called()
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_new_resources_onboarded_during_scaling(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(23, {"resource1": 4000, "resource2": 6000})
+    async def test_new_resources_onboarded_during_scaling(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            23, {"resource1": 4000, "resource2": 6000}
+        )
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
             assignment_cache_state={
@@ -460,9 +460,8 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_new_resources_onboard_to_the_least_busy_forwarder(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+    async def test_new_resources_onboard_to_the_least_busy_forwarder(self):
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource1": 4000, "resource2": 6000}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(10.5, {"resource1": 4000, "resource2": 6000}),
@@ -504,9 +503,8 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_deleted_resources_are_removed_before_scaling(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(
+    async def test_deleted_resources_are_removed_before_scaling(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
             4000, {"resource1": 10, "resource2": 10, "resource3": 3000, "resource4": 5000}
         )
         await self.run_scaling_task(
@@ -543,46 +541,8 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_old_log_forwarder_metrics_not_collected(self):
-        metrics = generate_metrics(
-            100, {"resource1": 4, "resource2": 6}, offset_mins=METRIC_COLLECTION_PERIOD_MINUTES + 1
-        )
-        self.client.get_blob_metrics_lines.return_value = list(map(dumps, metrics))
-        await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
-            assignment_cache_state={
-                SUB_ID1: {
-                    EAST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
-                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
-                    }
-                },
-            },
-        )
-
-        self.client.get_blob_metrics_lines.assert_called_once_with(OLD_LOG_FORWARDER_ID)
-        self.log.warning.assert_called_with("No valid metrics found for forwarders in region %s", EAST_US)
-
-    async def test_background_tasks_awaited(self):
-        m = Mock()
-
-        async def background_task():
-            await sleep(0.05)
-            m()
-
-        async with ScalingTask(dumps({SUB_ID1: {}}), dumps({SUB_ID1: {}})) as task:
-            for _ in range(3):
-                task.submit_background_task(background_task())
-            failing_task_error = Exception("test")
-            task.submit_background_task(AsyncMock(side_effect=failing_task_error)())
-            await task.run()
-
-        self.assertEqual(m.call_count, 3)
-        self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
-
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_scaling_up_based_on_resource_load_with_onboarding(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(
+    async def test_scaling_up_based_on_resource_load_with_onboarding(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
             lambda i: 55 + i, {"resource1": 1000, "resource2": 10000, "resource3": 3000, "resource4": 50}
         )
         await self.run_scaling_task(
@@ -627,9 +587,8 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_scaling_up_with_only_one_resource(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(58, {"resource1": 90000})
+    async def test_scaling_up_with_only_one_resource(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(58, {"resource1": 90000})
         initial_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -671,9 +630,8 @@ class TestScalingTask(TaskTestCase):
         )
         self.write_cache.assert_not_awaited()
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_no_resource_metrics_split_in_half(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(57, {})
+    async def test_no_resource_metrics_split_in_half(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(57, {})
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -705,9 +663,8 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_forwarder_without_resources_or_metrics_is_cleaned_up(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+    async def test_forwarder_without_resources_or_metrics_is_cleaned_up(self):
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(0.5, {}),
@@ -751,11 +708,8 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_forwarder_without_resources_but_with_metrics_is_not_cleaned_up(
-        self, collect_forwarder_metrics: AsyncMock
-    ):
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+    async def test_forwarder_without_resources_but_with_metrics_is_not_cleaned_up(self):
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(0.5, {"resource3": 100}),
@@ -781,10 +735,9 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_awaited()
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_two_phase_forwarder_cleanup(self, collect_forwarder_metrics: AsyncMock):
+    async def test_two_phase_forwarder_cleanup(self):
         # Phase 1: Move resources to new forwarder
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource2": 2000}),
@@ -828,7 +781,7 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.reset_mock()
 
         # Phase 2: Clean up the old forwarder
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 2000}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(0.5, {}),  # resource2 is moved over
@@ -850,9 +803,8 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_forwarders_are_not_deleted_with_old_metrics(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+    async def test_forwarders_are_not_deleted_with_old_metrics(self):
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(
@@ -882,9 +834,8 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_awaited()
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_forwarders_are_coalesced_not_deleted(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
+    async def test_forwarders_are_coalesced_not_deleted(self):
+        self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
                 NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource4": 4000}),
