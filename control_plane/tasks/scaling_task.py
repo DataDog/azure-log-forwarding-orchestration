@@ -140,19 +140,18 @@ class ScalingTask(Task):
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
-        previous_region_assignments = {
+        regions_with_forwarders = {
             region
             for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
             if region_config.get("configurations")
         }
-        # regions where resources exist
-        active_regions = set(self.resource_cache.get(subscription_id, {}).keys())
-        # regions where forwarders are provisioned
+        regions_with_resources = set(self.resource_cache.get(subscription_id, {}).keys())
+        # regions with any forwarders/environments
         provisioned_regions = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
 
-        regions_to_add = active_regions - previous_region_assignments
-        regions_to_remove = provisioned_regions - active_regions
-        regions_to_check_scaling = active_regions & previous_region_assignments
+        regions_to_add = regions_with_resources - regions_with_forwarders
+        regions_to_remove = provisioned_regions - regions_with_resources
+        regions_to_check_scaling = regions_with_resources & regions_with_forwarders
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             await gather(
                 *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),
