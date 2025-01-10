@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # stdlib
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
+from gzip import GzipFile
 import json
 import os
 from time import sleep, time
@@ -11,7 +13,7 @@ import requests
 # azure
 from azure.storage.blob import BlobServiceClient
 
-LOOKBACK_MINUTES = 5
+LOOKBACK_MINUTES = 120
 CONTAINER = "insights-logs-functionapplogs"
 
 START_TIME = datetime.now()
@@ -73,21 +75,35 @@ def get_start_time() -> datetime:
     raise Exception("No common start time found")
 
 
-def download_blob(blob_service_client: BlobServiceClient, blob_name: str) -> list:
+def download_blob(blob_service_client: BlobServiceClient, blob_name: str, container_name: str) -> tuple[dict[str, datetime], int]:
     blob_client = blob_service_client.get_blob_client(
-        container=CONTAINER, blob=blob_name
+        container=container_name, blob=blob_name
     )
     output = []
+    duplicates = 0
     # encoding param is necessary for readall() to return str, otherwise it returns bytes
     downloader = blob_client.download_blob(max_concurrency=1, encoding="UTF-8")
+    blob_ids = {}
     try:
-        content = downloader.readall()
+        if blob_name[len(blob_name) -2:] == "gz":
+            
+            stream = BytesIO()
+            downloader.readinto(stream)
+            if not stream.getvalue():
+                content = ""
+            else:
+                stream.seek(0)
+                decompressed_file = GzipFile(fileobj=stream, mode='rb')
+                content = decompressed_file.read().decode("utf-8")
+        else:
+            content = downloader.readall()
     except Exception as e:
         if "The condition specified using HTTP conditional" in str(e):
             print(f"Blob {blob_name} was being WEIRD")
-            return output
+            return blob_ids, duplicates
         print(f"Error downloading blob {blob_name}: {e}")
         raise e
+    print(f"Downloaded {len(content)} bytes from {blob_name}")
     for line in content.split("\n"):
         if line and len(line) < 31:
             continue
@@ -96,12 +112,18 @@ def download_blob(blob_service_client: BlobServiceClient, blob_name: str) -> lis
             not in line
         ):
             continue
-        date_time_obj = datetime.strptime(line[11:31], "%Y-%m-%dT%H:%M:%SZ")
+        if blob_name[len(blob_name) -2:] == "gz":
+            date_time_obj = datetime.strptime(line[9:33], '%Y-%m-%dT%H:%M:%S.%fZ')
+        else:
+            date_time_obj = datetime.strptime(line[11:31], "%Y-%m-%dT%H:%M:%SZ")
+        date_time_obj = date_time_obj.replace(tzinfo=timezone.utc)
         lorem_index = line.find("Lorem")
         curr_id = line[lorem_index - 37 : lorem_index - 1]
-        storage_id_map[curr_id] = date_time_obj
-        storage_ids.append(curr_id)
-    return output
+        if curr_id in blob_ids:
+            duplicates += 1
+        blob_ids[curr_id] = date_time_obj
+    return blob_ids, duplicates
+
 
 
 def submit_metric(metric_name: str, value: float | int):
@@ -214,26 +236,36 @@ def store_logs(logs: list, source: str):
         json.dump(logs, f)
 
 
-def get_logs_from_storage_account(connection_string: str | None):
+def get_logs_from_storage_account(connection_string: str | None, filter, container: str = CONTAINER) -> tuple[dict[str, datetime], int]:
     if not connection_string:
         raise Exception("No connection string found")
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-    container_client = blob_service_client.get_container_client(CONTAINER)
+    container_client = blob_service_client.get_container_client(container)
     blob_iter = container_client.list_blobs()
     hours_ago = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES + 60)
     blob_list = list(blob_iter)
+    log_ids = {}
+    duplicates = 0
     for blob in blob_list:
         # blob_client = container_client.get_blob_client(blob.name)
-        if "loggya" not in blob.name.lower():
+        # if "loggya" not in blob.name.lower():
+        if not filter(blob):
             continue
         if blob.creation_time < hours_ago:
             continue
-        download_blob(blob_service_client, blob.name)
+        blob_ids, blob_duplicates = download_blob(blob_service_client, blob.name, container)
+        duplicates += blob_duplicates
+        # possible to have duplicates across blobs
+        for blob_id in blob_ids:
+            if blob_id in log_ids:
+                duplicates += 1
+            log_ids[blob_id] = blob_ids[blob_id]
 
-    def id_sort(e):
-        return storage_id_map[e]
+    # def id_sort(e):
+    #     return storage_id_map[e]
 
-    storage_ids.sort(key=id_sort)
+    # storage_ids.sort(key=id_sort)
+    return log_ids, duplicates
 
 
 def truncate_list(data: list, start: datetime, end: datetime) -> list:
@@ -245,8 +277,8 @@ def truncate_list(data: list, start: datetime, end: datetime) -> list:
             and storage_id_map[item] < end
         ):
             truncated_data.append(item)
-        elif not storage_id_map.get(item):
-            print(f"Could not find timestamp for {item}")
+        # elif not storage_id_map.get(item):
+        #     print(f"Could not find timestamp for {item}")
     return truncated_data
 
 
@@ -255,53 +287,85 @@ native_query = '"loggya" forwarder:native'
 event_hub_query = '"loggya" forwarder:eventhub'
 
 connection_string = os.environ.get("AzureWebJobsStorage")
-end = datetime.now(timezone.utc) - timedelta(minutes=60)
-endtime = get_dd_time(end)
-starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
 
-get_logs_from_storage_account(connection_string)
-if not storage_ids:
-    raise Exception("No logs found in storage account")
 
-native_logs = get_logs(query=native_query, from_time=starttime, to_time=endtime)
-# store_logs(native_logs, "native")
-native_ids = get_uuids(native_logs)
+archives_connection_string = os.environ.get("LOG_ARCHIVING")
 
-event_hub_logs = get_logs(query=event_hub_query, from_time=starttime, to_time=endtime)
-# store_logs(event_hub_logs, "event_hub")
-event_hub_ids = get_uuids(event_hub_logs)
-
-lfo_logs = get_logs(query=lfo_query, from_time=starttime, to_time=endtime)
-# store_logs(lfo_logs, "lfo")
-lfo_ids = get_uuids(lfo_logs)
-
-start = get_start_time()
-print(f"Start id: {start}, end id: {end}")
-native_truncated = truncate_list(native_ids, start, end)
-lfo_truncated = truncate_list(lfo_ids, start, end)
-event_hub_truncated = truncate_list(event_hub_ids, start, end)
-storage_truncated = truncate_list(storage_ids, start, end)
-
-print(f"Storage truncated: {len(storage_truncated)}")
-
-missing_native_ids = [item for item in storage_truncated if item not in native_ids]
-missing_lfo_ids = [item for item in storage_truncated if item not in lfo_ids]
-missing_event_hub_ids = [
-    item for item in storage_truncated if item not in event_hub_ids
-]
-
-submit_metric(
-    "azure.log.forwarding.native.missing",
-    (len(missing_native_ids) * 1.0 / len(storage_truncated)),
-)
-submit_metric(
-    "azure.log.forwarding.lfo.missing",
-    (len(missing_lfo_ids) * 1.0 / len(storage_truncated)),
-)
-if event_hub_ids:
+def run():
+    end = datetime.now(timezone.utc) - timedelta(minutes=60)
+    endtime = get_dd_time(end)
+    starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
+    storage_id_map, storage_duplicates = get_logs_from_storage_account(connection_string, lambda blob: "loggya" in blob.name.lower())
+    storage_ids = list(storage_id_map.keys())
+    storage_ids.sort(key=lambda e: storage_id_map[e])
+    if not storage_ids:
+        raise Exception("No logs found in storage account")
+    
+    print(f"Duplicate storage ids: {storage_duplicates}")
     submit_metric(
-        "azure.log.forwarding.event_hub.missing",
-        (len(missing_event_hub_ids) * 1.0 / len(storage_truncated)),
+        "azure.log.forwarding.native.duplicate",
+        storage_duplicates,
     )
-breakpoint()
-print(f"Missing native ids: {len(missing_native_ids)}")
+
+    # native_logs = get_logs(query=native_query, from_time=starttime, to_time=endtime)
+    # store_logs(native_logs, "native")
+    # native_ids = get_uuids(native_logs)
+    native_id_map, native_duplicates = get_logs_from_storage_account(archives_connection_string, lambda blob: True, container="native")
+    native_ids = list(native_id_map.keys())
+    native_ids.sort(key=lambda e: native_id_map[e])
+
+    print(f"Duplicate liftr ids: {native_duplicates}")
+    submit_metric(
+        "azure.log.forwarding.native.duplicate",
+        native_duplicates,
+    )
+
+    # event_hub_logs = get_logs(query=event_hub_query, from_time=starttime, to_time=endtime)
+    # store_logs(event_hub_logs, "event_hub")
+    # event_hub_ids = get_uuids(event_hub_logs)
+
+    # lfo_logs = get_logs(query=lfo_query, from_time=starttime, to_time=endtime)
+    # store_logs(lfo_logs, "lfo")
+    # lfo_ids = get_uuids(lfo_logs)
+    lfo_id_map, lfo_duplicates = get_logs_from_storage_account(archives_connection_string, lambda blob: True, container="lfo")
+    lfo_ids = list(lfo_id_map.keys())
+    lfo_ids.sort(key=lambda e: lfo_id_map[e])
+
+    print(f"Duplicate LFO ids: {lfo_duplicates}")
+    submit_metric(
+        "azure.log.forwarding.lfo.duplicate",
+        lfo_duplicates,
+    )
+
+    start = get_start_time()
+    print(f"Start time: {start}, end time: {end}")
+    native_truncated = truncate_list(native_ids, start, end)
+    lfo_truncated = truncate_list(lfo_ids, start, end)
+    event_hub_truncated = truncate_list(event_hub_ids, start, end)
+    storage_truncated = truncate_list(storage_ids, start, end)
+
+    print(f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(event_hub_truncated)}")
+
+    missing_lfo_ids = [item for item in storage_truncated if item not in lfo_ids]
+    print(f"Missing LFO ids: {len(missing_lfo_ids)}")
+    submit_metric(
+        "azure.log.forwarding.lfo.missing",
+        (len(missing_lfo_ids) * 1.0 / len(storage_truncated)),
+    )
+
+    missing_native_ids = [item for item in storage_truncated if item not in native_ids]
+    print(f"Missing native ids: {len(missing_native_ids)}")
+
+    submit_metric(
+        "azure.log.forwarding.native.missing",
+        (len(missing_native_ids) * 1.0 / len(storage_truncated)),
+    )
+
+while True:
+    print(f"Starting at {datetime.now()}")
+    try:
+        run()
+    except Exception as e:
+        print(f"Error: {e}")
+    print(f"Done at {datetime.now()}")
+    sleep(60)
