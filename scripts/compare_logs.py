@@ -75,7 +75,9 @@ def get_start_time() -> datetime:
     raise Exception("No common start time found")
 
 
-def download_blob(blob_service_client: BlobServiceClient, blob_name: str, container_name: str) -> tuple[dict[str, datetime], int]:
+def download_blob(
+    blob_service_client: BlobServiceClient, blob_name: str, container_name: str
+) -> tuple[dict[str, datetime], int]:
     blob_client = blob_service_client.get_blob_client(
         container=container_name, blob=blob_name
     )
@@ -85,15 +87,14 @@ def download_blob(blob_service_client: BlobServiceClient, blob_name: str, contai
     downloader = blob_client.download_blob(max_concurrency=1, encoding="UTF-8")
     blob_ids = {}
     try:
-        if blob_name[len(blob_name) -2:] == "gz":
-            
+        if blob_name[len(blob_name) - 2 :] == "gz":
             stream = BytesIO()
             downloader.readinto(stream)
             if not stream.getvalue():
                 content = ""
             else:
                 stream.seek(0)
-                decompressed_file = GzipFile(fileobj=stream, mode='rb')
+                decompressed_file = GzipFile(fileobj=stream, mode="rb")
                 content = decompressed_file.read().decode("utf-8")
         else:
             content = downloader.readall()
@@ -112,8 +113,8 @@ def download_blob(blob_service_client: BlobServiceClient, blob_name: str, contai
             not in line
         ):
             continue
-        if blob_name[len(blob_name) -2:] == "gz":
-            date_time_obj = datetime.strptime(line[9:33], '%Y-%m-%dT%H:%M:%S.%fZ')
+        if blob_name[len(blob_name) - 2 :] == "gz":
+            date_time_obj = datetime.strptime(line[9:33], "%Y-%m-%dT%H:%M:%S.%fZ")
         else:
             date_time_obj = datetime.strptime(line[11:31], "%Y-%m-%dT%H:%M:%SZ")
         date_time_obj = date_time_obj.replace(tzinfo=timezone.utc)
@@ -123,7 +124,6 @@ def download_blob(blob_service_client: BlobServiceClient, blob_name: str, contai
             duplicates += 1
         blob_ids[curr_id] = date_time_obj
     return blob_ids, duplicates
-
 
 
 def submit_metric(metric_name: str, value: float | int):
@@ -236,7 +236,9 @@ def store_logs(logs: list, source: str):
         json.dump(logs, f)
 
 
-def get_logs_from_storage_account(connection_string: str | None, filter, container: str = CONTAINER) -> tuple[dict[str, datetime], int]:
+def get_logs_from_storage_account(
+    connection_string: str | None, filter, container: str = CONTAINER
+) -> tuple[dict[str, datetime], int]:
     if not connection_string:
         raise Exception("No connection string found")
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -253,7 +255,9 @@ def get_logs_from_storage_account(connection_string: str | None, filter, contain
             continue
         if blob.creation_time < hours_ago:
             continue
-        blob_ids, blob_duplicates = download_blob(blob_service_client, blob.name, container)
+        blob_ids, blob_duplicates = download_blob(
+            blob_service_client, blob.name, container
+        )
         duplicates += blob_duplicates
         # possible to have duplicates across blobs
         for blob_id in blob_ids:
@@ -291,26 +295,31 @@ connection_string = os.environ.get("AzureWebJobsStorage")
 
 archives_connection_string = os.environ.get("LOG_ARCHIVING")
 
+
 def run():
     end = datetime.now(timezone.utc) - timedelta(minutes=60)
     endtime = get_dd_time(end)
     starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
-    storage_id_map, storage_duplicates = get_logs_from_storage_account(connection_string, lambda blob: "loggya" in blob.name.lower())
+    storage_id_map, storage_duplicates = get_logs_from_storage_account(
+        connection_string, lambda blob: "loggya" in blob.name.lower()
+    )
     storage_ids = list(storage_id_map.keys())
     storage_ids.sort(key=lambda e: storage_id_map[e])
     if not storage_ids:
         raise Exception("No logs found in storage account")
-    
+
     print(f"Duplicate storage ids: {storage_duplicates}")
     submit_metric(
-        "azure.log.forwarding.native.duplicate",
+        "azure.log.forwarding.storage.duplicate",
         storage_duplicates,
     )
 
     # native_logs = get_logs(query=native_query, from_time=starttime, to_time=endtime)
     # store_logs(native_logs, "native")
     # native_ids = get_uuids(native_logs)
-    native_id_map, native_duplicates = get_logs_from_storage_account(archives_connection_string, lambda blob: True, container="native")
+    native_id_map, native_duplicates = get_logs_from_storage_account(
+        archives_connection_string, lambda blob: True, container="native"
+    )
     native_ids = list(native_id_map.keys())
     native_ids.sort(key=lambda e: native_id_map[e])
 
@@ -327,7 +336,9 @@ def run():
     # lfo_logs = get_logs(query=lfo_query, from_time=starttime, to_time=endtime)
     # store_logs(lfo_logs, "lfo")
     # lfo_ids = get_uuids(lfo_logs)
-    lfo_id_map, lfo_duplicates = get_logs_from_storage_account(archives_connection_string, lambda blob: True, container="lfo")
+    lfo_id_map, lfo_duplicates = get_logs_from_storage_account(
+        archives_connection_string, lambda blob: True, container="lfo"
+    )
     lfo_ids = list(lfo_id_map.keys())
     lfo_ids.sort(key=lambda e: lfo_id_map[e])
 
@@ -344,7 +355,9 @@ def run():
     event_hub_truncated = truncate_list(event_hub_ids, start, end)
     storage_truncated = truncate_list(storage_ids, start, end)
 
-    print(f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(event_hub_truncated)}")
+    print(
+        f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(event_hub_truncated)}"
+    )
 
     missing_lfo_ids = [item for item in storage_truncated if item not in lfo_ids]
     print(f"Missing LFO ids: {len(missing_lfo_ids)}")
@@ -360,6 +373,7 @@ def run():
         "azure.log.forwarding.native.missing",
         (len(missing_native_ids) * 1.0 / len(storage_truncated)),
     )
+
 
 while True:
     print(f"Starting at {datetime.now()}")
