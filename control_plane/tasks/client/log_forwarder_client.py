@@ -1,12 +1,13 @@
 # stdlib
-from asyncio import Lock, create_task, gather
-from collections.abc import Awaitable, Callable, Iterable
+from asyncio import Lock, create_task, gather, wait
+from asyncio import Task as AsyncTask
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Self, TypeAlias, TypeVar, cast
+from typing import Any, Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -63,7 +64,7 @@ from cache.common import (
     LogForwarderType,
     get_config_option,
 )
-from cache.metric_blob_cache import MetricBlobEntry
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
@@ -138,6 +139,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
+        self._background_tasks: set[AsyncTask[Any]] = set()
 
     async def __aenter__(self) -> Self:
         await gather(
@@ -150,11 +152,23 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
+        if self._background_tasks:
+            await wait(self._background_tasks)
         await gather(
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
+
+    def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
+        def _done_callback(task: AsyncTask[Any]) -> None:
+            self._background_tasks.discard(task)
+            if e := task.exception():
+                log.error("Background task failed with an exception", exc_info=e)
+
+        task = create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(_done_callback)
 
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
@@ -396,6 +410,19 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if raise_error:
                 raise
             return False
+
+    async def collect_forwarder_metrics(self, config_id: str, oldest_valid_timestamp: float) -> list[MetricBlobEntry]:
+        """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
+        metric_lines = await self.get_blob_metrics_lines(config_id)
+        forwarder_metrics = [
+            metric_entry
+            for metric_line in metric_lines
+            if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
+        ]
+        if not forwarder_metrics:
+            log.warning("No valid metrics found for forwarder %s", config_id)
+        self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+        return forwarder_metrics
 
     async def get_blob_metrics_lines(self, config_id: str) -> list[str]:
         """
