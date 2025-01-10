@@ -154,7 +154,8 @@ ALLOWED_RESOURCE_TYPES: Final = frozenset(
 )
 
 # Azure Product Region Availability
-# https://azure.microsoft.com/en-us/explore/global-infrastructure/products-by-region/table
+# Overview: https://azure.microsoft.com/en-us/explore/global-infrastructure/products-by-region/table
+# To ensure an up to date list, attempt to create the resources in a region which does not exist, and check the error message
 
 ALLOWED_STORAGE_ACCOUNT_REGIONS: Final = frozenset(
     {
