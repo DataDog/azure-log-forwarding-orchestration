@@ -215,23 +215,27 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         + f"--parameters storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
         cwd=lfo_dir,
     )
-
-
-# execute deployer
-print("Waiting for deployer to be ready..", end="")
-while True:
-    print(".", end="", flush=True)
-    jobs_json = run(
-        f"az containerapp job list --resource-group {resource_group_name} --output json"
+else:
+    # execute deployer
+    jobs = loads(
+        run(
+            f"az containerapp job list --resource-group {resource_group_name} --output json"
+        )
     )
-    if not jobs_json or not (jobs := loads(jobs_json)):
-        sleep(5)
-        continue
-    for job in jobs:
-        if "deployer-task" in job.get("name"):
-            print(f"\nDeployer Ready, Executing deployer for job {job.get('name')}...")
-            run(
-                f"az containerapp job start --resource-group {resource_group_name} --name {job.get('name')}",
-            )
-            print(f"Deployer executed for job {job.get('name')}")
-            raise SystemExit(0)
+    if not jobs or not (
+        deployer_job := next(
+            (job.get("name") for job in jobs if "deployer-task" in job.get("name")),
+            None,
+        )
+    ):
+        print(
+            "Deployer not found, try re-running the script with `--force-arm-deploy` to ensure all resources are created"
+        )
+        raise SystemExit(1)
+
+    run(
+        f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}"
+    )
+    print(
+        f"Deployer job {deployer_job} executed! In a minute or two, all tasks will be redeployed."
+    )
