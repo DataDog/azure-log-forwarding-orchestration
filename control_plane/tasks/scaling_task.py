@@ -146,15 +146,11 @@ class ScalingTask(Task):
             for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
             if region_config.get("configurations")
         }
-
         current_regions = set(self.resource_cache.get(subscription_id, {}).keys())
-        empty_regions = {
-            region
-            for region, region_config in self._assignment_cache_initial_state.get(subscription_id, {}).items()
-            if not region_config.get("configurations")
-        }
+        existing_regions = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
+
         regions_to_add = current_regions - previous_region_assignments
-        regions_to_remove = (previous_region_assignments | empty_regions) - current_regions
+        regions_to_remove = existing_regions - current_regions
         regions_to_check_scaling = current_regions & previous_region_assignments
         async with LogForwarderClient(self.credential, subscription_id, self.resource_group) as client:
             await gather(
@@ -230,7 +226,8 @@ class ScalingTask(Task):
         region: str,
     ) -> None:
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
-        if not self._assignment_cache_initial_state.get(subscription_id, {}).get(region, {}).get("configurations"):
+        forwarders = self._assignment_cache_initial_state[subscription_id][region]["configurations"]
+        if not forwarders:
             log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
             await client.delete_log_forwarder_env(region, raise_error=False)
 
@@ -239,21 +236,28 @@ class ScalingTask(Task):
             await self.write_caches()
             return
 
+        # not needed, but useful to indicate all resources are gone
+        self.assignment_cache[subscription_id][region]["resources"].clear()
+
+        forwarder_metrics = await self.collect_region_forwarder_metrics(client, forwarders)
+        forwarders_to_delete = [
+            forwarder
+            for forwarder, metrics in forwarder_metrics.items()
+            if not any(m["resource_log_volume"] for m in metrics)
+        ]
+        if not forwarders_to_delete:
+            log.info("Attempted to delete region %s but all forwarders are still receiving logs", region)
+            return
+
         log.info("Deleting log forwarders for subscription %s in region %s", subscription_id, region)
         maybe_errors = await gather(
             *(
-                client.delete_log_forwarder(forwarder_id)
-                for forwarder_id in self._assignment_cache_initial_state[subscription_id][region]["configurations"]
+                self.delete_log_forwarder(client, self.assignment_cache[subscription_id][region], forwarder_id)
+                for forwarder_id in forwarders_to_delete
             ),
             return_exceptions=True,
         )
         log_errors("Failed to delete region", *maybe_errors)
-
-        # clear configuration and resource assignments for the region
-        self.assignment_cache.setdefault(subscription_id, {})[region] = {
-            "configurations": {},
-            "resources": {},
-        }
         await self.write_caches()
 
     async def maintain_existing_region(self, client: LogForwarderClient, subscription_id: str, region: str) -> None:

@@ -272,9 +272,8 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
         self.assertEqual(self.cache, {SUB_ID1: {}})
 
-    @patch.object(ScalingTask, "collect_forwarder_metrics", new_callable=AsyncMock)
-    async def test_regions_added_and_deleted(self, collect_forwarder_metrics: AsyncMock):
-        collect_forwarder_metrics.return_value = generate_metrics(2, {"resource1": 4000, "resource2": 6000})
+    async def test_regions_added_and_deleted(self):
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(2, {"resource1": 4000, "resource2": 6000})
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {WEST_US: {"resource3", "resource4"}}},
             assignment_cache_state={
