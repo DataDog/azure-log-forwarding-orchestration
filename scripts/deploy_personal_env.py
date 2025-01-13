@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # stdlib
 from hashlib import md5
-from json import loads
+from json import dumps, loads
 from os import environ
 from re import sub
 from subprocess import PIPE, Popen
@@ -44,9 +44,11 @@ def get_name(name: str, max_length: int) -> str:
     return name.lower()
 
 
-def run(cmd: str, **kwargs: Any) -> str:
+def run(cmd: str | list[str], **kwargs: Any) -> str:
     """Runs the command and returns the stdout, stripping any newlines"""
-    output = Popen(cmd.split(), stdout=PIPE, text=True, **kwargs)
+    if isinstance(cmd, str):
+        cmd = cmd.split()
+    output = Popen(cmd, stdout=PIPE, text=True, **kwargs)
     output.wait()
     if not output.stdout:
         return ""
@@ -130,10 +132,7 @@ if not container_client.exists():
 
 # check if ACR exists
 container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
-acr_list = run(
-    f"az acr list --resource-group {resource_group_name} --output json",
-    cwd=lfo_dir,
-)
+acr_list = run(f"az acr list --resource-group {resource_group_name} --output json", cwd=lfo_dir)
 
 # if ACR does not exist, create it
 if not acr_list or container_registry_name not in acr_list:
@@ -187,17 +186,26 @@ if initial_deploy or FORCE_ARM_DEPLOY:
     print(f"Deploying LFO to {resource_group_name}...")
     app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
+    params = {
+        "monitoredSubscriptions": dumps([subscription_id]),
+        "controlPlaneLocation": LOCATION,
+        "controlPlaneSubscriptionId": subscription_id,
+        "controlPlaneResourceGroupName": resource_group_name,
+        "datadogApplicationKey": app_key,
+        "datadogApiKey": api_key,
+        "datadogSite": "datadoghq.com",
+        "imageRegistry": f"{container_registry_name}.azurecr.io",
+        "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
+    }
     run(
-        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION} "
-        + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
-        + f'--parameters monitoredSubscriptions=["{subscription_id}"] '
-        + f"--parameters controlPlaneLocation={LOCATION} "
-        + f"--parameters controlPlaneSubscriptionId={subscription_id} "
-        + f"--parameters controlPlaneResourceGroupName={resource_group_name} "
-        + f"--parameters datadogApplicationKey={app_key} "
-        + f"--parameters datadogApiKey={api_key} --parameters datadogSite=datadoghq.com "
-        + f"--parameters imageRegistry={container_registry_name}.azurecr.io "
-        + f"--parameters storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
+        [
+            *("az", "deployment", "mg", "create"),
+            *("--management-group-id", "Azure-Integrations-Mg"),
+            *("--location", LOCATION),
+            *("--name", resource_group_name),
+            *("--template-file", "./deploy/azuredeploy.bicep"),
+            *(paramPart for k, v in params.items() for paramPart in ("--parameters", f"{k}={v}")),
+        ],
         cwd=lfo_dir,
     )
 else:
