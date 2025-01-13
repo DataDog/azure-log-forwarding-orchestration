@@ -17,14 +17,14 @@ ci-build-image:
   rules:
     - when: manual
       allow_failure: true
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - ci/scripts/control_plane/test.sh
   artifacts:
@@ -33,31 +33,31 @@ control-plane-tests:
 control-plane-test-dependencies:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - ci/scripts/control_plane/test-dependencies.sh
 control-plane-formatting:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - ci/scripts/control_plane/format.sh
 control-plane-lint:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - ci/scripts/control_plane/lint.sh
 control-plane-type-check:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - ci/scripts/control_plane/type-check.sh
 build-tasks:
   image: $CI_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   only:
     refs:
       - main
@@ -71,7 +71,7 @@ build-tasks:
 publish-tasks:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -84,7 +84,7 @@ publish-tasks:
 publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   only:
     refs:
       - main
@@ -98,18 +98,18 @@ publish-tasks-qa:
 arm-template-publish-qa:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   only:
     refs:
       - main
-  script: 
+  script:
     - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
     - ./scripts/arm-template/gen-template.sh
     - ./ci/scripts/arm-template/upload-qa-env.sh
 arm-template-publish:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -124,7 +124,7 @@ deployer-build-qa:
   only:
     refs:
       - main
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - docker buildx build --platform=linux/amd64 --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
@@ -134,7 +134,7 @@ deployer-build-tagged:
   only:
     refs:
       - main
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - docker buildx build --platform=linux/amd64 --tag $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-publish:
@@ -151,13 +151,26 @@ deployer-publish:
   variables:
     IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-    IMG_SIGNING: "false"
+    IMG_SIGNING: 'false'
     IMG_REGISTRIES: public-azure
+# -------------  SCRIPTS  -------------
+scripts-format:
+  image: $CI_IMAGE
+  stage: test
+  tags: ['arch:amd64']
+  script:
+    - /venv/bin/ruff format --check ./scripts --config ./control_plane/pyproject.toml
+scripts-lint:
+  image: $CI_IMAGE
+  stage: test
+  tags: ['arch:amd64']
+  script:
+    - /venv/bin/ruff check ./scripts --config ./control_plane/pyproject.toml
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
@@ -166,7 +179,7 @@ forwarder-tests:
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   only:
     refs:
       - main
@@ -175,7 +188,7 @@ forwarder-build-tagged:
 forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   only:
     refs:
       - main
@@ -196,12 +209,12 @@ forwarder-publish:
   variables:
     IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-    IMG_SIGNING: "false"
+    IMG_SIGNING: 'false'
     IMG_REGISTRIES: public-azure
 forwarder-tidy:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - cd forwarder
     - go mod tidy
@@ -209,14 +222,14 @@ forwarder-tidy:
 forwarder-vet:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - cd forwarder
     - go vet ./...
 forwarder-format:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   script:
     - cd forwarder
     - go fmt ./...
@@ -225,7 +238,7 @@ forwarder-format:
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   rules:
     - if: $CI_COMMIT_BRANCH != "main"
       allow_failure: true
@@ -238,7 +251,7 @@ coverage-comment:
 deploy-qa-env:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: ['arch:amd64']
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
