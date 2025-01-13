@@ -11,9 +11,10 @@ repos:
     hooks:
       # Run the linter.
       - id: ruff
-        args: [--fix]
+        args: ['--fix', '--config', './control_plane/pyproject.toml']
       # Run the formatter.
       - id: ruff-format
+        args: ['--config', './control_plane/pyproject.toml']
   - repo: https://github.com/google/yamlfmt
     rev: v0.13.0
     hooks:

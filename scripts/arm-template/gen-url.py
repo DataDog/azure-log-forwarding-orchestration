@@ -1,10 +1,10 @@
 #!/usr/bin/env python3.11
 """Adapted from: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/secure-template-with-sas-token?tabs=azure-cli#provide-sas-token-during-deployment"""
 
-from urllib.parse import quote
-from os.path import isfile, join
 from os import environ
+from os.path import isfile, join
 from subprocess import run
+from urllib.parse import quote
 
 
 def get_connection_string(account: str, rg: str) -> str:
@@ -51,11 +51,7 @@ dotenv_path = join(
 # generate tokens
 if isfile(dotenv_path):
     with open(dotenv_path) as f:
-        dotenv = {
-            parts[0].strip(): parts[1].strip("\"' \t\n")
-            for line in f
-            if len((parts := line.split("=", 1))) == 2
-        }
+        dotenv = {parts[0].strip(): parts[1].strip("\"' \t\n") for line in f if len(parts := line.split("=", 1)) == 2}
 else:
     dotenv = {}
 
@@ -64,9 +60,7 @@ if not all(key in dotenv for key in ("deploy_token", "ui_token", "account", "rg"
     if "account" not in dotenv:
         dotenv["account"] = input("What is the storage account name?: ")
     if "rg" not in dotenv:
-        dotenv["rg"] = input(
-            "What is the resource group name for the storage account?: "
-        )
+        dotenv["rg"] = input("What is the resource group name for the storage account?: ")
 
     if "deploy_token" not in dotenv or "ui_token" not in dotenv:
         duration = input("How long should the tokens be valid? [1 week]: ") or "1 week"
