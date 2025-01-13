@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 # Remove DataDog Log Forwarding Orchestration from an Azure environment
-# Last updated: Jan 2025
 
-from asyncio import run
-from collections import defaultdict
-from logging import INFO, WARNING, basicConfig, getLogger
-from typing import Any, Iterable, Final
 import argparse
 import json
 import subprocess
+from collections import defaultdict
+from collections.abc import Iterable
+from logging import INFO, WARNING, basicConfig, getLogger
+from typing import Any, Final
 
 getLogger("azure").setLevel(WARNING)
 log = getLogger("uninstaller")
@@ -178,18 +177,8 @@ def first_key_of(d: dict[str, Any]) -> str:
     return next(iter(d))
 
 
-def newline_spaced(dict: dict) -> str:
-    items = dict.items()
-    formatted = "\n".join(f"\t{key} | {value}" for key, value in items)
-    return f"\n{formatted}\n"
-
-
 def space_separated(iter: Iterable) -> str:
     return " ".join(iter)
-
-
-def comma_separated_quoted(iter: Iterable) -> str:
-    return ", ".join(f'"{i}"' for i in iter)
 
 
 def indented_log_of(iter: Iterable) -> str:
@@ -231,13 +220,14 @@ def role_assignment_summary(role_assignments: list[Any]) -> str:
 
 
 def diagnostic_setting_summary(resource_ds_map: dict[str, list[str]]) -> str:
-    ds_set = set()
+    ds_resource_count = defaultdict(int)
     for _, ds_list in resource_ds_map.items():
-        ds_set.update(ds_list)
+        for ds_name in ds_list:
+            ds_resource_count[ds_name] += 1
 
-    summary = f"\tDiagnostic Settings: {'None' if not ds_set else ''}\n"
-    for ds in ds_set:
-        summary += f"\t\t- {ds}\n"
+    summary = f"\tDiagnostic Settings: {'None' if not ds_resource_count else ''}\n"
+    for ds_name, resource_count in ds_resource_count.items():
+        summary += f"\t\t- {ds_name} for {resource_count} resources\n"
 
     return summary
 
@@ -284,8 +274,7 @@ def az(cmd: str) -> str:
         return result.stdout
     except subprocess.CalledProcessError as e:
         print(f"Error running Azure CLI command:\n{e.stderr}")
-        SystemExit(1)
-        return ""
+        raise SystemExit(1) from e
 
 
 def list_users_subscriptions() -> dict:
@@ -324,11 +313,11 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
 def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """
     Queries for all LFO control planes that the user has access to.
-    Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to storage account mapping
+    Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to control plane ID mapping
     """
 
     sub_to_rg = defaultdict(list)
-    rg_to_storage = defaultdict(list)
+    rg_to_lfo_id = defaultdict(list)
 
     for sub_id, sub_name in sub_id_to_name.items():
         control_planes = find_sub_control_planes(sub_id, sub_name)
@@ -337,9 +326,11 @@ def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str, list[str]],
 
         for resource_group_name, storage_account_name in control_planes.items():
             sub_to_rg[sub_id].append(resource_group_name)
-            rg_to_storage[resource_group_name].append(storage_account_name)
+            rg_to_lfo_id[resource_group_name].append(
+                storage_account_name.removeprefix(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX)
+            )
 
-    return sub_to_rg, rg_to_storage
+    return sub_to_rg, rg_to_lfo_id
 
 
 def find_role_assignments(sub_id: str, control_plane_ids: set) -> list[dict[str, str]]:
@@ -402,7 +393,7 @@ def find_diagnostic_settings(sub_id: str, control_plane_ids: set) -> dict[str, l
             resource_ds_map[resource_id].append(ds_name)
             ds_count += 1
 
-    log.info(f"Found {ds_count} diagnostic settings to remove across {resource_count} resources")
+    log.info(f"Found {ds_count} diagnostic settings to remove (searched through {resource_count} resources)")
     return resource_ds_map
 
 
@@ -445,7 +436,7 @@ def confirm_uninstall(
     )
     log.warning(summary)
 
-    choice = ""
+    choice = input("Continue? (y/n): ").lower().strip()
     while choice not in ["y", "n"]:
         choice = input("Continue? (y/n): ").lower().strip()
 
@@ -517,7 +508,7 @@ def mark_rg_deletions_per_sub(
 
 
 def mark_control_plane_deletions(
-    sub_to_rg_deletions: dict[str, list[str]], rg_to_storage_account: dict[str, list[str]]
+    sub_to_rg_deletions: dict[str, list[str]], rg_to_lfo_id: dict[str, list[str]]
 ) -> set[str]:
     """Based on the resource groups the user selected previously, return the control plane IDs to target for deletion"""
 
@@ -525,24 +516,65 @@ def mark_control_plane_deletions(
 
     for sub in sub_to_rg_deletions:
         for rg in sub_to_rg_deletions[sub]:
-            storage_accounts = rg_to_storage_account[rg]
-            for account in storage_accounts:
-                control_plane_ids_to_delete.add(account[len(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX) :])
+            lfo_ids = rg_to_lfo_id[rg]
+            for id in lfo_ids:
+                control_plane_ids_to_delete.add(id)
 
     return control_plane_ids_to_delete
 
 
-async def main():
+def mark_role_assignment_deletions(
+    sub_to_rg_deletions: dict[str, list[str]], control_plane_id_deletions: set[str]
+) -> dict[str, list[dict[str, str]]]:
+    role_assignment_deletions = defaultdict(list)
+    for sub_id in sub_to_rg_deletions:
+        role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
+        if role_assignment_json:
+            role_assignment_deletions[sub_id] = role_assignment_json
+
+    return role_assignment_deletions
+
+
+def mark_diagnostic_setting_deletions(
+    sub_to_rg_deletions: dict[str, list[str]], control_plane_id_deletions: set[str]
+) -> dict[str, dict[str, list[str]]]:
+    sub_diagnostic_setting_deletions = defaultdict(dict)
+    for sub_id in sub_to_rg_deletions:
+        resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
+        if resource_ds_map:
+            sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
+
+    return sub_diagnostic_setting_deletions
+
+
+def mark_artifact_deletions(
+    sub_id_to_name: dict[str, str], sub_to_rg_deletions: dict[str, list[str]], control_plane_id_deletions: set[str]
+) -> tuple[dict[str, list[dict[str, str]]], dict[str, dict[str, list[str]]]]:
+    role_assignment_deletions = defaultdict(list)
+    sub_diagnostic_setting_deletions = defaultdict(dict)
+    for sub_id in sub_to_rg_deletions:
+        role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
+        if role_assignment_json:
+            role_assignment_deletions[sub_id] = role_assignment_json
+
+        resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
+        if resource_ds_map:
+            sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
+
+    return role_assignment_deletions, sub_diagnostic_setting_deletions
+
+
+def main():
     """
     Overview:
-    1) Fetch all subscriptions accessible by the current user. Cache them
+    1) Fetch all subscriptions accessible by the current user.
     2) For each subscription, search for LFO control planes. If found:
-        - Cache the subscription to control plane resource group mapping
-        - Cache the resource group to storage account mapping
+        - Map the subscription to control plane resource group
+        - Map the resource group to storage account mapping
     3) For each subscription, determine which LFO resource groups need to be deleted
         - If there is only one resource group in the sub, mark it for deletion
         - If there are multiple, user input will be required to disambiguate
-    4) Based on the resource groups marked for deletion, cache the corresponding control plane IDs
+    4) Based on the resource groups marked for deletion, note the corresponding control plane IDs
     5) Based on control plane ID, find corresponding role assignments and diagnostic settings
     6) Display summary of what will be deleted to user. Prompt for confirmation.
     7) Delete role assignments, diagnostic settings, and resource groups.
@@ -572,39 +604,32 @@ async def main():
         )
 
     sub_id_to_name = list_users_subscriptions()
-    sub_id_to_rgs, rg_to_storage_account = find_all_control_planes(sub_id_to_name)
+    sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
     if not sub_to_rg_deletions or not any(sub_to_rg_deletions.values()):
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
 
-    control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_storage_account)
+    control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
 
-    role_assignment_deletions = defaultdict(list)
-    sub_diagnostic_setting_deletions = defaultdict(dict)
-    for sub_id in sub_to_rg_deletions.keys():
-        log.info(f"{SEPARATOR}Processing subscription '{sub_id_to_name[sub_id]}' ({sub_id})\n\n")
-        role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
-        if role_assignment_json:
-            role_assignment_deletions[sub_id] = role_assignment_json
-
-        resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
-        if resource_ds_map:
-            sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
+    sub_role_assignment_deletions = mark_role_assignment_deletions(sub_to_rg_deletions, control_plane_id_deletions)
+    sub_diagnostic_setting_deletions = mark_diagnostic_setting_deletions(
+        sub_to_rg_deletions, control_plane_id_deletions
+    )
 
     confirmed = confirm_uninstall(
-        sub_to_rg_deletions, sub_id_to_name, role_assignment_deletions, sub_diagnostic_setting_deletions
+        sub_to_rg_deletions, sub_id_to_name, sub_role_assignment_deletions, sub_diagnostic_setting_deletions
     )
     if not confirmed:
         log.info("Exiting.")
         raise SystemExit(0)
 
-    for sub_id, role_assignment_deletions in role_assignment_deletions.items():
-        delete_role_assignments(sub_id, role_assignment_deletions)
+    for sub_id, role_assignments in sub_role_assignment_deletions.items():
+        delete_role_assignments(sub_id, role_assignments)
 
-    for sub_id, diagnostic_setting_deletions in sub_diagnostic_setting_deletions.items():
-        delete_diagnostic_settings(sub_id, diagnostic_setting_deletions)
+    for sub_id, diagnostic_settings in sub_diagnostic_setting_deletions.items():
+        delete_diagnostic_settings(sub_id, diagnostic_settings)
 
     for sub_id, rg_list in sub_to_rg_deletions.items():
         delete_resource_group(sub_id, rg_list)
@@ -614,4 +639,4 @@ async def main():
 
 if __name__ == "__main__":
     basicConfig(level=INFO)
-    run(main())
+    main()
