@@ -22,8 +22,8 @@ DRY_RUN = False
 # ===== Constants ===== # 
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
 DIAGNOSTIC_SETTING_PREFIX: Final = "datadog_log_forwarding_"
-
-ALLOWED_TYPES_PER_PROVIDER = {
+SEPARATOR: Final = "\n==============================\n"
+ALLOWED_TYPES_PER_PROVIDER: Final = {
     "Microsoft.AAD": {"DomainServices"},
     "Microsoft.AgFoodPlatform": {"farmBeats"},
     "Microsoft.AnalysisServices": {"servers"},
@@ -171,12 +171,96 @@ ALLOWED_TYPES_PER_PROVIDER = {
     "microsoft.workloads": {"sapvirtualinstances"},
     "NGINX.NGINXPLUS": {"nginxDeployment"},
 }
-
-ALLOWED_RESOURCE_TYPES = [
+ALLOWED_RESOURCE_TYPES: Final = [
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 ]
+ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
 
-ALLOWED_RESOURCE_TYPES_FILTER = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
+# ===== Utility ===== #
+def first_key_of(d: dict[str,Any]) -> str:
+    return next(iter(d))
+
+def newline_spaced(dict: dict) -> str:
+    items = dict.items()
+    formatted = "\n".join(f"\t{key} | {value}" for key, value in items)
+    return f"\n{formatted}\n"
+
+def space_separated(iter: Iterable) -> str:
+    return " ".join(iter)
+
+def comma_separated_quoted(iter: Iterable) -> str:
+    return ", ".join(f"\"{i}\"" for i in iter)
+
+def indented_log_of(iter: Iterable) -> str:
+    formatted = "\n".join(f"\t- {item}" for item in iter)
+    return f"\n{formatted}\n"
+
+def formatted_number(n: int) -> str:
+    return f"{n:,}"
+
+def dry_run_of(s: str) -> str:
+    msg = s[0].lower() + s[1:]
+    return f"DRY RUN | Would be {msg}"
+
+def print_progress(current: int, total: int):
+    bar_length = 40
+    progress = current / total
+    done_bar = int(bar_length * progress)
+    leftover_bar = bar_length - done_bar
+    percent_done = f"{progress * 100:.0f}%"
+    text = f"[{'#' * done_bar + '-' * (leftover_bar)}] {current}/{total} ({percent_done})"
+    print(text, end='\r', flush=True)
+
+    if current == total:
+        print("\nDone!") 
+
+def role_assignment_summary(role_assignments: list[Any]) -> str:
+    summary = f"\tRole Assignments: {'None' if not role_assignments else ''}\n"
+    
+    for role_assignment in role_assignments:
+        definition_name = role_assignment["roleDefinitionName"]
+        principal_id = role_assignment["principalId"]
+        summary += f"\t\t- {definition_name} for principal {principal_id}\n"
+    
+    return summary
+
+def diagnostic_setting_summary(resource_ds_map: dict[str, list[str]]) -> str:
+    ds_set = set() 
+    for _, ds_list in resource_ds_map.items():
+        ds_set.update(ds_list)
+
+    summary = f"\tDiagnostic Settings: {'None' if not ds_set else ''}\n"
+    for ds in ds_set:
+        summary += f"\t\t- {ds}\n"
+    
+    return summary
+
+def resource_group_summary(resource_groups: list[str]) -> str:
+    summary = f"\tResource Group(s): {'None' if not resource_groups else ''}\n"
+    for rg in resource_groups:
+        summary += f"\t\t- {rg}\n"
+
+    return summary
+
+def uninstall_summary(sub_to_rg_deletions: dict[str,list[str]], 
+                      sub_id_to_name: dict[str,str],
+                      role_assignment_deletions: dict[str, list[Any]],
+                      sub_diagnostic_setting_deletions: dict[str, dict[str,list[str]]]) -> str:
+    header = "Deleting the following artifacts"
+    deletion_summary = f"{SEPARATOR}{dry_run_of(header) if DRY_RUN else header}:\n"
+    
+    for sub_id, rg_list in sub_to_rg_deletions.items():
+        deletion_summary += f"From subscription {sub_id_to_name[sub_id]} ({sub_id}):\n"
+
+        role_assignments = role_assignment_deletions[sub_id]
+        deletion_summary += role_assignment_summary(role_assignments)
+
+        resource_ds_map = sub_diagnostic_setting_deletions[sub_id]
+        deletion_summary += diagnostic_setting_summary(resource_ds_map)
+
+        deletion_summary += resource_group_summary(rg_list)
+    
+    return deletion_summary
 
 # ===== Command Execution ===== # 
 def az(cmd: str) -> str:
@@ -194,23 +278,31 @@ def az(cmd: str) -> str:
 
 # ===== Azure Commands ===== #
 def list_users_subscriptions() -> dict:
-    log.info("Searching for all subscriptions accessible by the current user to find log forwarding installations")
+    log.info("Searching for log forwarding installations in all subscriptions accessible by current user... ")
     
     all_subs_json = json.loads(az("account list --output json"))
+    print(f"Found {len(all_subs_json)}")
+
     return {sub["id"]: sub["name"] for sub in all_subs_json}
 
 def list_resources(sub_id: str) -> set:
+    log.info("Searching for resources in subscription... ")
+    
     resource_ids = json.loads(az(f"resource list --subscription {sub_id} --query \"[?{ALLOWED_RESOURCE_TYPES_FILTER}].id\" --output json"))
+    log.info(f"Found {formatted_number(len(resource_ids))} resource(s)")
+
     return set(resource_ids)
 
-def find_sub_control_plane(sub_id: str, sub_name: str) -> dict[str,str]:
+def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str,str]:
     """Queries for LFO control planes in single subscription, returns mapping of resource group name to control plane storage account name"""
     
-    log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})")
+    log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})... ")
     cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
     storage_accounts_json = json.loads(az(cmd))
 
     lfo_install_map = {account["resourceGroup"] : account["name"] for account in storage_accounts_json} 
+    print(f"Found {len(lfo_install_map)}")
+
     return lfo_install_map
 
 def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], dict[str,list[str]]]:
@@ -223,7 +315,7 @@ def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
     rg_to_storage = defaultdict(list)
 
     for sub_id, sub_name in sub_id_to_name.items():
-        control_planes = find_sub_control_plane(sub_id, sub_name)
+        control_planes = find_sub_control_planes(sub_id, sub_name)
         if not control_planes:
             continue
 
@@ -233,11 +325,15 @@ def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
         
     return sub_to_rg, rg_to_storage
 
-def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> Any:
-    log.info(f"Looking for DataDog diagnostic settings to delete in {sub_name} ({sub_id})")
-    
+def find_role_assignments(sub_id: str, control_plane_ids: set) -> Any:
+    log.info("Looking for DataDog role assignments... ")
+
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
-    return json.loads(az(f"role assignment list --all --subscription {sub_id} --query \"[?description != null && ({description_filter})].{{id: id, roleDefinitionName: roleDefinitionName, principalId: principalId}}\" --output json"))
+    role_assignment_json = json.loads(az(f"role assignment list --all --subscription {sub_id} --query \"[?description != null && ({description_filter})].{{id: id, roleDefinitionName: roleDefinitionName, principalId: principalId}}\" --output json"))
+
+    print(f"Found {len(role_assignment_json)} role assignment(s)")
+
+    return role_assignment_json
 
 def delete_role_assignments(sub_id: str, role_assigments_json: Any):
     ids = {role["id"] for role in role_assigments_json}
@@ -245,125 +341,91 @@ def delete_role_assignments(sub_id: str, role_assigments_json: Any):
         log.info(f"Did not find any role assignments to delete in subscription {sub_id}")
         return 
     
-    role_infos = [f"Role: {role['roleDefinitionName']}, Principal: {role['principalId']}" for role in role_assigments_json]
-    role_deletion_log = f"Deleting role assignments from subscription {sub_id}:\n{indented_log_of(role_infos)}"
-
+    role_deletion_log = "Deleting role assignments"
     if DRY_RUN:
         log.info(dry_run_of(role_deletion_log))
         return
 
-    # --include-inherited flag will also try to delete the role assignment from the management group scope if possible
     log.info(role_deletion_log)
+    
+    print_progress(0, 1)
+    
+    # --include-inherited flag will also try to delete the role assignment from the management group scope if possible
     az(f"role assignment delete --ids {space_separated(ids)} --subscription {sub_id} --include-inherited --yes")
+    print_progress(1, 1)
 
-def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set) -> dict[str, list[str]]:
-    log.info(f"Looking for DataDog diagnostic settings to delete in {sub_name} ({sub_id})")
+def find_diagnostic_settings(sub_id: str, control_plane_ids: set) -> dict[str, list[str]]:
+    """Returns mapping of resource ID to list of diagnostic settings to delete"""
     
     resource_ids = list_resources(sub_id)
-    resource_ds_map = defaultdict(list)     
+    resource_count = len(resource_ids)
+    resource_ds_map = defaultdict(list)
+    if not resource_ids:
+        return resource_ds_map
     
+    log.info("Looking for DataDog log forwarding diagnostic settings... ")
+    ds_count = 0
     diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
-    for resource_id in resource_ids:        
+    for i, resource_id in enumerate(resource_ids, start = 1):        
+        print_progress(i, resource_count)
         ds_names = json.loads(az(f"monitor diagnostic-settings list --resource {resource_id} --query \"[?{diagnostic_settings_filter}].name\""))
         for ds_name in ds_names:
             resource_ds_map[resource_id].append(ds_name)
+            ds_count += 1
     
+    log.info(f"Found {ds_count} diagnostic settings to remove across {resource_count} resources")
     return resource_ds_map
             
 def delete_diagnostic_settings(sub_id: str, resource_setting_map: dict[str,list[str]]):    
-    ds_deletion_log = f"Deleting DataDog diagnostic settings from {len(resource_setting_map)} resources in subscription {sub_id}"
+    num_resources = len(resource_setting_map)
+    ds_deletion_log = f"Deleting DataDog diagnostic settings from {num_resources} resources"
     if DRY_RUN:
         log.info(f"{dry_run_of(ds_deletion_log)}")
         return
 
     log.info(ds_deletion_log)
-    for resource_id, ds_names in resource_setting_map.items():
+    for i, (resource_id, ds_names) in enumerate(resource_setting_map.items(), 1):
+        print_progress(i, num_resources)
         for ds_name in ds_names:
             az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
 
 def delete_resource_group(sub_id: str, resource_group_list: list[str]):
     for resource_group in resource_group_list:
-        rg_deletion_log = f"Deleting resource group {resource_group}"
+        rg_deletion_log = f"Deleting resource group {resource_group} (this could take a few minutes)... "
         if DRY_RUN:
             log.info(dry_run_of(rg_deletion_log))
             return
         
         log.info(rg_deletion_log)
         az(f"group delete --subscription {sub_id} --name {resource_group} --yes")
-
-# ===== Dict Utility ===== #
-def firstKeyOf(d: dict[str,Any]) -> str:
-    return next(iter(d))
-
-# ===== String Utility ===== #
-def dry_run_of(s: str) -> str:
-    msg = s[0].lower() + s[1:]
-    return f"DRY RUN | Would be {msg}"
-
-def space_separated(iter: Iterable) -> str:
-    return " ".join(iter)
-
-def comma_separated_quoted(set: set) -> str:
-    return ", ".join(f"\"{i}\"" for i in set)
-
-def indented_log_of(iter: Iterable) -> str:
-    formatted = "\n".join(f"\t{item}" for item in iter)
-    return f"\n{formatted}\n"
-
-def dict_newline_spaced(dict: dict) -> str:
-    items = dict.items()
-    formatted = "\n".join(f"\t{key} | {value}" for key, value in items)
-    return f"\n{formatted}\n"
-
-def uninstall_summary(sub_to_rg_deletions: dict[str,list[str]], 
-                      sub_id_to_name: dict[str,str],
-                      role_assignment_deletions: dict[str, Iterable],
-                      resource_ds_map: dict[str, list[str]]) -> str:
-    deletionSummary = "The following role assignments, diagnostic settings, and resource groups will be deleted as part of the uninstallation process.\n"
-    
-    for sub_id, rg_list in sub_to_rg_deletions.items():
-        role_assignments = role_assignment_deletions[sub_id]
-        deletionSummary += f"=== From subscription {sub_id_to_name[sub_id]} ({sub_id}) === \n"
-        deletionSummary += "Role Assignments:\n"
-        deletionSummary += f"{indented_log_of(f"Role Assignment {role_assignment["id"]} ({role_assignment["roleDefinitionName"]} with principal {role_assignment["principalId"]})\n" for role_assignment in role_assignments)}"
-        deletionSummary += "Diagnostic Settings:\n"
-        
-        resource_list = resource_ds_map[sub_id]
-        num_ds = 0
-        for resource_id in resource_list:
-            ds_list = resource_ds_map[resource_id]
-            num_ds += len(ds_list)
-        
-        deletionSummary += f"{num_ds} diagnostic settings will be deleted from {len(resource_list)} resources\n"
-        
-        deletionSummary += "Resource Groups:\n"
-        for rg in rg_list:
-            deletionSummary += f"Resource Group {rg}\n"
-    
-    return deletionSummary
+        print("Done!")
 
 # ===== User Interaction =====  #
 def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], 
                       sub_id_to_name: dict[str,str],
-                      role_assignment_deletions: dict[str, Iterable],
-                      resource_ds_map: dict[str, list[str]]) -> bool:
-
-    summary = uninstall_summary(sub_to_rg_deletions, sub_id_to_name, role_assignment_deletions, resource_ds_map)
-    log.info(summary)
+                      role_assignment_deletions: dict[str, list[Any]],
+                      resource_ds_map: dict[str, list[str]],
+                      sub_diagnostic_setting_deletions: dict[str, dict[str,list[str]]]) -> bool:
+    summary = uninstall_summary(sub_to_rg_deletions, 
+                                sub_id_to_name, 
+                                role_assignment_deletions, 
+                                sub_diagnostic_setting_deletions)
+    log.warning(summary)
     
-    choice = input("Continue? (y/n): ").lower().strip()
+    choice = ""
     while choice not in ["y", "n"]:
         choice = input("Continue? (y/n): ").lower().strip()
 
     return choice == 'y'
 
 def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[str]:
-    """Given list of resource groups, prompt the user to what to delete. Returns list of what was selected"""
+    """Given list of resource groups, prompt the user to what to delete. 
+    Returns list of what was selected"""
     
     prompt = '''
     Enter the resource group name you would like to remove
-    To remove all of them, enter *
-    To remove nothing, enter -
+    - To remove all of them, enter *
+    - To remove nothing, enter -
     : '''
     chosen_rg = input(prompt).strip().lower()
 
@@ -379,8 +441,6 @@ def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[
 
 def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_groups_in_sub: list[str]) -> list[str]:
     """For given subscription, prompt the user to choose which resource group (or all) to delete if there's multiple. Returns a list of resource groups to delete"""
-    
-    log.info(f"Found log forwarding installation in subscription '{sub_name}' ({sub_id})")
     
     if len(resource_groups_in_sub) == 1:
         log.info(f"Found single resource group with log forwarding artifact: '{resource_groups_in_sub[0]}'")
@@ -400,23 +460,30 @@ def mark_rg_deletions_per_sub(sub_id_to_name: dict[str,str],
         return sub_id_to_rg_deletions
     
     if len(sub_id_to_rgs) == 1:
-        sub_id = firstKeyOf(sub_id_to_rgs)
+        sub_id = first_key_of(sub_id_to_rgs)
         sub_name = sub_id_to_name[sub_id]
         resource_groups_in_sub = sub_id_to_rgs[sub_id]        
         rgs_to_delete = identify_resource_groups_to_delete(sub_id, sub_name, resource_groups_in_sub)         
-        
-        sub_id_to_rg_deletions[sub_id] = rgs_to_delete
+        if any(rgs_to_delete):
+            sub_id_to_rg_deletions[sub_id] = rgs_to_delete
         return sub_id_to_rg_deletions
     
-    log.info("Found multiple subscriptions with log forwarding installations")
+    log.info("Found log forwarding installations in multiple subscriptions")
     for sub_id, rg_list in sub_id_to_rgs.items():
         sub_name = sub_id_to_name[sub_id]
         rgs_to_delete = identify_resource_groups_to_delete(sub_id, sub_name, rg_list)
-        sub_id_to_rg_deletions[sub_id] = rgs_to_delete
+        if any(rgs_to_delete):
+            sub_id_to_rg_deletions[sub_id] = rgs_to_delete
 
     return sub_id_to_rg_deletions
 
-def mark_control_plane_deletions(sub_to_rg_deletions: dict[str, list[str]], rg_to_storage_account: dict[str,list[str]]) -> set[str]:
+def mark_control_plane_deletions(sub_to_rg_deletions: dict[str, list[str]], 
+                                 rg_to_storage_account: dict[str,list[str]]) -> set[str]:
+    '''
+       Based on the resource groups the user selected previously, 
+       this will return the control plane IDs to target for deletion
+    '''
+    
     control_plane_ids_to_delete = set()
     
     for sub in sub_to_rg_deletions:
@@ -430,13 +497,17 @@ def mark_control_plane_deletions(sub_to_rg_deletions: dict[str, list[str]], rg_t
 async def main():
     '''
     Overview:
-    1) Fetch all subscriptions accessible by the current user. Cache them. 
-    2) For each subscription, search for LFO control planes. 
-       Cache the subscription to resource group mapping and the control plane to storage account mapping.
-    3) For each subscription, determine which resource groups need to be deleted. User input may occur to disambiguate. 
-    4) Summarize what resource groups will be deleted and display to user. User input required to confirm that we should proceed.
-    5) Based on the resource groups, cache the corresponding control plane IDs. 
-    6) Based on subscriptions and control plane IDs, delete all LFO role assignments and diagnostic settings.
+    1) Fetch all subscriptions accessible by the current user. Cache them
+    2) For each subscription, search for LFO control planes. If found:
+        - Cache the subscription to control plane resource group mapping 
+        - Cache the resource group to storage account mapping
+    3) For each subscription, determine which LFO resource groups need to be deleted
+        - If there is only one resource group in the sub, mark it for deletion
+        - If there are multiple, user input will be required to disambiguate
+    4) Based on the resource groups marked for deletion, cache the corresponding control plane IDs
+    5) Based on control plane ID, find corresponding role assignments and diagnostic settings
+    6) Display summary of what will be deleted to user. Prompt for confirmation.
+    7) Delete role assignments, diagnostic settings, and resource groups.
     '''
 
     global DRY_RUN
@@ -444,39 +515,44 @@ async def main():
     parser.add_argument("-d", "--dry-run", action="store_true", help="Run the script in dry-run mode. No changes will be made to the Azure environment")
     args = parser.parse_args()
 
+    # if args.sub_id:
     if args.dry_run:
         DRY_RUN = True
         log.info("Dry run enabled, no changes will be made")
     else:
         log.warning("Deletion of resource groups and ALL resources within them will occur as a result of the uninstall process.")
-        log.warning("If you have created any Azure resources in resource groups managed by DataDog log forwarding, they will be deleted. Perform backups if necessary")
+        log.warning("If you have created any Azure resources in resource groups managed by DataDog log forwarding, they will be deleted. Perform backups if necessary!")
 
     sub_id_to_name = list_users_subscriptions()    
     sub_id_to_rgs, rg_to_storage_account = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
-    if not sub_to_rg_deletions or sub_to_rg_deletions is None or not any(sub_to_rg_deletions.values()):
+    if not sub_to_rg_deletions or not any(sub_to_rg_deletions.values()):
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
     
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_storage_account)    
-    role_assignment_deletions = defaultdict(Iterable) 
+    
+    role_assignment_deletions = defaultdict(list[Any]) 
     sub_diagnostic_setting_deletions = defaultdict(dict) 
-
-    for sub_id, rg_list in sub_to_rg_deletions.items():
-        sub_name = sub_id_to_name[sub_id]
-        role_assignment_json = find_role_assignments(sub_id, sub_name, control_plane_id_deletions)
+    for sub_id in sub_to_rg_deletions.keys():
+        log.info(f"{SEPARATOR}Processing subscription '{sub_id_to_name[sub_id]}' ({sub_id})\n\n")
+        role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
         if role_assignment_json:
             role_assignment_deletions[sub_id] = role_assignment_json
+            
+        else:
+            log.info("Did not find any role assignments to delete")
         
-        resource_ds_map = find_diagnostic_settings(sub_id, sub_name, control_plane_id_deletions)
+        resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
         if resource_ds_map:
             sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
-        
-    if DRY_RUN:
-        return
     
-    confirmed = confirm_uninstall(sub_to_rg_deletions, sub_id_to_name, role_assignment_deletions, resource_ds_map)
+    confirmed = confirm_uninstall(sub_to_rg_deletions, 
+                                  sub_id_to_name, 
+                                  role_assignment_deletions, 
+                                  resource_ds_map,
+                                  sub_diagnostic_setting_deletions)
     if not confirmed:
         log.info("Exiting.")
         raise SystemExit(0)
@@ -490,7 +566,6 @@ async def main():
     for sub_id, rg_list in sub_to_rg_deletions.items():
         delete_resource_group(sub_id, rg_list)
             
-        
     log.info("Done!")
 
     # for async: process executor, thread pool executor
