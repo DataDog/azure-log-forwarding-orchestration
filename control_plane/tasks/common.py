@@ -19,8 +19,6 @@ FORWARDER_CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
 FORWARDER_MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 FORWARDER_STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 
-DEPLOYER_MANAGED_ENVIRONMENT_NAME: Final = "deployer-task-env-"
-
 # TODO We will need to add prefixes for these when we implement event hub support
 EVENT_HUB_NAME_PREFIX: Final = NotImplemented
 EVENT_HUB_NAMESPACE_PREFIX: Final = NotImplemented

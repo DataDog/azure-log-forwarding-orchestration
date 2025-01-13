@@ -19,14 +19,13 @@ from cache.resources_cache import (
     prune_resource_cache,
 )
 from tasks.common import (
-    DEPLOYER_MANAGED_ENVIRONMENT_NAME,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
     FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
     now,
 )
-from tasks.constants import ALLOWED_REGIONS, ALLOWED_RESOURCE_TYPES
+from tasks.constants import ALLOWED_RESOURCE_TYPES, ALLOWED_STORAGE_ACCOUNT_REGIONS
 from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
@@ -40,18 +39,26 @@ IGNORED_LFO_PREFIXES: Final = frozenset(
         SCALING_TASK_PREFIX,
         RESOURCES_TASK_PREFIX,
         DIAGNOSTIC_SETTINGS_TASK_PREFIX,
-        DEPLOYER_MANAGED_ENVIRONMENT_NAME,
         # STORAGE_ACCOUNT_PREFIX, # TODO (AZINTS-2763): add these in once we implement adding storage accounts
         # CONTROL_PLANE_STORAGE_PREFIX,
     }
 )
 
 
+RESOURCE_QUERY_FILTER: Final = " or ".join(f"resourceType eq '{rt}'" for rt in ALLOWED_RESOURCE_TYPES)
+
+
 def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
+    """Determines if we should ignore the resource"""
+    name = resource_name.lower()
     return (
-        region not in ALLOWED_REGIONS
-        or resource_type not in ALLOWED_RESOURCE_TYPES
-        or any(resource_name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
+        # we must be able to put a storage account in the same region
+        # https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings#destination-limitations
+        region.lower() not in ALLOWED_STORAGE_ACCOUNT_REGIONS
+        # only certain resource types have diagnostic settings
+        or resource_type.lower() not in ALLOWED_RESOURCE_TYPES
+        # ignore resources that are managed by the control plane
+        or any(name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
     )
 
 
@@ -67,10 +74,6 @@ class ResourcesTask(Task):
 
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
-
-    @staticmethod
-    def resource_query_filter(resource_types: set[str]) -> str:
-        return " or ".join([f"resourceType eq '{rt}'" for rt in resource_types])
 
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
@@ -96,10 +99,9 @@ class ResourcesTask(Task):
         async with ResourceManagementClient(self.credential, subscription_id) as client:
             resources_per_region: dict[str, set[str]] = {}
             resource_count = 0
-            resource_filter = ResourcesTask.resource_query_filter(ALLOWED_RESOURCE_TYPES)
-            async for r in client.resources.list(resource_filter):
+            async for r in client.resources.list(RESOURCE_QUERY_FILTER):
                 region = cast(str, r.location).lower()
-                if should_ignore_resource(region, cast(str, r.type).lower(), cast(str, r.name).lower()):
+                if should_ignore_resource(region, cast(str, r.type), cast(str, r.name)):
                     continue
                 resources_per_region.setdefault(region, set()).add(cast(str, r.id).lower())
                 resource_count += 1

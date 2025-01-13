@@ -150,7 +150,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
 }
 
 resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: 'deployer-task-env-${controlPlaneId}'
+  name: 'dd-log-forwarder-env-${controlPlaneId}-${controlPlaneLocation}'
   location: controlPlaneLocation
   properties: {}
 }
