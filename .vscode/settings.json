@@ -1,3 +1,4 @@
 {
     "python.defaultInterpreterPath": "~/.pyenv/versions/3.12.3/envs/lfo/bin/python",
+    "ruff.configuration": "./control_plane/pyproject.toml",
 }
