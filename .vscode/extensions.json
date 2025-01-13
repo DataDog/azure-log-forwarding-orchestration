@@ -4,6 +4,7 @@
         "bencoleman.armview",
         "msazurermtools.azurerm-vscode-tools",
         "ms-azuretools.vscode-azurefunctions",
-        "azurite.azurite"
+        "azurite.azurite",
+        "charliermarsh.ruff"
     ]
 }
