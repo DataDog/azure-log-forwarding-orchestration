@@ -1,12 +1,12 @@
 # stdlib
 from collections.abc import Callable
+from logging import getLogger
 from os import environ
 from typing import TypeVar
 
-# project
-from cache.common import log
-
 T = TypeVar("T")
+
+log = getLogger(__name__)
 
 
 # Settings
