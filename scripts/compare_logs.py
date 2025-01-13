@@ -18,11 +18,11 @@ CONTAINER = "insights-logs-functionapplogs"
 
 START_TIME = datetime.now()
 
-storage_id_map = {}
-storage_ids = []
-native_ids = []
-lfo_ids = []
-event_hub_ids = []
+# storage_id_map = {}
+# storage_ids = []
+# native_ids = []
+# lfo_ids = []
+# event_hub_ids = []
 
 
 def get_dd_time(time: datetime) -> str:
@@ -68,9 +68,14 @@ def get_uuids(data) -> list:
     return curr_ids
 
 
-def get_start_time() -> datetime:
+def get_start_time(
+    storage_id_map: dict[str, datetime],
+    storage_ids: list[str],
+    lfo_ids: list[str],
+    native_ids: list[str],
+) -> datetime:
     for storage_id in storage_ids:
-        if storage_id in native_ids and storage_id in native_ids:
+        if storage_id in native_ids or storage_id in lfo_ids:
             return storage_id_map[storage_id]
     raise Exception("No common start time found")
 
@@ -81,7 +86,6 @@ def download_blob(
     blob_client = blob_service_client.get_blob_client(
         container=container_name, blob=blob_name
     )
-    output = []
     duplicates = 0
     # encoding param is necessary for readall() to return str, otherwise it returns bytes
     downloader = blob_client.download_blob(max_concurrency=1, encoding="UTF-8")
@@ -272,15 +276,17 @@ def get_logs_from_storage_account(
     return log_ids, duplicates
 
 
-def truncate_list(data: list, start: datetime, end: datetime) -> list:
-    truncated_data = []
+def truncate_to_set(
+    data: list, start: datetime, end: datetime, storage_id_map: dict[str, datetime]
+) -> set:
+    truncated_data = set()
     for item in data:
         if (
             storage_id_map.get(item)
             and storage_id_map[item] > start
             and storage_id_map[item] < end
         ):
-            truncated_data.append(item)
+            truncated_data.add(item)
         # elif not storage_id_map.get(item):
         #     print(f"Could not find timestamp for {item}")
     return truncated_data
@@ -297,9 +303,14 @@ archives_connection_string = os.environ.get("LOG_ARCHIVING")
 
 
 def run():
+    storage_id_map = {}
+    storage_ids = []
+    native_ids = []
+    lfo_ids = []
+
     end = datetime.now(timezone.utc) - timedelta(minutes=60)
-    endtime = get_dd_time(end)
-    starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
+    # endtime = get_dd_time(end)
+    # starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
     storage_id_map, storage_duplicates = get_logs_from_storage_account(
         connection_string, lambda blob: "loggya" in blob.name.lower()
     )
@@ -348,25 +359,25 @@ def run():
         lfo_duplicates,
     )
 
-    start = get_start_time()
+    start = get_start_time(storage_id_map, storage_ids, lfo_ids, native_ids)
     print(f"Start time: {start}, end time: {end}")
-    native_truncated = truncate_list(native_ids, start, end)
-    lfo_truncated = truncate_list(lfo_ids, start, end)
-    event_hub_truncated = truncate_list(event_hub_ids, start, end)
-    storage_truncated = truncate_list(storage_ids, start, end)
+    native_truncated = truncate_to_set(native_ids, start, end, native_id_map)
+    lfo_truncated = truncate_to_set(lfo_ids, start, end, lfo_id_map)
+    # event_hub_truncated = truncate_list(event_hub_ids, start, end, event_hub_ids)
+    storage_truncated = truncate_to_set(storage_ids, start, end, storage_id_map)
 
     print(
-        f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(event_hub_truncated)}"
+        f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}"
     )
 
-    missing_lfo_ids = [item for item in storage_truncated if item not in lfo_ids]
+    missing_lfo_ids = storage_truncated - lfo_truncated
     print(f"Missing LFO ids: {len(missing_lfo_ids)}")
     submit_metric(
         "azure.log.forwarding.lfo.missing",
         (len(missing_lfo_ids) * 1.0 / len(storage_truncated)),
     )
 
-    missing_native_ids = [item for item in storage_truncated if item not in native_ids]
+    missing_native_ids = storage_truncated - native_truncated
     print(f"Missing native ids: {len(missing_native_ids)}")
 
     submit_metric(
@@ -377,6 +388,7 @@ def run():
 
 while True:
     print(f"Starting at {datetime.now()}")
+    run()
     try:
         run()
     except Exception as e:
