@@ -48,6 +48,25 @@ from azure.mgmt.storage.v2023_05_01.models import (
 )
 from azure.storage.blob.aio import ContainerClient
 from azure.storage.blob.aio._download_async import StorageStreamDownloader
+
+# project
+from cache.common import (
+    STORAGE_ACCOUNT_TYPE,
+    LogForwarderType,
+)
+from cache.env import (
+    CONFIG_ID_SETTING,
+    CONNECTION_STRING_SECRET,
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    DD_API_KEY_SECRET,
+    DD_API_KEY_SETTING,
+    DD_SITE_SETTING,
+    FORWARDER_IMAGE_SETTING,
+    STORAGE_CONNECTION_SETTING,
+    get_config_option,
+)
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
@@ -56,15 +75,6 @@ from datadog_api_client.v2.model.metric_payload import MetricPayload
 from datadog_api_client.v2.model.metric_point import MetricPoint
 from datadog_api_client.v2.model.metric_resource import MetricResource
 from datadog_api_client.v2.model.metric_series import MetricSeries
-from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
-
-# project
-from cache.common import (
-    STORAGE_ACCOUNT_TYPE,
-    LogForwarderType,
-    get_config_option,
-)
-from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
@@ -78,18 +88,9 @@ from tasks.common import (
 from tasks.concurrency import collect, create_task_from_awaitable
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
+from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
-
-DD_SITE_SETTING = "DD_SITE"
-DD_API_KEY_SETTING = "DD_API_KEY"
-FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
-CONFIG_ID_SETTING = "CONFIG_ID"
-CONTROL_PLANE_REGION_SETTING = "CONTROL_PLANE_REGION"
-CONTROL_PLANE_ID_SETTING = "CONTROL_PLANE_ID"
-
-DD_API_KEY_SECRET = "dd-api-key"
-CONNECTION_STRING_SECRET = "connection-string"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
@@ -288,7 +289,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                             image=self.forwarder_image,
                             resources=ContainerResources(cpu=2, memory="4Gi"),
                             env=[
-                                EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
+                                EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
                                 EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
                                 EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
                                 EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),

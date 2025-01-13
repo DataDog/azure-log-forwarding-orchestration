@@ -5,16 +5,14 @@ from unittest.mock import AsyncMock, patch
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
+from tasks.tests.common import AsyncMockClient
 
 # project
 from cache.common import (
-    STORAGE_CONNECTION_SETTING,
-    MissingConfigOptionError,
-    get_config_option,
     read_cache,
     write_cache,
 )
-from tasks.tests.common import AsyncMockClient
+from cache.env import STORAGE_CONNECTION_SETTING, MissingConfigOptionError, get_config_option
 
 sub1 = "sub1"
 rg1 = "rg1"

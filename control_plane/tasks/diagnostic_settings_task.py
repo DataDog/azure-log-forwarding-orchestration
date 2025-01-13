@@ -18,9 +18,10 @@ from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment
 from cache.common import (
     InvalidCacheError,
     LogForwarderType,
-    get_config_option,
     read_cache,
 )
+from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -79,8 +80,10 @@ class DiagnosticSettingsTask(Task):
     def __init__(self, assignment_cache_state: str) -> None:
         super().__init__()
 
-        self.resource_group = get_config_option("RESOURCE_GROUP")
-        self.diagnostic_settings_name = (DIAGNOSTIC_SETTING_PREFIX + get_config_option("CONTROL_PLANE_ID")).lower()
+        self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
+        self.diagnostic_settings_name = (
+            DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
+        ).lower()
 
         # read caches
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)

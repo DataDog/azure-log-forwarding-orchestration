@@ -8,9 +8,6 @@ from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import cast
 
-# 3p
-from tenacity import retry, retry_if_result, stop_after_attempt
-
 # project
 from cache.assignment_cache import (
     ASSIGNMENT_CACHE_BLOB,
@@ -21,13 +18,22 @@ from cache.assignment_cache import (
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
-    get_config_option,
-    parse_config_option,
     read_cache,
     write_cache,
 )
+from cache.env import (
+    CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    SCALING_PERCENTAGE_SETTING,
+    get_config_option,
+    parse_config_option,
+)
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+
+# 3p
+from tenacity import retry, retry_if_result, stop_after_attempt
+
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors, now
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
@@ -116,9 +122,9 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
 class ScalingTask(Task):
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
-        self.resource_group = get_config_option("RESOURCE_GROUP")
-        self.scaling_percentage = parse_config_option("SCALING_PERCENTAGE", float, DEFAULT_SCALING_PERCENTAGE)
-        self.control_plane_region = get_config_option("CONTROL_PLANE_REGION")
+        self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
+        self.scaling_percentage = parse_config_option(SCALING_PERCENTAGE_SETTING, float, DEFAULT_SCALING_PERCENTAGE)
+        self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
 
         self.now = datetime.now()
 
@@ -265,7 +271,8 @@ class ScalingTask(Task):
         """Checks the performance/scaling of a region and determines/performs scaling as needed
 
         Additionally assigns new resources to the least busy forwarder
-        and reassigns resources based on the new scaling"""
+        and reassigns resources based on the new scaling,
+        as well as ensuring existing forwarders have up to date settings"""
         log.info("Checking scaling for log forwarders in region %s", region)
         region_config = self.assignment_cache[subscription_id][region]
 
