@@ -1,6 +1,7 @@
 # stdlib
 from collections.abc import Callable
 from json import JSONDecodeError, loads
+from logging import DEBUG, getLogger
 from os import environ
 from typing import Any, Final, Literal, NamedTuple, TypeVar
 
@@ -8,6 +9,11 @@ from typing import Any, Final, Literal, NamedTuple, TypeVar
 from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient, StorageStreamDownloader
 from jsonschema import ValidationError, validate
+
+log = getLogger(__name__)
+log.setLevel(DEBUG)
+
+T = TypeVar("T")
 
 BLOB_STORAGE_CACHE = "control-plane-cache"
 
@@ -24,6 +30,22 @@ def get_config_option(name: str) -> str:
     if option := environ.get(name):
         return option
     raise MissingConfigOptionError(name)
+
+
+def parse_config_option(name: str, parse: Callable[[str], T | None], default: T) -> T:
+    """Get a configuration option from the environment, parse it, or return a default"""
+    try:
+        value = environ.get(name)
+        if value is None:
+            return default
+        result = parse(value)
+        if result is None:
+            log.error(f"Invalid value for configuration option {name}: {value}")
+            return default
+        return result
+    except ValueError:
+        log.error(f"Invalid value for configuration option {name}: {environ.get(name)}")
+        return default
 
 
 EVENT_HUB_TYPE: Final = "eventhub"
@@ -65,9 +87,6 @@ async def write_cache(blob_name: str, content: str) -> None:
         get_config_option(STORAGE_CONNECTION_SETTING), BLOB_STORAGE_CACHE, blob_name
     ) as blob_client:
         await blob_client.upload_blob(content, overwrite=True)
-
-
-T = TypeVar("T")
 
 
 def deserialize_cache(
