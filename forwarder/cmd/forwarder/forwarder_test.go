@@ -197,6 +197,73 @@ func TestRun(t *testing.T) {
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
+
+	t.Run("continues processing on errors", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testString := "test"
+		validLog := getLogWithContent(testString)
+		expectedBytesForLog := len(validLog) + 1 // +1 for newline
+
+		containerPage := []*service.ContainerItem{
+			newContainerItem("insights-logs-functionapplogs"),
+		}
+		blobPage := []*container.BlobItem{
+			newBlobItem("testA", int64(expectedBytesForLog)),
+			newBlobItem("testB", int64(expectedBytesForLog)),
+		}
+
+		firstBlob := true
+
+		getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
+			resp := azblob.DownloadStreamResponse{}
+			if firstBlob {
+				firstBlob = false
+				resp.Body = io.NopCloser(strings.NewReader("invalid"))
+			} else {
+				resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
+			}
+			return resp
+		}
+
+		cursorResp := azblob.DownloadStreamResponse{}
+		cursorResp.Body = io.NopCloser(strings.NewReader(""))
+
+		var uploadedMetrics []byte
+		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+			if strings.Contains(blobName, "metrics_") {
+				uploadedMetrics = append(uploadedMetrics, content...)
+			}
+			return azblob.UploadBufferResponse{}, nil
+		}
+
+		// WHEN
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, uploadFunc)
+
+		// THEN
+		assert.ErrorIs(t, err, logs.ErrInvalidJavaScript)
+
+		finalMetrics, err := metrics.FromBytes(uploadedMetrics)
+		assert.NoError(t, err)
+		totalLoad := 0
+		totalBytes := 0
+		for _, metric := range finalMetrics {
+			for _, value := range metric.ResourceLogVolumes {
+				totalLoad += int(value)
+			}
+			for _, value := range metric.ResourceLogBytes {
+				totalBytes += int(value)
+			}
+		}
+		assert.Equal(t, len(blobPage)-1, totalLoad)
+		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
+		assert.Len(t, submittedLogs, len(blobPage)-1)
+
+		for _, logItem := range submittedLogs {
+			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
+		}
+	})
 }
 
 func TestProcessLogs(t *testing.T) {

@@ -205,7 +205,11 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
+			processLogsErr := processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
+			if processLogsErr != nil {
+				logger.Warning(fmt.Errorf("error processing logs: %w", processLogsErr))
+			}
+			return nil
 		})
 	}
 
@@ -227,11 +231,12 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 				continue
 			}
 			downloadEg.Go(func() error {
-				err := getLogs(segmentCtx, storageClient, cursors, blob, logCh)
-				if err != nil {
-					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, err))
+				downloadErr := getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+				if downloadErr != nil {
+					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, downloadErr))
 				}
-				return err
+				// return nil to prevent errgroup from stopping
+				return downloadErr
 			})
 		}
 	}
