@@ -2,7 +2,6 @@
 from collections.abc import Callable
 from json import JSONDecodeError, loads
 from logging import DEBUG, getLogger
-from os import environ
 from typing import Any, Final, Literal, NamedTuple, TypeVar
 
 # 3p
@@ -10,43 +9,14 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob.aio import BlobClient, StorageStreamDownloader
 from jsonschema import ValidationError, validate
 
+from cache.env import STORAGE_CONNECTION_SETTING, get_config_option
+
 log = getLogger(__name__)
 log.setLevel(DEBUG)
 
 T = TypeVar("T")
 
 BLOB_STORAGE_CACHE = "control-plane-cache"
-
-STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
-
-
-class MissingConfigOptionError(Exception):
-    def __init__(self, option: str) -> None:
-        super().__init__(f"Missing required configuration option: {option}")
-
-
-def get_config_option(name: str) -> str:
-    """Get a configuration option from the environment or raise a helpful error"""
-    if option := environ.get(name):
-        return option
-    raise MissingConfigOptionError(name)
-
-
-def parse_config_option(name: str, parse: Callable[[str], T | None], default: T) -> T:
-    """Get a configuration option from the environment, parse it, or return a default"""
-    try:
-        value = environ.get(name)
-        if value is None:
-            return default
-        result = parse(value)
-        if result is None:
-            log.error(f"Invalid value for configuration option {name}: {value}")
-            return default
-        return result
-    except ValueError:
-        log.error(f"Invalid value for configuration option {name}: {environ.get(name)}")
-        return default
-
 
 EVENT_HUB_TYPE: Final = "eventhub"
 STORAGE_ACCOUNT_TYPE: Final = "storageaccount"

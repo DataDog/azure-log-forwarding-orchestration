@@ -68,6 +68,9 @@ quote-style = "double"
 indent-style = "space"
 docstring-code-format = true
 
+[tool.ruff.lint.isort]
+combine-as-imports = true
+
 [tool.pyright]
 include = ["tasks", "cache"]
 exclude = ["**/__pycache__", "build/"]

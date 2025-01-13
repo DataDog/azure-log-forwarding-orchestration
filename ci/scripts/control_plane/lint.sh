@@ -7,4 +7,4 @@ set -euxo pipefail
 cd control_plane
 
 : run linter
-ruff check
+ruff check --config ./pyproject.toml

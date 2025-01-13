@@ -1,6 +1,5 @@
 # stdlib
-from asyncio import Lock, create_task, gather, wait
-from asyncio import Task as AsyncTask
+from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
@@ -62,6 +61,17 @@ from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
+)
+from cache.env import (
+    CONFIG_ID_SETTING,
+    CONNECTION_STRING_SECRET,
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    DD_API_KEY_SECRET,
+    DD_API_KEY_SETTING,
+    DD_SITE_SETTING,
+    FORWARDER_IMAGE_SETTING,
+    STORAGE_CONNECTION_SETTING,
     get_config_option,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
@@ -80,16 +90,6 @@ from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
-
-DD_SITE_SETTING = "DD_SITE"
-DD_API_KEY_SETTING = "DD_API_KEY"
-FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
-CONFIG_ID_SETTING = "CONFIG_ID"
-CONTROL_PLANE_REGION_SETTING = "CONTROL_PLANE_REGION"
-CONTROL_PLANE_ID_SETTING = "CONTROL_PLANE_ID"
-
-DD_API_KEY_SECRET = "dd-api-key"
-CONNECTION_STRING_SECRET = "connection-string"
 
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
@@ -288,7 +288,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                             image=self.forwarder_image,
                             resources=ContainerResources(cpu=2, memory="4Gi"),
                             env=[
-                                EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
+                                EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
                                 EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
                                 EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
                                 EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
