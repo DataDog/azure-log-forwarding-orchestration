@@ -241,7 +241,7 @@ func TestRun(t *testing.T) {
 		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, uploadFunc)
 
 		// THEN
-		assert.ErrorIs(t, err, logs.ErrInvalidJavaScript)
+		assert.NoError(t, err)
 
 		finalMetrics, err := metrics.FromBytes(uploadedMetrics)
 		assert.NoError(t, err)

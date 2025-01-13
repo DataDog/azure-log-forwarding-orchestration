@@ -235,8 +235,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 				if downloadErr != nil {
 					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, downloadErr))
 				}
-				// return nil to prevent errgroup from stopping
-				return downloadErr
+				return nil
 			})
 		}
 	}
