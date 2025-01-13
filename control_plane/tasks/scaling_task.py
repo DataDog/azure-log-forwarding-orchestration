@@ -8,6 +8,9 @@ from json import dumps
 from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import cast
 
+# 3p
+from tenacity import retry, retry_if_result, stop_after_attempt
+
 # project
 from cache.assignment_cache import (
     ASSIGNMENT_CACHE_BLOB,
@@ -30,10 +33,6 @@ from cache.env import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
-
-# 3p
-from tenacity import retry, retry_if_result, stop_after_attempt
-
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors, now
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS

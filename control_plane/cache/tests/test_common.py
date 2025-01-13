@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
-from tasks.tests.common import AsyncMockClient
 
 # project
 from cache.common import (
@@ -13,6 +12,7 @@ from cache.common import (
     write_cache,
 )
 from cache.env import STORAGE_CONNECTION_SETTING
+from tasks.tests.common import AsyncMockClient
 
 sub1 = "sub1"
 rg1 = "rg1"

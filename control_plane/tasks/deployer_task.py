@@ -14,6 +14,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
 from azure.storage.blob.aio import ContainerClient
+from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
 # project
 from cache.common import InvalidCacheError, read_cache, write_cache
@@ -33,8 +34,6 @@ from cache.manifest_cache import (
     ManifestKey,
     deserialize_manifest_cache,
 )
-from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
-
 from tasks.common import (
     CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX,
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,

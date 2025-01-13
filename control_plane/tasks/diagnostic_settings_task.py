@@ -21,7 +21,6 @@ from cache.common import (
     read_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
