@@ -547,23 +547,6 @@ def mark_diagnostic_setting_deletions(
     return sub_diagnostic_setting_deletions
 
 
-def mark_artifact_deletions(
-    sub_id_to_name: dict[str, str], sub_to_rg_deletions: dict[str, list[str]], control_plane_id_deletions: set[str]
-) -> tuple[dict[str, list[dict[str, str]]], dict[str, dict[str, list[str]]]]:
-    role_assignment_deletions = defaultdict(list)
-    sub_diagnostic_setting_deletions = defaultdict(dict)
-    for sub_id in sub_to_rg_deletions:
-        role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
-        if role_assignment_json:
-            role_assignment_deletions[sub_id] = role_assignment_json
-
-        resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
-        if resource_ds_map:
-            sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
-
-    return role_assignment_deletions, sub_diagnostic_setting_deletions
-
-
 def main():
     """
     Overview:
