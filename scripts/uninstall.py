@@ -204,8 +204,7 @@ def print_progress(current: int, total: int):
     done_bar = int(progress_bar_length * progress)
     leftover_bar = progress_bar_length - done_bar
     percent_done = f"{progress * 100:.0f}%"
-    text = f"[{'#' * done_bar + '-' * (leftover_bar)}] {current}/{total} ({percent_done})"
-    print(text, end='\r', flush=True)
+    print(f"[{'#' * done_bar + '-' * (leftover_bar)}] {current}/{total} ({percent_done})", end='\r', flush=True)
 
     if current == total:
         print("\nDone!") 
@@ -286,7 +285,7 @@ def list_resources(sub_id: str) -> set:
     log.info("Searching for resources in subscription... ")
     
     resource_ids = json.loads(az(f"resource list --subscription {sub_id} --query \"[?{ALLOWED_RESOURCE_TYPES_FILTER}].id\" --output json"))
-    log.info(f"Found {formatted_number(len(resource_ids))} resource(s)")
+    print(f"Found {formatted_number(len(resource_ids))} resource(s)")
 
     return set(resource_ids)
 
@@ -322,7 +321,7 @@ def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
         
     return sub_to_rg, rg_to_storage
 
-def find_role_assignments(sub_id: str, control_plane_ids: set) -> Any:
+def find_role_assignments(sub_id: str, control_plane_ids: set) -> list[dict[str,str]]:
     """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
     
     log.info("Looking for DataDog role assignments... ")
@@ -334,7 +333,7 @@ def find_role_assignments(sub_id: str, control_plane_ids: set) -> Any:
 
     return role_assignment_json
 
-def delete_role_assignments(sub_id: str, role_assigments_json: Any):
+def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str,str]]):
     ids = {role["id"] for role in role_assigments_json}
     if not ids:
         log.info(f"Did not find any role assignments to delete in subscription {sub_id}")
@@ -402,7 +401,7 @@ def delete_resource_group(sub_id: str, resource_group_list: list[str]):
 # ===== User Interaction =====  #
 def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], 
                       sub_id_to_name: dict[str,str],
-                      role_assignment_deletions: dict[str, list[Any]],
+                      role_assignment_deletions: dict[str, list[dict[str,str]]],
                       sub_diagnostic_setting_deletions: dict[str, dict[str,list[str]]]) -> bool:
     """Displays summary of what will be deleted and prompts user for confirmation. Returns true if user confirms, false otherwise"""
     summary = uninstall_summary(sub_to_rg_deletions, 
@@ -527,7 +526,7 @@ async def main():
     
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_storage_account)    
     
-    role_assignment_deletions = defaultdict(list[Any]) 
+    role_assignment_deletions = defaultdict(list) 
     sub_diagnostic_setting_deletions = defaultdict(dict) 
     for sub_id in sub_to_rg_deletions.keys():
         log.info(f"{SEPARATOR}Processing subscription '{sub_id_to_name[sub_id]}' ({sub_id})\n\n")
