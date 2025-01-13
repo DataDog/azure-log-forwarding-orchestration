@@ -28,6 +28,7 @@ from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
+    SUBSCRIPTION_ID_SETTING,
     get_config_option,
     parse_config_option,
 )
@@ -124,6 +125,7 @@ class ScalingTask(Task):
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.scaling_percentage = parse_config_option(SCALING_PERCENTAGE_SETTING, float, DEFAULT_SCALING_PERCENTAGE)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
+        self.control_plane_subscription = get_config_option(SUBSCRIPTION_ID_SETTING)
 
         self.now = datetime.now()
 
@@ -233,8 +235,12 @@ class ScalingTask(Task):
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
         forwarders = self._assignment_cache_initial_state[subscription_id][region]["configurations"]
         if not forwarders:
-            # never delete control plane env. if the region is supported by container apps, it has its own env and should be deleted
-            if region != self.control_plane_region and region in ALLOWED_CONTAINER_APP_REGIONS:
+            # never delete control plane env in the control plane subscription.
+            # if the region is supported by container apps, it has its own env and should be deleted
+            if (
+                not (region == self.control_plane_region and subscription_id == self.control_plane_subscription)
+                and region in ALLOWED_CONTAINER_APP_REGIONS
+            ):
                 log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
                 await client.delete_log_forwarder_env(region, raise_error=False)
 

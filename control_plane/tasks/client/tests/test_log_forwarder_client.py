@@ -45,7 +45,7 @@ CONFIG_ID1 = "d6fc2c757f9c"
 CONFIG_ID2 = "e8d5222d1c46"
 CONFIG_ID3 = "619fff16cae1"
 CONTROL_PLANE_ID = "e90ecb54476d"
-MANAGED_ENV_NAME = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{CONTROL_PLANE_ID}-{EAST_US}"
+MANAGED_ENV_EAST_US_NAME = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{CONTROL_PLANE_ID}-{EAST_US}"
 CONTAINER_APP_NAME = f"{FORWARDER_CONTAINER_APP_PREFIX}{CONFIG_ID1}"
 STORAGE_ACCOUNT_NAME = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{CONFIG_ID1}"
 RESOURCE_GROUP_NAME = "test_lfo"
@@ -445,24 +445,15 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIsNone(result)
 
     async def test_get_log_forwarder_managed_env_unsupported_region_defaults_to_control_plane_region(self):
+        self.client.container_apps_client.managed_environments.get.return_value = mock(id="fake_id")
+
         async with self.client:
             res = await self.client.get_log_forwarder_managed_environment(NEW_ZEALAND_NORTH)
 
-        self.assertEqual(
-            f"/subscriptions/{SUB_ID1}/resourcegroups/{RESOURCE_GROUP_NAME}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{CONTROL_PLANE_ID}-{EAST_US}",
-            res,
+        self.assertEqual("fake_id", res)
+        self.client.container_apps_client.managed_environments.get.assert_called_once_with(
+            RESOURCE_GROUP_NAME, f"dd-log-forwarder-env-{CONTROL_PLANE_ID}-{EAST_US}"
         )
-        self.client.container_apps_client.managed_environments.get.assert_not_called()
-
-    async def test_get_log_forwarder_managed_env_control_plane_region_makes_no_api_call(self):
-        async with self.client:
-            res = await self.client.get_log_forwarder_managed_environment(EAST_US)
-
-        self.assertEqual(
-            f"/subscriptions/{SUB_ID1}/resourcegroups/{RESOURCE_GROUP_NAME}/providers/microsoft.app/managedenvironments/dd-log-forwarder-env-{CONTROL_PLANE_ID}-{EAST_US}",
-            res,
-        )
-        self.client.container_apps_client.managed_environments.get.assert_not_called()
 
     async def test_delete_log_forwarder_doesnt_retry_after_second_unretryable(self):
         self.client.container_apps_client.jobs.begin_delete.side_effect = [FakeHttpError(429), FakeHttpError(400)]
@@ -874,9 +865,22 @@ class TestLogForwarderClient(AsyncTestCase):
         # managed environment
         asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update
         asp_create.assert_awaited_once_with(
-            RESOURCE_GROUP_NAME, MANAGED_ENV_NAME, AzureModelMatcher({"location": EAST_US, "zone_redundant": False})
+            RESOURCE_GROUP_NAME,
+            MANAGED_ENV_EAST_US_NAME,
+            AzureModelMatcher({"location": EAST_US, "zone_redundant": False}),
         )
         (await asp_create()).result.assert_awaited_once_with()
+
+    async def test_create_log_forwarder_managed_env_in_unsupported_region(self):
+        async with self.client:
+            await self.client.create_log_forwarder_managed_environment(NEW_ZEALAND_NORTH)
+        asp_create: AsyncMock = self.client.container_apps_client.managed_environments.begin_create_or_update
+        asp_create.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME,
+            MANAGED_ENV_EAST_US_NAME,
+            AzureModelMatcher({"location": EAST_US, "zone_redundant": False}),
+        )
+        (await asp_create()).result.assert_not_called()
 
     async def test_get_forwarder_resources_both_exist(self):
         job, storage_account = Mock(name="job"), Mock(name="storage_account")

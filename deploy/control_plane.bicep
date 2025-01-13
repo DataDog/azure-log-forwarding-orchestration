@@ -149,6 +149,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
     siteConfig: {
       appSettings: union(commonAppSettings, [
         { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
+        { name: SUBSCRIPTION_ID_SETTING, value: controlPlaneSubscriptionId }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: FORWARDER_IMAGE_SETTING, value: forwarderImage }
         { name: DD_API_KEY_SETTING, value: datadogApiKey }

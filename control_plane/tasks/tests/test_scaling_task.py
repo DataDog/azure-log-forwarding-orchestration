@@ -20,6 +20,13 @@ from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
 )
+from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    SCALING_PERCENTAGE_SETTING,
+    SUBSCRIPTION_ID_SETTING,
+)
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import (
@@ -88,10 +95,11 @@ class TestScalingTask(TaskTestCase):
         p = patch.dict(
             environ,
             {
-                "RESOURCE_GROUP": RG1,
-                "CONTROL_PLANE_ID": CONTROL_PLANE_ID,
-                "CONTROL_PLANE_REGION": EAST_US_2,
-                "SCALING_PERCENTAGE": "0.7",
+                SUBSCRIPTION_ID_SETTING: SUB_ID1,
+                RESOURCE_GROUP_SETTING: RG1,
+                CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
+                CONTROL_PLANE_REGION_SETTING: EAST_US_2,
+                SCALING_PERCENTAGE_SETTING: "0.7",
             },
         )
         p.start()
