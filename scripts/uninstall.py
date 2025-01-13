@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # Remove DataDog Log Forwarding Orchestration from an Azure environment
 # Last updated: Jan 2025
-# User running this script will need the following permissions: 
 
 from asyncio import run
 from collections import defaultdict
@@ -10,9 +9,6 @@ from typing import Any, Iterable, Final
 import argparse
 import json 
 import subprocess
-
-# 3p
-# from tenacity import retry, stop_after_attempt
 
 getLogger("azure").setLevel(WARNING)
 log = getLogger("uninstaller")
@@ -203,10 +199,10 @@ def dry_run_of(s: str) -> str:
     return f"DRY RUN | Would be {msg}"
 
 def print_progress(current: int, total: int):
-    bar_length = 40
+    progress_bar_length = 40
     progress = current / total
-    done_bar = int(bar_length * progress)
-    leftover_bar = bar_length - done_bar
+    done_bar = int(progress_bar_length * progress)
+    leftover_bar = progress_bar_length - done_bar
     percent_done = f"{progress * 100:.0f}%"
     text = f"[{'#' * done_bar + '-' * (leftover_bar)}] {current}/{total} ({percent_done})"
     print(text, end='\r', flush=True)
@@ -214,6 +210,7 @@ def print_progress(current: int, total: int):
     if current == total:
         print("\nDone!") 
 
+# ===== Artifact Deletion Summaries ===== #
 def role_assignment_summary(role_assignments: list[Any]) -> str:
     summary = f"\tRole Assignments: {'None' if not role_assignments else ''}\n"
     
@@ -236,7 +233,7 @@ def diagnostic_setting_summary(resource_ds_map: dict[str, list[str]]) -> str:
     return summary
 
 def resource_group_summary(resource_groups: list[str]) -> str:
-    summary = f"\tResource Group(s): {'None' if not resource_groups else ''}\n"
+    summary = f"\tResource Groups: {'None' if not resource_groups else ''}\n"
     for rg in resource_groups:
         summary += f"\t\t- {rg}\n"
 
@@ -326,6 +323,8 @@ def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
     return sub_to_rg, rg_to_storage
 
 def find_role_assignments(sub_id: str, control_plane_ids: set) -> Any:
+    """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
+    
     log.info("Looking for DataDog role assignments... ")
 
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
@@ -355,7 +354,7 @@ def delete_role_assignments(sub_id: str, role_assigments_json: Any):
     print_progress(1, 1)
 
 def find_diagnostic_settings(sub_id: str, control_plane_ids: set) -> dict[str, list[str]]:
-    """Returns mapping of resource ID to list of diagnostic settings to delete"""
+    """Returns mapping of resource ID to list of LFO diagnostic settings"""
     
     resource_ids = list_resources(sub_id)
     resource_count = len(resource_ids)
@@ -404,8 +403,8 @@ def delete_resource_group(sub_id: str, resource_group_list: list[str]):
 def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]], 
                       sub_id_to_name: dict[str,str],
                       role_assignment_deletions: dict[str, list[Any]],
-                      resource_ds_map: dict[str, list[str]],
                       sub_diagnostic_setting_deletions: dict[str, dict[str,list[str]]]) -> bool:
+    """Displays summary of what will be deleted and prompts user for confirmation. Returns true if user confirms, false otherwise"""
     summary = uninstall_summary(sub_to_rg_deletions, 
                                 sub_id_to_name, 
                                 role_assignment_deletions, 
@@ -419,8 +418,7 @@ def confirm_uninstall(sub_to_rg_deletions: dict[str,list[str]],
     return choice == 'y'
 
 def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[str]:
-    """Given list of resource groups, prompt the user to what to delete. 
-    Returns list of what was selected"""
+    """Given list of resource groups, prompt the user to select what to delete. Returns what was selected"""
     
     prompt = '''
     Enter the resource group name you would like to remove
@@ -479,10 +477,7 @@ def mark_rg_deletions_per_sub(sub_id_to_name: dict[str,str],
 
 def mark_control_plane_deletions(sub_to_rg_deletions: dict[str, list[str]], 
                                  rg_to_storage_account: dict[str,list[str]]) -> set[str]:
-    '''
-       Based on the resource groups the user selected previously, 
-       this will return the control plane IDs to target for deletion
-    '''
+    '''Based on the resource groups the user selected previously, return the control plane IDs to target for deletion'''
     
     control_plane_ids_to_delete = set()
     
@@ -515,7 +510,6 @@ async def main():
     parser.add_argument("-d", "--dry-run", action="store_true", help="Run the script in dry-run mode. No changes will be made to the Azure environment")
     args = parser.parse_args()
 
-    # if args.sub_id:
     if args.dry_run:
         DRY_RUN = True
         log.info("Dry run enabled, no changes will be made")
@@ -540,9 +534,6 @@ async def main():
         role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
         if role_assignment_json:
             role_assignment_deletions[sub_id] = role_assignment_json
-            
-        else:
-            log.info("Did not find any role assignments to delete")
         
         resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
         if resource_ds_map:
@@ -551,7 +542,6 @@ async def main():
     confirmed = confirm_uninstall(sub_to_rg_deletions, 
                                   sub_id_to_name, 
                                   role_assignment_deletions, 
-                                  resource_ds_map,
                                   sub_diagnostic_setting_deletions)
     if not confirmed:
         log.info("Exiting.")
@@ -566,11 +556,7 @@ async def main():
     for sub_id, rg_list in sub_to_rg_deletions.items():
         delete_resource_group(sub_id, rg_list)
             
-    log.info("Done!")
-
-    # for async: process executor, thread pool executor
-    # check for existence of the things we tried to delete. if exists, retry deletion
-    # Verify that unknown role assigments will still appear if you're querying by description
+    log.info("Uninstall done! Exiting.")
 
 if __name__ == "__main__":
     basicConfig(level=INFO)
