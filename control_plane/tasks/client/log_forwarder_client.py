@@ -1,6 +1,5 @@
 # stdlib
-from asyncio import Lock, create_task, gather, wait
-from asyncio import Task as AsyncTask
+from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
@@ -48,6 +47,15 @@ from azure.mgmt.storage.v2023_05_01.models import (
 )
 from azure.storage.blob.aio import ContainerClient
 from azure.storage.blob.aio._download_async import StorageStreamDownloader
+from datadog_api_client import AsyncApiClient, Configuration
+from datadog_api_client.v2.api.metrics_api import MetricsApi
+from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
+from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
+from datadog_api_client.v2.model.metric_payload import MetricPayload
+from datadog_api_client.v2.model.metric_point import MetricPoint
+from datadog_api_client.v2.model.metric_resource import MetricResource
+from datadog_api_client.v2.model.metric_series import MetricSeries
+from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
 from cache.common import (
@@ -67,14 +75,6 @@ from cache.env import (
     get_config_option,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
-from datadog_api_client import AsyncApiClient, Configuration
-from datadog_api_client.v2.api.metrics_api import MetricsApi
-from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
-from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
-from datadog_api_client.v2.model.metric_payload import MetricPayload
-from datadog_api_client.v2.model.metric_point import MetricPoint
-from datadog_api_client.v2.model.metric_resource import MetricResource
-from datadog_api_client.v2.model.metric_series import MetricSeries
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
@@ -88,7 +88,6 @@ from tasks.common import (
 from tasks.concurrency import collect, create_task_from_awaitable
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
-from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
