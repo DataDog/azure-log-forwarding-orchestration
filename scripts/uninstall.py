@@ -190,9 +190,10 @@ def az(cmd: str) -> str:
     except subprocess.CalledProcessError as e:
         print(f"Error running Azure CLI command:\n{e.stderr}")
         SystemExit(1)
+        return ""
 
 # ===== Azure Commands ===== #
-def get_users_subscriptions() -> dict:
+def list_users_subscriptions() -> dict:
     log.info("Searching for all subscriptions accessible by the current user to find log forwarding installations")
     
     all_subs_json = json.loads(az("account list --output json"))
@@ -202,7 +203,7 @@ def list_resources(sub_id: str) -> set:
     resource_ids = json.loads(az(f"resource list --subscription {sub_id} --query \"[?{ALLOWED_RESOURCE_TYPES_FILTER}].id\" --output json"))
     return set(resource_ids)
 
-def find_control_planes(sub_id: str, sub_name: str) -> dict[str,str]:
+def find_sub_control_plane(sub_id: str, sub_name: str) -> dict[str,str]:
     """Queries for LFO control planes in single subscription, returns mapping of resource group name to control plane storage account name"""
     
     log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})")
@@ -212,7 +213,7 @@ def find_control_planes(sub_id: str, sub_name: str) -> dict[str,str]:
     lfo_install_map = {account["resourceGroup"] : account["name"] for account in storage_accounts_json} 
     return lfo_install_map
 
-def find_lfo_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], dict[str,list[str]]]:
+def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], dict[str,list[str]]]:
     """
     Queries for all LFO control planes that the user has access to.
     Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to storage account mapping
@@ -222,7 +223,7 @@ def find_lfo_control_planes(sub_id_to_name: dict) -> tuple[dict[str,list[str]], 
     rg_to_storage = defaultdict(list)
 
     for sub_id, sub_name in sub_id_to_name.items():
-        control_planes = find_control_planes(sub_id, sub_name)
+        control_planes = find_sub_control_plane(sub_id, sub_name)
         if not control_planes:
             continue
 
@@ -280,7 +281,6 @@ def delete_diagnostic_settings(sub_id: str, resource_setting_map: dict[str,list[
         for ds_name in ds_names:
             az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
 
-# ===== Resource Group Delete ===== #
 def delete_resource_group(sub_id: str, resource_group_list: list[str]):
     for resource_group in resource_group_list:
         rg_deletion_log = f"Deleting resource group {resource_group}"
@@ -451,8 +451,8 @@ async def main():
         log.warning("Deletion of resource groups and ALL resources within them will occur as a result of the uninstall process.")
         log.warning("If you have created any Azure resources in resource groups managed by DataDog log forwarding, they will be deleted. Perform backups if necessary")
 
-    sub_id_to_name = get_users_subscriptions()    
-    sub_id_to_rgs, rg_to_storage_account = find_lfo_control_planes(sub_id_to_name)
+    sub_id_to_name = list_users_subscriptions()    
+    sub_id_to_rgs, rg_to_storage_account = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
     if not sub_to_rg_deletions or sub_to_rg_deletions is None or not any(sub_to_rg_deletions.values()):
