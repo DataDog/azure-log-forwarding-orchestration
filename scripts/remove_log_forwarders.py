@@ -83,31 +83,18 @@ async def delete_resource(client: ResourceManagementClient, resource: Resource):
 async def main():
     sub_id = "0b62a232-b8db-4380-9da6-640f7272ed6d"
     resource_group: str | None = "lfo"
-    async with DefaultAzureCredential() as cred, ResourceManagementClient(
-        cred, sub_id
-    ) as client:
+    async with DefaultAzureCredential() as cred, ResourceManagementClient(cred, sub_id) as client:
         resources = client.resources.list()
         jobs, everything_else = partition_resources(
-            [
-                resource
-                async for resource in resources
-                if should_delete(resource, resource_group)
-            ]
+            [resource async for resource in resources if should_delete(resource, resource_group)]
         )
 
         # delete any function apps before we delete the rest to avoid conflicts
         for i in range(0, len(jobs), BATCH_SIZE):
-            await gather(
-                *[delete_resource(client, r) for r in jobs[i : i + BATCH_SIZE]]
-            )
+            await gather(*[delete_resource(client, r) for r in jobs[i : i + BATCH_SIZE]])
 
         for i in range(0, len(everything_else), BATCH_SIZE):
-            await gather(
-                *[
-                    delete_resource(client, r)
-                    for r in everything_else[i : i + BATCH_SIZE]
-                ]
-            )
+            await gather(*[delete_resource(client, r) for r in everything_else[i : i + BATCH_SIZE]])
 
 
 if __name__ == "__main__":
