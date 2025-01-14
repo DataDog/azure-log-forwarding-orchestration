@@ -6,7 +6,9 @@ import json
 import subprocess
 from collections import defaultdict
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from logging import INFO, WARNING, basicConfig, getLogger
+from time import sleep
 from typing import Any, Final
 
 getLogger("azure").setLevel(WARNING)
@@ -196,6 +198,9 @@ def dry_run_of(s: str) -> str:
 
 
 def print_progress(current: int, total: int):
+    if total == 0:
+        return
+
     progress_bar_length = 40
     progress = current / total
     done_bar = int(progress_bar_length * progress)
@@ -273,7 +278,10 @@ def az(cmd: str) -> str:
         result = subprocess.run(az_cmd, shell=True, check=True, text=True, capture_output=True)
         return result.stdout
     except subprocess.CalledProcessError as e:
-        print(f"Error running Azure CLI command:\n{e.stderr}")
+        if "resource list" in cmd and "--resource-group" in cmd and "ResourceGroupNotFound" in str(e.stderr):
+            raise e
+
+        log.error(f"Error running Azure CLI command:\n{e.stderr}")
         raise SystemExit(1) from e
 
 
@@ -286,8 +294,8 @@ def list_users_subscriptions() -> dict:
     return {sub["id"]: sub["name"] for sub in all_subs_json}
 
 
-def list_resources(sub_id: str) -> set:
-    log.info("Searching for resources in subscription... ")
+def list_resources(sub_id: str, sub_name: str) -> set:
+    log.info(f"Searching for resources in {sub_name} ({sub_id})... ")
 
     resource_ids = json.loads(
         az(f'resource list --subscription {sub_id} --query "[?{ALLOWED_RESOURCE_TYPES_FILTER}].id" --output json')
@@ -295,6 +303,19 @@ def list_resources(sub_id: str) -> set:
     print(f"Found {formatted_number(len(resource_ids))} resource(s)")
 
     return set(resource_ids)
+
+
+def num_resources_in_group(sub_id: str, resource_group: str) -> int:
+    try:
+        return int(
+            az(
+                f'resource list --subscription {sub_id} --resource-group {resource_group} --query "length([])" --output tsv'
+            )
+        )
+    except subprocess.CalledProcessError as e:
+        if "ResourceGroupNotFound" in str(e.stderr):
+            return 0
+        raise e
 
 
 def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
@@ -333,10 +354,10 @@ def find_all_control_planes(sub_id_to_name: dict) -> tuple[dict[str, list[str]],
     return sub_to_rg, rg_to_lfo_id
 
 
-def find_role_assignments(sub_id: str, control_plane_ids: set) -> list[dict[str, str]]:
+def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> list[dict[str, str]]:
     """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
 
-    log.info("Looking for DataDog role assignments... ")
+    log.info(f"Looking for DataDog role assignments in {sub_name} ({sub_id})... ")
 
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
     role_assignment_json = json.loads(
@@ -351,35 +372,28 @@ def find_role_assignments(sub_id: str, control_plane_ids: set) -> list[dict[str,
 
 
 def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str, str]]):
+    if DRY_RUN:
+        return
+
     ids = {role["id"] for role in role_assigments_json}
     if not ids:
         log.info(f"Did not find any role assignments to delete in subscription {sub_id}")
         return
 
-    role_deletion_log = "Deleting role assignments"
-    if DRY_RUN:
-        log.info(dry_run_of(role_deletion_log))
-        return
-
-    log.info(role_deletion_log)
-
-    print_progress(0, 1)
-
     # --include-inherited flag will also try to delete the role assignment from the management group scope if possible
     az(f"role assignment delete --ids {space_separated(ids)} --subscription {sub_id} --include-inherited --yes")
-    print_progress(1, 1)
 
 
-def find_diagnostic_settings(sub_id: str, control_plane_ids: set) -> dict[str, list[str]]:
+def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set) -> dict[str, list[str]]:
     """Returns mapping of resource ID to list of LFO diagnostic settings"""
 
-    resource_ids = list_resources(sub_id)
+    resource_ids = list_resources(sub_id, sub_name)
     resource_count = len(resource_ids)
     resource_ds_map = defaultdict(list)
     if not resource_ids:
         return resource_ds_map
 
-    log.info("Looking for DataDog log forwarding diagnostic settings... ")
+    log.info(f"Looking for DataDog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
     ds_count = 0
     diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
     for i, resource_id in enumerate(resource_ids, start=1):
@@ -397,30 +411,75 @@ def find_diagnostic_settings(sub_id: str, control_plane_ids: set) -> dict[str, l
     return resource_ds_map
 
 
-def delete_diagnostic_settings(sub_id: str, resource_setting_map: dict[str, list[str]]):
-    num_resources = len(resource_setting_map)
-    ds_deletion_log = f"Deleting DataDog diagnostic settings from {num_resources} resources"
+def delete_diagnostic_setting(sub_id: str, resource_id: str, ds_name: str):
     if DRY_RUN:
-        log.info(f"{dry_run_of(ds_deletion_log)}")
         return
 
-    log.info(ds_deletion_log)
-    for i, (resource_id, ds_names) in enumerate(resource_setting_map.items(), 1):
-        print_progress(i, num_resources)
-        for ds_name in ds_names:
-            az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
+    az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
 
 
-def delete_resource_group(sub_id: str, resource_group_list: list[str]):
+def delete_roles_diag_settings(
+    sub_id: str,
+    sub_role_assignment_deletions: dict[str, list[dict[str, str]]],
+    sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
+):
+    delete_log = "Deleting role assignments and diagnostic settings"
+    log.info(f"{dry_run_of(delete_log) if DRY_RUN else delete_log}")
+
+    with ThreadPoolExecutor(100) as tpe:
+        futures = []
+        for sub_id, role_assignments_json in sub_role_assignment_deletions.items():
+            if role_assignments_json:
+                futures.append(tpe.submit(delete_role_assignments, sub_id, role_assignments_json))
+        for sub_id, resource_ds_map in sub_diagnostic_setting_deletions.items():
+            for resource_id, ds_names in resource_ds_map.items():
+                for ds_name in ds_names:
+                    futures.append(tpe.submit(delete_diagnostic_setting, sub_id, resource_id, ds_name))
+
+    num_completed = 0
+    print_progress(num_completed, len(futures))
+    for _ in as_completed(futures):
+        num_completed += 1
+        print_progress(num_completed, len(futures))
+
+
+def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
     for resource_group in resource_group_list:
-        rg_deletion_log = f"Deleting resource group {resource_group} (this could take a few minutes)... "
+        rg_deletion_log = (
+            f"Starting resource group {resource_group} deletion in background since it can take some time... "
+        )
         if DRY_RUN:
             log.info(dry_run_of(rg_deletion_log))
             return
 
         log.info(rg_deletion_log)
-        az(f"group delete --subscription {sub_id} --name {resource_group} --yes")
-        print("Done!")
+
+        # --no-wait will initiate delete and immediately return
+        az(f"group delete --subscription {sub_id} --name {resource_group} --yes --no-wait")
+
+
+def check_resource_group_delete_status(sub_to_rg_deletions: dict[str, list[str]]):
+    log_msg = "Checking resource group deletion status... "
+    log.info(f"{dry_run_of(log_msg) if DRY_RUN else log_msg}")
+
+    if DRY_RUN:
+        return
+
+    total_resource_count = 0
+    for sub_id, rg_list in sub_to_rg_deletions.items():
+        for rg in rg_list:
+            total_resource_count += num_resources_in_group(sub_id, rg)
+
+    while True:
+        leftover_resource_count = 0
+        for sub_id, rg_list in sub_to_rg_deletions.items():
+            for rg in rg_list:
+                leftover_resource_count += num_resources_in_group(sub_id, rg)
+        deleted_resource_count = total_resource_count - leftover_resource_count
+        print_progress(deleted_resource_count, total_resource_count)
+        if leftover_resource_count == 0:
+            break
+        sleep(5)
 
 
 # ===== User Interaction =====  #
@@ -524,11 +583,12 @@ def mark_control_plane_deletions(
 
 
 def mark_role_assignment_deletions(
-    sub_to_rg_deletions: dict[str, list[str]], control_plane_id_deletions: set[str]
+    sub_to_rg_deletions: dict[str, list[str]], sub_id_to_name: dict, control_plane_id_deletions: set[str]
 ) -> dict[str, list[dict[str, str]]]:
     role_assignment_deletions = defaultdict(list)
     for sub_id in sub_to_rg_deletions:
-        role_assignment_json = find_role_assignments(sub_id, control_plane_id_deletions)
+        sub_name = sub_id_to_name[sub_id]
+        role_assignment_json = find_role_assignments(sub_id, sub_name, control_plane_id_deletions)
         if role_assignment_json:
             role_assignment_deletions[sub_id] = role_assignment_json
 
@@ -536,11 +596,12 @@ def mark_role_assignment_deletions(
 
 
 def mark_diagnostic_setting_deletions(
-    sub_to_rg_deletions: dict[str, list[str]], control_plane_id_deletions: set[str]
+    sub_to_rg_deletions: dict[str, list[str]], sub_id_to_name: dict, control_plane_id_deletions: set[str]
 ) -> dict[str, dict[str, list[str]]]:
     sub_diagnostic_setting_deletions = defaultdict(dict)
     for sub_id in sub_to_rg_deletions:
-        resource_ds_map = find_diagnostic_settings(sub_id, control_plane_id_deletions)
+        sub_name = sub_id_to_name[sub_id]
+        resource_ds_map = find_diagnostic_settings(sub_id, sub_name, control_plane_id_deletions)
         if resource_ds_map:
             sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
 
@@ -596,9 +657,11 @@ def main():
 
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
 
-    sub_role_assignment_deletions = mark_role_assignment_deletions(sub_to_rg_deletions, control_plane_id_deletions)
+    sub_role_assignment_deletions = mark_role_assignment_deletions(
+        sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
+    )
     sub_diagnostic_setting_deletions = mark_diagnostic_setting_deletions(
-        sub_to_rg_deletions, control_plane_id_deletions
+        sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
     )
 
     confirmed = confirm_uninstall(
@@ -608,14 +671,13 @@ def main():
         log.info("Exiting.")
         raise SystemExit(0)
 
-    for sub_id, role_assignments in sub_role_assignment_deletions.items():
-        delete_role_assignments(sub_id, role_assignments)
-
-    for sub_id, diagnostic_settings in sub_diagnostic_setting_deletions.items():
-        delete_diagnostic_settings(sub_id, diagnostic_settings)
-
     for sub_id, rg_list in sub_to_rg_deletions.items():
-        delete_resource_group(sub_id, rg_list)
+        sub_name = sub_id_to_name[sub_id]
+        log.info(f"{SEPARATOR}Deleting artifacts in {sub_name} ({sub_id})")
+        start_resource_group_delete(sub_id, rg_list)
+        delete_roles_diag_settings(sub_id, sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
+
+    check_resource_group_delete_status(sub_to_rg_deletions)
 
     log.info("Uninstall done! Exiting.")
 
