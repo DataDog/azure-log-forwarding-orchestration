@@ -665,7 +665,7 @@ def parse_args():
     parser.add_argument(
         "-y",
         "--yes",
-        type="store_true",
+        action="store_true",
         help="Skip all user prompts. This will delete all detected installations without confirmation",
     )
     args = parser.parse_args()
