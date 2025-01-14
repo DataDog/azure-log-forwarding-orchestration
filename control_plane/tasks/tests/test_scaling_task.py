@@ -357,7 +357,10 @@ class TestScalingTask(TaskTestCase):
     async def test_container_app_env_in_control_plane_region_is_not_deleted_on_cleanup(self):
         non_control_plane_subscription_id = "some-other-subscription-id"
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
+            resource_cache_state={
+                SUB_ID1: {WEST_US: {"resource1", "resource2"}},
+                non_control_plane_subscription_id: {},
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     WEST_US: {
@@ -380,7 +383,8 @@ class TestScalingTask(TaskTestCase):
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     }
-                }
+                },
+                non_control_plane_subscription_id: {},
             },
         )
 
