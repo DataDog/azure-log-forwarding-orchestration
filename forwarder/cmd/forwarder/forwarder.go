@@ -233,7 +233,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 			downloadEg.Go(func() error {
 				downloadErr := getLogs(downloadCtx, storageClient, cursors, blob, logCh)
 				if downloadErr != nil {
-					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, downloadErr))
+					logger.Warning(fmt.Errorf("error processing blob %s from container %s: %w", blob.Name, c.Name, downloadErr))
 				}
 				return nil
 			})
