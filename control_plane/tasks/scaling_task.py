@@ -235,12 +235,9 @@ class ScalingTask(Task):
         """Cleans up a region by deleting all log forwarders for the given subscription and region."""
         forwarders = self._assignment_cache_initial_state[subscription_id][region]["configurations"]
         if not forwarders:
-            # never delete control plane env in the control plane subscription.
+            # never delete control plane region env, it is either used by the deployer task or potentially unsupported regions
             # if the region is supported by container apps, it has its own env and should be deleted
-            if (
-                not (region == self.control_plane_region and subscription_id == self.control_plane_subscription)
-                and region in ALLOWED_CONTAINER_APP_REGIONS
-            ):
+            if region == self.control_plane_region and region in ALLOWED_CONTAINER_APP_REGIONS:
                 log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
                 await client.delete_log_forwarder_env(region, raise_error=False)
 

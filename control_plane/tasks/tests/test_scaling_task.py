@@ -356,9 +356,8 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    async def test_container_app_env_in_control_plane_region_in_control_plane_subscription_is_not_deleted_on_cleanup(
-        self,
-    ):
+    async def test_container_app_env_in_control_plane_region_is_not_deleted_on_cleanup(self):
+        non_control_plane_subscription_id = "some-other-subscription-id"
         await self.run_scaling_task(
             resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
             assignment_cache_state={
@@ -369,6 +368,9 @@ class TestScalingTask(TaskTestCase):
                     },
                     EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
                 },
+                non_control_plane_subscription_id: {
+                    EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
+                },
             },
         )
         self.client.delete_log_forwarder_env.assert_not_called()
@@ -376,35 +378,6 @@ class TestScalingTask(TaskTestCase):
             self.cache,
             {
                 SUB_ID1: {
-                    WEST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
-                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
-                    }
-                }
-            },
-        )
-
-    async def test_container_app_env_in_control_plane_region_but_not_in_control_plane_subscription_is_deleted_on_cleanup(
-        self,
-    ):
-        non_control_plane_subscription_id = "some-other-subscription-id"
-        await self.run_scaling_task(
-            resource_cache_state={non_control_plane_subscription_id: {WEST_US: {"resource1", "resource2"}}},
-            assignment_cache_state={
-                non_control_plane_subscription_id: {
-                    WEST_US: {
-                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
-                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
-                    },
-                    EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
-                },
-            },
-        )
-        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US_2, raise_error=False)
-        self.assertEqual(
-            self.cache,
-            {
-                non_control_plane_subscription_id: {
                     WEST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
