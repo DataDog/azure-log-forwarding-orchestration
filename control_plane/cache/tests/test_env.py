@@ -32,3 +32,8 @@ class TestParseConfigOption(TestCase):
     def test_parse_config_option_missing(self):
         result = parse_config_option(SCALING_PERCENTAGE_SETTING, int, 100)
         self.assertEqual(result, 100)
+
+    @patch.dict("cache.env.environ", {SCALING_PERCENTAGE_SETTING: "hi"})
+    def test_parse_config_option_parser_returns_none(self):
+        result = parse_config_option(SCALING_PERCENTAGE_SETTING, lambda _: None, 100)
+        self.assertEqual(result, 100)
