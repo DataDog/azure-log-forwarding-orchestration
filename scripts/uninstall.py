@@ -270,19 +270,39 @@ def uninstall_summary(
 
 # ===== Azure Commands ===== #
 def az(cmd: str) -> str:
-    """Runs az command, returns stdout"""
+    """Runs az command with exponential backoff/retry, returns stdout"""
 
+    max_retries = 6
+    delay = 2  # seconds
     az_cmd = f"az {cmd}"
 
-    try:
-        result = subprocess.run(az_cmd, shell=True, check=True, text=True, capture_output=True)
-        return result.stdout
-    except subprocess.CalledProcessError as e:
-        if "resource list" in cmd and "--resource-group" in cmd and "ResourceGroupNotFound" in str(e.stderr):
-            raise e
+    for attempt in range(max_retries):
+        try:
+            result = subprocess.run(az_cmd, shell=True, check=True, text=True, capture_output=True)
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            stderr = str(e.stderr)
+            if (
+                "resource list" in cmd
+                and "--resource-group" in cmd
+                and '--query "length([])"' in cmd
+                and "ResourceGroupNotFound" in stderr
+            ):
+                return "0"
+            if "TooManyRequests" in stderr:
+                if attempt < max_retries - 1:
+                    sleep(delay)
+                    delay *= 2
+                    log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
+                    continue
 
-        log.error(f"Error running Azure CLI command:\n{e.stderr}")
-        raise SystemExit(1) from e
+                log.error("Rate limit exceeded. Please wait a few minutes and try again.")
+                raise SystemExit(1) from e
+
+            log.error(f"Error running Azure CLI command:\n{e.stderr}")
+            raise SystemExit(1) from e
+
+    raise SystemExit(1)  # unreachable
 
 
 def list_users_subscriptions() -> dict:
