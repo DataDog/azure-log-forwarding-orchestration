@@ -81,4 +81,4 @@ class AzureModelMatcher:
     def __eq__(self, other: Any) -> bool:
         with suppress(Exception):
             return other.as_dict() == self.expected
-        return False
+        return False  # pragma: no cover
