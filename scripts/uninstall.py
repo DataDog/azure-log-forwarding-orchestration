@@ -208,10 +208,12 @@ def print_progress(current: int, total: int):
     done_bar = int(progress_bar_length * progress)
     leftover_bar = progress_bar_length - done_bar
     percent_done = f"{progress * 100:.0f}%"
-    print(f"[{'#' * done_bar + '-' * (leftover_bar)}] {current}/{total} ({percent_done})", end="\r", flush=True)
-
-    if current == total:
-        print("\nDone!")
+    is_done = current == total
+    print(
+        f"[{'#' * done_bar + '-' * (leftover_bar)}] {current}/{total} ({percent_done})",
+        end="\tDone!\n" if is_done else "\r",
+        flush=True,
+    )
 
 
 # ===== Artifact Deletion Summaries ===== #
@@ -301,7 +303,7 @@ def az(cmd: str) -> str:
                 log.error("Rate limit exceeded. Please wait a few minutes and try again.")
                 raise SystemExit(1) from e
 
-            log.error(f"Error running Azure CLI command:\n{e.stderr}")
+            log.error(f"Error running Azure command:\n{e.stderr}")
             raise SystemExit(1) from e
 
     raise SystemExit(1)  # unreachable
@@ -309,15 +311,28 @@ def az(cmd: str) -> str:
 
 def list_users_subscriptions(sub_id=None) -> dict:
     if sub_id is None:
-        log.info("Searching for log forwarding installations in all subscriptions accessible by current user... ")
+        log.info("Fetching details for all subscriptions accessible by current user... ")
+        print_progress(0, 1)
         subs_json = json.loads(az("account list --output json"))
-        print(f"Found {len(subs_json)}")
+        print_progress(1, 1)
+        print(f"Found {len(subs_json)} subscriptions")
         return {sub["id"]: sub["name"] for sub in subs_json}
 
-    log.info(f"Searching for log forwarding installations in subscription {sub_id}... ")
-    subs_json = json.loads(az(f"account show --name {sub_id} --output json"))
-    print(f"Found {len(subs_json)}")
-    return {sub["id"]: sub["name"] for sub in subs_json}
+    log.info(f"Fetching details for subscription {sub_id}... ")
+
+    try:
+        print_progress(0, 1)
+        subs_json = json.loads(az(f"account show --name {sub_id} --output json"))
+        print_progress(1, 1)
+        print(f'Found {subs_json["name"]} ({subs_json["id"]})')
+        return {subs_json["id"]: subs_json["name"]}
+    except subprocess.CalledProcessError as e:
+        print_progress(1, 1)
+        if f"Subscription '{sub_id}' not found" in str(e.stderr):
+            log.error(f"Subscription '{sub_id}' not found, exiting")
+
+        log.error(f"Error fetching subscription details: {e.stderr}")
+        raise SystemExit(1) from e
 
 
 def list_resources(sub_id: str, sub_name: str) -> set:
@@ -348,15 +363,17 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     """Queries for LFO control planes in single subscription, returns mapping of resource group name to control plane storage account name"""
 
     log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})... ")
-
     lfo_install_map = {}
+    print_progress(0, 1)
 
     try:
         cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
         storage_accounts_json = json.loads(az(cmd))
         lfo_install_map = {account["resourceGroup"]: account["name"] for account in storage_accounts_json}
+        print_progress(1, 1)
         print(f"Found {len(lfo_install_map)}")
     except subprocess.CalledProcessError as e:
+        print_progress(1, 1)
         if "AADSTS700082" in e.stderr:
             log.warning(f"Refresh token is expired on {sub_name} ({sub_id}). Skipping for now.")
             return lfo_install_map
@@ -658,7 +675,7 @@ def parse_args():
     )
     parser.add_argument(
         "-s",
-        "--sub",
+        "--subscription",
         type=str,
         help="Specify subscription ID to uninstall artifacts from. If not provided, all subscriptions will be searched",
     )
@@ -708,7 +725,7 @@ def main():
 
     args = parse_args()
 
-    sub_id_to_name = list_users_subscriptions(args.sub)
+    sub_id_to_name = list_users_subscriptions(args.subscription)
     sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
