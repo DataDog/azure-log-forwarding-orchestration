@@ -17,7 +17,6 @@ log = getLogger("uninstaller")
 # ===== User settings ===== #
 DRY_RUN_SETTING = False
 SKIP_PROMPTS_SETTING = False
-SUB_ID_SETTING = None
 
 # ===== Constants ===== #
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
@@ -349,11 +348,18 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     """Queries for LFO control planes in single subscription, returns mapping of resource group name to control plane storage account name"""
 
     log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})... ")
-    cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
-    storage_accounts_json = json.loads(az(cmd))
 
-    lfo_install_map = {account["resourceGroup"]: account["name"] for account in storage_accounts_json}
-    print(f"Found {len(lfo_install_map)}")
+    lfo_install_map = {}
+
+    try:
+        cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
+        storage_accounts_json = json.loads(az(cmd))
+        lfo_install_map = {account["resourceGroup"]: account["name"] for account in storage_accounts_json}
+        print(f"Found {len(lfo_install_map)}")
+    except subprocess.CalledProcessError as e:
+        if "AADSTS700082" in e.stderr:
+            log.warning(f"Refresh token is expired on {sub_name} ({sub_id}). Skipping for now.")
+            return lfo_install_map
 
     return lfo_install_map
 
