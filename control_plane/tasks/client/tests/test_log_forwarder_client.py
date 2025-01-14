@@ -877,3 +877,50 @@ class TestLogForwarderClient(AsyncTestCase):
             RESOURCE_GROUP_NAME, MANAGED_ENV_NAME, AzureModelMatcher({"location": EAST_US, "zone_redundant": False})
         )
         (await asp_create()).result.assert_awaited_once_with()
+
+    async def test_get_forwarder_resources_both_exist(self):
+        job, storage_account = Mock(name="job"), Mock(name="storage_account")
+        self.client.container_apps_client.jobs.get.return_value = job
+        self.client.storage_client.storage_accounts.get_properties.return_value = storage_account
+        async with self.client as client:
+            res = await client.get_forwarder_resources(CONFIG_ID1)
+        self.client.container_apps_client.jobs.get.assert_awaited_once_with(RESOURCE_GROUP_NAME, CONTAINER_APP_NAME)
+        self.client.storage_client.storage_accounts.get_properties.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+        )
+        self.assertEqual(res, (job, storage_account))
+
+    async def test_get_forwarder_resources_neither_exist(self):
+        self.client.container_apps_client.jobs.get.side_effect = ResourceNotFoundError()
+        self.client.storage_client.storage_accounts.get_properties.side_effect = ResourceNotFoundError()
+        async with self.client as client:
+            res = await client.get_forwarder_resources(CONFIG_ID1)
+        self.client.container_apps_client.jobs.get.assert_awaited_once_with(RESOURCE_GROUP_NAME, CONTAINER_APP_NAME)
+        self.client.storage_client.storage_accounts.get_properties.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+        )
+        self.assertEqual(res, (None, None))
+
+    async def test_get_forwarder_resources_job_not_found(self):
+        storage_account = Mock(name="storage_account")
+        self.client.container_apps_client.jobs.get.side_effect = ResourceNotFoundError()
+        self.client.storage_client.storage_accounts.get_properties.return_value = storage_account
+        async with self.client as client:
+            res = await client.get_forwarder_resources(CONFIG_ID1)
+        self.client.container_apps_client.jobs.get.assert_awaited_once_with(RESOURCE_GROUP_NAME, CONTAINER_APP_NAME)
+        self.client.storage_client.storage_accounts.get_properties.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+        )
+        self.assertEqual(res, (None, storage_account))
+
+    async def test_get_forwarder_resources_storage_not_found(self):
+        job = Mock(name="job")
+        self.client.container_apps_client.jobs.get.return_value = job
+        self.client.storage_client.storage_accounts.get_properties.side_effect = ResourceNotFoundError()
+        async with self.client as client:
+            res = await client.get_forwarder_resources(CONFIG_ID1)
+        self.client.container_apps_client.jobs.get.assert_awaited_once_with(RESOURCE_GROUP_NAME, CONTAINER_APP_NAME)
+        self.client.storage_client.storage_accounts.get_properties.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+        )
+        self.assertEqual(res, (job, None))
