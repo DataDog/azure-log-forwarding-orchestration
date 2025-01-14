@@ -233,7 +233,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
     async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
         container_app_region = self.get_container_app_region(region)
-        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
+        env_name = get_managed_env_name(container_app_region, self.control_plane_id)
         log.info("Creating managed environment %s for region %s in %s", env_name, region, container_app_region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
