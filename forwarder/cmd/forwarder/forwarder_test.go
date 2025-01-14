@@ -219,7 +219,7 @@ func TestRun(t *testing.T) {
 			resp := azblob.DownloadStreamResponse{}
 			if firstBlob {
 				firstBlob = false
-				resp.Body = io.NopCloser(strings.NewReader("invalid"))
+				resp.Body = io.NopCloser(strings.NewReader("{\"test\": \"invalid\"}"))
 			} else {
 				resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
 			}
