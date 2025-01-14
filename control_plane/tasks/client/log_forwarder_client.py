@@ -232,13 +232,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
     async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
-        env_name = get_managed_env_name(region, self.control_plane_id)
-        log.info("Creating managed environment %s for region %s", env_name, region)
+        container_app_region = self.get_container_app_region(region)
+        env_name = get_managed_env_name(container_app_region, self.control_plane_id)
+        log.info("Creating managed environment %s for region %s in %s", env_name, region, container_app_region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
             ManagedEnvironment(
-                location=region,
+                location=container_app_region,
                 zone_redundant=False,
             ),
         )
@@ -246,10 +247,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             await poller.result()
 
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
-        env_region = self.get_container_app_region(region)
-        if env_region == self.control_plane_region:  # we know this will always exist
-            return get_managed_env_id(self.subscription_id, self.resource_group, env_region, self.control_plane_id)
-        env_name = get_managed_env_name(env_region, self.control_plane_id)
+        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:

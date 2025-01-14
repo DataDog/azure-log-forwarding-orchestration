@@ -87,7 +87,7 @@ class ResourcesTask(Task):
             all_subscription_count = len(subscriptions)
             subscriptions = [sub for sub in subscriptions if sub in self.monitored_subscriptions]
             log.info(
-                "Filterted %s subscriptions down to the monitored subscriptions list (%s subscriptions)",
+                "Filtered %s subscriptions down to the monitored subscriptions list (%s subscriptions)",
                 all_subscription_count,
                 len(subscriptions),
             )

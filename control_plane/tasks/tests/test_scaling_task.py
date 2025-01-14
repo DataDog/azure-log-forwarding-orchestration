@@ -20,6 +20,12 @@ from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     InvalidCacheError,
 )
+from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    SCALING_PERCENTAGE_SETTING,
+)
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache
 from tasks.scaling_task import (
@@ -88,10 +94,10 @@ class TestScalingTask(TaskTestCase):
         p = patch.dict(
             environ,
             {
-                "RESOURCE_GROUP": RG1,
-                "CONTROL_PLANE_ID": CONTROL_PLANE_ID,
-                "CONTROL_PLANE_REGION": EAST_US_2,
-                "SCALING_PERCENTAGE": "0.7",
+                RESOURCE_GROUP_SETTING: RG1,
+                CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
+                CONTROL_PLANE_REGION_SETTING: EAST_US_2,
+                SCALING_PERCENTAGE_SETTING: "0.7",
             },
         )
         p.start()
@@ -349,14 +355,21 @@ class TestScalingTask(TaskTestCase):
         self.assertEqual(self.cache, expected_cache)
 
     async def test_container_app_env_in_control_plane_region_is_not_deleted_on_cleanup(self):
+        non_control_plane_subscription_id = "some-other-subscription-id"
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
+            resource_cache_state={
+                SUB_ID1: {WEST_US: {"resource1", "resource2"}},
+                non_control_plane_subscription_id: {},
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     WEST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     },
+                    EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
+                },
+                non_control_plane_subscription_id: {
                     EAST_US_2: {"configurations": {}, "resources": {}},  # to be cleaned up
                 },
             },
@@ -370,7 +383,8 @@ class TestScalingTask(TaskTestCase):
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     }
-                }
+                },
+                non_control_plane_subscription_id: {},
             },
         )
 
