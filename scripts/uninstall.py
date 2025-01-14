@@ -14,7 +14,10 @@ from typing import Any, Final
 getLogger("azure").setLevel(WARNING)
 log = getLogger("uninstaller")
 
-DRY_RUN = False
+# ===== User settings ===== #
+DRY_RUN_SETTING = False
+SKIP_PROMPTS_SETTING = False
+SUB_ID_SETTING = None
 
 # ===== Constants ===== #
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
@@ -252,7 +255,7 @@ def uninstall_summary(
     sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
 ) -> str:
     header = "Deleting the following artifacts"
-    deletion_summary = f"{SEPARATOR}{dry_run_of(header) if DRY_RUN else header}:\n"
+    deletion_summary = f"{SEPARATOR}{dry_run_of(header) if DRY_RUN_SETTING else header}:\n"
 
     for sub_id, rg_list in sub_to_rg_deletions.items():
         deletion_summary += f"From subscription {sub_id_to_name[sub_id]} ({sub_id}):\n"
@@ -305,13 +308,17 @@ def az(cmd: str) -> str:
     raise SystemExit(1)  # unreachable
 
 
-def list_users_subscriptions() -> dict:
-    log.info("Searching for log forwarding installations in all subscriptions accessible by current user... ")
+def list_users_subscriptions(sub_id=None) -> dict:
+    if sub_id is None:
+        log.info("Searching for log forwarding installations in all subscriptions accessible by current user... ")
+        subs_json = json.loads(az("account list --output json"))
+        print(f"Found {len(subs_json)}")
+        return {sub["id"]: sub["name"] for sub in subs_json}
 
-    all_subs_json = json.loads(az("account list --output json"))
-    print(f"Found {len(all_subs_json)}")
-
-    return {sub["id"]: sub["name"] for sub in all_subs_json}
+    log.info(f"Searching for log forwarding installations in subscription {sub_id}... ")
+    subs_json = json.loads(az(f"account show --name {sub_id} --output json"))
+    print(f"Found {len(subs_json)}")
+    return {sub["id"]: sub["name"] for sub in subs_json}
 
 
 def list_resources(sub_id: str, sub_name: str) -> set:
@@ -392,7 +399,7 @@ def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) ->
 
 
 def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str, str]]):
-    if DRY_RUN:
+    if DRY_RUN_SETTING:
         return
 
     ids = {role["id"] for role in role_assigments_json}
@@ -432,7 +439,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
 
 
 def delete_diagnostic_setting(sub_id: str, resource_id: str, ds_name: str):
-    if DRY_RUN:
+    if DRY_RUN_SETTING:
         return
 
     az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
@@ -444,7 +451,7 @@ def delete_roles_diag_settings(
     sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
 ):
     delete_log = "Deleting role assignments and diagnostic settings"
-    log.info(f"{dry_run_of(delete_log) if DRY_RUN else delete_log}")
+    log.info(f"{dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log}")
 
     with ThreadPoolExecutor(100) as tpe:
         futures = []
@@ -468,7 +475,7 @@ def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
         rg_deletion_log = (
             f"Starting resource group {resource_group} deletion in background since it can take some time... "
         )
-        if DRY_RUN:
+        if DRY_RUN_SETTING:
             log.info(dry_run_of(rg_deletion_log))
             return
 
@@ -478,11 +485,11 @@ def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
         az(f"group delete --subscription {sub_id} --name {resource_group} --yes --no-wait")
 
 
-def check_resource_group_delete_status(sub_to_rg_deletions: dict[str, list[str]]):
+def check_resource_group_status(sub_to_rg_deletions: dict[str, list[str]]):
     log_msg = "Checking resource group deletion status... "
-    log.info(f"{dry_run_of(log_msg) if DRY_RUN else log_msg}")
+    log.info(f"{dry_run_of(log_msg) if DRY_RUN_SETTING else log_msg}")
 
-    if DRY_RUN:
+    if DRY_RUN_SETTING:
         return
 
     total_resource_count = 0
@@ -515,6 +522,9 @@ def confirm_uninstall(
     )
     log.warning(summary)
 
+    if SKIP_PROMPTS_SETTING:
+        return True
+
     choice = input("Continue? (y/n): ").lower().strip()
     while choice not in ["y", "n"]:
         choice = input("Continue? (y/n): ").lower().strip()
@@ -524,6 +534,8 @@ def confirm_uninstall(
 
 def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[str]:
     """Given list of resource groups, prompt the user to select what to delete. Returns what was selected"""
+    if SKIP_PROMPTS_SETTING:
+        return resource_groups_in_sub
 
     prompt = """
     Enter the resource group name you would like to remove
@@ -628,23 +640,7 @@ def mark_diagnostic_setting_deletions(
     return sub_diagnostic_setting_deletions
 
 
-def main():
-    """
-    Overview:
-    1) Fetch all subscriptions accessible by the current user.
-    2) For each subscription, search for LFO control planes. If found:
-        - Map the subscription to control plane resource group
-        - Map the resource group to storage account mapping
-    3) For each subscription, determine which LFO resource groups need to be deleted
-        - If there is only one resource group in the sub, mark it for deletion
-        - If there are multiple, user input will be required to disambiguate
-    4) Based on the resource groups marked for deletion, note the corresponding control plane IDs
-    5) Based on control plane ID, find corresponding role assignments and diagnostic settings
-    6) Display summary of what will be deleted to user. Prompt for confirmation.
-    7) Delete role assignments, diagnostic settings, and resource groups.
-    """
-
-    global DRY_RUN
+def parse_args():
     parser = argparse.ArgumentParser(
         description="Uninstall DataDog Log Forwarding Orchestration from an Azure environment"
     )
@@ -654,20 +650,59 @@ def main():
         action="store_true",
         help="Run the script in dry-run mode. No changes will be made to the Azure environment",
     )
+    parser.add_argument(
+        "-s",
+        "--sub",
+        type=str,
+        help="Specify subscription ID to uninstall artifacts from. If not provided, all subscriptions will be searched",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        type="store_true",
+        help="Skip all user prompts. This will delete all detected installations without confirmation",
+    )
     args = parser.parse_args()
 
+    global DRY_RUN_SETTING, SKIP_PROMPTS_SETTING
     if args.dry_run:
-        DRY_RUN = True
+        DRY_RUN_SETTING = True
         log.info("Dry run enabled, no changes will be made")
     else:
+        DRY_RUN_SETTING = False
         log.warning(
-            "Deletion of resource groups and ALL resources within them will occur as a result of the uninstall process."
+            "Deletion of resource groups (& ALL resources within), role assignments, and diagnostic settings will occur as a result of the uninstall process."
         )
         log.warning(
             "If you have created any Azure resources in resource groups managed by DataDog log forwarding, they will be deleted. Perform backups if necessary!"
         )
 
-    sub_id_to_name = list_users_subscriptions()
+    if args.yes:
+        SKIP_PROMPTS_SETTING = True
+        log.warning("Skipping all user prompts. Script will execute without user confirmation")
+    return args
+
+
+def main():
+    """
+    Overview:
+    1) Fetch subscriptions accessible by current user or the single specified one.
+    2) For each subscription, search for LFO control planes. If found:
+        - Map the subscription to control plane resource group
+        - Map the resource group to storage account mapping
+    3) For each subscription, determine which LFO resource groups need to be deleted
+        - If there is only one resource group, mark it for deletion
+        - If there are multiple, user input may be required to disambiguate
+    4) Based on the resource groups marked for deletion, note the corresponding control plane IDs
+    5) Based on control plane IDs, find corresponding role assignments and diagnostic settings
+    6) Display summary of what will be deleted to user. May prompt for confirmation.
+    7) Delete role assignments, diagnostic settings, and resource groups.
+    8) Confirm the artifacts are deleted successfully.
+    """
+
+    args = parse_args()
+
+    sub_id_to_name = list_users_subscriptions(args.sub)
     sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
@@ -697,7 +732,7 @@ def main():
         start_resource_group_delete(sub_id, rg_list)
         delete_roles_diag_settings(sub_id, sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
 
-    check_resource_group_delete_status(sub_to_rg_deletions)
+    check_resource_group_status(sub_to_rg_deletions)
 
     log.info("Uninstall done! Exiting.")
 
