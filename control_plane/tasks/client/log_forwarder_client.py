@@ -331,6 +331,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                             Container(
                                 name="forwarder",
                                 image=self.forwarder_image,
+                                resources=ContainerResources(cpu=2, memory="4Gi"),
                                 env=settings,
                             )
                         ]
