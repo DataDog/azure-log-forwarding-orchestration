@@ -218,7 +218,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 
 	// Get all the blobs
 	currNow := now()
-	downloadEg, segmentCtx := errgroup.WithContext(ctx)
+	downloadEg, downloadCtx := errgroup.WithContext(ctx)
 	downloadEg.SetLimit(channelSize)
 	for c := range containers {
 		blobs := storageClient.ListBlobs(ctx, c, logger)
@@ -231,7 +231,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 				continue
 			}
 			downloadEg.Go(func() error {
-				downloadErr := getLogs(segmentCtx, storageClient, cursors, blob, logCh)
+				downloadErr := getLogs(downloadCtx, storageClient, cursors, blob, logCh)
 				if downloadErr != nil {
 					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, downloadErr))
 				}
