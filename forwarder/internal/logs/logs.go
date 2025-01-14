@@ -111,9 +111,6 @@ var ErrUnexpectedToken = errors.New("found unexpected token in log")
 // ErrIncompleteLogFile is an error for when a log file is incomplete.
 var ErrIncompleteLogFile = errors.New("received a partial log file")
 
-// ErrInvalidJavaScript is an error for when invalid JavaScript is found in a log.
-var ErrInvalidJavaScript = errors.New("invalid JavaScript object")
-
 func astToAny(node any) (any, error) {
 	switch v := node.(type) {
 	case *ast.StringLiteral:
@@ -161,11 +158,6 @@ func objectLiteralToMap(objectLiteral *ast.ObjectLiteral) (map[string]any, error
 }
 
 func mapFromJSON(data []byte) (jsonMap map[string]any, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = ErrInvalidJavaScript
-		}
-	}()
 	javascriptExpression := fmt.Sprintf("a = %s;", data)
 	program, err := parser.ParseFile(nil, "", javascriptExpression, 0)
 	if err != nil {
