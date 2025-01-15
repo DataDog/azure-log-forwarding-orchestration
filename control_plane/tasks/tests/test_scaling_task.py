@@ -5,9 +5,10 @@ from json import dumps
 from os import environ
 from typing import Any
 from unittest import TestCase
-from unittest.mock import ANY, call, patch
+from unittest.mock import ANY, Mock, call, patch
 
 # 3rd party
+from azure.mgmt.appcontainers.models import EnvironmentVar, Secret
 from tenacity import RetryError
 
 # project
@@ -21,10 +22,16 @@ from cache.common import (
     InvalidCacheError,
 )
 from cache.env import (
+    CONFIG_ID_SETTING,
+    CONNECTION_STRING_SECRET,
     CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
+    DD_API_KEY_SECRET,
+    DD_API_KEY_SETTING,
+    DD_SITE_SETTING,
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
+    STORAGE_CONNECTION_SETTING,
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache
@@ -36,7 +43,7 @@ from tasks.scaling_task import (
     is_consistently_over_threshold,
     resources_to_move_by_load,
 )
-from tasks.tests.common import AsyncMockClient, TaskTestCase
+from tasks.tests.common import AsyncMockClient, AzureModelMatcher, TaskTestCase, mock
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -88,7 +95,24 @@ class TestScalingTask(TaskTestCase):
         self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
         self.client.create_log_forwarder_env.return_value = CONTROL_PLANE_ID
-
+        self.forwarder_resources_mapping: dict[str, tuple[Mock | None, Mock | None]] = {
+            OLD_LOG_FORWARDER_ID: (mock(), mock()),
+            NEW_LOG_FORWARDER_ID: (mock(), mock()),
+        }
+        self.client.get_forwarder_resources.side_effect = self.forwarder_resources_mapping.get
+        self.client.generate_forwarder_settings = Mock(
+            side_effect=lambda config_id: [
+                EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
+                EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
+                EnvironmentVar(name=DD_SITE_SETTING, value="datadoghq.com"),
+                EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=CONTROL_PLANE_ID),
+                EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
+            ]
+        )
+        self.client.generate_forwarder_secrets.return_value = [
+            Secret(name=DD_API_KEY_SECRET, value="some_api_key"),
+            Secret(name=CONNECTION_STRING_SECRET, value="some_connection_string"),
+        ]
         self.log = self.patch("log")
         self.generate_unique_id = self.patch("generate_unique_id")
         p = patch.dict(
@@ -446,6 +470,99 @@ class TestScalingTask(TaskTestCase):
                 },
             },
         )
+
+    async def test_ensure_region_forwarders_deletes_region_when_all_forwarders_are_gone(self):
+        self.forwarder_resources_mapping.clear()
+        self.forwarder_resources_mapping[OLD_LOG_FORWARDER_ID] = (None, None)
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+        self.client.get_forwarder_resources.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
+        self.assertEqual(self.cache, {SUB_ID1: {}})
+
+    async def test_ensure_region_forwarders_fixes_missing_settings(self):
+        actual_settings = [
+            EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
+            EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref="messed-up-secret"),
+            EnvironmentVar(name=DD_SITE_SETTING, value="newrelic.com"),  # oops!
+            EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=CONTROL_PLANE_ID),
+            EnvironmentVar(name=CONFIG_ID_SETTING, value=OLD_LOG_FORWARDER_ID),
+        ]
+        actual_secrets = [
+            Secret(name=DD_API_KEY_SECRET, value="invalid_api_key"),
+            Secret(name=CONNECTION_STRING_SECRET, value="invalid_connection_string"),
+        ]
+        self.forwarder_resources_mapping.clear()
+        self.forwarder_resources_mapping[OLD_LOG_FORWARDER_ID] = (
+            mock(template=mock(containers=[mock(env=actual_settings)]), configuration=mock(secrets=actual_secrets)),
+            mock(),
+        )
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+        self.client.get_forwarder_resources.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
+        self.log.info.assert_any_call("Updating settings for forwarder %s", OLD_LOG_FORWARDER_ID)
+        self.client.update_forwarder_settings.assert_awaited_once_with(
+            OLD_LOG_FORWARDER_ID,
+            secrets=[
+                AzureModelMatcher(dict(name=DD_API_KEY_SECRET, value="some_api_key")),
+                AzureModelMatcher(dict(name=CONNECTION_STRING_SECRET, value="some_connection_string")),
+            ],
+            settings=[
+                AzureModelMatcher(dict(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET)),
+                AzureModelMatcher(dict(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET)),
+                AzureModelMatcher(dict(name=DD_SITE_SETTING, value="datadoghq.com")),
+                AzureModelMatcher(dict(name=CONTROL_PLANE_ID_SETTING, value=CONTROL_PLANE_ID)),
+                AzureModelMatcher(dict(name=CONFIG_ID_SETTING, value=OLD_LOG_FORWARDER_ID)),
+            ],
+        )
+
+    async def test_ensure_region_forwarders_doesnt_make_api_calls_when_settings_are_correct(self):
+        actual_settings = [
+            EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
+            EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
+            EnvironmentVar(name=DD_SITE_SETTING, value="datadoghq.com"),
+            EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=CONTROL_PLANE_ID),
+            EnvironmentVar(name=CONFIG_ID_SETTING, value=OLD_LOG_FORWARDER_ID),
+        ]
+        actual_secrets = [
+            Secret(name=DD_API_KEY_SECRET, value="some_api_key"),
+            Secret(name=CONNECTION_STRING_SECRET, value="some_connection_string"),
+        ]
+        self.forwarder_resources_mapping.clear()
+        self.forwarder_resources_mapping[OLD_LOG_FORWARDER_ID] = (
+            mock(template=mock(containers=[mock(env=actual_settings)]), configuration=mock(secrets=actual_secrets)),
+            mock(),
+        )
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+        self.client.get_forwarder_resources.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.update_forwarder_settings.assert_not_awaited()
 
     async def test_log_forwarder_metrics_collected(self):
         self.client.collect_forwarder_metrics.return_value = generate_metrics(100, {"resource1": 4, "resource2": 6})

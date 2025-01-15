@@ -9,6 +9,7 @@ from logging import DEBUG, INFO, basicConfig, getLogger
 from typing import cast
 
 # 3p
+from azure.mgmt.appcontainers.models import Job
 from tenacity import retry, retry_if_result, stop_after_attempt
 
 # project
@@ -340,7 +341,15 @@ class ScalingTask(Task):
         forwarder_resources = dict(zip(region_config["configurations"], forwarder_resources_list, strict=False))
 
         if all(all(resources) for resources in forwarder_resources.values()):
-            # everything is there!
+            # everything is there! check that the forwarder settings are correct
+            errors = await gather(
+                *(
+                    self.ensure_forwarder_settings(client, config_id, cast(Job, job))
+                    for config_id, (job, _) in forwarder_resources.items()
+                ),
+                return_exceptions=True,
+            )
+            log_errors("Failed to ensure forwarder settings are updated", *errors)
             return True
 
         # if all forwarders have been deleted, we should delete the region from the cache and exit
@@ -372,6 +381,31 @@ class ScalingTask(Task):
 
         await self.write_caches()
         return False
+
+    async def ensure_forwarder_settings(self, client: LogForwarderClient, config_id: str, forwarder: Job) -> None:
+        """Ensures that the forwarder has the correct settings, updating them if not"""
+        expected_secrets = await client.generate_forwarder_secrets(config_id)
+        expected_settings = client.generate_forwarder_settings(config_id)
+        if (
+            forwarder.template
+            and forwarder.template.containers
+            and forwarder.configuration
+            and forwarder.configuration.secrets
+        ):
+            actual_secrets_by_name = {secret.name: secret.value for secret in forwarder.configuration.secrets}
+            expected_secrets_by_name = {secret.name: secret.value for secret in expected_secrets}
+            actual_settings_by_name = {
+                setting.name: setting.as_dict() for setting in forwarder.template.containers[0].env or []
+            }
+            expected_settings_by_name = {setting.name: setting.as_dict() for setting in expected_settings}
+            if (
+                expected_secrets_by_name == actual_secrets_by_name
+                and expected_settings_by_name == actual_settings_by_name
+            ):
+                return  # everything looks good!
+
+        log.info("Updating settings for forwarder %s", config_id)
+        await client.update_forwarder_settings(config_id, secrets=expected_secrets, settings=expected_settings)
 
     async def check_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
         """Checks to see if the forwarder env exists for a given region"""

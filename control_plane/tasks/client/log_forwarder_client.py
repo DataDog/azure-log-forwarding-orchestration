@@ -21,6 +21,8 @@ from azure.mgmt.appcontainers.models import (
     Job,
     JobConfiguration,
     JobConfigurationScheduleTriggerConfig,
+    JobPatchProperties,
+    JobPatchPropertiesProperties,
     JobTemplate,
     ManagedEnvironment,
     Secret,
@@ -91,6 +93,7 @@ from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
+FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
@@ -199,6 +202,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         get_job = create_task_from_awaitable(
             self.container_apps_client.jobs.get(self.resource_group, get_container_app_name(config_id))
         )
+        get_secrets = create_task_from_awaitable(
+            self.container_apps_client.jobs.list_secrets(self.resource_group, get_container_app_name(config_id))
+        )
         get_storage_account = create_task_from_awaitable(
             self.storage_client.storage_accounts.get_properties(
                 self.resource_group, get_storage_account_name(config_id)
@@ -208,6 +214,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         job = None
         with suppress(ResourceNotFoundError):
             job = await get_job
+            # populate the configuration separately
+            if not job.configuration:
+                job.configuration = JobConfiguration(replica_timeout=FORWARDER_TIMEOUT_SECONDS)
+            job.configuration.secrets = (await get_secrets).value
         storage_account = None
         with suppress(ResourceNotFoundError):
             storage_account = await get_storage_account
@@ -255,7 +265,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         return str(managed_env.id)
 
     async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
-        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
         job_name = get_container_app_name(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
             self.resource_group,
@@ -272,12 +281,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         parallelism=1,
                         replica_completion_count=1,
                     ),
-                    replica_timeout=1800,  # 30 minutes
+                    replica_timeout=FORWARDER_TIMEOUT_SECONDS,
                     replica_retry_limit=1,
-                    secrets=[
-                        Secret(name=DD_API_KEY_SECRET, value=self.dd_api_key),
-                        Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
-                    ],
+                    secrets=await self.generate_forwarder_secrets(config_id),
                 ),
                 template=JobTemplate(
                     containers=[
@@ -285,18 +291,56 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                             name="forwarder",
                             image=self.forwarder_image,
                             resources=ContainerResources(cpu=2, memory="4Gi"),
-                            env=[
-                                EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
-                                EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
-                                EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
-                                EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
-                                EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
-                            ],
+                            env=self.generate_forwarder_settings(config_id),
                         )
                     ],
                 ),
             ),
         ), lambda: self.container_apps_client.jobs.get(self.resource_group, job_name)
+
+    async def generate_forwarder_secrets(self, config_id: str) -> list[Secret]:
+        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
+        return [
+            Secret(name=DD_API_KEY_SECRET, value=self.dd_api_key),
+            Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
+        ]
+
+    def generate_forwarder_settings(self, config_id: str) -> list[EnvironmentVar]:
+        return [
+            EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
+            EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
+            EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
+            EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
+            EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
+        ]
+
+    async def update_forwarder_settings(
+        self, confid_id: str, secrets: list[Secret], settings: list[EnvironmentVar], *, wait: bool = False
+    ) -> None:
+        poller = await self.container_apps_client.jobs.begin_update(
+            self.resource_group,
+            get_container_app_name(confid_id),
+            JobPatchProperties(
+                properties=JobPatchPropertiesProperties(
+                    configuration=JobConfiguration(
+                        secrets=secrets,
+                        replica_timeout=FORWARDER_TIMEOUT_SECONDS,  # required
+                    ),
+                    template=JobTemplate(
+                        containers=[
+                            Container(
+                                name="forwarder",
+                                image=self.forwarder_image,
+                                resources=ContainerResources(cpu=2, memory="4Gi"),
+                                env=settings,
+                            )
+                        ]
+                    ),
+                )
+            ),
+        )
+        if wait:
+            await poller.result()
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
         await self.storage_client.blob_containers.create(
