@@ -518,7 +518,7 @@ def delete_roles_diag_settings(
     sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
 ):
     delete_log = "Deleting role assignments and diagnostic settings"
-    log.info(f"{dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log}")
+    log.info(dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log)
 
     with ThreadPoolExecutor(100) as tpe:
         futures = []
@@ -552,7 +552,7 @@ def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
         az(f"group delete --subscription {sub_id} --name {resource_group} --yes --no-wait")
 
 
-def check_resource_group_status(sub_to_rg_deletions: dict[str, list[str]]):
+def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
     log_msg = "Checking resource group deletion status... "
     log.info(f"{dry_run_of(log_msg) if DRY_RUN_SETTING else log_msg}")
 
@@ -582,7 +582,7 @@ def confirm_uninstall(
     sub_id_to_name: dict[str, str],
     role_assignment_deletions: dict[str, list[dict[str, str]]],
     sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
-) -> bool:
+):
     """Displays summary of what will be deleted and prompts user for confirmation. Returns true if user confirms, false otherwise"""
     summary = uninstall_summary(
         sub_to_rg_deletions,
@@ -599,7 +599,9 @@ def confirm_uninstall(
     while choice not in ["y", "n"]:
         choice = input("Continue? (y/n): ").lower().strip()
 
-    return choice == "y"
+    if choice == "n":
+        log.info("Exiting.")
+        raise SystemExit(0)
 
 
 def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[str]:
@@ -673,15 +675,9 @@ def mark_control_plane_deletions(
 ) -> set[str]:
     """Based on the resource groups the user selected previously, return the control plane IDs to target for deletion"""
 
-    control_plane_ids_to_delete = set()
-
-    for sub in sub_to_rg_deletions:
-        for rg in sub_to_rg_deletions[sub]:
-            lfo_ids = rg_to_lfo_id[rg]
-            for id in lfo_ids:
-                control_plane_ids_to_delete.add(id)
-
-    return control_plane_ids_to_delete
+    return {
+        lfo_id for rg_deletions in sub_to_rg_deletions.values() for rg in rg_deletions for lfo_id in rg_to_lfo_id[rg]
+    }
 
 
 def mark_role_assignment_deletions(
@@ -780,7 +776,7 @@ def main():
     sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
-    if not sub_to_rg_deletions or not any(sub_to_rg_deletions.values()):
+    if not any(sub_to_rg_deletions.values()):
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
 
@@ -793,15 +789,12 @@ def main():
         sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
     )
 
-    confirmed = confirm_uninstall(
+    confirm_uninstall(
         sub_to_rg_deletions,
         sub_id_to_name,
         sub_role_assignment_deletions,
         sub_diagnostic_setting_deletions,
     )
-    if not confirmed:
-        log.info("Exiting.")
-        raise SystemExit(0)
 
     for sub_id, rg_list in sub_to_rg_deletions.items():
         sub_name = sub_id_to_name[sub_id]
@@ -809,7 +802,7 @@ def main():
         start_resource_group_delete(sub_id, rg_list)
         delete_roles_diag_settings(sub_id, sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
 
-    check_resource_group_status(sub_to_rg_deletions)
+    wait_for_resource_group_deletion(sub_to_rg_deletions)
 
     log.info("Uninstall done! Exiting.")
 
