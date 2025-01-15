@@ -205,7 +205,13 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			return processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
+			// TODO (AZINTS-2955): Add a dead letter queue to not drop logs when datadog errors
+			// TODO (AZINTS-3044): Limit failure modes where we return nil and drop data
+			processLogsErr := processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
+			if processLogsErr != nil {
+				logger.Warning(fmt.Errorf("error processing logs: %w", processLogsErr))
+			}
+			return nil
 		})
 	}
 
@@ -214,7 +220,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 
 	// Get all the blobs
 	currNow := now()
-	downloadEg, segmentCtx := errgroup.WithContext(ctx)
+	downloadEg, downloadCtx := errgroup.WithContext(ctx)
 	downloadEg.SetLimit(channelSize)
 	for c := range containers {
 		blobs := storageClient.ListBlobs(ctx, c, logger)
@@ -227,11 +233,11 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 				continue
 			}
 			downloadEg.Go(func() error {
-				err := getLogs(segmentCtx, storageClient, cursors, blob, logCh)
-				if err != nil {
-					logger.Warning(fmt.Errorf("error processing %s: %w", blob.Name, err))
+				downloadErr := getLogs(downloadCtx, storageClient, cursors, blob, logCh)
+				if downloadErr != nil {
+					logger.Warning(fmt.Errorf("error processing blob %s from container %s: %w", blob.Name, c.Name, downloadErr))
 				}
-				return err
+				return nil
 			})
 		}
 	}
