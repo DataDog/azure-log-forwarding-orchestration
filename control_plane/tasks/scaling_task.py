@@ -344,7 +344,7 @@ class ScalingTask(Task):
             # everything is there! check that the forwarder settings are correct
             errors = await gather(
                 *(
-                    self.ensure_forwarder_settings(client, config_id, cast(Job, job))
+                    self.ensure_forwarder_settings(client, region, config_id, cast(Job, job))
                     for config_id, (job, _) in forwarder_resources.items()
                 ),
                 return_exceptions=True,
@@ -382,7 +382,9 @@ class ScalingTask(Task):
         await self.write_caches()
         return False
 
-    async def ensure_forwarder_settings(self, client: LogForwarderClient, config_id: str, forwarder: Job) -> None:
+    async def ensure_forwarder_settings(
+        self, client: LogForwarderClient, region: str, config_id: str, forwarder: Job
+    ) -> None:
         """Ensures that the forwarder has the correct settings, updating them if not"""
         expected_secrets = await client.generate_forwarder_secrets(config_id)
         expected_settings = client.generate_forwarder_settings(config_id)
@@ -405,7 +407,10 @@ class ScalingTask(Task):
                 return  # everything looks good!
 
         log.info("Updating settings for forwarder %s", config_id)
-        await client.update_forwarder_settings(config_id, secrets=expected_secrets, settings=expected_settings)
+        # just await the begin_update call, don't poll for it to finish
+        await client.create_or_update_log_forwarder_container_app(
+            region, config_id, env=expected_settings, secrets=expected_secrets
+        )
 
     async def check_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
         """Checks to see if the forwarder env exists for a given region"""
