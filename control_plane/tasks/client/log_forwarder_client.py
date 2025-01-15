@@ -21,8 +21,6 @@ from azure.mgmt.appcontainers.models import (
     Job,
     JobConfiguration,
     JobConfigurationScheduleTriggerConfig,
-    JobPatchProperties,
-    JobPatchPropertiesProperties,
     JobTemplate,
     ManagedEnvironment,
     Secret,
@@ -185,9 +183,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
         maybe_errors = await gather(
-            wait_for_resource(
-                *await self.create_log_forwarder_container_app(self.get_container_app_region(region), config_id)
-            ),
+            wait_for_resource(*await self.create_or_update_log_forwarder_container_app(region, config_id)),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -264,8 +260,18 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return None
         return str(managed_env.id)
 
-    async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
+    async def create_or_update_log_forwarder_container_app(
+        self,
+        region: str,
+        config_id: str,
+        *,
+        env: list[EnvironmentVar] | None = None,
+        secrets: list[Secret] | None = None,
+    ) -> ResourcePoller[Job]:
         job_name = get_container_app_name(config_id)
+        region = self.get_container_app_region(region)
+        env = env or self.generate_forwarder_settings(config_id)
+        secrets = secrets or await self.generate_forwarder_secrets(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
             self.resource_group,
             job_name,
@@ -283,7 +289,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                     ),
                     replica_timeout=FORWARDER_TIMEOUT_SECONDS,
                     replica_retry_limit=1,
-                    secrets=await self.generate_forwarder_secrets(config_id),
+                    secrets=secrets,
                 ),
                 template=JobTemplate(
                     containers=[
@@ -291,7 +297,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                             name="forwarder",
                             image=self.forwarder_image,
                             resources=ContainerResources(cpu=2, memory="4Gi"),
-                            env=self.generate_forwarder_settings(config_id),
+                            env=env,
                         )
                     ],
                 ),
@@ -313,34 +319,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
         ]
-
-    async def update_forwarder_settings(
-        self, confid_id: str, secrets: list[Secret], settings: list[EnvironmentVar], *, wait: bool = False
-    ) -> None:
-        poller = await self.container_apps_client.jobs.begin_update(
-            self.resource_group,
-            get_container_app_name(confid_id),
-            JobPatchProperties(
-                properties=JobPatchPropertiesProperties(
-                    configuration=JobConfiguration(
-                        secrets=secrets,
-                        replica_timeout=FORWARDER_TIMEOUT_SECONDS,  # required
-                    ),
-                    template=JobTemplate(
-                        containers=[
-                            Container(
-                                name="forwarder",
-                                image=self.forwarder_image,
-                                resources=ContainerResources(cpu=2, memory="4Gi"),
-                                env=settings,
-                            )
-                        ]
-                    ),
-                )
-            ),
-        )
-        if wait:
-            await poller.result()
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
         await self.storage_client.blob_containers.create(

@@ -518,18 +518,19 @@ class TestScalingTask(TaskTestCase):
         )
         self.client.get_forwarder_resources.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
         self.log.info.assert_any_call("Updating settings for forwarder %s", OLD_LOG_FORWARDER_ID)
-        self.client.update_forwarder_settings.assert_awaited_once_with(
+        self.client.create_or_update_log_forwarder_container_app.assert_awaited_once_with(
+            EAST_US,
             OLD_LOG_FORWARDER_ID,
-            secrets=[
-                AzureModelMatcher(dict(name=DD_API_KEY_SECRET, value="some_api_key")),
-                AzureModelMatcher(dict(name=CONNECTION_STRING_SECRET, value="some_connection_string")),
-            ],
-            settings=[
+            env=[
                 AzureModelMatcher(dict(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET)),
                 AzureModelMatcher(dict(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET)),
                 AzureModelMatcher(dict(name=DD_SITE_SETTING, value="datadoghq.com")),
                 AzureModelMatcher(dict(name=CONTROL_PLANE_ID_SETTING, value=CONTROL_PLANE_ID)),
                 AzureModelMatcher(dict(name=CONFIG_ID_SETTING, value=OLD_LOG_FORWARDER_ID)),
+            ],
+            secrets=[
+                AzureModelMatcher(dict(name=DD_API_KEY_SECRET, value="some_api_key")),
+                AzureModelMatcher(dict(name=CONNECTION_STRING_SECRET, value="some_connection_string")),
             ],
         )
 
