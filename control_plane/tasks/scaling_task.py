@@ -274,7 +274,7 @@ class ScalingTask(Task):
         Additionally assigns new resources to the least busy forwarder
         and reassigns resources based on the new scaling,
         as well as ensuring existing forwarders have up to date settings"""
-        log.info("Checking scaling for log forwarders in region %s", region)
+        log.info("Checking scaling for log forwarders in subscription %s in region %s", subscription_id, region)
         region_config = self.assignment_cache[subscription_id][region]
 
         env_exists = await self.check_region_forwarder_env(client, region)
