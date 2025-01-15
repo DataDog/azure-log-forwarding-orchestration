@@ -33,6 +33,8 @@ import (
 // serviceName is the service tag used for APM and logs about this forwarder.
 const serviceName = "dd-azure-forwarder"
 
+const maxLogAge = 18 * time.Hour
+
 // resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
 type resourceBytes struct {
 	resourceId string
@@ -95,8 +97,14 @@ func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *l
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
+	oldestLogTime := time.Now().Add(-maxLogAge)
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
+		// if log is older than 18 hours, skip it
+		if logItem.Time.Before(oldestLogTime) {
+			logger.Warningf("Skipping log older than 18 hours for resource: %s", logItem.ResourceId)
+			continue
+		}
 		currErr := logsClient.AddLog(ctx, logItem)
 		var invalidLogError logs.TooLargeError
 		if errors.As(currErr, &invalidLogError) {
