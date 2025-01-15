@@ -205,6 +205,8 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
+			// TODO (AZINTS-2955): Add a dead letter queue to not drop logs when datadog errors
+			// TODO (AZINTS-3044): Limit failure modes where we return nil and drop data
 			processLogsErr := processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
 			if processLogsErr != nil {
 				logger.Warning(fmt.Errorf("error processing logs: %w", processLogsErr))
