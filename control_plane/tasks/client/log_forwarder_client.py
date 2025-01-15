@@ -183,11 +183,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
         maybe_errors = await gather(
-            wait_for_resource(
-                *await self.create_or_update_log_forwarder_container_app(
-                    self.get_container_app_region(region), config_id
-                )
-            ),
+            wait_for_resource(*await self.create_or_update_log_forwarder_container_app(region, config_id)),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -273,6 +269,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         secrets: list[Secret] | None = None,
     ) -> ResourcePoller[Job]:
         job_name = get_container_app_name(config_id)
+        region = self.get_container_app_region(region)
         env = env or self.generate_forwarder_settings(config_id)
         secrets = secrets or await self.generate_forwarder_secrets(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
