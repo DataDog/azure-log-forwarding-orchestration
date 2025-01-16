@@ -97,11 +97,10 @@ func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *l
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
 	defer span.Finish(tracer.WithError(err))
-	oldestLogTime := time.Now().Add(-maxLogAge)
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
 		// if log is older than 18 hours, skip it
-		if logItem.Time.Before(oldestLogTime) {
+		if logItem.Time.Before(time.Now().Add(-maxLogAge)) {
 			logger.Warningf("Skipping log older than 18 hours for resource: %s", logItem.ResourceId)
 			continue
 		}
