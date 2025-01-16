@@ -17,7 +17,7 @@ from cache.resources_cache import (
     deserialize_resource_cache,
     prune_resource_cache,
 )
-from tasks.client.resources_client import ResourceClient
+from tasks.client.resource_client import ResourceClient
 from tasks.common import now
 from tasks.task import Task
 
