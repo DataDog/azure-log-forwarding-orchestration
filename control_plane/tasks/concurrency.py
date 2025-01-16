@@ -1,14 +1,28 @@
 # stdlib
 from asyncio import Task, create_task
 from collections.abc import AsyncIterable, Awaitable
+from logging import getLogger
 from typing import TypeVar
 
 T = TypeVar("T")
+
+log = getLogger(__name__)
 
 
 async def collect(it: AsyncIterable[T]) -> list[T]:
     """Helper for collecting an async iterable, useful for simplifying error handling"""
     return [item async for item in it]
+
+
+async def safe_collect(it: AsyncIterable[T]) -> list[T]:
+    """Helper for collecting an async iterable, logs a warning if an error was thrown but returns the result so far"""
+    collected = []
+    try:
+        async for item in it:
+            collected.append(item)
+    except Exception as e:
+        log.warning("Ignored error while collecting async iterable: %s", e)
+    return collected
 
 
 def create_task_from_awaitable(awaitable: Awaitable[T]) -> Task[T]:
