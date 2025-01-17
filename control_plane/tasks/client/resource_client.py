@@ -163,16 +163,30 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
 
     async def get_resources_per_region(self) -> dict[str, set[str]]:
         resources_per_region: dict[str, set[str]] = {}
-        resource_count = 0
-        async for r in self.resources_client.resources.list(RESOURCE_QUERY_FILTER):
-            region = cast(str, r.location).lower()
-            if should_ignore_resource(region, cast(str, r.type), cast(str, r.name)):
-                continue
-            resources_per_region.setdefault(region, set()).update(
-                await safe_collect(self.all_resource_ids_for_resource(r))
-            )
-            resource_count += 1
-        log.debug("Subscription %s: Collected %s resources", self.subscription_id, resource_count)
+
+        resources = await safe_collect(self.resources_client.resources.list(RESOURCE_QUERY_FILTER))
+        valid_resources = [
+            r
+            for r in resources
+            if not should_ignore_resource(cast(str, r.location), cast(str, r.type), cast(str, r.name))
+        ]
+        log.debug(
+            "Collected %s valid resources for subscription %s, fetching sub-resources...",
+            len(valid_resources),
+            self.subscription_id,
+        )
+        batched_resource_ids = await gather(
+            *(safe_collect(self.all_resource_ids_for_resource(r)) for r in valid_resources)
+        )
+        for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
+            region = cast(str, resource.location).lower()
+            resources_per_region.setdefault(region, set()).update(resource_ids)
+
+        log.info(
+            "Subscription %s: Collected %s resources",
+            self.subscription_id,
+            sum(len(rs) for rs in resources_per_region.values()),
+        )
         return resources_per_region
 
     async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
