@@ -130,11 +130,11 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             "microsoft.sql/servers": (
                 sql_client,
                 make_sub_resource_extractor_for_rg_and_name(sql_client.databases.list_by_server),
-            ),  # {"databases"},
+            ),
             "microsoft.sql/managedinstances": (
                 None,
                 make_sub_resource_extractor_for_rg_and_name(sql_client.managed_databases.list_by_instance),
-            ),  # {"databases"},
+            ),
             "microsoft.synapse/workspaces": (None, None),  # {"bigdatapools", "kustopools", "scopepools", "sqlpools"},
             "microsoft.web/sites": (
                 web_client,
