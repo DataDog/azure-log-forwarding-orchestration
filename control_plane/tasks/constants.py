@@ -3,7 +3,7 @@ from itertools import chain
 from typing import Final
 
 # https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-logs/logs-index
-NON_NESTED_VALID_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
+UNNESTED_VALID_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
     {
         "microsoft.aad/domainservices",
         "microsoft.agfoodplatform/farmbeats",
@@ -179,7 +179,7 @@ NESTED_VALID_RESOURCE_TYPES: Final[Mapping[str, set[str]]] = {
     "microsoft.web/sites": {"slots"},
 }
 
-FETCHED_RESOURCE_TYPES: Final = frozenset(chain(NON_NESTED_VALID_RESOURCE_TYPES, NESTED_VALID_RESOURCE_TYPES))
+FETCHED_RESOURCE_TYPES: Final = frozenset(chain(UNNESTED_VALID_RESOURCE_TYPES, NESTED_VALID_RESOURCE_TYPES))
 
 
 # Azure Product Region Availability
