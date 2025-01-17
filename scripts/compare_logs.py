@@ -18,6 +18,11 @@ CONTAINER = "insights-logs-functionapplogs"
 
 START_TIME = datetime.now()
 
+STORAGE_SOURCE = "storage"
+NATIVE_SOURCE = "native"
+LFO_SOURCE = "lfo"
+EVENT_HUB_SOURCE = "event_hub"
+
 # storage_id_map = {}
 # storage_ids = []
 # native_ids = []
@@ -130,7 +135,7 @@ def download_blob(
     return blob_ids, duplicates
 
 
-def submit_metric(metric_name: str, value: float | int):
+def submit_metric(metric_name: str, value: float | int, tags: dict | None = None):
     # # Template variables
     # export NOW="$(date +%s)"
     # # Curl command
@@ -169,13 +174,19 @@ def submit_metric(metric_name: str, value: float | int):
         "DD-API-KEY": api_key,
         "DD-APPLICATION-KEY": app_key,
     }
+    metric = {
+        "metric": metric_name,
+        "type": 3,
+        "points": [{"timestamp": int(time()), "value": value}],
+    }
+    if tags:
+        tag_list = []
+        for key in tags:
+            tag_list.append(f"{key}:{tags[key]}")
+        metric["tags"] = tag_list
     body = {
         "series": [
-            {
-                "metric": metric_name,
-                "type": 3,
-                "points": [{"timestamp": int(time()), "value": value}],
-            }
+            metric,
         ]
     }
     response = requests.post(url, headers=headers, json=body)
@@ -321,8 +332,9 @@ def run():
 
     print(f"Duplicate storage ids: {storage_duplicates}")
     submit_metric(
-        "azure.log.forwarding.storage.duplicate",
+        "azure.log.forwarding.duplicates",
         storage_duplicates,
+        tags={"source": "storage"},
     )
 
     # native_logs = get_logs(query=native_query, from_time=starttime, to_time=endtime)
@@ -336,8 +348,22 @@ def run():
 
     print(f"Duplicate liftr ids: {native_duplicates}")
     submit_metric(
-        "azure.log.forwarding.native.duplicate",
+        "azure.log.forwarding.duplicates",
         native_duplicates,
+        tags={"source": NATIVE_SOURCE},
+    )
+
+    eventhub_id_map, eventhub_duplicates = get_logs_from_storage_account(
+        archives_connection_string, lambda blob: True, container="eventhub"
+    )
+    eventhub_ids = list(eventhub_id_map.keys())
+    eventhub_ids.sort(key=lambda e: eventhub_id_map[e])
+
+    print(f"Duplicate event hub ids: {eventhub_duplicates}")
+    submit_metric(
+        "azure.log.forwarding.duplicates",
+        eventhub_duplicates,
+        tags={"source": EVENT_HUB_SOURCE},
     )
 
     # event_hub_logs = get_logs(query=event_hub_query, from_time=starttime, to_time=endtime)
@@ -355,34 +381,87 @@ def run():
 
     print(f"Duplicate LFO ids: {lfo_duplicates}")
     submit_metric(
-        "azure.log.forwarding.lfo.duplicate",
+        "azure.log.forwarding.duplicates",
         lfo_duplicates,
+        tags={"source": LFO_SOURCE},
     )
 
     start = get_start_time(storage_id_map, storage_ids, lfo_ids, native_ids)
     print(f"Start time: {start}, end time: {end}")
     native_truncated = truncate_to_set(native_ids, start, end, native_id_map)
     lfo_truncated = truncate_to_set(lfo_ids, start, end, lfo_id_map)
-    # event_hub_truncated = truncate_list(event_hub_ids, start, end, event_hub_ids)
+    eventhub_truncated = truncate_to_set(eventhub_ids, start, end, eventhub_id_map)
     storage_truncated = truncate_to_set(storage_ids, start, end, storage_id_map)
 
     print(
-        f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}"
+        f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(eventhub_truncated)}"
     )
 
     missing_lfo_ids = storage_truncated - lfo_truncated
     print(f"Missing LFO ids: {len(missing_lfo_ids)}")
     submit_metric(
-        "azure.log.forwarding.lfo.missing",
+        "azure.log.forwarding.missing_percent",
         (len(missing_lfo_ids) * 1.0 / len(storage_truncated)),
+        tags={"source": LFO_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.missing",
+        len(missing_lfo_ids),
+        tags={"source": LFO_SOURCE},
     )
 
     missing_native_ids = storage_truncated - native_truncated
     print(f"Missing native ids: {len(missing_native_ids)}")
 
     submit_metric(
-        "azure.log.forwarding.native.missing",
+        "azure.log.forwarding.missing_percent",
         (len(missing_native_ids) * 1.0 / len(storage_truncated)),
+        tags={"source": NATIVE_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.missing",
+        len(missing_native_ids),
+        tags={"source": NATIVE_SOURCE},
+    )
+
+    missing_eventhub_ids = storage_truncated - eventhub_truncated
+    print(f"Missing event hub ids: {len(missing_eventhub_ids)}")
+    submit_metric(
+        "azure.log.forwarding.missing_percent",
+        (len(missing_eventhub_ids) * 1.0 / len(storage_truncated)),
+        tags={"source": EVENT_HUB_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.missing",
+        len(missing_eventhub_ids),
+        tags={"source": EVENT_HUB_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.found",
+        len(storage_truncated),
+        tags={"source": STORAGE_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.found",
+        len(lfo_truncated),
+        tags={"source": LFO_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.found",
+        len(native_truncated),
+        tags={"source": NATIVE_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.found",
+        len(eventhub_truncated),
+        tags={"source": EVENT_HUB_SOURCE},
     )
 
 
