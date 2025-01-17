@@ -28,7 +28,7 @@ from tasks.constants import (
     ALLOWED_STORAGE_ACCOUNT_REGIONS,
     FETCHED_RESOURCE_TYPES,
     NESTED_VALID_RESOURCE_TYPES,
-    NON_NESTED_VALID_RESOURCE_TYPES,
+    UNNESTED_VALID_RESOURCE_TYPES,
 )
 
 log = getLogger(__name__)
@@ -178,7 +178,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
     async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
         resource_id = cast(str, resource.id).lower()
         resource_type = cast(str, resource.type).lower()
-        if resource_type in NON_NESTED_VALID_RESOURCE_TYPES:
+        if resource_type in UNNESTED_VALID_RESOURCE_TYPES:
             yield resource_id
         if resource_type in self._get_sub_resources_map and (
             get_sub_resources := self._get_sub_resources_map[resource_type][1]
