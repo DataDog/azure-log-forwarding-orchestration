@@ -53,7 +53,7 @@ FetchSubResources: TypeAlias = Callable[[GenericResourceExpanded], AsyncIterable
 
 async def get_storage_account_services(r: GenericResourceExpanded) -> AsyncGenerator[str]:
     for service_type in NESTED_VALID_RESOURCE_TYPES["microsoft.storage/storageaccounts"]:
-        yield f"{r.id}/{service_type}/default"
+        yield f"{r.id}/{service_type}/default".lower()
 
 
 def safe_get_id(r: Any) -> str | None:
