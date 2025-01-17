@@ -357,7 +357,6 @@ class ScalingTask(Task):
         # if all forwarders have been deleted, we should delete the region from the cache and exit
         # it will be recreated next time
         if all(not all(resources) for resources in forwarder_resources.values()):
-            # TODO(AZINTS-2968) we should just nuke the region and wait until next time
             log.warning("All forwarders gone in region %s", region)
             self.assignment_cache[subscription_id].pop(region)
             await self.write_caches()
