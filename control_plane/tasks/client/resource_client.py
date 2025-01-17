@@ -69,7 +69,7 @@ def make_sub_resource_extractor_for_rg_and_name(f: Callable[[str, str], AsyncIte
         resource_group = getattr(r, "resource_group", None)
         resource_name = r.name
         if not (resource_group and resource_name):  # fallback to parsing the resource id
-            parsed = parse_resource_id(r.id)
+            parsed = parse_resource_id(cast(str, r.id))
             resource_group = parsed["resource_group"]
             resource_name = parsed["name"]
         log.debug("Extracting sub resources for %s", r.id)
