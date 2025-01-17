@@ -140,7 +140,6 @@ NON_NESTED_VALID_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
         "microsoft.signalrservice/webpubsub",
         "microsoft.singularity/accounts",
         "microsoft.sql/managedinstances",
-        "microsoft.storage/storageaccounts",
         "microsoft.storagecache/amlfilesystems",
         "microsoft.storagecache/caches",
         "microsoft.storagemover/storagemovers",
