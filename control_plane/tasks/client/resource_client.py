@@ -72,7 +72,7 @@ def make_sub_resource_extractor_for_rg_and_name(f: Callable[[str, str], AsyncIte
             parsed = parse_resource_id(r.id)
             resource_group = parsed["resource_group"]
             resource_name = parsed["name"]
-
+        log.debug("Extracting sub resources for %s", r.id)
         async for sub_resource in f(resource_group, resource_name):
             if hasattr(sub_resource, "value") and isinstance(sub_resource.value, Iterable):
                 for resource in sub_resource.value:

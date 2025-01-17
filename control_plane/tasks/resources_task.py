@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import gather, run
 from json import dumps
-from logging import DEBUG, basicConfig, getLogger
+from logging import INFO, basicConfig, getLogger
 from os import getenv
 from typing import cast
 
@@ -88,7 +88,7 @@ class ResourcesTask(Task):
 
 
 async def main() -> None:
-    basicConfig(level=DEBUG)
+    basicConfig(level=INFO)
     log.info("Started task at %s", now())
     resources_cache_state = await read_cache(RESOURCE_CACHE_BLOB)
     async with ResourcesTask(resources_cache_state) as task:
