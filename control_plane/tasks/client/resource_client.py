@@ -68,10 +68,12 @@ def make_sub_resource_extractor_for_rg_and_name(f: Callable[[str, str], AsyncIte
     async def _f(r: GenericResourceExpanded) -> AsyncGenerator[str]:
         resource_group = getattr(r, "resource_group", None)
         resource_name = r.name
-        if not (resource_group and resource_name):  # fallback to parsing the resource id
+        if not isinstance(resource_group, str) or not isinstance(
+            resource_name, str
+        ):  # fallback to parsing the resource id
             parsed = parse_resource_id(cast(str, r.id))
-            resource_group = parsed["resource_group"]
-            resource_name = parsed["name"]
+            resource_group = cast(str, parsed["resource_group"])
+            resource_name = cast(str, parsed["name"])
         log.debug("Extracting sub resources for %s", r.id)
         async for sub_resource in f(resource_group, resource_name):
             if hasattr(sub_resource, "value") and isinstance(sub_resource.value, Iterable):
