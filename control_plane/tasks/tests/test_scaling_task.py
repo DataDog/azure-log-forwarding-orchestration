@@ -3,6 +3,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from json import dumps
 from os import environ
+from string import ascii_lowercase
 from typing import Any
 from unittest import TestCase
 from unittest.mock import ANY, Mock, call, patch
@@ -77,6 +78,10 @@ def generate_metrics(
         }
         for i in range(METRIC_COLLECTION_PERIOD_MINUTES)
     ]
+
+
+def generate_forwarder_ids(count: int) -> list[str]:
+    return [f"{i}{ascii_lowercase[i] * 11}" for i in range(count)]
 
 
 def collect_metrics_side_effect(
@@ -657,6 +662,37 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_called()
+
+    async def test_log_forwarders_dont_scale_when_at_max_capacity(self):
+        forwarder_ids = generate_forwarder_ids(15)
+        self.forwarder_resources_mapping.update({id: (mock(), mock()) for id in forwarder_ids})
+        resource_log_volume = {f"resource{i}": i * 1000 for i in range(20)}
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            lambda i: 49.045 - (i * 0.2), resource_log_volume
+        )
+
+        assignment_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {
+                        f"resource{i}": forwarder_ids[i] for i in range(15)
+                    },  # assign 15 resources to 15 forwarders
+                    "configurations": {forwarder_id: STORAGE_ACCOUNT_TYPE for forwarder_id in forwarder_ids},
+                }
+            },
+        }
+
+        # and assign more log-intensive resources to first forwarder to simulate scale-up context
+        noisy_resources = {f"resource{i}": forwarder_ids[0] for i in range(15, 20)}
+        assignment_cache[SUB_ID1][EAST_US]["resources"].update(noisy_resources)
+
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {f"resource{i}" for i in range(20)}}},
+            assignment_cache_state=assignment_cache,
+        )
+
+        self.client.is_consistently_over_threshold.assert_not_awaited()
+        self.client.create_log_forwarder.assert_not_awaited()
 
     async def test_new_resources_onboarded_during_scaling(self):
         self.client.collect_forwarder_metrics.return_value = generate_metrics(
