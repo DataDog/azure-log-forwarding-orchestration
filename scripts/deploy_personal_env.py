@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # stdlib
 from hashlib import md5
-from json import loads
+from json import dumps, loads
 from os import environ
 from re import sub
-from subprocess import Popen, PIPE
+from subprocess import PIPE, Popen
 from sys import argv
 from time import sleep
 from typing import Any
@@ -15,7 +15,6 @@ from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
 from azure.storage.blob import BlobServiceClient
-
 
 # constants
 CONTAINER_NAME = "lfo"
@@ -35,7 +34,7 @@ FORCE_ARM_DEPLOY = "--force-arm-deploy" in argv
 def get_name(name: str, max_length: int) -> str:
     if len(name) > max_length:
         name_bytes = name
-        if not isinstance(name, (bytes, bytearray)):
+        if not isinstance(name, (bytes | bytearray)):
             name_bytes = name.encode("utf-8")
         name_md5 = md5(name_bytes).hexdigest()
         if max_length > MD5_LENGTH:
@@ -45,9 +44,11 @@ def get_name(name: str, max_length: int) -> str:
     return name.lower()
 
 
-def run(cmd: str, **kwargs: Any) -> str:
+def run(cmd: str | list[str], **kwargs: Any) -> str:
     """Runs the command and returns the stdout, stripping any newlines"""
-    output = Popen(cmd.split(), stdout=PIPE, text=True, **kwargs)
+    if isinstance(cmd, str):
+        cmd = cmd.split()
+    output = Popen(cmd, stdout=PIPE, text=True, **kwargs)
     output.wait()
     if not output.stdout:
         return ""
@@ -62,9 +63,7 @@ home = environ.get("HOME")
 user = environ.get("USER")
 lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}"))
 lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
-subscription_id = environ.get("AZURE_SUBSCRIPTION_ID") or run(
-    "az account show --query id -o tsv"
-)
+subscription_id = environ.get("AZURE_SUBSCRIPTION_ID") or run("az account show --query id -o tsv")
 credential = AzureCliCredential()
 resource_client = ResourceManagementClient(credential, subscription_id)
 storage_client = StorageManagementClient(credential, subscription_id)
@@ -82,18 +81,14 @@ resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
 # if resource group does not exist, create it
 if not resource_client.resource_groups.check_existence(resource_group_name):
     print(f"Resource group {resource_group_name} does not exist, will be created")
-    resource_group = resource_client.resource_groups.create_or_update(
-        resource_group_name, {"location": LOCATION}
-    )
+    resource_group = resource_client.resource_groups.create_or_update(resource_group_name, {"location": LOCATION})
     initial_deploy = True
     print(f"Created resource group {resource_group.name}")
 
 
 # check if staging storage account exists
 storage_account_name = get_name(lfo_base_name, STORAGE_ACCOUNT_MAX_LENGTH)
-availability_result = storage_client.storage_accounts.check_name_availability(
-    {"name": storage_account_name}
-)
+availability_result = storage_client.storage_accounts.check_name_availability({"name": storage_account_name})
 
 
 # if storage account does not exist, create it
@@ -110,19 +105,13 @@ if availability_result.name_available:
 
     # set the allow_blob_public_access settings
     public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
-    storage_client.storage_accounts.update(
-        resource_group_name, storage_account_name, public_params
-    )
-    print(
-        f"Enabled public access for storage account {storage_account_name}. Waiting for settings to take effect..."
-    )
+    storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
+    print(f"Enabled public access for storage account {storage_account_name}. Waiting for settings to take effect...")
     sleep(20)  # wait for storage account setting to propagate
 
 
 # get connection string
-keys = storage_client.storage_accounts.list_keys(
-    resource_group_name, storage_account_name
-)
+keys = storage_client.storage_accounts.list_keys(resource_group_name, storage_account_name)
 connection_string = f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName={storage_account_name};AccountKey={keys.keys[0].value}"
 blob_service_client = BlobServiceClient.from_connection_string(connection_string)
 
@@ -132,23 +121,18 @@ container_client = blob_service_client.get_container_client(CONTAINER_NAME)
 # if container does not exist, create it
 if not container_client.exists():
     try:
-        container_client = blob_service_client.create_container(
-            CONTAINER_NAME, public_access="container"
-        )
-    except Exception:
+        container_client = blob_service_client.create_container(CONTAINER_NAME, public_access="container")
+    except Exception as e:
         print(
             f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
         )
-        raise SystemExit(1)
+        raise SystemExit(1) from e
     print(f"Created storage container {CONTAINER_NAME}")
 
 
 # check if ACR exists
 container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
-acr_list = run(
-    f"az acr list --resource-group {resource_group_name} --output json",
-    cwd=lfo_dir,
-)
+acr_list = run(f"az acr list --resource-group {resource_group_name} --output json", cwd=lfo_dir)
 
 # if ACR does not exist, create it
 if not acr_list or container_registry_name not in acr_list:
@@ -202,36 +186,41 @@ if initial_deploy or FORCE_ARM_DEPLOY:
     print(f"Deploying LFO to {resource_group_name}...")
     app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
+    params = {
+        "monitoredSubscriptions": dumps([subscription_id]),
+        "controlPlaneLocation": LOCATION,
+        "controlPlaneSubscriptionId": subscription_id,
+        "controlPlaneResourceGroupName": resource_group_name,
+        "datadogApplicationKey": app_key,
+        "datadogApiKey": api_key,
+        "datadogSite": "datadoghq.com",
+        "imageRegistry": f"{container_registry_name}.azurecr.io",
+        "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
+    }
     run(
-        f"az deployment mg create --management-group-id Azure-Integrations-Mg --location {LOCATION} "
-        + f"--name {resource_group_name} --template-file ./deploy/azuredeploy.bicep "
-        + f'--parameters monitoredSubscriptions=["{subscription_id}"] '
-        + f"--parameters controlPlaneLocation={LOCATION} "
-        + f"--parameters controlPlaneSubscriptionId={subscription_id} "
-        + f"--parameters controlPlaneResourceGroupName={resource_group_name} "
-        + f"--parameters datadogApplicationKey={app_key} "
-        + f"--parameters datadogApiKey={api_key} --parameters datadogSite=datadoghq.com "
-        + f"--parameters imageRegistry={container_registry_name}.azurecr.io "
-        + f"--parameters storageAccountUrl=https://{storage_account_name}.blob.core.windows.net",
+        [
+            *("az", "deployment", "mg", "create"),
+            *("--management-group-id", "Azure-Integrations-Mg"),
+            *("--location", LOCATION),
+            *("--name", resource_group_name),
+            *("--template-file", "./deploy/azuredeploy.bicep"),
+            *(paramPart for k, v in params.items() for paramPart in ("--parameters", f"{k}={v}")),
+        ],
         cwd=lfo_dir,
     )
+else:
+    # execute deployer
+    jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
+    if not jobs or not (
+        deployer_job := next(
+            (job.get("name") for job in jobs if "deployer-task" in job.get("name")),
+            None,
+        )
+    ):
+        print(
+            "Deployer not found, try re-running the script with `--force-arm-deploy` to ensure all resources are created"
+        )
+        raise SystemExit(1)
 
-
-# execute deployer
-print("Waiting for deployer to be ready..", end="")
-while True:
-    print(".", end="", flush=True)
-    jobs_json = run(
-        f"az containerapp job list --resource-group {resource_group_name} --output json"
-    )
-    if not jobs_json or not (jobs := loads(jobs_json)):
-        sleep(5)
-        continue
-    for job in jobs:
-        if "deployer-task" in job.get("name"):
-            print(f"\nDeployer Ready, Executing deployer for job {job.get('name')}...")
-            run(
-                f"az containerapp job start --resource-group {resource_group_name} --name {job.get('name')}",
-            )
-            print(f"Deployer executed for job {job.get('name')}")
-            raise SystemExit(0)
+    run(f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}")
+    print(f"Deployer job {deployer_job} executed! In a minute or two, all tasks will be redeployed.")

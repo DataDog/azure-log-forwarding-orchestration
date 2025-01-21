@@ -1,6 +1,6 @@
 # stdlib
 from os import environ
-from unittest import IsolatedAsyncioTestCase, TestCase
+from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
 
 # 3p
@@ -8,25 +8,15 @@ from azure.core.exceptions import ResourceNotFoundError
 
 # project
 from cache.common import (
-    STORAGE_CONNECTION_SETTING,
-    MissingConfigOptionError,
-    get_config_option,
     read_cache,
     write_cache,
 )
+from cache.env import STORAGE_CONNECTION_SETTING
 from tasks.tests.common import AsyncMockClient
 
 sub1 = "sub1"
 rg1 = "rg1"
 config1 = "config1"
-
-
-class TestCommon(TestCase):
-    def test_missing_config_option(self):
-        with self.assertRaises(MissingConfigOptionError) as ctx:
-            get_config_option("missing_option")
-
-        self.assertEqual(str(ctx.exception), "Missing required configuration option: missing_option")
 
 
 class TestCacheUtils(IsolatedAsyncioTestCase):

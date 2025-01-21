@@ -7,4 +7,4 @@ set -euxo pipefail
 cd control_plane
 
 : run ruff format
-ruff format --check
+ruff format --check --config ./pyproject.toml

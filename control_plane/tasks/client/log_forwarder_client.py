@@ -1,12 +1,12 @@
 # stdlib
-from asyncio import Lock, create_task, gather
-from collections.abc import Awaitable, Callable, Iterable
+from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
 from os import environ
 from types import TracebackType
-from typing import Self, TypeAlias, TypeVar, cast
+from typing import Any, Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -61,9 +61,20 @@ from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 from cache.common import (
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
+)
+from cache.env import (
+    CONFIG_ID_SETTING,
+    CONNECTION_STRING_SECRET,
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    DD_API_KEY_SECRET,
+    DD_API_KEY_SETTING,
+    DD_SITE_SETTING,
+    FORWARDER_IMAGE_SETTING,
+    STORAGE_CONNECTION_SETTING,
     get_config_option,
 )
-from cache.metric_blob_cache import MetricBlobEntry
+from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
@@ -75,20 +86,12 @@ from tasks.common import (
     log_errors,
 )
 from tasks.concurrency import collect, create_task_from_awaitable
+from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
-DD_SITE_SETTING = "DD_SITE"
-DD_API_KEY_SETTING = "DD_API_KEY"
-FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
-CONFIG_ID_SETTING = "CONFIG_ID"
-CONTROL_PLANE_REGION_SETTING = "CONTROL_PLANE_REGION"
-CONTROL_PLANE_ID_SETTING = "CONTROL_PLANE_ID"
-
-DD_API_KEY_SECRET = "dd-api-key"
-CONNECTION_STRING_SECRET = "connection-string"
-
+FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
@@ -138,6 +141,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
+        self._background_tasks: set[AsyncTask[Any]] = set()
 
     async def __aenter__(self) -> Self:
         await gather(
@@ -150,11 +154,28 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
+        if self._background_tasks:
+            await wait(self._background_tasks)
         await gather(
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
+
+    def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:
+        def _done_callback(task: AsyncTask[Any]) -> None:
+            self._background_tasks.discard(task)
+            if e := task.exception():
+                log.error("Background task failed with an exception", exc_info=e)
+
+        task = create_task(coro)
+        self._background_tasks.add(task)
+        task.add_done_callback(_done_callback)
+
+    def get_container_app_region(self, region: str) -> str:
+        if region in ALLOWED_CONTAINER_APP_REGIONS:
+            return region
+        return self.control_plane_region
 
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
@@ -162,7 +183,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
         maybe_errors = await gather(
-            wait_for_resource(*await self.create_log_forwarder_container_app(region, config_id)),
+            wait_for_resource(*await self.create_or_update_log_forwarder_container_app(region, config_id)),
             self.create_log_forwarder_containers(storage_account_name),
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
@@ -177,6 +198,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         get_job = create_task_from_awaitable(
             self.container_apps_client.jobs.get(self.resource_group, get_container_app_name(config_id))
         )
+        get_secrets = create_task_from_awaitable(
+            self.container_apps_client.jobs.list_secrets(self.resource_group, get_container_app_name(config_id))
+        )
         get_storage_account = create_task_from_awaitable(
             self.storage_client.storage_accounts.get_properties(
                 self.resource_group, get_storage_account_name(config_id)
@@ -186,6 +210,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         job = None
         with suppress(ResourceNotFoundError):
             job = await get_job
+            # populate the configuration separately
+            if not job.configuration:
+                job.configuration = JobConfiguration(replica_timeout=FORWARDER_TIMEOUT_SECONDS)
+            job.configuration.secrets = (await get_secrets).value
         storage_account = None
         with suppress(ResourceNotFoundError):
             storage_account = await get_storage_account
@@ -210,13 +238,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
     async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
-        env_name = get_managed_env_name(region, self.control_plane_id)
-        log.info("Creating managed environment %s for region %s", env_name, region)
+        container_app_region = self.get_container_app_region(region)
+        env_name = get_managed_env_name(container_app_region, self.control_plane_id)
+        log.info("Creating managed environment %s for region %s in %s", env_name, region, container_app_region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
             ManagedEnvironment(
-                location=region,
+                location=container_app_region,
                 zone_redundant=False,
             ),
         )
@@ -224,16 +253,25 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             await poller.result()
 
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
-        env_name = get_managed_env_name(region, self.control_plane_id)
+        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
             return None
         return str(managed_env.id)
 
-    async def create_log_forwarder_container_app(self, region: str, config_id: str) -> ResourcePoller[Job]:
-        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
+    async def create_or_update_log_forwarder_container_app(
+        self,
+        region: str,
+        config_id: str,
+        *,
+        env: list[EnvironmentVar] | None = None,
+        secrets: list[Secret] | None = None,
+    ) -> ResourcePoller[Job]:
         job_name = get_container_app_name(config_id)
+        region = self.get_container_app_region(region)
+        env = env or self.generate_forwarder_settings(config_id)
+        secrets = secrets or await self.generate_forwarder_secrets(config_id)
         return await self.container_apps_client.jobs.begin_create_or_update(
             self.resource_group,
             job_name,
@@ -249,12 +287,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         parallelism=1,
                         replica_completion_count=1,
                     ),
-                    replica_timeout=1800,  # 30 minutes
+                    replica_timeout=FORWARDER_TIMEOUT_SECONDS,
                     replica_retry_limit=1,
-                    secrets=[
-                        Secret(name=DD_API_KEY_SECRET, value=self.dd_api_key),
-                        Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
-                    ],
+                    secrets=secrets,
                 ),
                 template=JobTemplate(
                     containers=[
@@ -262,18 +297,28 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                             name="forwarder",
                             image=self.forwarder_image,
                             resources=ContainerResources(cpu=2, memory="4Gi"),
-                            env=[
-                                EnvironmentVar(name="AzureWebJobsStorage", secret_ref=CONNECTION_STRING_SECRET),
-                                EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
-                                EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
-                                EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
-                                EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
-                            ],
+                            env=env,
                         )
                     ],
                 ),
             ),
         ), lambda: self.container_apps_client.jobs.get(self.resource_group, job_name)
+
+    async def generate_forwarder_secrets(self, config_id: str) -> list[Secret]:
+        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
+        return [
+            Secret(name=DD_API_KEY_SECRET, value=self.dd_api_key),
+            Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
+        ]
+
+    def generate_forwarder_settings(self, config_id: str) -> list[EnvironmentVar]:
+        return [
+            EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
+            EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
+            EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
+            EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
+            EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
+        ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
         await self.storage_client.blob_containers.create(
@@ -396,6 +441,19 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if raise_error:
                 raise
             return False
+
+    async def collect_forwarder_metrics(self, config_id: str, oldest_valid_timestamp: float) -> list[MetricBlobEntry]:
+        """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
+        metric_lines = await self.get_blob_metrics_lines(config_id)
+        forwarder_metrics = [
+            metric_entry
+            for metric_line in metric_lines
+            if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
+        ]
+        if not forwarder_metrics:
+            log.warning("No valid metrics found for forwarder %s", config_id)
+        self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+        return forwarder_metrics
 
     async def get_blob_metrics_lines(self, config_id: str) -> list[str]:
         """

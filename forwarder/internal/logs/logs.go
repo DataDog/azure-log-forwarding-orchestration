@@ -105,8 +105,11 @@ func (l *azureLog) ToLog() (*Log, error) {
 	}, nil
 }
 
-// ErrIncompleteLog is an error for when a log is incomplete.
-var ErrIncompleteLog = errors.New("received a partial log")
+// ErrUnexpectedToken is an error for when an unexpected token is found in a log.
+var ErrUnexpectedToken = errors.New("found unexpected token in log")
+
+// ErrIncompleteLogFile is an error for when a log file is incomplete.
+var ErrIncompleteLogFile = errors.New("received a partial log file")
 
 func astToAny(node any) (any, error) {
 	switch v := node.(type) {
@@ -187,7 +190,7 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 		logBytes, err = BytesFromJSON(logBytes)
 		if err != nil {
 			if strings.Contains(err.Error(), "Unexpected token ;") {
-				return nil, ErrIncompleteLog
+				return nil, ErrUnexpectedToken
 			}
 			return nil, err
 		}
@@ -197,7 +200,7 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 
 	if err != nil {
 		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, ErrIncompleteLog
+			return nil, ErrIncompleteLogFile
 		}
 		return nil, err
 	}

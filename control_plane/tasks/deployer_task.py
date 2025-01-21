@@ -17,7 +17,14 @@ from azure.storage.blob.aio import ContainerClient
 from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
 # project
-from cache.common import InvalidCacheError, get_config_option, read_cache, write_cache
+from cache.common import InvalidCacheError, read_cache, write_cache
+from cache.env import (
+    CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    STORAGE_ACCOUNT_URL_SETTING,
+    SUBSCRIPTION_ID_SETTING,
+    get_config_option,
+)
 from cache.manifest_cache import (
     KEY_TO_ZIP,
     MANIFEST_FILE_NAME,
@@ -61,10 +68,10 @@ class DeployError(Exception):
 class DeployerTask(Task):
     def __init__(self) -> None:
         super().__init__()
-        self.subscription_id = get_config_option("SUBSCRIPTION_ID")
-        self.resource_group = get_config_option("RESOURCE_GROUP")
-        self.region = get_config_option("REGION")
-        storage_account_url = environ.get("STORAGE_ACCOUNT_URL", PUBLIC_STORAGE_ACCOUNT_URL)
+        self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
+        self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
+        self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
+        storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
         self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)

@@ -23,6 +23,22 @@ param datadogSite string
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
 var forwarderImage = '${imageRegistry}/forwarder:latest'
 
+// Settings
+var STORAGE_CONNECTION_SETTING = 'AzureWebJobsStorage'
+var DD_SITE_SETTING = 'DD_SITE'
+var DD_API_KEY_SETTING = 'DD_API_KEY'
+var DD_APP_KEY_SETTING = 'DD_APP_KEY'
+var FORWARDER_IMAGE_SETTING = 'FORWARDER_IMAGE'
+var SUBSCRIPTION_ID_SETTING = 'SUBSCRIPTION_ID'
+var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
+var CONTROL_PLANE_REGION_SETTING = 'CONTROL_PLANE_REGION'
+var CONTROL_PLANE_ID_SETTING = 'CONTROL_PLANE_ID'
+var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
+
+// Secret Names
+var DD_API_KEY_SECRET = 'dd-api-key'
+var DD_APP_KEY_SECRET = 'dd-app-key'
+var CONNECTION_STRING_SECRET = 'connection-string'
 // CONTROL PLANE RESOURCES
 
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
@@ -68,7 +84,7 @@ var storageAccountKey = listKeys(storageAccount.id, '2019-06-01').keys[0].value
 var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccountKey}'
 
 var commonAppSettings = [
-  { name: 'AzureWebJobsStorage', value: connectionString }
+  { name: STORAGE_CONNECTION_SETTING, value: connectionString }
   { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
   { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
   { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
@@ -108,9 +124,9 @@ resource diagnosticSettingsTask 'Microsoft.Web/sites@2022-09-01' = {
     serverFarmId: asp.id
     siteConfig: {
       appSettings: union(commonAppSettings, [
-        { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
+        { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
-        { name: 'CONTROL_PLANE_ID', value: controlPlaneId }
+        { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
       ])
       linuxFxVersion: 'Python|3.11'
     }
@@ -132,14 +148,14 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
     serverFarmId: asp.id
     siteConfig: {
       appSettings: union(commonAppSettings, [
-        { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
+        { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
-        { name: 'FORWARDER_IMAGE', value: forwarderImage }
-        { name: 'DD_API_KEY', value: datadogApiKey }
-        { name: 'DD_APP_KEY', value: datadogApplicationKey }
-        { name: 'DD_SITE', value: datadogSite }
-        { name: 'CONTROL_PLANE_REGION', value: controlPlaneLocation }
-        { name: 'CONTROL_PLANE_ID', value: controlPlaneId }
+        { name: FORWARDER_IMAGE_SETTING, value: forwarderImage }
+        { name: DD_API_KEY_SETTING, value: datadogApiKey }
+        { name: DD_APP_KEY_SETTING, value: datadogApplicationKey }
+        { name: DD_SITE_SETTING, value: datadogSite }
+        { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
+        { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
       ])
       linuxFxVersion: 'Python|3.11'
     }
@@ -150,7 +166,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
 }
 
 resource deployerTaskEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: 'deployer-task-env-${controlPlaneId}'
+  name: 'dd-log-forwarder-env-${controlPlaneId}-${controlPlaneLocation}'
   location: controlPlaneLocation
   properties: {}
 }
@@ -173,9 +189,9 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
       replicaRetryLimit: 1
       replicaTimeout: 1800
       secrets: [
-        { name: 'connection-string', value: connectionString }
-        { name: 'dd-api-key', value: datadogApiKey }
-        { name: 'dd-app-key', value: datadogApplicationKey }
+        { name: CONNECTION_STRING_SECRET, value: connectionString }
+        { name: DD_API_KEY_SECRET, value: datadogApiKey }
+        { name: DD_APP_KEY_SECRET, value: datadogApplicationKey }
       ]
     }
     template: {
@@ -188,14 +204,14 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             memory: '1Gi'
           }
           env: [
-            { name: 'AzureWebJobsStorage', secretRef: 'connection-string' }
-            { name: 'SUBSCRIPTION_ID', value: controlPlaneSubscriptionId }
-            { name: 'RESOURCE_GROUP', value: controlPlaneResourceGroupName }
-            { name: 'REGION', value: controlPlaneLocation }
-            { name: 'DD_API_KEY', secretRef: 'dd-api-key' }
-            { name: 'DD_APP_KEY', secretRef: 'dd-app-key' }
-            { name: 'DD_SITE', value: datadogSite }
-            { name: 'STORAGE_ACCOUNT_URL', value: storageAccountUrl }
+            { name: STORAGE_CONNECTION_SETTING, secretRef: CONNECTION_STRING_SECRET }
+            { name: SUBSCRIPTION_ID_SETTING, value: controlPlaneSubscriptionId }
+            { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
+            { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
+            { name: DD_API_KEY_SETTING, secretRef: DD_API_KEY_SECRET }
+            { name: DD_APP_KEY_SETTING, secretRef: DD_APP_KEY_SECRET }
+            { name: DD_SITE_SETTING, value: datadogSite }
+            { name: STORAGE_ACCOUNT_URL_SETTING, value: storageAccountUrl }
           ]
         }
       ]

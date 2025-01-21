@@ -133,7 +133,7 @@ func TestNewLog(t *testing.T) {
 
 		// THEN
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, logs.ErrIncompleteLog)
+		assert.ErrorIs(t, err, logs.ErrIncompleteLogFile)
 		assert.Nil(t, log)
 	})
 
@@ -144,7 +144,7 @@ func TestNewLog(t *testing.T) {
 
 		// THEN
 		assert.Error(t, err)
-		assert.ErrorIs(t, err, logs.ErrIncompleteLog)
+		assert.ErrorIs(t, err, logs.ErrUnexpectedToken)
 		assert.Nil(t, log)
 	})
 
@@ -262,4 +262,5 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		assert.Equal(t, got, 20)
 	})
+
 }
