@@ -216,10 +216,15 @@ ALLOWED_RESOURCE_TYPES: Final = [
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 ]
 ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
+PROGRESS_BAR_LENGTH: Final = 40
+MAX_RETRIES = 6
+THREAD_POOL_SIZE = 100  # https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#migrating-to-regional-throttling-and-token-bucket-algorithm
 
 
 # ===== Utility ===== #
 def first_key_of(d: dict[str, Any]) -> str:
+    if not d:
+        raise ValueError("Empty dictionary")
     return next(iter(d))
 
 
@@ -245,10 +250,9 @@ def print_progress(current: int, total: int):
     if total == 0:
         return
 
-    progress_bar_length = 40
     progress = current / total
-    done_bar = int(progress_bar_length * progress)
-    leftover_bar = progress_bar_length - done_bar
+    done_bar = int(PROGRESS_BAR_LENGTH * progress)
+    leftover_bar = PROGRESS_BAR_LENGTH - done_bar
     percent_done = f"{progress * 100:.0f}%"
     is_done = current == total
     print(
@@ -318,11 +322,10 @@ def uninstall_summary(
 def az(cmd: str) -> str:
     """Runs az command with exponential backoff/retry, returns stdout"""
 
-    max_retries = 6
     delay = 2  # seconds
     az_cmd = f"az {cmd}"
 
-    for attempt in range(max_retries):
+    for attempt in range(MAX_RETRIES):
         try:
             result = subprocess.run(az_cmd, shell=True, check=True, text=True, capture_output=True)
             return result.stdout
@@ -336,7 +339,7 @@ def az(cmd: str) -> str:
             ):
                 return "0"
             if "TooManyRequests" in stderr:
-                if attempt < max_retries - 1:
+                if attempt < MAX_RETRIES - 1:
                     sleep(delay)
                     delay *= 2
                     log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
@@ -361,13 +364,11 @@ def list_users_subscriptions(sub_id=None) -> dict:
         return {sub["id"]: sub["name"] for sub in subs_json}
 
     log.info(f"Fetching details for subscription {sub_id}... ")
+    subs_json = None
+    print_progress(0, 1)
 
     try:
-        print_progress(0, 1)
         subs_json = json.loads(az(f"account show --name {sub_id} --output json"))
-        print_progress(1, 1)
-        print(f'Found {subs_json["name"]} ({subs_json["id"]})')
-        return {subs_json["id"]: subs_json["name"]}
     except subprocess.CalledProcessError as e:
         print_progress(1, 1)
         if f"Subscription '{sub_id}' not found" in str(e.stderr):
@@ -375,6 +376,10 @@ def list_users_subscriptions(sub_id=None) -> dict:
 
         log.error(f"Error fetching subscription details: {e.stderr}")
         raise SystemExit(1) from e
+
+    print_progress(1, 1)
+    print(f'Found {subs_json["name"]} ({subs_json["id"]})')
+    return {subs_json["id"]: subs_json["name"]}
 
 
 def list_resources(sub_id: str, sub_name: str) -> set:
@@ -407,18 +412,19 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})... ")
     lfo_install_map = {}
     print_progress(0, 1)
+    cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
 
     try:
-        cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
         storage_accounts_json = json.loads(az(cmd))
         lfo_install_map = {account["resourceGroup"]: account["name"] for account in storage_accounts_json}
-        print_progress(1, 1)
-        print(f"Found {len(lfo_install_map)}")
     except subprocess.CalledProcessError as e:
         print_progress(1, 1)
         if "AADSTS700082" in e.stderr:
             log.warning(f"Refresh token is expired on {sub_name} ({sub_id}). Skipping for now.")
             return lfo_install_map
+
+    print_progress(1, 1)
+    print(f"Found {len(lfo_install_map)}")
 
     return lfo_install_map
 
@@ -520,7 +526,7 @@ def delete_roles_diag_settings(
     delete_log = "Deleting role assignments and diagnostic settings"
     log.info(dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log)
 
-    with ThreadPoolExecutor(100) as tpe:
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
         futures = []
         for sub_id, role_assignments_json in sub_role_assignment_deletions.items():
             if role_assignments_json:
@@ -777,7 +783,7 @@ def main():
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
     if not any(sub_to_rg_deletions.values()):
-        log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
+        log.info("Could not find DataDog log forwarding instances to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
 
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
