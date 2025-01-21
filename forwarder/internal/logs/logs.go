@@ -19,6 +19,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/dop251/goja/ast"
 	"github.com/dop251/goja/parser"
+	log "github.com/sirupsen/logrus"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -52,9 +53,17 @@ type Log struct {
 	Level      string
 }
 
-// IsValid checks if the log is valid to send to Datadog.
-func (l *Log) IsValid() bool {
-	return l.ByteSize < MaxPayloadSize
+// Validate checks if the log is valid to send to Datadog.
+func (l *Log) Validate(logger *log.Entry) bool {
+	if l.ByteSize > MaxPayloadSize {
+		logger.Warningf("Skipping large log at %s from %s with a size of %d", l.Time.Format(time.RFC3339), l.ResourceId, l.Length())
+		return false
+	}
+	if l.Time.Before(time.Now().Add(-MaxLogAge)) {
+		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", l.Time.Format(time.RFC3339), l.ResourceId)
+		return false
+	}
+	return true
 }
 
 // Content converts the log content to a string.
@@ -222,16 +231,6 @@ func getTags(id *arm.ResourceID) []string {
 	}
 }
 
-// TooLargeError represents an error for when a log is too large to send to Datadog.
-type TooLargeError struct {
-	log Log
-}
-
-// Error returns a string representation of the TooLargeError.
-func (e TooLargeError) Error() string {
-	return fmt.Sprintf("large log from %s with a size of %d", e.log.ResourceId, e.log.Length())
-}
-
 // bufferSize is the maximum number of logs per post to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
 const bufferSize = 950
@@ -239,6 +238,10 @@ const bufferSize = 950
 // MaxPayloadSize is the maximum byte size of the payload to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
 const MaxPayloadSize = 4 * 1000000
+
+// MaxLogAge is the maximum age a log in the payload to Logs API.
+// https://docs.datadoghq.com/api/latest/logs/
+const MaxLogAge = 18 * time.Hour
 
 func ptr[T any](v T) *T {
 	return &v
@@ -283,11 +286,9 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 }
 
 // AddLog adds a log to the buffer for future submission.
-func (c *Client) AddLog(ctx context.Context, log *Log) (err error) {
-	if !log.IsValid() {
-		return TooLargeError{
-			log: *log,
-		}
+func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err error) {
+	if !log.Validate(logger) {
+		return nil
 	}
 	if c.shouldFlush(log) {
 		err = c.Flush(ctx)

@@ -97,11 +97,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
-		currErr := logsClient.AddLog(ctx, logItem)
-		var invalidLogError logs.TooLargeError
-		if errors.As(currErr, &invalidLogError) {
-			logger.Warning(invalidLogError.Error())
-		}
+		currErr := logsClient.AddLog(ctx, logger, logItem)
 		err = errors.Join(err, currErr)
 		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: int64(logItem.Length())}
 	}

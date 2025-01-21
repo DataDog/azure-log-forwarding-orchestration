@@ -10,8 +10,10 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	// 3p
+	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -22,11 +24,24 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
-func getLogWithContent(content string) []byte {
-	return []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
+func azureTimestamp(t time.Time) string {
+	return t.UTC().Format("2006-01-02T15:04:05Z")
+}
+
+func getLogWithContent(content string, delay time.Duration) []byte {
+	timestamp := time.Now().Add(-delay)
+	return []byte("{ \"time\": \"" + azureTimestamp(timestamp) + "\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 }
 
 const functionAppContainer = "insights-logs-functionapplogs"
+
+func MockLogger() (*log.Entry, *bytes.Buffer) {
+	var output []byte
+	buffer := bytes.NewBuffer(output)
+	logger := log.New()
+	logger.SetOutput(buffer)
+	return log.NewEntry(logger), buffer
+}
 
 func TestAddLog(t *testing.T) {
 	t.Parallel()
@@ -42,6 +57,7 @@ func TestAddLog(t *testing.T) {
 		logBytes := []byte(logString)
 		for range 3 {
 			currLog, err := logs.NewLog(logBytes, functionAppContainer)
+			currLog.Time = time.Now().Add(-5 * time.Minute)
 			require.NoError(t, err)
 			payload = append(payload, currLog)
 		}
@@ -53,15 +69,17 @@ func TestAddLog(t *testing.T) {
 		client := logs.NewClient(mockClient)
 		ctx := context.Background()
 		var err error
+		logger, buffer := MockLogger()
 
 		// WHEN
 		for _, l := range payload {
-			errors.Join(client.AddLog(ctx, l), err)
+			errors.Join(client.AddLog(ctx, logger, l), err)
 		}
 		errors.Join(client.Flush(ctx), err)
 
 		// THEN
 		assert.NoError(t, err)
+		assert.Empty(t, buffer)
 	})
 }
 
@@ -181,28 +199,46 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns true for a valid log", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		l, err := logs.NewLog(getLogWithContent("test"), "insights-logs-functionapplogs")
+		l, err := logs.NewLog(getLogWithContent("test", 5*time.Minute), "insights-logs-functionapplogs")
 		require.NoError(t, err)
+		logger, buffer := MockLogger()
 
 		// WHEN
-		got := l.IsValid()
+		got := l.Validate(logger)
 
 		// THEN
 		assert.True(t, got)
+		assert.Empty(t, buffer)
 	})
 
-	t.Run("valid returns false for an invalid log", func(t *testing.T) {
+	t.Run("valid returns false and warns for an too large log", func(t *testing.T) {
 		t.Parallel()
 		// Given
 		content := strings.Repeat("a", logs.MaxPayloadSize)
-		l, err := logs.NewLog(getLogWithContent(content), functionAppContainer)
+		l, err := logs.NewLog(getLogWithContent(content, 5*time.Minute), functionAppContainer)
 		require.NoError(t, err)
+		logger, buffer := MockLogger()
 
 		// WHEN
-		got := l.IsValid()
+		got := l.Validate(logger)
 
 		// THEN
 		assert.False(t, got)
+		assert.Contains(t, buffer.String(), "Skipping large log")
+	})
+	t.Run("valid returns false and warns for an too old log", func(t *testing.T) {
+		t.Parallel()
+		// Given
+		l, err := logs.NewLog(getLogWithContent("short content", (18*time.Hour)+time.Minute), functionAppContainer)
+		require.NoError(t, err)
+		logger, buffer := MockLogger()
+
+		// WHEN
+		got := l.Validate(logger)
+
+		// THEN
+		assert.False(t, got)
+		assert.Contains(t, buffer.String(), "Skipping log older than 18 hours")
 	})
 }
 
