@@ -238,7 +238,7 @@ func TestValid(t *testing.T) {
 
 		// THEN
 		assert.False(t, got)
-		assert.Contains(t, buffer.String(), "Skipping log older than 18 hours for resource:")
+		assert.Contains(t, buffer.String(), "Skipping log older than 18 hours")
 	})
 }
 

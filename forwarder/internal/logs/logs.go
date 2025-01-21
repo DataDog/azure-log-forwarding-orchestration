@@ -60,7 +60,7 @@ func (l *Log) Validate(logger *log.Entry) bool {
 		return false
 	}
 	if l.Time.Before(time.Now().Add(-MaxLogAge)) {
-		logger.Warningf("Skipping log older than 18 hours for resource: %s", l.ResourceId)
+		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", l.Time.Format(time.RFC3339), l.ResourceId)
 		return false
 	}
 	return true
