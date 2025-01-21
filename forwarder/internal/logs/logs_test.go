@@ -224,7 +224,7 @@ func TestValid(t *testing.T) {
 
 		// THEN
 		assert.False(t, got)
-		assert.Contains(t, buffer.String(), "Skipping large log from")
+		assert.Contains(t, buffer.String(), "Skipping large log")
 	})
 	t.Run("valid returns false and warns for an too old log", func(t *testing.T) {
 		t.Parallel()

@@ -56,7 +56,7 @@ type Log struct {
 // Validate checks if the log is valid to send to Datadog.
 func (l *Log) Validate(logger *log.Entry) bool {
 	if l.ByteSize > MaxPayloadSize {
-		logger.Warningf("Skipping large log from %s with a size of %d", l.ResourceId, l.Length())
+		logger.Warningf("Skipping large log at %s from %s with a size of %d", l.Time.Format(time.RFC3339), l.ResourceId, l.Length())
 		return false
 	}
 	if l.Time.Before(time.Now().Add(-MaxLogAge)) {
