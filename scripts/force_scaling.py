@@ -5,9 +5,9 @@ import random
 import sys
 
 from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
+from azure.storage.blob import BlobServiceClient
 
 float_max = sys.float_info.max
 big_int = sys.maxsize / 100
@@ -18,17 +18,13 @@ if len(sys.argv) != 3:
 
 
 def list_blobs_flat(blob_service_client: BlobServiceClient, container_name):
-    container_client = blob_service_client.get_container_client(
-        container=container_name
-    )
+    container_client = blob_service_client.get_container_client(container=container_name)
     blob_list = container_client.list_blobs()
     return blob_list
 
 
 def download_blob(blob_service_client: BlobServiceClient, blob_name: str) -> list:
-    blob_client = blob_service_client.get_blob_client(
-        container="dd-forwarder", blob=blob_name
-    )
+    blob_client = blob_service_client.get_blob_client(container="dd-forwarder", blob=blob_name)
     output = []
     # encoding param is necessary for readall() to return str, otherwise it returns bytes
     downloader = blob_client.download_blob(max_concurrency=1, encoding="UTF-8")
@@ -39,24 +35,18 @@ def download_blob(blob_service_client: BlobServiceClient, blob_name: str) -> lis
     return output
 
 
-def upload_blob_data(
-    blob_service_client: BlobServiceClient, blob_name: str, data: list
-):
+def upload_blob_data(blob_service_client: BlobServiceClient, blob_name: str, data: list):
     content = ""
     for item in data:
         content += json.dumps(item) + "\n"
-    blob_client = blob_service_client.get_blob_client(
-        container="dd-forwarder", blob=blob_name
-    )
+    blob_client = blob_service_client.get_blob_client(container="dd-forwarder", blob=blob_name)
     # Upload the blob data - default blob type is BlockBlob
-    blob_client.upload_blob(
-        content.encode("utf-8"), blob_type="BlockBlob", overwrite=True
-    )
+    blob_client.upload_blob(content.encode("utf-8"), blob_type="BlockBlob", overwrite=True)
 
 
 def update_metrics(metrics: list):
     last_metric = metrics[-1]
-    resources = [i for i in last_metric.get("resource_log_volume", {}).keys()]
+    resources = [i for i in last_metric.get("resource_log_volume", {})]
     if len(resources) < 2:
         print("Need at least two resources generating logs.")
         sys.exit(1)
@@ -78,19 +68,11 @@ resource_client = ResourceManagementClient(credential, subscription_id)
 resource_group = sys.argv[1]
 location = sys.argv[2]
 
-resource_list = resource_client.resources.list_by_resource_group(
-    resource_group, expand="createdTime,changedTime"
-)
+resource_list = resource_client.resources.list_by_resource_group(resource_group, expand="createdTime,changedTime")
 
-resources = [
-    i
-    for i in resource_list
-    if i.location == location and i.name and "ddlogstorage" in i.name
-]
+resources = [i for i in resource_list if i.location == location and i.name and "ddlogstorage" in i.name]
 if not resources:
-    print(
-        f"No storage account found in resource group {resource_group} in location {location}"
-    )
+    print(f"No storage account found in resource group {resource_group} in location {location}")
     sys.exit(1)
 
 storage_account = random.choice(resources)
