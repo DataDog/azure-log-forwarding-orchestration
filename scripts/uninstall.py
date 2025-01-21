@@ -1,5 +1,15 @@
 #!/usr/bin/env python
-# Remove DataDog Log Forwarding Orchestration from an Azure environment
+
+# usage: uninstall.py [-h] [-d] [-s SUBSCRIPTION] [-y]
+#
+# Uninstall DataDog Log Forwarding Orchestration from an Azure environment
+#
+# optional arguments:
+#   -h, --help            show this help message and exit
+#   -d, --dry-run         Run the script in dry-run mode. No changes will be made to the Azure environment
+#   -s SUBSCRIPTION, --subscription SUBSCRIPTION
+#                         Specify subscription ID to uninstall artifacts from. If not provided, all subscriptions will be searched
+#   -y, --yes             Skip all user prompts. This will delete all detected installations without confirmation
 
 import argparse
 import json
@@ -8,6 +18,7 @@ from collections import defaultdict
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from logging import INFO, WARNING, basicConfig, getLogger
+from re import search
 from time import sleep
 from typing import Any, Final
 
@@ -216,10 +227,21 @@ ALLOWED_RESOURCE_TYPES: Final = [
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 ]
 ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
+PROGRESS_BAR_LENGTH: Final = 40
+MAX_RETRIES = 6
+RESOURCE_GROUP_DELETION_POLLING_DELAY = 5  # seconds
+THREAD_POOL_SIZE = 100  # https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#migrating-to-regional-throttling-and-token-bucket-algorithm
+
+# ===== Errors ===== #
+REFRESH_TOKEN_EXPIRED_ERROR = "AADSTS700082"
+AZURE_THROTTLING_ERROR = "TooManyRequests"
+AUTHORIZATION_ERROR = "AuthorizationFailed"
 
 
 # ===== Utility ===== #
 def first_key_of(d: dict[str, Any]) -> str:
+    if not d:
+        raise ValueError("Empty dictionary")
     return next(iter(d))
 
 
@@ -245,10 +267,9 @@ def print_progress(current: int, total: int):
     if total == 0:
         return
 
-    progress_bar_length = 40
     progress = current / total
-    done_bar = int(progress_bar_length * progress)
-    leftover_bar = progress_bar_length - done_bar
+    done_bar = int(PROGRESS_BAR_LENGTH * progress)
+    leftover_bar = PROGRESS_BAR_LENGTH - done_bar
     percent_done = f"{progress * 100:.0f}%"
     is_done = current == total
     print(
@@ -256,6 +277,25 @@ def print_progress(current: int, total: int):
         end="\tDone!\n" if is_done else "\r",
         flush=True,
     )
+
+
+def try_regex_access_error(stderr: str):
+    # Sample:
+    # (AuthorizationFailed) The client 'ava.silver@devdatadoghq.onmicrosoft.com' with object id '5d1aa0c9-69bb-4617-b025-915ad02ac8b8'
+    # does not have authorization to perform action 'Microsoft.Storage/storageAccounts/read'
+    # over scope '/subscriptions/7d8db849-485b-421f-97db-72b617b8e748' or the scope is invalid.
+    # If access was recently granted, please refresh your credentials.
+
+    client_match = search(r"client '([^']*)'", stderr)
+    action_match = search(r"action '([^']*)'", stderr)
+    scope_match = search(r"scope '([^']*)'", stderr)
+
+    if action_match and scope_match and client_match:
+        client = client_match.group(1)
+        action = action_match.group(1)
+        scope = scope_match.group(1)
+        log.warning(f"Insufficient permissions for {client} to perform {action} on {scope}")
+        raise
 
 
 # ===== Artifact Deletion Summaries ===== #
@@ -318,35 +358,44 @@ def uninstall_summary(
 def az(cmd: str) -> str:
     """Runs az command with exponential backoff/retry, returns stdout"""
 
-    max_retries = 6
     delay = 2  # seconds
     az_cmd = f"az {cmd}"
 
-    for attempt in range(max_retries):
+    for attempt in range(MAX_RETRIES):
         try:
             result = subprocess.run(az_cmd, shell=True, check=True, text=True, capture_output=True)
             return result.stdout
         except subprocess.CalledProcessError as e:
             stderr = str(e.stderr)
-            if (
-                "resource list" in cmd
+            resource_group_deletion_complete = (
+                "ResourceGroupNotFound" in stderr
+                and "resource list" in cmd
                 and "--resource-group" in cmd
                 and '--query "length([])"' in cmd
-                and "ResourceGroupNotFound" in stderr
-            ):
-                return "0"
-            if "TooManyRequests" in stderr:
-                if attempt < max_retries - 1:
+            )
+            if resource_group_deletion_complete:
+                return "0"  # handle expected error for polling RG deletion progress - return 0 to indicate there's no resources left
+            if AZURE_THROTTLING_ERROR in stderr:
+                if attempt < MAX_RETRIES - 1:
+                    log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
                     sleep(delay)
                     delay *= 2
-                    log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
                     continue
 
                 log.error("Rate limit exceeded. Please wait a few minutes and try again.")
                 raise SystemExit(1) from e
+            if REFRESH_TOKEN_EXPIRED_ERROR in stderr:
+                log.warning(
+                    "Refresh token is expired - can't complete operation. Use interactive login to refresh token if necessary."
+                )
+                raise
+            if AUTHORIZATION_ERROR in stderr:
+                try_regex_access_error(stderr)  # logs and raises if it finds match
+                log.warning(f"Insufficient permissions to access resource when executing '{cmd}'")
+                raise
 
             log.error(f"Error running Azure command:\n{e.stderr}")
-            raise SystemExit(1) from e
+            raise
 
     raise SystemExit(1)  # unreachable
 
@@ -357,17 +406,15 @@ def list_users_subscriptions(sub_id=None) -> dict:
         print_progress(0, 1)
         subs_json = json.loads(az("account list --output json"))
         print_progress(1, 1)
-        print(f"Found {len(subs_json)} subscriptions")
+        print(f"Found {len(subs_json)} subscription(s)")
         return {sub["id"]: sub["name"] for sub in subs_json}
 
     log.info(f"Fetching details for subscription {sub_id}... ")
+    subs_json = None
+    print_progress(0, 1)
 
     try:
-        print_progress(0, 1)
         subs_json = json.loads(az(f"account show --name {sub_id} --output json"))
-        print_progress(1, 1)
-        print(f'Found {subs_json["name"]} ({subs_json["id"]})')
-        return {subs_json["id"]: subs_json["name"]}
     except subprocess.CalledProcessError as e:
         print_progress(1, 1)
         if f"Subscription '{sub_id}' not found" in str(e.stderr):
@@ -375,6 +422,10 @@ def list_users_subscriptions(sub_id=None) -> dict:
 
         log.error(f"Error fetching subscription details: {e.stderr}")
         raise SystemExit(1) from e
+
+    print_progress(1, 1)
+    print(f'Found {subs_json["name"]} ({subs_json["id"]})')
+    return {subs_json["id"]: subs_json["name"]}
 
 
 def list_resources(sub_id: str, sub_name: str) -> set:
@@ -407,18 +458,27 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})... ")
     lfo_install_map = {}
     print_progress(0, 1)
+    cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
 
     try:
-        cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
         storage_accounts_json = json.loads(az(cmd))
         lfo_install_map = {account["resourceGroup"]: account["name"] for account in storage_accounts_json}
-        print_progress(1, 1)
-        print(f"Found {len(lfo_install_map)}")
     except subprocess.CalledProcessError as e:
         print_progress(1, 1)
-        if "AADSTS700082" in e.stderr:
-            log.warning(f"Refresh token is expired on {sub_name} ({sub_id}). Skipping for now.")
-            return lfo_install_map
+        if REFRESH_TOKEN_EXPIRED_ERROR in e.stderr:
+            log.warning(
+                f"Ran into authentication token error searching {sub_name} ({sub_id}) - excluding it from search results."
+            )
+            return {}
+        if AUTHORIZATION_ERROR in e.stderr:
+            log.warning(
+                f"Ran into authorization error searching {sub_name} ({sub_id}) - excluding it from search results."
+            )
+            return {}
+        raise
+
+    print_progress(1, 1)
+    print(f"Found {len(lfo_install_map)} log forwarding instance(s)")
 
     return lfo_install_map
 
@@ -520,7 +580,7 @@ def delete_roles_diag_settings(
     delete_log = "Deleting role assignments and diagnostic settings"
     log.info(dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log)
 
-    with ThreadPoolExecutor(100) as tpe:
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
         futures = []
         for sub_id, role_assignments_json in sub_role_assignment_deletions.items():
             if role_assignments_json:
@@ -540,7 +600,7 @@ def delete_roles_diag_settings(
 def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
     for resource_group in resource_group_list:
         rg_deletion_log = (
-            f"Starting resource group {resource_group} deletion in background since it can take some time... "
+            f"Starting resource group '{resource_group}' deletion in background since it can take some time... "
         )
         if DRY_RUN_SETTING:
             log.info(dry_run_of(rg_deletion_log))
@@ -553,7 +613,7 @@ def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
 
 
 def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
-    log_msg = "Checking resource group deletion status... "
+    log_msg = "Checking resource group deletion status (this can take 15+ minutes depending on number of resources in the group)... "
     log.info(f"{dry_run_of(log_msg) if DRY_RUN_SETTING else log_msg}")
 
     if DRY_RUN_SETTING:
@@ -573,7 +633,7 @@ def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
         print_progress(deleted_resource_count, total_resource_count)
         if leftover_resource_count == 0:
             break
-        sleep(5)
+        sleep(RESOURCE_GROUP_DELETION_POLLING_DELAY)
 
 
 # ===== User Interaction =====  #
@@ -611,8 +671,8 @@ def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[
 
     prompt = """
     Enter the resource group name you would like to remove
-    - To remove all of them, enter *
-    - To remove nothing, enter -
+    - To remove all of them, enter '*'
+    - To remove nothing, enter '-'
     : """
     chosen_rg = input(prompt).strip().lower()
 
@@ -622,7 +682,9 @@ def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[
         if chosen_rg == "-":
             return []
 
-        chosen_rg = input("Please enter a valid resource group name from the list above, *, or - \n: ").strip().lower()
+        chosen_rg = (
+            input("Please enter a valid resource group name from the list above, '*', or '-' \n: ").strip().lower()
+        )
 
     return [chosen_rg]
 
