@@ -49,6 +49,8 @@ DEFAULT_SCALING_PERCENTAGE = 0.8
 SCALE_UP_EXECUTION_SECONDS = 45
 SCALE_DOWN_EXECUTION_SECONDS = 3
 
+MAX_FORWARDERS_PER_REGION = 15
+
 log = getLogger(SCALING_TASK_NAME)
 log.setLevel(DEBUG)
 
@@ -461,6 +463,15 @@ class ScalingTask(Task):
         num_resources_by_forwarder: dict[str, int],
         forwarder_metrics: dict[str, list[MetricBlobEntry]],
     ) -> bool:
+        num_forwarders = len(num_resources_by_forwarder.keys())
+        if num_forwarders >= MAX_FORWARDERS_PER_REGION:
+            log.warning(
+                "Reached maximum number of forwarders (%s) in region %s, preventing scale up",
+                MAX_FORWARDERS_PER_REGION,
+                region,
+            )
+            return False
+
         def _has_enough_resources_to_scale_up(config_id: str) -> bool:
             if num_resources_by_forwarder[config_id] < 2:
                 log.warning("Forwarder %s only has one resource but is overwhelmed", config_id)
