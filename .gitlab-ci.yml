@@ -99,9 +99,9 @@ arm-template-publish-qa:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  # only:
+  #   refs:
+  #     - main
   script:
     - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
     - ./scripts/arm-template/gen-template.sh
@@ -124,9 +124,9 @@ uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  # only:
+  #   refs:
+  #     - main
   script:
     - ./ci/scripts/arm-template/upload-qa-env.sh ./scripts/uninstall.py uninstall uninstall.py
 uninstall-script-publish:
