@@ -1,6 +1,11 @@
+# stdlib
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
 
+# 3p
+from azure.core.exceptions import ResourceNotFoundError
+
+# project
 from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource
 from tasks.constants import FETCHED_RESOURCE_TYPES
 from tasks.tests.common import AsyncMockClient, async_generator, mock
@@ -70,7 +75,20 @@ class TestResourceClientHelpers(TestCase):
 
 
 class TestResourceClient(IsolatedAsyncioTestCase):
-    MOCKED_CLIENTS = ("ResourceManagementClient", "WebSiteManagementClient", "SqlManagementClient")
+    MOCKED_CLIENTS = {
+        "ResourceManagementClient",
+        "RedisEnterpriseManagementClient",
+        "CdnManagementClient",
+        "HealthcareApisManagementClient",
+        "AzureMediaServices",
+        "NetworkManagementClient",
+        "NetAppManagementClient",
+        "NotificationHubsManagementClient",
+        "PowerBIEmbeddedManagementClient",
+        "SqlManagementClient",
+        "SynapseManagementClient",
+        "WebSiteManagementClient",
+    }
 
     def setUp(self) -> None:
         super().setUp()
@@ -275,6 +293,49 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     "/subscriptions/whatever/resourcegroups/my-rg/whatever/function-app",
                     "/subscriptions/.../function-app/slots/prod",
                     "/subscriptions/.../function-app/slots/staging",
+                }
+            },
+        )
+
+    async def test_sub_resources_failed_doesnt_fail(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(
+                mock(
+                    id="/subscriptions/WHATEVER/resourceGroups/my-rg/whatever/some-sql-server",
+                    name="some-sql-server",
+                    resource_group="my-rg",
+                    location=SUPPORTED_REGION_1,
+                    type="Microsoft.Sql/servers",
+                ),
+                ResourceNotFoundError(),
+            )
+        )
+        self.mock_clients["SqlManagementClient"].databases.list_by_server = mock(
+            return_value=async_generator(
+                mock(
+                    value=[
+                        mock(id="/subscriptions/.../some-sql-server/databases/db1", name="db1"),
+                        mock(id="/subscriptions/.../some-sql-server/databases/db2", name="db2"),
+                    ]
+                ),
+                ResourceNotFoundError(),
+                mock(
+                    value=[
+                        mock(id="will never get this", name="nope"),
+                    ]
+                ),
+            )
+        )
+
+        async with ResourceClient(self.cred, sub_id1) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    "/subscriptions/.../some-sql-server/databases/db1",
+                    "/subscriptions/.../some-sql-server/databases/db2",
                 }
             },
         )
