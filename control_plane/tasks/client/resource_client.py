@@ -2,16 +2,26 @@
 from asyncio import gather
 from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
+from itertools import chain
 from logging import getLogger
 from types import TracebackType
 from typing import Any, Final, Self, TypeAlias, cast
 
 # 3p
 from azure.identity.aio import DefaultAzureCredential
+from azure.mgmt.cdn.aio import CdnManagementClient
 from azure.mgmt.core.tools import parse_resource_id
+from azure.mgmt.healthcareapis.aio import HealthcareApisManagementClient
+from azure.mgmt.media.aio import AzureMediaServices
+from azure.mgmt.netapp.aio import NetAppManagementClient
+from azure.mgmt.network.aio import NetworkManagementClient
+from azure.mgmt.notificationhubs.aio import NotificationHubsManagementClient
+from azure.mgmt.powerbiembedded.aio import PowerBIEmbeddedManagementClient
+from azure.mgmt.redisenterprise.aio import RedisEnterpriseManagementClient
 from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
 from azure.mgmt.resource.resources.v2021_01_01.models import GenericResourceExpanded
 from azure.mgmt.sql.aio import SqlManagementClient
+from azure.mgmt.synapse.aio import SynapseManagementClient
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
 
 # project
@@ -62,7 +72,7 @@ def safe_get_id(r: Any) -> str | None:
     return None
 
 
-def make_sub_resource_extractor_for_rg_and_name(f: Callable[[str, str], AsyncIterable[Any]]) -> FetchSubResources:
+def make_sub_resource_extractor_for_rg_and_name(*fs: Callable[[str, str], AsyncIterable[Any]]) -> FetchSubResources:
     """Creates an extractor for sub resource IDs based on the resource group and name"""
 
     async def _f(r: GenericResourceExpanded) -> AsyncGenerator[str]:
@@ -75,7 +85,8 @@ def make_sub_resource_extractor_for_rg_and_name(f: Callable[[str, str], AsyncIte
             resource_group = cast(str, parsed["resource_group"])
             resource_name = cast(str, parsed["name"])
         log.debug("Extracting sub resources for %s", r.id)
-        async for sub_resource in f(resource_group, resource_name):
+        sub_resources = await gather(*(safe_collect(f(resource_group, resource_name)) for f in fs))
+        for sub_resource in chain.from_iterable(sub_resources):
             if hasattr(sub_resource, "value") and isinstance(sub_resource.value, Iterable):
                 for resource in sub_resource.value:
                     if rid := safe_get_id(resource):
@@ -106,26 +117,70 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self.credential = cred
         self.subscription_id = subscription_id
         self.resources_client = ResourceManagementClient(cred, subscription_id)
-        web_client = WebSiteManagementClient(cred, subscription_id)
+        redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
+        cdn_client = CdnManagementClient(cred, subscription_id)
+        healthcareapis_client = HealthcareApisManagementClient(cred, subscription_id)
+        # machinelearningservices_client = AzureMachineLearningWorkspaces(cred, subscription_id)
+        media_client = AzureMediaServices(cred, subscription_id)
+        network_client = NetworkManagementClient(cred, subscription_id)
+        netapp_client = NetAppManagementClient(cred, subscription_id)
+        notificationhubs_client = NotificationHubsManagementClient(cred, subscription_id)
+        powerbi_client = PowerBIEmbeddedManagementClient(cred, subscription_id)
         sql_client = SqlManagementClient(cred, subscription_id)
+        synapse_client = SynapseManagementClient(cred, subscription_id)
+        web_client = WebSiteManagementClient(cred, subscription_id)
+
         # map of resource type to client and sub resource fetching function
         self._get_sub_resources_map: Final[
             Mapping[str, tuple[AbstractAsyncContextManager | None, FetchSubResources | None]]
         ] = {
             "microsoft.azuredatatransfer/connections": (None, None),  # {"flows"},
-            "microsoft.cache/redisenterprise": (None, None),  # {"databases"},
-            "microsoft.cdn/profiles": (None, None),  # {"endpoints"},
-            "microsoft.healthcareapis/workspaces": (None, None),  # {"dicomservices", "fhirservices", "iotconnectors"},
-            "microsoft.machinelearningservices/workspaces": (None, None),  # {"onlineendpoints"},
-            "microsoft.media/mediaservices": (None, None),  # {"liveevents", "streamingendpoints"},
+            "microsoft.cache/redisenterprise": (
+                redis_client,
+                make_sub_resource_extractor_for_rg_and_name(redis_client.databases.list_by_cluster),
+            ),
+            "microsoft.cdn/profiles": (
+                cdn_client,
+                make_sub_resource_extractor_for_rg_and_name(cdn_client.endpoints.list_by_profile),
+            ),
+            "microsoft.healthcareapis/workspaces": (
+                healthcareapis_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    healthcareapis_client.dicom_services.list_by_workspace,
+                    healthcareapis_client.fhir_services.list_by_workspace,
+                    healthcareapis_client.iot_connectors.list_by_workspace,
+                ),
+            ),
+            "microsoft.machinelearningservices/workspaces": (
+                None,  # machinelearningservices_client,
+                None,  # make_sub_resource_extractor_for_rg_and_name(machinelearningservices_client.????),
+            ),  # {"onlineendpoints"},
+            "microsoft.media/mediaservices": (
+                media_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    media_client.live_events.list, media_client.streaming_endpoints.list
+                ),
+            ),
             "microsoft.netapp/netappaccounts": (
-                None,
-                None,
-            ),  # { "capacitypools","capacitypools/volumes",  # this is also a doubly nested subtype but i dont wanna deal with that rn},
+                netapp_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    netapp_client.pools.list,
+                    # netapp_client.volumes.list, # TODO(once we support doubly nested subtypes)
+                ),
+            ),
             "microsoft.network/networksecurityperimeters": (None, None),  # {"profiles"},
-            "microsoft.network/networkmanagers": (None, None),  # {"ipampools"},
-            "microsoft.notificationhubs/namespaces": (None, None),  # {"notificationhubs"},
-            "microsoft.powerbi/tenants": (None, None),  # {"workspaces"},
+            "microsoft.network/networkmanagers": (
+                network_client,
+                make_sub_resource_extractor_for_rg_and_name(network_client.ipam_pools.list),
+            ),
+            "microsoft.notificationhubs/namespaces": (
+                notificationhubs_client,
+                make_sub_resource_extractor_for_rg_and_name(notificationhubs_client.notification_hubs.list),
+            ),
+            "microsoft.powerbi/tenants": (
+                powerbi_client,
+                make_sub_resource_extractor_for_rg_and_name(powerbi_client.workspaces.list),
+            ),
             "microsoft.signalrservice/signalr": (None, None),  # {"replicas"},
             "microsoft.signalrservice/webpubsub": (None, None),  # {"replicas"},
             "microsoft.storage/storageaccounts": (None, get_storage_account_services),
@@ -137,7 +192,15 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
                 None,
                 make_sub_resource_extractor_for_rg_and_name(sql_client.managed_databases.list_by_instance),
             ),
-            "microsoft.synapse/workspaces": (None, None),  # {"bigdatapools", "kustopools", "scopepools", "sqlpools"},
+            "microsoft.synapse/workspaces": (
+                synapse_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    synapse_client.big_data_pools.list_by_workspace,
+                    synapse_client.sql_pools.list_by_workspace,
+                    # synapse_client.kusto_pools.list_by_workspace,
+                    # synapse_client.scope_pools.list_by_workspace,
+                ),
+            ),
             "microsoft.web/sites": (
                 web_client,
                 make_sub_resource_extractor_for_rg_and_name(web_client.web_apps.list_slots),
