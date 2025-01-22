@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from itertools import chain
 from logging import getLogger
 from types import TracebackType
-from typing import Any, Final, Self, TypeAlias, cast
+from typing import Any, Final, Protocol, Self, TypeAlias, cast
 
 # 3p
 from azure.identity.aio import DefaultAzureCredential
@@ -61,6 +61,10 @@ IGNORED_LFO_PREFIXES: Final = frozenset(
 FetchSubResources: TypeAlias = Callable[[GenericResourceExpanded], AsyncIterable[str]]
 
 
+class SDKClientMethod(Protocol):
+    def __call__(self, resource_group: str, resource_name: str, **kwargs) -> AsyncIterable[Any]: ...
+
+
 async def get_storage_account_services(r: GenericResourceExpanded) -> AsyncGenerator[str]:
     for service_type in NESTED_VALID_RESOURCE_TYPES["microsoft.storage/storageaccounts"]:
         yield f"{r.id}/{service_type}/default".lower()
@@ -72,7 +76,7 @@ def safe_get_id(r: Any) -> str | None:
     return None
 
 
-def make_sub_resource_extractor_for_rg_and_name(*fs: Callable[[str, str], AsyncIterable[Any]]) -> FetchSubResources:
+def make_sub_resource_extractor_for_rg_and_name(*fs: SDKClientMethod) -> FetchSubResources:
     """Creates an extractor for sub resource IDs based on the resource group and name"""
 
     async def _f(r: GenericResourceExpanded) -> AsyncGenerator[str]:
@@ -85,7 +89,7 @@ def make_sub_resource_extractor_for_rg_and_name(*fs: Callable[[str, str], AsyncI
             resource_group = cast(str, parsed["resource_group"])
             resource_name = cast(str, parsed["name"])
         log.debug("Extracting sub resources for %s", r.id)
-        sub_resources = await gather(*(safe_collect(f(resource_group, resource_name)) for f in fs))
+        sub_resources = await gather(*(safe_collect(f(resource_group, resource_name, timeout=30)) for f in fs))
         for sub_resource in chain.from_iterable(sub_resources):
             if hasattr(sub_resource, "value") and isinstance(sub_resource.value, Iterable):
                 for resource in sub_resource.value:
