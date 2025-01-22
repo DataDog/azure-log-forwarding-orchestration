@@ -62,7 +62,7 @@ FetchSubResources: TypeAlias = Callable[[GenericResourceExpanded], AsyncIterable
 
 
 class SDKClientMethod(Protocol):
-    def __call__(self, resource_group: str, resource_name: str, **kwargs) -> AsyncIterable[Any]: ...
+    def __call__(self, resource_group: str, resource_name: str, /, **kwargs: Any) -> AsyncIterable[Any]: ...
 
 
 async def get_storage_account_services(r: GenericResourceExpanded) -> AsyncGenerator[str]:
