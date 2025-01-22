@@ -170,7 +170,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             },
         )
 
-    async def test_sql_managedinstances_collected(self):
+    async def test_sql_managedinstances_manageddatabases_collected(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
                 mock(
@@ -204,6 +204,77 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     "/subscriptions/.../db2",
                     "/subscriptions/.../db1",
                     "res1",
+                }
+            },
+        )
+
+    async def test_sql_servers_databases_collected(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(
+                mock(
+                    id="/subscriptions/WHATEVER/resourceGroups/my-rg/whatever/some-sql-server",
+                    name="some-sql-server",
+                    resource_group="my-rg",
+                    location=SUPPORTED_REGION_1,
+                    type="Microsoft.Sql/servers",
+                ),
+                resource1,
+            )
+        )
+        self.mock_clients["SqlManagementClient"].databases.list_by_server = mock(
+            return_value=async_generator(
+                mock(
+                    value=[
+                        mock(id="/subscriptions/.../some-sql-server/databases/db1", name="db1"),
+                        mock(id="/subscriptions/.../some-sql-server/databases/db2", name="db2"),
+                    ]
+                )
+            )
+        )
+
+        async with ResourceClient(self.cred, sub_id1) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    "/subscriptions/.../some-sql-server/databases/db1",
+                    "/subscriptions/.../some-sql-server/databases/db2",
+                    "res1",
+                }
+            },
+        )
+
+    async def test_functionapp_slots_collected(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(
+                mock(
+                    id="/subscriptions/WHATEVER/resourceGroups/my-rg/whatever/function-app",
+                    name="function-app",
+                    resource_group="my-rg",
+                    location=SUPPORTED_REGION_1,
+                    type="Microsoft.Web/sites",
+                ),
+            )
+        )
+        self.mock_clients["WebSiteManagementClient"].web_apps.list_slots = mock(
+            return_value=async_generator(
+                mock(id="/subscriptions/.../function-app/slots/prod", name="prod"),
+                mock(id="/subscriptions/.../function-app/slots/staging", name="staging"),
+            )
+        )
+
+        async with ResourceClient(self.cred, sub_id1) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    "/subscriptions/whatever/resourcegroups/my-rg/whatever/function-app",
+                    "/subscriptions/.../function-app/slots/prod",
+                    "/subscriptions/.../function-app/slots/staging",
                 }
             },
         )
