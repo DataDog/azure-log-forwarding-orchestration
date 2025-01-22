@@ -80,7 +80,7 @@ def make_sub_resource_extractor_for_rg_and_name(f: Callable[[str, str], AsyncIte
                 for resource in sub_resource.value:
                     if rid := safe_get_id(resource):
                         yield rid
-            if rid := safe_get_id(sub_resource):
+            elif rid := safe_get_id(sub_resource):
                 yield rid
 
     return _f
