@@ -38,7 +38,7 @@ def get_name(name: str, max_length: int) -> str:
             name_bytes = name.encode("utf-8")
         name_md5 = md5(name_bytes).hexdigest()
         if max_length > MD5_LENGTH:
-            name = f"{name[:max_length - len(name_md5)]}{name_md5}"
+            name = f"{name[: max_length - len(name_md5)]}{name_md5}"
         else:
             name = f"{name[:12]}{name_md5}"[:max_length]
     return name.lower()
