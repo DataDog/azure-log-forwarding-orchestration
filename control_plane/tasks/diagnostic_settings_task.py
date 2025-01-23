@@ -13,6 +13,11 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
     LogSettings,
 )
 
+# dd
+from datadog_api_client.v1 import ApiClient, Configuration
+from datadog_api_client.v1.api.events_api import EventsApi
+from datadog_api_client.v1.models import EventCreateRequest
+
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import (
@@ -34,6 +39,7 @@ from tasks.task import Task
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
+MAX_DIAGNOSTIC_SETTINGS = 5
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 
@@ -124,6 +130,21 @@ class DiagnosticSettingsTask(Task):
         # i.e. client.subscription_diagnostic_settings.list()
         return
 
+    def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> None:
+        config = Configuration()
+        with ApiClient(config) as api_client:
+            events_api = EventsApi(api_client)
+            body = EventCreateRequest(
+                title=f"Max diag settings on {resource_id}, can't add another",
+                text=f"{resource_id} in {sub_id} has reached maximum number of diagnostic settings",
+                tags=["env:altandev"],
+                alert_type="warning",
+            )
+            try:
+                events_api.create_event(body)
+            except Exception as e:
+                log.error(f"Error while sending pipeline event to the Datadog backend: {e}")
+
     async def process_resource(
         self,
         client: MonitorManagementClient,
@@ -154,7 +175,11 @@ class DiagnosticSettingsTask(Task):
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
-            return  # it is set up properly already
+            return  # current diagnostic setting is correctly configured
+
+        if len(current_diagnostic_settings) == MAX_DIAGNOSTIC_SETTINGS:
+            self.send_max_settings_reached_event(sub_id, resource_id)
+            return
 
         # otherwise fix it
         await self.set_diagnostic_setting(
