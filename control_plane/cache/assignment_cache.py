@@ -1,5 +1,5 @@
 # stdlib
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, NotRequired, TypeAlias, TypedDict
 
 # 3p
 from jsonschema import ValidationError
@@ -15,6 +15,8 @@ class RegionAssignmentConfiguration(TypedDict, total=True):
     "Mapping of config_id to DiagnosticSettingType"
     resources: dict[str, str]
     "Mapping of resource_id to config_id"
+    on_cooldown: NotRequired[bool]
+    "whether the region has recently scaled up and is on cooldown"
 
 
 AssignmentCache: TypeAlias = dict[str, dict[str, RegionAssignmentConfiguration]]
@@ -36,6 +38,7 @@ ASSIGNMENT_CACHE_SCHEMA: dict[str, Any] = {
                     "type": "object",  # resource_id
                     "additionalProperties": {"type": "string"},  # config_id
                 },
+                "on_cooldown": {"type": "boolean"},
             },
             "required": ["configurations", "resources"],
             "additionalProperties": False,
