@@ -329,7 +329,7 @@ func TestProcessLogs(t *testing.T) {
 		// GIVEN
 		oneHundredAs := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		var content string
-		for range logs.MaxPayloadSize / 100 {
+		for range logs.MaxLogSize / 100 {
 			content += oneHundredAs
 		}
 		invalidLog := getLogWithContent(content, 5*time.Minute)

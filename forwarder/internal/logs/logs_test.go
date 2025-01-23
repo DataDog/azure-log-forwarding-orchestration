@@ -52,10 +52,10 @@ func TestAddLog(t *testing.T) {
 		var payload []*logs.Log
 		prefix := "{\"category\":\"a\",\"resourceId\":\"/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo-qa/providers/Microsoft.Web/sites/loggya/appServices\",\"key\":\""
 		suffix := "\"}"
-		targetSize := logs.MaxPayloadSize/2 - len(prefix) - len(suffix) - 3
+		targetSize := logs.MaxLogSize/2 - len(prefix) - len(suffix) - 3
 		logString := fmt.Sprintf("%s%s%s", prefix, strings.Repeat("a", targetSize), suffix)
 		logBytes := []byte(logString)
-		for range 3 {
+		for range 12 {
 			currLog, err := logs.NewLog(logBytes, functionAppContainer)
 			currLog.Time = time.Now().Add(-5 * time.Minute)
 			require.NoError(t, err)

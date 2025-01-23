@@ -55,7 +55,7 @@ type Log struct {
 
 // Validate checks if the log is valid to send to Datadog.
 func (l *Log) Validate(logger *log.Entry) bool {
-	if l.ByteSize > MaxPayloadSize {
+	if l.ByteSize > MaxLogSize {
 		logger.Warningf("Skipping large log at %s from %s with a size of %d", l.Time.Format(time.RFC3339), l.ResourceId, l.Length())
 		return false
 	}
@@ -238,6 +238,10 @@ const bufferSize = 950
 // MaxPayloadSize is the maximum byte size of the payload to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
 const MaxPayloadSize = 4 * 1000000
+
+// MaxLogSize is the maximum byte size of a single log to Logs API.
+// https://docs.datadoghq.com/api/latest/logs/
+const MaxLogSize = 1000000
 
 // MaxLogAge is the maximum age a log in the payload to Logs API.
 // https://docs.datadoghq.com/api/latest/logs/
