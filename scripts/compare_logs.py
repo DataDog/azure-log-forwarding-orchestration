@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from gzip import GzipFile
-import json
 import os
 from time import sleep, time
 
@@ -14,73 +13,44 @@ import requests
 from azure.storage.blob import BlobServiceClient
 
 LOOKBACK_MINUTES = 120
-CONTAINER = "insights-logs-functionapplogs"
+END_MINUTES_AGO = 60
 
-START_TIME = datetime.now()
+UUID_LENGTH = 36
+
+CONTAINER = "insights-logs-functionapplogs"
 
 STORAGE_SOURCE = "storage"
 NATIVE_SOURCE = "native"
 LFO_SOURCE = "lfo"
 EVENT_HUB_SOURCE = "event_hub"
 
-# storage_id_map = {}
-# storage_ids = []
-# native_ids = []
-# lfo_ids = []
-# event_hub_ids = []
-
-
-def get_dd_time(time: datetime) -> str:
-    # "2020-10-07T00:00:00+00:00"
-    return time.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-
-
-def get_uuid_from_log(log) -> str | None:
-    message = json.dumps(log)
-
-    if (
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nullam euismod, nisl eget aliquam ultricies, nunc nisl aliquet nunc, sed aliquam"
-        not in message
-    ):
-        return None
-    lorem_index = message.find("Lorem")
-    return message[lorem_index - 37 : lorem_index - 1]
-
-
-def get_uuids(data) -> list:
-    curr_ids = []
-    ids_to_timestamps = {}
-
-    def uuid_sort(e):
-        return ids_to_timestamps[e]
-
-    for item in data:
-        curr_uuid = get_uuid_from_log(item)
-        if not curr_uuid:
-            continue
-        curr_ids.append(curr_uuid)
-        date_time_obj = None
-        try:
-            date_time_obj = datetime.strptime(
-                item.get("attributes", {}).get("timestamp"), "%Y-%m-%dT%H:%M:%S.%fZ"
-            )
-        except Exception:
-            date_time_obj = datetime.strptime(
-                item.get("attributes", {}).get("timestamp"), "%Y-%m-%dT%H:%M:%SZ"
-            )
-        ids_to_timestamps[curr_uuid] = date_time_obj
-    curr_ids.sort(key=uuid_sort)
-    return curr_ids
+AZURE_LOGS_CONNECTION_STRING = os.environ.get("AzureWebJobsStorage")
+DD_ARCHIVES_CONNECTION_STRING = os.environ.get("LOG_ARCHIVING")
 
 
 def get_start_time(
-    storage_id_map: dict[str, datetime],
-    storage_ids: list[str],
-    lfo_ids: list[str],
-    native_ids: list[str],
+    storage_id_map: dict[
+        str, datetime
+    ],  # storage_id_map is a dictionary of uuid to datetime
+    storage_ids: list[str],  # storage_ids is a list of uuids
+    lfo_ids: list[str],  # lfo_ids is a list of uuids
+    native_ids: list[str],  # native_ids is a list of uuids
 ) -> datetime:
-    for storage_id in storage_ids:
-        if storage_id in native_ids or storage_id in lfo_ids:
+    """returns the first start time found in storage logs that is either lfo or native logs"""
+    for storage_id in storage_ids:  # assumes storage_ids are sorted
+        if storage_id in native_ids:
+            submit_metric(
+                "azure.log.forwarding.first_timestamp",
+                1,
+                tags={"source": NATIVE_SOURCE},
+            )
+            return storage_id_map[storage_id]
+        if storage_id in lfo_ids:
+            submit_metric(
+                "azure.log.forwarding.first_timestamp",
+                1,
+                tags={"source": LFO_SOURCE},
+            )
             return storage_id_map[storage_id]
     raise Exception("No common start time found")
 
@@ -128,7 +98,7 @@ def download_blob(
             date_time_obj = datetime.strptime(line[11:31], "%Y-%m-%dT%H:%M:%SZ")
         date_time_obj = date_time_obj.replace(tzinfo=timezone.utc)
         lorem_index = line.find("Lorem")
-        curr_id = line[lorem_index - 37 : lorem_index - 1]
+        curr_id = line[lorem_index - UUID_LENGTH + 1 : lorem_index - 1]
         if curr_id in blob_ids:
             duplicates += 1
         blob_ids[curr_id] = date_time_obj
@@ -136,35 +106,6 @@ def download_blob(
 
 
 def submit_metric(metric_name: str, value: float | int, tags: dict | None = None):
-    # # Template variables
-    # export NOW="$(date +%s)"
-    # # Curl command
-    # curl -X POST "https://api.datadoghq.com/api/v2/series" \
-    # -H "Accept: application/json" \
-    # -H "Content-Type: application/json" \
-    # -H "DD-API-KEY: ${DD_API_KEY}" \
-    # -d @- << EOF
-    # {
-    #   "series": [
-    #     {
-    #       "metric": "system.load.1",
-    #       "type": 0,
-    #       "points": [
-    #         {
-    #           "timestamp": 1636629071,
-    #           "value": 0.7
-    #         }
-    #       ],
-    #       "resources": [
-    #         {
-    #           "name": "dummyhost",
-    #           "type": "host"
-    #         }
-    #       ]
-    #     }
-    #   ]
-    # }
-    # EOF
     dd_site = os.getenv("DD_SITE", "datadoghq.com")
     api_key = os.getenv("DD_API_KEY")
     app_key = os.getenv("DD_APP_KEY")
@@ -193,64 +134,6 @@ def submit_metric(metric_name: str, value: float | int, tags: dict | None = None
     response.raise_for_status()
 
 
-def get_logs(query="*", from_time="now-4h", to_time="now"):
-    # curl -L -X POST "https://api.us3.datadoghq.com/api/v2/logs/events/search" -H "Content-Type: application/json" -H "DD-API-KEY: <DATADOG_API_KEY>" -H "DD-APPLICATION-KEY: <DATADOG_APP_KEY>" --data-raw '{
-    #   "filter": {
-    #     "from": "2020-10-07T00:00:00+00:00",
-    #     "to": "2020-10-07T00:15:00+00:00",
-    #     "query": "*"
-    #   },
-    #    "page": {
-    #      "cursor": "eyJhZnRlciI6IkFRQUFBWFVBWFZOU3Z1TXZXd0FBQUFCQldGVkJXRlpPVTJJMlpXY3hYM2MyTFZWQlFRIiwidmFsdWVzIjpbIjUwMCJdfQ",
-    #     "limit":2
-    #   },
-    #   "sort":"-@pageViews"
-    # }'
-    results = []
-    dd_site = os.getenv("DD_SITE", "datadoghq.com")
-    api_key = os.getenv("DD_API_KEY")
-    app_key = os.getenv("DD_APP_KEY")
-    url = f"https://api.{dd_site}/api/v2/logs/events/search"
-    headers = {
-        "Content-Type": "application/json",
-        "DD-API-KEY": api_key,
-        "DD-APPLICATION-KEY": app_key,
-    }
-    body = {
-        "filter": {"from": from_time, "to": to_time, "query": query},
-        "page": {"limit": 1000},
-    }
-
-    while True:
-        response = requests.post(url, headers=headers, json=body)
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError:
-            if response.status_code == 429:
-                sleep_time = int(response.headers.get("x-ratelimit-reset", 10)) + 1
-                print(f"Rate limit exceeded, waiting {sleep_time} seconds.")
-                sleep(sleep_time)
-                continue
-        response_json = response.json()
-        data = response_json.get("data", [])
-        print(f"Received {len(data)} logs for query {query}")
-        results.extend(data)
-
-        if not response_json.get("meta", {}).get("page", {}).get("after"):
-            # if True:
-            break
-        body["page"]["cursor"] = response_json["meta"]["page"]["after"]
-    return results
-
-
-def store_logs(logs: list, source: str):
-    # save logs to file named after source
-    file_name = f"{source}_{START_TIME.year}{START_TIME.month}{START_TIME.day}{START_TIME.hour}{START_TIME.minute}.json"
-    print(f"Saving {len(logs)} logs to {file_name}")
-    with open(file_name, "w") as f:
-        json.dump(logs, f)
-
-
 def get_logs_from_storage_account(
     connection_string: str | None, filter, container: str = CONTAINER
 ) -> tuple[dict[str, datetime], int]:
@@ -259,31 +142,27 @@ def get_logs_from_storage_account(
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container_client = blob_service_client.get_container_client(container)
     blob_iter = container_client.list_blobs()
-    hours_ago = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES + 60)
+    hours_ago = datetime.now(timezone.utc) - timedelta(
+        minutes=LOOKBACK_MINUTES + END_MINUTES_AGO
+    )
     blob_list = list(blob_iter)
     log_ids = {}
     duplicates = 0
     for blob in blob_list:
-        # blob_client = container_client.get_blob_client(blob.name)
-        # if "loggya" not in blob.name.lower():
         if not filter(blob):
             continue
         if blob.creation_time < hours_ago:
             continue
-        blob_ids, blob_duplicates = download_blob(
+        blob_time_by_id, blob_duplicates = download_blob(
             blob_service_client, blob.name, container
         )
         duplicates += blob_duplicates
         # possible to have duplicates across blobs
-        for blob_id in blob_ids:
+        for blob_id in blob_time_by_id:
             if blob_id in log_ids:
                 duplicates += 1
-            log_ids[blob_id] = blob_ids[blob_id]
+            log_ids[blob_id] = blob_time_by_id[blob_id]
 
-    # def id_sort(e):
-    #     return storage_id_map[e]
-
-    # storage_ids.sort(key=id_sort)
     return log_ids, duplicates
 
 
@@ -298,35 +177,22 @@ def truncate_to_set(
             and storage_id_map[item] < end
         ):
             truncated_data.add(item)
-        # elif not storage_id_map.get(item):
-        #     print(f"Could not find timestamp for {item}")
     return truncated_data
 
 
-lfo_query = "@resource_name:loggya control_plane_id:f2f2da2c9b64"
-native_query = '"loggya" forwarder:native'
-event_hub_query = '"loggya" forwarder:eventhub'
-
-connection_string = os.environ.get("AzureWebJobsStorage")
-
-
-archives_connection_string = os.environ.get("LOG_ARCHIVING")
-
-
 def run():
-    storage_id_map = {}
+    storage_timestamps_by_id = {}
     storage_ids = []
     native_ids = []
     lfo_ids = []
 
-    end = datetime.now(timezone.utc) - timedelta(minutes=60)
-    # endtime = get_dd_time(end)
-    # starttime = get_dd_time(end - timedelta(minutes=LOOKBACK_MINUTES))
-    storage_id_map, storage_duplicates = get_logs_from_storage_account(
-        connection_string, lambda blob: "loggya" in blob.name.lower()
+    end = datetime.now(timezone.utc) - timedelta(minutes=END_MINUTES_AGO)
+
+    storage_timestamps_by_id, storage_duplicates = get_logs_from_storage_account(
+        AZURE_LOGS_CONNECTION_STRING, lambda blob: "loggya" in blob.name.lower()
     )
-    storage_ids = list(storage_id_map.keys())
-    storage_ids.sort(key=lambda e: storage_id_map[e])
+    storage_ids = list(storage_timestamps_by_id.keys())
+    storage_ids.sort(key=lambda e: storage_timestamps_by_id[e])
     if not storage_ids:
         raise Exception("No logs found in storage account")
 
@@ -337,14 +203,11 @@ def run():
         tags={"source": "storage"},
     )
 
-    # native_logs = get_logs(query=native_query, from_time=starttime, to_time=endtime)
-    # store_logs(native_logs, "native")
-    # native_ids = get_uuids(native_logs)
-    native_id_map, native_duplicates = get_logs_from_storage_account(
-        archives_connection_string, lambda blob: True, container="native"
+    native_timestamps_by_id, native_duplicates = get_logs_from_storage_account(
+        DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="native"
     )
-    native_ids = list(native_id_map.keys())
-    native_ids.sort(key=lambda e: native_id_map[e])
+    native_ids = list(native_timestamps_by_id.keys())
+    native_ids.sort(key=lambda e: native_timestamps_by_id[e])
 
     print(f"Duplicate liftr ids: {native_duplicates}")
     submit_metric(
@@ -353,11 +216,17 @@ def run():
         tags={"source": NATIVE_SOURCE},
     )
 
-    eventhub_id_map, eventhub_duplicates = get_logs_from_storage_account(
-        archives_connection_string, lambda blob: True, container="eventhub"
+    submit_metric(
+        "azure.log.forwarding.totals",
+        len(native_timestamps_by_id.keys()) + native_duplicates,
+        tags={"source": NATIVE_SOURCE},
     )
-    eventhub_ids = list(eventhub_id_map.keys())
-    eventhub_ids.sort(key=lambda e: eventhub_id_map[e])
+
+    eventhub_timestamps_by_id, eventhub_duplicates = get_logs_from_storage_account(
+        DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="eventhub"
+    )
+    eventhub_ids = list(eventhub_timestamps_by_id.keys())
+    eventhub_ids.sort(key=lambda e: eventhub_timestamps_by_id[e])
 
     print(f"Duplicate event hub ids: {eventhub_duplicates}")
     submit_metric(
@@ -366,18 +235,17 @@ def run():
         tags={"source": EVENT_HUB_SOURCE},
     )
 
-    # event_hub_logs = get_logs(query=event_hub_query, from_time=starttime, to_time=endtime)
-    # store_logs(event_hub_logs, "event_hub")
-    # event_hub_ids = get_uuids(event_hub_logs)
-
-    # lfo_logs = get_logs(query=lfo_query, from_time=starttime, to_time=endtime)
-    # store_logs(lfo_logs, "lfo")
-    # lfo_ids = get_uuids(lfo_logs)
-    lfo_id_map, lfo_duplicates = get_logs_from_storage_account(
-        archives_connection_string, lambda blob: True, container="lfo"
+    submit_metric(
+        "azure.log.forwarding.totals",
+        len(eventhub_timestamps_by_id.keys()) + eventhub_duplicates,
+        tags={"source": EVENT_HUB_SOURCE},
     )
-    lfo_ids = list(lfo_id_map.keys())
-    lfo_ids.sort(key=lambda e: lfo_id_map[e])
+
+    lfo_timestamps_by_id, lfo_duplicates = get_logs_from_storage_account(
+        DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="lfo"
+    )
+    lfo_ids = list(lfo_timestamps_by_id.keys())
+    lfo_ids.sort(key=lambda e: lfo_timestamps_by_id[e])
 
     print(f"Duplicate LFO ids: {lfo_duplicates}")
     submit_metric(
@@ -386,12 +254,22 @@ def run():
         tags={"source": LFO_SOURCE},
     )
 
-    start = get_start_time(storage_id_map, storage_ids, lfo_ids, native_ids)
+    submit_metric(
+        "azure.log.forwarding.totals",
+        len(lfo_timestamps_by_id.keys()) + lfo_duplicates,
+        tags={"source": LFO_SOURCE},
+    )
+
+    start = get_start_time(storage_timestamps_by_id, storage_ids, lfo_ids, native_ids)
     print(f"Start time: {start}, end time: {end}")
-    native_truncated = truncate_to_set(native_ids, start, end, native_id_map)
-    lfo_truncated = truncate_to_set(lfo_ids, start, end, lfo_id_map)
-    eventhub_truncated = truncate_to_set(eventhub_ids, start, end, eventhub_id_map)
-    storage_truncated = truncate_to_set(storage_ids, start, end, storage_id_map)
+    native_truncated = truncate_to_set(native_ids, start, end, native_timestamps_by_id)
+    lfo_truncated = truncate_to_set(lfo_ids, start, end, lfo_timestamps_by_id)
+    eventhub_truncated = truncate_to_set(
+        eventhub_ids, start, end, eventhub_timestamps_by_id
+    )
+    storage_truncated = truncate_to_set(
+        storage_ids, start, end, storage_timestamps_by_id
+    )
 
     print(
         f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(eventhub_truncated)}"
