@@ -156,26 +156,31 @@ UNNESTED_VALID_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
 
 # resource type to their sub-types
 NESTED_VALID_RESOURCE_TYPES: Final[Mapping[str, set[str]]] = {
-    "microsoft.azuredatatransfer/connections": {"flows"},
+    # "microsoft.azuredatatransfer/connections": {"flows"}, TODO(AZINTS-3054)
     "microsoft.cache/redisenterprise": {"databases"},
     "microsoft.cdn/profiles": {"endpoints"},
     "microsoft.healthcareapis/workspaces": {"dicomservices", "fhirservices", "iotconnectors"},
-    "microsoft.machinelearningservices/workspaces": {"onlineendpoints"},
+    # "microsoft.machinelearningservices/workspaces": {"onlineendpoints"}, TODO(AZINTS-3054)
     "microsoft.media/mediaservices": {"liveevents", "streamingendpoints"},
     "microsoft.netapp/netappaccounts": {
         "capacitypools",
-        "capacitypools/volumes",  # this is also a doubly nested subtype but i dont wanna deal with that rn
+        # "capacitypools/volumes" TODO(AZINTS-3055)
     },
-    "microsoft.network/networksecurityperimeters": {"profiles"},
+    # "microsoft.network/networksecurityperimeters": {"profiles"}, TODO(AZINTS-3054)
     "microsoft.network/networkmanagers": {"ipampools"},
     "microsoft.notificationhubs/namespaces": {"notificationhubs"},
     "microsoft.powerbi/tenants": {"workspaces"},
-    "microsoft.signalrservice/signalr": {"replicas"},
-    "microsoft.signalrservice/webpubsub": {"replicas"},
+    # "microsoft.signalrservice/signalr": {"replicas"}, TODO(AZINTS-3054)
+    # "microsoft.signalrservice/webpubsub": {"replicas"}, TODO(AZINTS-3054)
     "microsoft.storage/storageaccounts": {"blobservices", "fileservices", "queueservices", "tableservices"},
     "microsoft.sql/servers": {"databases"},
     "microsoft.sql/managedinstances": {"databases"},
-    "microsoft.synapse/workspaces": {"bigdatapools", "kustopools", "scopepools", "sqlpools"},
+    "microsoft.synapse/workspaces": {
+        "bigdatapools",
+        "sqlpools",
+        # "kustopools", TODO(AZINTS-3054)
+        # "scopepools", TODO(AZINTS-3054)
+    },
     "microsoft.web/sites": {"slots"},
 }
 

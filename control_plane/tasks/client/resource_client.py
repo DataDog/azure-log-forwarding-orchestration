@@ -76,7 +76,7 @@ def safe_get_id(r: Any) -> str | None:
     return None
 
 
-def make_sub_resource_extractor_for_rg_and_name(*fs: SDKClientMethod) -> FetchSubResources:
+def make_sub_resource_extractor_for_rg_and_name(*functions: SDKClientMethod) -> FetchSubResources:
     """Creates an extractor for sub resource IDs based on the resource group and name"""
 
     async def _f(r: GenericResourceExpanded) -> AsyncGenerator[str]:
@@ -89,7 +89,7 @@ def make_sub_resource_extractor_for_rg_and_name(*fs: SDKClientMethod) -> FetchSu
             resource_group = cast(str, parsed["resource_group"])
             resource_name = cast(str, parsed["name"])
         log.debug("Extracting sub resources for %s", r.id)
-        sub_resources = await gather(*(safe_collect(f(resource_group, resource_name, timeout=30)) for f in fs))
+        sub_resources = await gather(*(safe_collect(f(resource_group, resource_name, timeout=30)) for f in functions))
         for sub_resource in chain.from_iterable(sub_resources):
             if hasattr(sub_resource, "value") and isinstance(sub_resource.value, Iterable):
                 for resource in sub_resource.value:
@@ -124,7 +124,6 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
         cdn_client = CdnManagementClient(cred, subscription_id)
         healthcareapis_client = HealthcareApisManagementClient(cred, subscription_id)
-        # machinelearningservices_client = AzureMachineLearningWorkspaces(cred, subscription_id)
         media_client = AzureMediaServices(cred, subscription_id)
         network_client = NetworkManagementClient(cred, subscription_id)
         netapp_client = NetAppManagementClient(cred, subscription_id)
@@ -136,9 +135,8 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
 
         # map of resource type to client and sub resource fetching function
         self._get_sub_resources_map: Final[
-            Mapping[str, tuple[AbstractAsyncContextManager | None, FetchSubResources | None]]
+            Mapping[str, tuple[AbstractAsyncContextManager | None, FetchSubResources]]
         ] = {
-            "microsoft.azuredatatransfer/connections": (None, None),  # {"flows"},
             "microsoft.cache/redisenterprise": (
                 redis_client,
                 make_sub_resource_extractor_for_rg_and_name(redis_client.databases.list_by_cluster),
@@ -155,10 +153,6 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
                     healthcareapis_client.iot_connectors.list_by_workspace,
                 ),
             ),
-            "microsoft.machinelearningservices/workspaces": (
-                None,  # machinelearningservices_client,
-                None,  # make_sub_resource_extractor_for_rg_and_name(machinelearningservices_client.????),
-            ),  # {"onlineendpoints"},
             "microsoft.media/mediaservices": (
                 media_client,
                 make_sub_resource_extractor_for_rg_and_name(
@@ -167,12 +161,8 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             ),
             "microsoft.netapp/netappaccounts": (
                 netapp_client,
-                make_sub_resource_extractor_for_rg_and_name(
-                    netapp_client.pools.list,
-                    # netapp_client.volumes.list, # TODO(once we support doubly nested subtypes)
-                ),
+                make_sub_resource_extractor_for_rg_and_name(netapp_client.pools.list),
             ),
-            "microsoft.network/networksecurityperimeters": (None, None),  # {"profiles"},
             "microsoft.network/networkmanagers": (
                 network_client,
                 make_sub_resource_extractor_for_rg_and_name(network_client.ipam_pools.list),
@@ -185,8 +175,6 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
                 powerbi_client,
                 make_sub_resource_extractor_for_rg_and_name(powerbi_client.workspaces.list),
             ),
-            "microsoft.signalrservice/signalr": (None, None),  # {"replicas"},
-            "microsoft.signalrservice/webpubsub": (None, None),  # {"replicas"},
             "microsoft.storage/storageaccounts": (None, get_storage_account_services),
             "microsoft.sql/servers": (
                 sql_client,
@@ -201,8 +189,6 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
                 make_sub_resource_extractor_for_rg_and_name(
                     synapse_client.big_data_pools.list_by_workspace,
                     synapse_client.sql_pools.list_by_workspace,
-                    # synapse_client.kusto_pools.list_by_workspace,
-                    # synapse_client.scope_pools.list_by_workspace,
                 ),
             ),
             "microsoft.web/sites": (
@@ -263,8 +249,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         resource_type = cast(str, resource.type).lower()
         if resource_type in UNNESTED_VALID_RESOURCE_TYPES:
             yield resource_id
-        if resource_type in self._get_sub_resources_map and (
-            get_sub_resources := self._get_sub_resources_map[resource_type][1]
-        ):
+        if resource_type in self._get_sub_resources_map:
+            _, get_sub_resources = self._get_sub_resources_map[resource_type]
             async for sub_resource in get_sub_resources(resource):
                 yield sub_resource
