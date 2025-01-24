@@ -1,12 +1,28 @@
 # stdlib
+from asyncio import gather
+from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
+from itertools import chain
 from logging import getLogger
 from types import TracebackType
-from typing import Final, Self, cast
+from typing import Any, Final, Protocol, Self, TypeAlias, cast
 
 # 3p
 from azure.identity.aio import DefaultAzureCredential
+from azure.mgmt.cdn.aio import CdnManagementClient
+from azure.mgmt.core.tools import parse_resource_id
+from azure.mgmt.healthcareapis.aio import HealthcareApisManagementClient
+from azure.mgmt.media.aio import AzureMediaServices
+from azure.mgmt.netapp.aio import NetAppManagementClient
+from azure.mgmt.network.aio import NetworkManagementClient
+from azure.mgmt.notificationhubs.aio import NotificationHubsManagementClient
+from azure.mgmt.powerbiembedded.aio import PowerBIEmbeddedManagementClient
+from azure.mgmt.redisenterprise.aio import RedisEnterpriseManagementClient
 from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClient
+from azure.mgmt.resource.resources.v2021_01_01.models import GenericResourceExpanded
+from azure.mgmt.sql.aio import SqlManagementClient
+from azure.mgmt.synapse.aio import SynapseManagementClient
+from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
 
 # project
 from tasks.common import (
@@ -17,7 +33,13 @@ from tasks.common import (
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
 )
-from tasks.constants import ALLOWED_STORAGE_ACCOUNT_REGIONS, FETCHED_RESOURCE_TYPES
+from tasks.concurrency import safe_collect
+from tasks.constants import (
+    ALLOWED_STORAGE_ACCOUNT_REGIONS,
+    FETCHED_RESOURCE_TYPES,
+    NESTED_VALID_RESOURCE_TYPES,
+    UNNESTED_VALID_RESOURCE_TYPES,
+)
 
 log = getLogger(__name__)
 
@@ -34,6 +56,49 @@ IGNORED_LFO_PREFIXES: Final = frozenset(
         FORWARDER_STORAGE_ACCOUNT_PREFIX,
     }
 )
+
+
+FetchSubResources: TypeAlias = Callable[[GenericResourceExpanded], AsyncIterable[str]]
+
+
+class SDKClientMethod(Protocol):
+    def __call__(self, resource_group: str, resource_name: str, /, **kwargs: Any) -> AsyncIterable[Any]: ...
+
+
+async def get_storage_account_services(r: GenericResourceExpanded) -> AsyncGenerator[str]:
+    for service_type in NESTED_VALID_RESOURCE_TYPES["microsoft.storage/storageaccounts"]:
+        yield f"{r.id}/{service_type}/default".lower()
+
+
+def safe_get_id(r: Any) -> str | None:
+    if hasattr(r, "id") and isinstance(r.id, str):
+        return r.id.lower()
+    return None
+
+
+def make_sub_resource_extractor_for_rg_and_name(*functions: SDKClientMethod) -> FetchSubResources:
+    """Creates an extractor for sub resource IDs based on the resource group and name"""
+
+    async def _f(r: GenericResourceExpanded) -> AsyncGenerator[str]:
+        resource_group = getattr(r, "resource_group", None)
+        resource_name = r.name
+        if not isinstance(resource_group, str) or not isinstance(
+            resource_name, str
+        ):  # fallback to parsing the resource id
+            parsed = parse_resource_id(cast(str, r.id))
+            resource_group = cast(str, parsed["resource_group"])
+            resource_name = cast(str, parsed["name"])
+        log.debug("Extracting sub resources for %s", r.id)
+        sub_resources = await gather(*(safe_collect(f(resource_group, resource_name, timeout=30)) for f in functions))
+        for sub_resource in chain.from_iterable(sub_resources):
+            if hasattr(sub_resource, "value") and isinstance(sub_resource.value, Iterable):
+                for resource in sub_resource.value:
+                    if rid := safe_get_id(resource):
+                        yield rid
+            elif rid := safe_get_id(sub_resource):
+                yield rid
+
+    return _f
 
 
 def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
@@ -56,24 +121,135 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self.credential = cred
         self.subscription_id = subscription_id
         self.resources_client = ResourceManagementClient(cred, subscription_id)
+        redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
+        cdn_client = CdnManagementClient(cred, subscription_id)
+        healthcareapis_client = HealthcareApisManagementClient(cred, subscription_id)
+        media_client = AzureMediaServices(cred, subscription_id)
+        network_client = NetworkManagementClient(cred, subscription_id)
+        netapp_client = NetAppManagementClient(cred, subscription_id)
+        notificationhubs_client = NotificationHubsManagementClient(cred, subscription_id)
+        powerbi_client = PowerBIEmbeddedManagementClient(cred, subscription_id)
+        sql_client = SqlManagementClient(cred, subscription_id)
+        synapse_client = SynapseManagementClient(cred, subscription_id)
+        web_client = WebSiteManagementClient(cred, subscription_id)
+
+        # map of resource type to client and sub resource fetching function
+        self._get_sub_resources_map: Final[
+            Mapping[str, tuple[AbstractAsyncContextManager | None, FetchSubResources]]
+        ] = {
+            "microsoft.cache/redisenterprise": (
+                redis_client,
+                make_sub_resource_extractor_for_rg_and_name(redis_client.databases.list_by_cluster),
+            ),
+            "microsoft.cdn/profiles": (
+                cdn_client,
+                make_sub_resource_extractor_for_rg_and_name(cdn_client.endpoints.list_by_profile),
+            ),
+            "microsoft.healthcareapis/workspaces": (
+                healthcareapis_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    healthcareapis_client.dicom_services.list_by_workspace,
+                    healthcareapis_client.fhir_services.list_by_workspace,
+                    healthcareapis_client.iot_connectors.list_by_workspace,
+                ),
+            ),
+            "microsoft.media/mediaservices": (
+                media_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    media_client.live_events.list, media_client.streaming_endpoints.list
+                ),
+            ),
+            "microsoft.netapp/netappaccounts": (
+                netapp_client,
+                make_sub_resource_extractor_for_rg_and_name(netapp_client.pools.list),
+            ),
+            "microsoft.network/networkmanagers": (
+                network_client,
+                make_sub_resource_extractor_for_rg_and_name(network_client.ipam_pools.list),
+            ),
+            "microsoft.notificationhubs/namespaces": (
+                notificationhubs_client,
+                make_sub_resource_extractor_for_rg_and_name(notificationhubs_client.notification_hubs.list),
+            ),
+            "microsoft.powerbi/tenants": (
+                powerbi_client,
+                make_sub_resource_extractor_for_rg_and_name(powerbi_client.workspaces.list),
+            ),
+            "microsoft.storage/storageaccounts": (None, get_storage_account_services),
+            "microsoft.sql/servers": (
+                sql_client,
+                make_sub_resource_extractor_for_rg_and_name(sql_client.databases.list_by_server),
+            ),
+            "microsoft.sql/managedinstances": (
+                None,
+                make_sub_resource_extractor_for_rg_and_name(sql_client.managed_databases.list_by_instance),
+            ),
+            "microsoft.synapse/workspaces": (
+                synapse_client,
+                make_sub_resource_extractor_for_rg_and_name(
+                    synapse_client.big_data_pools.list_by_workspace,
+                    synapse_client.sql_pools.list_by_workspace,
+                ),
+            ),
+            "microsoft.web/sites": (
+                web_client,
+                make_sub_resource_extractor_for_rg_and_name(web_client.web_apps.list_slots),
+            ),
+        }
 
     async def __aenter__(self) -> Self:
-        await self.resources_client.__aenter__()
+        await gather(
+            self.resources_client.__aenter__(),
+            *(client.__aenter__() for client, _ in self._get_sub_resources_map.values() if client is not None),
+        )
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
-        await self.resources_client.__aexit__(exc_type, exc_val, exc_tb)
+        await gather(
+            self.resources_client.__aexit__(exc_type, exc_val, exc_tb),
+            *(
+                client.__aexit__(exc_type, exc_val, exc_tb)
+                for client, _ in self._get_sub_resources_map.values()
+                if client is not None
+            ),
+        )
 
     async def get_resources_per_region(self) -> dict[str, set[str]]:
         resources_per_region: dict[str, set[str]] = {}
-        resource_count = 0
-        async for r in self.resources_client.resources.list(RESOURCE_QUERY_FILTER):
-            region = cast(str, r.location).lower()
-            if should_ignore_resource(region, cast(str, r.type), cast(str, r.name)):
-                continue
-            resources_per_region.setdefault(region, set()).add(cast(str, r.id).lower())
-            resource_count += 1
-        log.debug("Subscription %s: Collected %s resources", self.subscription_id, resource_count)
+
+        resources = await safe_collect(self.resources_client.resources.list(RESOURCE_QUERY_FILTER))
+        valid_resources = [
+            r
+            for r in resources
+            if not should_ignore_resource(cast(str, r.location), cast(str, r.type), cast(str, r.name))
+        ]
+        log.debug(
+            "Collected %s valid resources for subscription %s, fetching sub-resources...",
+            len(valid_resources),
+            self.subscription_id,
+        )
+        batched_resource_ids = await gather(
+            *(safe_collect(self.all_resource_ids_for_resource(r)) for r in valid_resources)
+        )
+        for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
+            region = cast(str, resource.location).lower()
+            resources_per_region.setdefault(region, set()).update(resource_ids)
+
+        log.info(
+            "Subscription %s: Collected %s resources",
+            self.subscription_id,
+            sum(len(rs) for rs in resources_per_region.values()),
+        )
         return resources_per_region
+
+    async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
+        resource_id = cast(str, resource.id).lower()
+        resource_type = cast(str, resource.type).lower()
+        if resource_type in UNNESTED_VALID_RESOURCE_TYPES:
+            yield resource_id
+        if resource_type in self._get_sub_resources_map:
+            _, get_sub_resources = self._get_sub_resources_map[resource_type]
+            async for sub_resource in get_sub_resources(resource):
+                yield sub_resource
