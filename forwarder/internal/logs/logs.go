@@ -338,7 +338,7 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	return nil
 }
 
-// AddFormattedLog adds a log to the buffer for future submission.
+// AddFormattedLog adds a datadog formatted log to the buffer for future submission.
 func (c *Client) AddFormattedLog(ctx context.Context, log datadogV2.HTTPLogItem) (err error) {
 	logBytes, valid := ValidateDatadogLog(log)
 	if !valid {

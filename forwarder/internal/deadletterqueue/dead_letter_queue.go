@@ -16,10 +16,11 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
+// BlobName is the name of the blob that contains the dead letter queue.
 const BlobName = "deadletterqueue.json"
 
+// DeadLetterQueue is a queue of logs that failed to be sent to Datadog.
 type DeadLetterQueue struct {
-	// The queue of logs that failed to be sent to the destination
 	queue  []datadogV2.HTTPLogItem
 	client *logs.Client
 }
@@ -52,6 +53,7 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) erro
 	return nil
 }
 
+// Process processes the dead letter queue by sending the logs to Datadog.
 func (d *DeadLetterQueue) Process(ctx context.Context) error {
 	var failedLogs []datadogV2.HTTPLogItem
 	for _, datadogLog := range d.queue {
@@ -68,11 +70,17 @@ func (d *DeadLetterQueue) Process(ctx context.Context) error {
 	return nil
 }
 
+// Add adds logs to the dead letter queue.
 func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 	if logs == nil || len(logs) == 0 {
 		return
 	}
 	d.queue = append(d.queue, logs...)
+}
+
+// GetQueue returns the dead letter queue.
+func (d *DeadLetterQueue) GetQueue() []datadogV2.HTTPLogItem {
+	return d.queue
 }
 
 // New creates a new DeadLetterQueue object with the given data.
@@ -101,6 +109,7 @@ func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.C
 	return FromBytes(logsClient, data)
 }
 
+// FromBytes creates a DeadLetterQueue object from the given bytes.
 func FromBytes(logsClient *logs.Client, data []byte) (*DeadLetterQueue, error) {
 	var logBytesSlice [][]byte
 	var datadogLogs []datadogV2.HTTPLogItem

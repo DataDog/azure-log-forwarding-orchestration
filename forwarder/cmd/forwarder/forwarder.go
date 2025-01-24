@@ -153,7 +153,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	return logCount, nil
 }
 
-func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
+func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, now customtime.Now) (err error) {
 	start := now()
 
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
@@ -260,7 +260,22 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	return err
 }
 
-func previousMainFunctionalityPleaseRenameOMGEmbarassing(ctx context.Context, logger *log.Entry, goroutineAmount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client) error {
+func processDeadLetterQueue(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client, logsClients []*logs.Client) error {
+	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
+	if err != nil || dlq == nil {
+		return err
+	}
+
+	dlq.Process(ctx)
+
+	for _, client := range logsClients {
+		dlq.Add(client.FailedLogs)
+	}
+
+	return dlq.Save(ctx, storageClient)
+}
+
+func run(ctx context.Context, logger *log.Entry, goroutineAmount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client) error {
 	start := time.Now()
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
@@ -274,25 +289,14 @@ func previousMainFunctionalityPleaseRenameOMGEmbarassing(ctx context.Context, lo
 		logsClients = append(logsClients, logs.NewClient(logsApiClient))
 	}
 
-	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
+	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, time.Now)
 
-	dlq, err := deadletterqueue.Load(ctx, storageClient, logs.NewClient(logsApiClient))
-	if err != nil || dlq == nil {
-		return err
-	}
-
-	dlq.Process(ctx)
-
-	for _, logsClient := range logsClients {
-		dlq.Add(logsClient.FailedLogs)
-	}
-
-	dlqSaveErr := dlq.Save(ctx, storageClient)
+	dlqErr := processDeadLetterQueue(ctx, storageClient, logs.NewClient(logsApiClient), logsClients)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 
-	return errors.Join(runErr, dlqSaveErr)
+	return errors.Join(processErr, dlqErr)
 }
 
 func main() {
@@ -378,7 +382,7 @@ func main() {
 		return
 	}
 
-	err = previousMainFunctionalityPleaseRenameOMGEmbarassing(ctx, logger, int(goroutineAmount), datadogClient, azBlobClient)
+	err = run(ctx, logger, int(goroutineAmount), datadogClient, azBlobClient)
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
