@@ -1,5 +1,6 @@
 # stdlib
 from asyncio import gather, run
+from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from random import shuffle
 from typing import NamedTuple, cast
@@ -20,12 +21,14 @@ from datadog_api_client.v1.models import EventCreateRequest
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
-from cache.common import (
-    InvalidCacheError,
-    LogForwarderType,
-    read_cache,
-)
+from cache.common import InvalidCacheError, LogForwarderType, read_cache, write_cache
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+from control_plane.cache.settings_event_cache import (
+    DIAGNOSTIC_SETTINGS_COUNT,
+    SENT_EVENT,
+    EVENT_CACHE_BLOB,
+    deserialize_event_cache,
+)
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -82,7 +85,7 @@ def get_diagnostic_setting(
 
 
 class DiagnosticSettingsTask(Task):
-    def __init__(self, assignment_cache_state: str) -> None:
+    def __init__(self, assignment_cache_state: str, event_cache_state: str) -> None:
         super().__init__()
 
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
@@ -90,19 +93,28 @@ class DiagnosticSettingsTask(Task):
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
 
-        # read caches
+        self.read_caches(assignment_cache_state, event_cache_state)
+
+    def read_caches(self, assignment_cache_state: str, event_cache_state: str):
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if assignment_cache is None:
             raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
         self.assignment_cache = assignment_cache
 
+        event_cache = deserialize_event_cache(event_cache_state)
+        if event_cache is None:
+            log.warning("Detected invalid event cache, cache will be reset")
+            event_cache = {}
+        self.event_cache = event_cache
+
     async def run(self) -> None:
         log.info("Processing %s subscriptions", len(self.assignment_cache))
         await gather(*map(self.process_subscription, self.assignment_cache))
+        await self.write_caches()
 
     async def process_subscription(self, sub_id: str) -> None:
         log.info("Processing subscription %s", sub_id)
-        # we assume if a resource isn't in the assignment cache then is has been deleted
+        # we assume if a resource isn't in the assignment cache, then it has been deleted
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
@@ -130,7 +142,7 @@ class DiagnosticSettingsTask(Task):
         # i.e. client.subscription_diagnostic_settings.list()
         return
 
-    def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> None:
+    def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> bool:
         config = Configuration()
         with ApiClient(config) as api_client:
             events_api = EventsApi(api_client)
@@ -141,9 +153,11 @@ class DiagnosticSettingsTask(Task):
                 alert_type="warning",
             )
             try:
-                events_api.create_event(body)
+                events_api.create_event(body)  # type: ignore
+                return True
             except Exception as e:
-                log.error(f"Error while sending pipeline event to the Datadog backend: {e}")
+                log.error(f"Error while sending event to the Datadog: {e}")
+                return False
 
     async def process_resource(
         self,
@@ -177,12 +191,18 @@ class DiagnosticSettingsTask(Task):
         ):
             return  # current diagnostic setting is correctly configured
 
-        if len(current_diagnostic_settings) == MAX_DIAGNOSTIC_SETTINGS:
-            self.send_max_settings_reached_event(sub_id, resource_id)
+        adding_ds = current_setting is None
+        num_diag_settings = len(current_diagnostic_settings)
+        resource_event_state = self.event_cache[sub_id][resource_id]
+        resource_event_state[DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
+
+        if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS and resource_event_state[SENT_EVENT] is False:
+            success = self.send_max_settings_reached_event(sub_id, resource_id)
+            if success:
+                self.event_cache[sub_id][resource_id][SENT_EVENT] = True
             return
 
-        # otherwise fix it
-        await self.set_diagnostic_setting(
+        await self.create_or_update_diagnostic_setting(
             client,
             sub_id,
             resource_id,
@@ -191,7 +211,10 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
-    async def set_diagnostic_setting(
+        if adding_ds:
+            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
+
+    async def create_or_update_diagnostic_setting(
         self,
         client: MonitorManagementClient,
         sub_id: str,
@@ -235,14 +258,16 @@ class DiagnosticSettingsTask(Task):
             )
 
     async def write_caches(self) -> None:
-        pass  # nothing to do here
+        # since sets cannot be json serialized, we convert them to lists before storing
+        await write_cache(EVENT_CACHE_BLOB, dumps(self.event_cache, default=list))
 
 
 async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
     assignment_cache = await read_cache(ASSIGNMENT_CACHE_BLOB)
-    async with DiagnosticSettingsTask(assignment_cache) as task:
+    event_cache = await read_cache(EVENT_CACHE_BLOB)
+    async with DiagnosticSettingsTask(assignment_cache, event_cache) as task:
         await task.run()
     log.info("Task finished at %s", now())
 
