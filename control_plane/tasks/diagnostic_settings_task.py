@@ -23,7 +23,7 @@ from datadog_api_client.v1.models import EventCreateRequest
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import InvalidCacheError, LogForwarderType, read_cache, write_cache
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-from control_plane.cache.settings_event_cache import (
+from control_plane.cache.diagnostic_settings_event_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
     SENT_EVENT,
     EVENT_CACHE_BLOB,
