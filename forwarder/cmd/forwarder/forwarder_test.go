@@ -25,11 +25,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
@@ -470,7 +472,7 @@ func TestCursors(t *testing.T) {
 		var currentLogData []byte
 		now := time.Now()
 
-		lastCursor := cursor.NewCursors(nil)
+		lastCursor := cursor.New(nil)
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
@@ -507,7 +509,7 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.GetCursor(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, "azure", *logItem.Ddsource)
@@ -537,7 +539,7 @@ func TestCursors(t *testing.T) {
 		var currentLogData []byte
 		now := time.Now()
 
-		lastCursor := cursor.NewCursors(nil)
+		lastCursor := cursor.New(nil)
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
@@ -574,7 +576,7 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.GetCursor(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, "azure", *logItem.Ddsource)
@@ -582,6 +584,13 @@ func TestCursors(t *testing.T) {
 			}
 		}
 	})
+}
+
+type FaultyRoundTripper struct {
+}
+
+func (f *FaultyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("faulty")
 }
 
 // TestRunMain exists for performance testing purposes.
@@ -594,5 +603,32 @@ func TestRunMain(t *testing.T) {
 			t.Skip("Skipping testing in CI environment")
 		}
 		main()
+	})
+
+	t.Run("run with flaky client", func(t *testing.T) {
+		t.Parallel()
+		if os.Getenv("CI") != "" {
+			t.Skip("Skipping testing in CI environment")
+		}
+		// GIVEN
+		defaultHttpClient := http.DefaultClient
+		defaultHttpClient.Transport = &FaultyRoundTripper{}
+
+		storageAccountConnectionString := environment.Get(environment.AZURE_WEB_JOBS_STORAGE)
+		azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+
+		datadogConfig := datadog.NewConfiguration()
+		datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+		datadogConfig.HTTPClient = defaultHttpClient
+		datadogClient := datadog.NewAPIClient(datadogConfig)
+
+		// WHEN
+		err = previousMainFunctionalityPleaseRenameOMGEmbarassing(ctx, nullLogger(), 1, datadogClient, azBlobClient)
+
+		// THEN
+		assert.NoError(t, err)
 	})
 }

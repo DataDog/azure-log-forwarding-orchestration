@@ -1,0 +1,119 @@
+package deadletterqueue
+
+import (
+	// stdlib
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+)
+
+const BlobName = "deadletterqueue.json"
+
+type DeadLetterQueue struct {
+	// The queue of logs that failed to be sent to the destination
+	queue  []datadogV2.HTTPLogItem
+	client *logs.Client
+}
+
+// Bytes returns the a []byte representation of the dead letter queue.
+func (d *DeadLetterQueue) Bytes() ([]byte, error) {
+	logBytesSlice := make([][]byte, 0, len(d.queue))
+	for _, log := range d.queue {
+		logBytes, err := json.Marshal(log)
+		if err != nil {
+			return nil, err
+		}
+		logBytesSlice = append(logBytesSlice, logBytes)
+	}
+	return json.Marshal(logBytesSlice)
+}
+
+// Save saves the dead letter queue to storage
+func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Client.Save")
+	defer span.Finish()
+	data, err := d.Bytes()
+	if err != nil {
+		return fmt.Errorf("error marshalling dlq: %w", err)
+	}
+	err = client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
+	if err != nil {
+		return fmt.Errorf("uploading dlq failed: %w", err)
+	}
+	return nil
+}
+
+func (d *DeadLetterQueue) Process(ctx context.Context) error {
+	var failedLogs []datadogV2.HTTPLogItem
+	for _, datadogLog := range d.queue {
+		err := d.client.AddFormattedLog(ctx, datadogLog)
+		if err != nil {
+			failedLogs = append(failedLogs, datadogLog)
+		}
+	}
+	err := d.client.Flush(ctx)
+	if err != nil {
+		return err
+	}
+	d.queue = failedLogs
+	return nil
+}
+
+func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
+	if logs == nil || len(logs) == 0 {
+		return
+	}
+	d.queue = append(d.queue, logs...)
+}
+
+// New creates a new DeadLetterQueue object with the given data.
+func New(client *logs.Client, queue []datadogV2.HTTPLogItem) *DeadLetterQueue {
+	if queue == nil {
+		queue = make([]datadogV2.HTTPLogItem, 0)
+	}
+	return &DeadLetterQueue{
+		client: client,
+		queue:  queue,
+	}
+}
+
+// Load loads the Dead Letter Queue from the storage client.
+func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client) (*DeadLetterQueue, error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Load")
+	defer span.Finish()
+	data, err := storageClient.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
+	if err != nil {
+		var notFoundError *storage.NotFoundError
+		if errors.As(err, &notFoundError) {
+			return New(logsClient, nil), nil
+		}
+		return nil, fmt.Errorf("failed to download dlq: %w", err)
+	}
+	return FromBytes(logsClient, data)
+}
+
+func FromBytes(logsClient *logs.Client, data []byte) (*DeadLetterQueue, error) {
+	var logBytesSlice [][]byte
+	var datadogLogs []datadogV2.HTTPLogItem
+	err := json.Unmarshal(data, &logBytesSlice)
+	if err != nil {
+		return nil, err
+	}
+	for _, logBytes := range logBytesSlice {
+		datadogLog := datadogV2.HTTPLogItem{}
+		err = json.Unmarshal(logBytes, &datadogLog)
+		if err == nil {
+			datadogLogs = append(datadogLogs, datadogLog)
+		}
+	}
+	return New(logsClient, datadogLogs), nil
+}

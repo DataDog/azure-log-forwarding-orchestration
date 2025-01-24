@@ -53,6 +53,16 @@ type Log struct {
 	Level      string
 }
 
+// Content converts the log content to a string.
+func (l *Log) Content() string {
+	return string(*l.content)
+}
+
+// Length returns the length of the log content.
+func (l *Log) Length() int64 {
+	return l.ByteSize
+}
+
 // Validate checks if the log is valid to send to Datadog.
 func (l *Log) Validate(logger *log.Entry) bool {
 	if l.ByteSize > MaxLogSize {
@@ -66,14 +76,35 @@ func (l *Log) Validate(logger *log.Entry) bool {
 	return true
 }
 
-// Content converts the log content to a string.
-func (l *Log) Content() string {
-	return string(*l.content)
-}
+// ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size.
+func ValidateDatadogLog(log datadogV2.HTTPLogItem) (int64, bool) {
+	logBytes, err := log.MarshalJSON()
+	if err != nil {
+		return 0, false
+	}
 
-// Length returns the length of the log content.
-func (l *Log) Length() int64 {
-	return l.ByteSize
+	if len(logBytes) > MaxLogSize {
+		// log is too large to ever be delivered
+		return 0, false
+	}
+
+	timeString, ok := log.AdditionalProperties["time"]
+	if !ok {
+		// log does not have a time field and cannot be validated
+		return 0, false
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, timeString)
+	if err != nil {
+		// log has an invalid time field and cannot be validated
+		return 0, false
+	}
+
+	if parsedTime.Before(time.Now().Add(-MaxLogAge)) {
+		// log is too old to be delivered
+		return 0, false
+	}
+	return int64(len(logBytes)), true
 }
 
 type azureLog struct {
@@ -278,8 +309,9 @@ type DatadogLogsSubmitter interface {
 // Client is not thread safe.
 type Client struct {
 	logsSubmitter DatadogLogsSubmitter
-	logsBuffer    []*Log
+	logsBuffer    []datadogV2.HTTPLogItem
 	currentSize   int64
+	FailedLogs    []datadogV2.HTTPLogItem
 }
 
 // NewClient creates a new Client.
@@ -297,12 +329,30 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	if c.shouldFlush(log) {
 		err = c.Flush(ctx)
 	}
-	c.logsBuffer = append(c.logsBuffer, log)
+	c.logsBuffer = append(c.logsBuffer, newHTTPLogItem(log))
 	c.currentSize += log.Length()
 
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+// AddFormattedLog adds a log to the buffer for future submission.
+func (c *Client) AddFormattedLog(ctx context.Context, log datadogV2.HTTPLogItem) (err error) {
+	logBytes, valid := ValidateDatadogLog(log)
+	if !valid {
+		return nil
+	}
+
+	if c.shouldFlushGivenBytes(logBytes) {
+		err = c.Flush(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	c.logsBuffer = append(c.logsBuffer, log)
+	c.currentSize += logBytes
 	return nil
 }
 
@@ -312,11 +362,12 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	defer span.Finish(tracer.WithError(err))
 
 	if len(c.logsBuffer) > 0 {
-		logs := make([]datadogV2.HTTPLogItem, 0, len(c.logsBuffer))
-		for _, currLog := range c.logsBuffer {
-			logs = append(logs, newHTTPLogItem(currLog))
+		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer)
+
+		if err != nil {
+			c.FailedLogs = append(c.FailedLogs, c.logsBuffer...)
 		}
-		_, _, err = c.logsSubmitter.SubmitLog(ctx, logs)
+
 		c.logsBuffer = c.logsBuffer[:0]
 		c.currentSize = 0
 	}
@@ -326,11 +377,16 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
-	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
+	return c.shouldFlushGivenBytes(log.Length())
 }
 
-// ParseLogs reads logs from a reader and parses them into Log objects.
-func ParseLogs(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error] {
+// shouldFlushGivenBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
+func (c *Client) shouldFlushGivenBytes(bytes int64) bool {
+	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+bytes >= MaxPayloadSize
+}
+
+// Parse reads logs from a reader and parses them into Log objects.
+func Parse(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb

@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"sync"
 
+	// 3p
 	log "github.com/sirupsen/logrus"
 
+	// datadog
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
@@ -28,8 +30,8 @@ type Cursors struct {
 	Length int
 }
 
-// GetCursor returns the cursor for the given key or 0 if it does not exist.
-func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
+// Get returns the cursor for the given key or 0 if it does not exist.
+func (c *Cursors) Get(containerName string, blobName string) int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	value, found := c.data[blobKey(containerName, blobName)]
@@ -39,8 +41,8 @@ func (c *Cursors) GetCursor(containerName string, blobName string) int64 {
 	return value
 }
 
-// SetCursor sets the cursor for the given key.
-func (c *Cursors) SetCursor(containerName string, blobName string, offset int64) {
+// Set sets the cursor for the given key.
+func (c *Cursors) Set(containerName string, blobName string, offset int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.data[blobKey(containerName, blobName)] = offset
@@ -53,9 +55,9 @@ func (c *Cursors) Bytes() ([]byte, error) {
 	return json.Marshal(c.data)
 }
 
-// SaveCursors saves the cursors to storage
-func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.SaveCursors")
+// Save saves the cursors to storage
+func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
+	span, ctx := tracer.StartSpanFromContext(ctx, "cursor.Cursors.Save")
 	defer span.Finish()
 	data, err := c.Bytes()
 	if err != nil {
@@ -68,8 +70,8 @@ func (c *Cursors) SaveCursors(ctx context.Context, client *storage.Client) error
 	return nil
 }
 
-// NewCursors creates a new Cursors object with the given data.
-func NewCursors(data map[string]int64) *Cursors {
+// New creates a new Cursors object with the given data.
+func New(data map[string]int64) *Cursors {
 	if data == nil {
 		data = make(map[string]int64)
 	}
@@ -78,15 +80,15 @@ func NewCursors(data map[string]int64) *Cursors {
 	}
 }
 
-// LoadCursors loads the cursors from the storage client.
-func LoadCursors(ctx context.Context, client *storage.Client, logger *log.Entry) (*Cursors, error) {
+// Load loads the cursors from the storage client.
+func Load(ctx context.Context, client *storage.Client, logger *log.Entry) (*Cursors, error) {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetCursors")
 	defer span.Finish()
 	data, err := client.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
 	if err != nil {
 		var notFoundError *storage.NotFoundError
 		if errors.As(err, &notFoundError) {
-			return NewCursors(nil), nil
+			return New(nil), nil
 
 		}
 		return nil, fmt.Errorf("failed to download cursor: %w", err)
@@ -99,7 +101,7 @@ func FromBytes(data []byte, logger *log.Entry) *Cursors {
 	err := json.Unmarshal(data, &cursorMap)
 	if err != nil {
 		logger.Errorf(fmt.Errorf("could not unmarshal log cursors: %w", err).Error())
-		return NewCursors(nil)
+		return New(nil)
 	}
-	return NewCursors(cursorMap)
+	return New(cursorMap)
 }

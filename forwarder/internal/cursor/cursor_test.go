@@ -31,8 +31,8 @@ func TestLoadCursors(t *testing.T) {
 		testContainerName := "test"
 		testBlobName := "test"
 		testValue := int64(300)
-		cursors := cursor.NewCursors(nil)
-		cursors.SetCursor(testContainerName, testBlobName, testValue)
+		cursors := cursor.New(nil)
+		cursors.Set(testContainerName, testBlobName, testValue)
 		data, err := cursors.Bytes()
 		reader := io.NopCloser(bytes.NewReader(data))
 		response := azblob.DownloadStreamResponse{
@@ -53,12 +53,12 @@ func TestLoadCursors(t *testing.T) {
 		logger.SetOutput(buffer)
 
 		// WHEN
-		got, err := cursor.LoadCursors(context.Background(), client, log.NewEntry(logger))
+		got, err := cursor.Load(context.Background(), client, log.NewEntry(logger))
 
 		// THEN
 		assert.NoError(t, err)
 		assert.NotNil(t, got)
-		gotValue := got.GetCursor(testContainerName, testBlobName)
+		gotValue := got.Get(testContainerName, testBlobName)
 		assert.Equal(t, testValue, gotValue)
 	})
 
@@ -82,7 +82,7 @@ func TestLoadCursors(t *testing.T) {
 		logger.SetOutput(buffer)
 
 		// WHEN
-		got, err := cursor.LoadCursors(context.Background(), client, log.NewEntry(logger))
+		got, err := cursor.Load(context.Background(), client, log.NewEntry(logger))
 
 		// THEN
 		assert.NoError(t, err)
@@ -99,8 +99,8 @@ func TestSaveCursors(t *testing.T) {
 		testContainerName := "test"
 		testBlobName := "test"
 		testValue := int64(300)
-		cursors := cursor.NewCursors(nil)
-		cursors.SetCursor(testContainerName, testBlobName, testValue)
+		cursors := cursor.New(nil)
+		cursors.Set(testContainerName, testBlobName, testValue)
 		response := azblob.UploadBufferResponse{}
 		createContainerResponse := azblob.CreateContainerResponse{}
 
@@ -112,7 +112,7 @@ func TestSaveCursors(t *testing.T) {
 		client := storage.NewClient(mockClient)
 
 		// WHEN
-		err := cursors.SaveCursors(context.Background(), client)
+		err := cursors.Save(context.Background(), client)
 
 		// THEN
 		assert.NoError(t, err)

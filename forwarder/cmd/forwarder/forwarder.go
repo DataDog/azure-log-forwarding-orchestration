@@ -23,6 +23,7 @@ import (
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/deadletterqueue"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
@@ -40,7 +41,7 @@ type resourceBytes struct {
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset := cursors.GetCursor(blob.Container.Name, blob.Name)
+	currentOffset := cursors.Get(blob.Container.Name, blob.Name)
 	if currentOffset == blob.ContentLength {
 		// Cursor is at the end of the blob, no need to process
 		return nil
@@ -69,7 +70,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	}
 
 	// we have processed and submitted logs up to currentOffset+processedBytes whether the error is nil or not
-	cursors.SetCursor(blob.Container.Name, blob.Name, currentOffset+processedBytes)
+	cursors.Set(blob.Container.Name, blob.Name, currentOffset+processedBytes)
 
 	return err
 }
@@ -80,7 +81,7 @@ func parseLogs(reader io.ReadCloser, containerName string, logsChannel chan<- *l
 
 	var currLog *logs.Log
 	var err error
-	for currLog, err = range logs.ParseLogs(reader, containerName) {
+	for currLog, err = range logs.Parse(reader, containerName) {
 		if err != nil {
 			break
 		}
@@ -171,7 +172,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	}()
 
 	// Download cursors
-	cursors, err := cursor.LoadCursors(ctx, storageClient, logger)
+	cursors, err := cursor.Load(ctx, storageClient, logger)
 	if err != nil {
 		return err
 	}
@@ -248,7 +249,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	err = errors.Join(err, logBytesEg.Wait())
 
 	// Save cursors
-	cursorErr := cursors.SaveCursors(ctx, storageClient)
+	cursorErr := cursors.Save(ctx, storageClient)
 	err = errors.Join(err, cursorErr)
 
 	// Write forwarder metrics
@@ -257,6 +258,41 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 
 	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
 	return err
+}
+
+func previousMainFunctionalityPleaseRenameOMGEmbarassing(ctx context.Context, logger *log.Entry, goroutineAmount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client) error {
+	start := time.Now()
+	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
+
+	storageClient := storage.NewClient(azBlobClient)
+
+	// Initialize log submission client
+	logsApiClient := datadogV2.NewLogsApi(datadogClient)
+
+	var logsClients []*logs.Client
+	for range goroutineAmount {
+		logsClients = append(logsClients, logs.NewClient(logsApiClient))
+	}
+
+	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
+
+	dlq, err := deadletterqueue.Load(ctx, storageClient, logs.NewClient(logsApiClient))
+	if err != nil || dlq == nil {
+		return err
+	}
+
+	dlq.Process(ctx)
+
+	for _, logsClient := range logsClients {
+		dlq.Add(logsClient.FailedLogs)
+	}
+
+	dlqSaveErr := dlq.Save(ctx, storageClient)
+
+	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
+	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
+
+	return errors.Join(runErr, dlqSaveErr)
 }
 
 func main() {
@@ -292,7 +328,6 @@ func main() {
 			"site": ddSite,
 		})
 
-	start := time.Now()
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.WithFields(log.Fields{"service": serviceName})
 
@@ -315,13 +350,16 @@ func main() {
 		defer profiler.Stop()
 	}
 
-	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
-
 	forceProfile := environment.Get(environment.DD_FORCE_PROFILE)
 	if forceProfile != "" {
 		// Sleep for 5 seconds to allow profiler to start
 		time.Sleep(5 * time.Second)
 	}
+
+	// Initialize Datadog API client
+	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+	datadogClient := datadog.NewAPIClient(datadogConfig)
 
 	goroutineString := environment.Get(environment.NUM_GOROUTINES)
 	if goroutineString == "" {
@@ -339,25 +377,9 @@ func main() {
 		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
 		return
 	}
-	storageClient := storage.NewClient(azBlobClient)
 
-	// Initialize log submission client
-	datadogConfig := datadog.NewConfiguration()
-	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
-	apiClient := datadog.NewAPIClient(datadogConfig)
-	logsApiClient := datadogV2.NewLogsApi(apiClient)
+	err = previousMainFunctionalityPleaseRenameOMGEmbarassing(ctx, logger, int(goroutineAmount), datadogClient, azBlobClient)
 
-	var logsClients []*logs.Client
-	for range goroutineAmount {
-		logsClients = append(logsClients, logs.NewClient(logsApiClient))
-	}
-
-	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
-
-	err = errors.Join(runErr, err)
-
-	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
-	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
 	}
