@@ -183,22 +183,25 @@ class DiagnosticSettingsTask(Task):
             None,
         )
 
+        num_diag_settings = len(current_diagnostic_settings)
+        current_setting_exists = current_setting is not None
+
         if (
-            current_setting
+            current_setting_exists
             and current_setting.storage_account_id
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
             return  # current diagnostic setting is correctly configured
 
-        adding_ds = current_setting is None
-        num_diag_settings = len(current_diagnostic_settings)
-        resource_event_state = self.event_cache[sub_id][resource_id]
-        resource_event_state[DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
+        if not self.event_cache[sub_id][resource_id]:
+            self.event_cache[sub_id][resource_id] = {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
+        else:
+            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
 
-        if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS and resource_event_state[SENT_EVENT] is False:
-            success = self.send_max_settings_reached_event(sub_id, resource_id)
-            if success:
+        if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS and self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
+            event_sent_success = self.send_max_settings_reached_event(sub_id, resource_id)
+            if event_sent_success:
                 self.event_cache[sub_id][resource_id][SENT_EVENT] = True
             return
 
@@ -211,7 +214,7 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
-        if adding_ds:
+        if not current_setting_exists:
             self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
 
     async def create_or_update_diagnostic_setting(
