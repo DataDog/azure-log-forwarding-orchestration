@@ -617,6 +617,7 @@ class TestScalingTask(TaskTestCase):
                         OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                     },
+                    "on_cooldown": True,
                 }
             }
         }
@@ -803,6 +804,7 @@ class TestScalingTask(TaskTestCase):
                             OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                             NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         },
+                        "on_cooldown": True,
                     }
                 },
             },
@@ -849,6 +851,7 @@ class TestScalingTask(TaskTestCase):
                         OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                     },
+                    "on_cooldown": True,
                 }
             },
         }
@@ -925,6 +928,7 @@ class TestScalingTask(TaskTestCase):
                         OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                         NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
                     },
+                    "on_cooldown": True,
                 }
             },
         }
@@ -1150,6 +1154,60 @@ class TestScalingTask(TaskTestCase):
                 }
             },
         )
+
+    async def test_cooldown_period_for_scaling(self):
+        # overwhelmed forwarder with 2 resources
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            100, {"resource1": 1000, "resource2": 2000}
+        )
+        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: {"resource1", "resource2"}}}
+        await self.run_scaling_task(
+            resource_cache_state=resource_cache,
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+        # forwarder should be scaled up
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_not_awaited()
+        new_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                    "on_cooldown": True,
+                }
+            },
+        }
+        self.assertEqual(self.cache, new_cache)
+        self.write_cache.reset_mock()
+        self.client.create_log_forwarder.reset_mock()
+
+        # same metrics as before
+        await self.run_scaling_task(resource_cache_state=resource_cache, assignment_cache_state=new_cache)
+
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_not_awaited()
+        final_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": NEW_LOG_FORWARDER_ID},
+                    "configurations": {
+                        OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                        NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE,
+                    },
+                }
+            }
+        }
+        self.assertEqual(self.cache, final_cache)
 
     async def test_write_to_cache_partway_through(self):
         self.client.list_log_forwarder_ids.side_effect = ValueError("meow")

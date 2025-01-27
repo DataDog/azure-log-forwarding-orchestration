@@ -292,6 +292,10 @@ class ScalingTask(Task):
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
         if not all_forwarders_exist:
             return
+        if region_config.get("on_cooldown", False):
+            log.info("Region %s is on cooldown, skipping scaling this run", region)
+            del region_config["on_cooldown"]
+            return
         all_forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
         if not any(all_forwarder_metrics.values()):
             log.warning("No valid metrics found for forwarders in region %s", region)
@@ -486,21 +490,20 @@ class ScalingTask(Task):
 
         if not forwarders_to_scale_up:
             return False
+        region_config = self.assignment_cache[subscription_id][region]
 
         # create a second forwarder for each forwarder that needs to scale up
         new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
-        if new_forwarders:
+        if any(new_forwarders):
             log.info("Scaled up %s forwarders in region %s", len(new_forwarders), region)
+            region_config["on_cooldown"] = True
 
         for overwhelmed_forwarder_id, new_forwarder in zip(forwarders_to_scale_up, new_forwarders, strict=False):
             if not new_forwarder:
                 log.warning("Failed to create new log forwarder, skipping scaling for %s", overwhelmed_forwarder_id)
                 continue
             self.split_forwarder_resources(
-                self.assignment_cache[subscription_id][region],
-                overwhelmed_forwarder_id,
-                new_forwarder,
-                forwarder_metrics[overwhelmed_forwarder_id],
+                region_config, overwhelmed_forwarder_id, new_forwarder, forwarder_metrics[overwhelmed_forwarder_id]
             )
 
         return True
