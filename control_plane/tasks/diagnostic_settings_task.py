@@ -22,14 +22,15 @@ from datadog_api_client.v1.models import EventCreateRequest
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import InvalidCacheError, LogForwarderType, read_cache, write_cache
-from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-from control_plane.cache.diagnostic_settings_event_cache import (
+from cache.diagnostic_settings_event_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
-    SENT_EVENT,
     EVENT_CACHE_BLOB,
-    deserialize_event_cache,
+    SENT_EVENT,
     ResourceDict,
+    deserialize_event_cache,
 )
+from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -104,14 +105,13 @@ class DiagnosticSettingsTask(Task):
             log.warning("Detected invalid event cache, cache will be reset")
             empty_resource_dict: ResourceDict = {}
             sub_ids = self.assignment_cache.keys()
-
             event_cache = {sub_id: empty_resource_dict for sub_id in sub_ids}
         self.event_cache = event_cache
+        self.initial_event_cache = event_cache
 
     async def run(self) -> None:
         log.info("Processing %s subscriptions", len(self.assignment_cache))
         await gather(*map(self.process_subscription, self.assignment_cache))
-        await self.write_caches()
 
     async def process_subscription(self, sub_id: str) -> None:
         log.info("Processing subscription %s", sub_id)
@@ -148,9 +148,9 @@ class DiagnosticSettingsTask(Task):
         with ApiClient(config) as api_client:
             events_api = EventsApi(api_client)
             body = EventCreateRequest(
-                title=f"Max diag settings on {resource_id}, can't add another",
-                text=f"{resource_id} in {sub_id} has reached maximum number of diagnostic settings",
-                tags=["env:altandev"],
+                title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached",
+                text=f"{resource_id} in {sub_id} has reached the maximum number of diagnostic settings, can't add another to it",
+                tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
                 alert_type="warning",
             )
             try:
@@ -185,29 +185,30 @@ class DiagnosticSettingsTask(Task):
         )
 
         num_diag_settings = len(current_diagnostic_settings)
-        current_setting_exists = current_setting is not None
+        new_setting_to_add = current_setting is None
 
         if (
-            current_setting_exists
+            not new_setting_to_add
             and current_setting.storage_account_id
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
             return  # current diagnostic setting is correctly configured
 
-        if self.event_cache[sub_id] and self.event_cache[sub_id][resource_id]:
-            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
-        else:
-            self.event_cache[sub_id][resource_id] = {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
+        self.update_event_cache(sub_id, resource_id, num_diag_settings)
 
         if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS:
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
                 event_sent_success = self.send_max_settings_reached_event(sub_id, resource_id)
-                if event_sent_success:
-                    self.event_cache[sub_id][resource_id][SENT_EVENT] = True
+                self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
+            log.warning(
+                "Max number of diagnostic settings reached for resource %s in subscription %s, won't not add another",
+                resource_id,
+                sub_id,
+            )
             return
 
-        await self.create_or_update_diagnostic_setting(
+        success = await self.create_or_update_diagnostic_setting(
             client,
             sub_id,
             resource_id,
@@ -216,8 +217,23 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
-        if not current_setting_exists:
+        if new_setting_to_add and success:
             self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
+
+    def update_event_cache(self, sub_id: str, resource_id: str, num_diag_settings: int) -> None:
+        if self.event_cache.get(sub_id, None) is None:
+            init_resource_dict: ResourceDict = {
+                resource_id: {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
+            }
+            self.event_cache[sub_id] = init_resource_dict
+            return
+
+        if self.event_cache[sub_id].get(resource_id, None) is None:
+            self.event_cache[sub_id][resource_id] = {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
+            return
+
+        if self.event_cache[sub_id] and self.event_cache[sub_id][resource_id]:
+            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
 
     async def create_or_update_diagnostic_setting(
         self,
@@ -226,7 +242,7 @@ class DiagnosticSettingsTask(Task):
         resource_id: str,
         config: DiagnosticSettingConfiguration,
         categories: list[str] | None = None,
-    ) -> None:
+    ) -> bool:
         try:
             categories = categories or [
                 cast(str, category.name)
@@ -235,7 +251,7 @@ class DiagnosticSettingsTask(Task):
             ]
             if not categories:
                 log.debug("No log categories found for resource %s", resource_id)
-                return
+                return False
 
             await client.diagnostic_settings.create_or_update(
                 resource_id,
@@ -243,27 +259,32 @@ class DiagnosticSettingsTask(Task):
                 get_diagnostic_setting(sub_id, self.resource_group, config, categories),
             )
             log.info("Added diagnostic setting for resource %s", resource_id)
+            return True
         except HttpResponseError as e:
             if e.error and e.error.code == "ResourceTypeNotSupported":
                 # This resource does not support diagnostic settings
-                return
+                return False
             if "Resources should be in the same region" in str(e):
                 # todo this should not happen in the real implementation, for now ignore
-                return
+                return False
             if "reused in different settings on the same category for the same resource" in str(e):
                 log.error(
                     "Resource %s already has a diagnostic setting with the same configuration: %s", resource_id, config
                 )
-                return
+                return False
 
             log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
+            return False
         except Exception:
             log.error(
                 "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
             )
+            return False
 
     async def write_caches(self) -> None:
-        # since sets cannot be json serialized, we convert them to lists before storing
+        if self.event_cache == self.initial_event_cache:
+            log.info("No changes to event cache, skipping write")
+            return
         await write_cache(EVENT_CACHE_BLOB, dumps(self.event_cache, default=list))
 
 

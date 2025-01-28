@@ -51,7 +51,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.addCleanup(env.stop)
 
     def mock_diagnostic_settings(self, count: int) -> AsyncIterable[Mock]:
-        mocks = [mock(name=f"{DIAGNOSTIC_SETTING_NAME}{i}", category_type=CategoryType.LOGS) for i in range(count)]
+        mocks = [mock(name=f"{i}-{DIAGNOSTIC_SETTING_NAME}", category_type=CategoryType.LOGS) for i in range(count)]
         return async_generator(*mocks)
 
     async def run_diagnostic_settings_task(
@@ -288,7 +288,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.create_or_update_setting.assert_awaited_once()
         self.send_max_settings_reached_event.assert_not_called()
 
-    async def test_max_diag_event_not_sent_on_some(self):
+    async def test_max_diag_event_not_sent_on_existing_setting(self):
         self.list_diagnostic_settings.return_value = self.mock_diagnostic_settings(2)
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS),
