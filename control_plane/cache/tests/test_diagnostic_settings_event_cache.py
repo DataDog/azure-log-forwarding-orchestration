@@ -3,13 +3,12 @@ from json import dumps
 from unittest import TestCase
 
 # project
-from control_plane.cache.diagnostic_settings_cache import (
+from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
     SENT_EVENT,
     DiagnosticSettingsCache,
     deserialize_event_cache,
 )
-
 from cache.tests import sub_id1, sub_id2
 
 

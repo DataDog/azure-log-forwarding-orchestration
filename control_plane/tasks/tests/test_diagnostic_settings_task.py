@@ -12,7 +12,7 @@ from azure.mgmt.monitor.models import CategoryType
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
-from control_plane.cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache
+from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
