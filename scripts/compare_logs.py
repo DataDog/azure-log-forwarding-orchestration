@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 # stdlib
+from collections import namedtuple
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from gzip import GzipFile
@@ -27,44 +28,44 @@ EVENT_HUB_SOURCE = "event_hub"
 AZURE_LOGS_CONNECTION_STRING = os.environ.get("AzureWebJobsStorage")
 DD_ARCHIVES_CONNECTION_STRING = os.environ.get("LOG_ARCHIVING")
 
+LogID = namedtuple("LogID", ["uuid", "dd_id", "timestamp"])
+
 
 def get_start_time(
-    storage_id_map: dict[
-        str, datetime
-    ],  # storage_id_map is a dictionary of uuid to datetime
-    storage_ids: list[str],  # storage_ids is a list of uuids
-    lfo_ids: list[str],  # lfo_ids is a list of uuids
-    native_ids: list[str],  # native_ids is a list of uuids
+    storage_ids: list[LogID],  # storage_ids is a list of uuids
+    lfo_ids: list[LogID],  # lfo_ids is a list of uuids
+    native_ids: list[LogID],  # native_ids is a list of uuids
 ) -> datetime:
     """returns the first start time found in storage logs that is either lfo or native logs"""
     for storage_id in storage_ids:  # assumes storage_ids are sorted
-        if storage_id in native_ids:
-            submit_metric(
-                "azure.log.forwarding.first_timestamp",
-                1,
-                tags={"source": NATIVE_SOURCE},
-            )
-            return storage_id_map[storage_id]
-        if storage_id in lfo_ids:
-            submit_metric(
-                "azure.log.forwarding.first_timestamp",
-                1,
-                tags={"source": LFO_SOURCE},
-            )
-            return storage_id_map[storage_id]
+        for lfo_id in lfo_ids:
+            if lfo_id.uuid == storage_id.uuid:
+                submit_metric(
+                    "azure.log.forwarding.first_timestamp",
+                    1,
+                    tags={"source": LFO_SOURCE},
+                )
+                return storage_id.timestamp
+        for native_id in native_ids:
+            if native_id.uuid == storage_id.uuid:
+                submit_metric(
+                    "azure.log.forwarding.first_timestamp",
+                    1,
+                    tags={"source": NATIVE_SOURCE},
+                )
+                return storage_id.timestamp
     raise Exception("No common start time found")
 
 
 def download_blob(
     blob_service_client: BlobServiceClient, blob_name: str, container_name: str
-) -> tuple[dict[str, datetime], int]:
+) -> list[LogID]:
     blob_client = blob_service_client.get_blob_client(
         container=container_name, blob=blob_name
     )
-    duplicates = 0
     # encoding param is necessary for readall() to return str, otherwise it returns bytes
     downloader = blob_client.download_blob(max_concurrency=1, encoding="UTF-8")
-    blob_ids = {}
+    blob_ids = list()
     try:
         if blob_name[len(blob_name) - 2 :] == "gz":
             stream = BytesIO()
@@ -80,7 +81,7 @@ def download_blob(
     except Exception as e:
         if "The condition specified using HTTP conditional" in str(e):
             print(f"Blob {blob_name} was being WEIRD")
-            return blob_ids, duplicates
+            return blob_ids
         print(f"Error downloading blob {blob_name}: {e}")
         raise e
     print(f"Downloaded {len(content)} bytes from {blob_name}")
@@ -92,17 +93,21 @@ def download_blob(
             not in line
         ):
             continue
+        dd_id = None
         if blob_name[len(blob_name) - 2 :] == "gz":
             date_time_obj = datetime.strptime(line[9:33], "%Y-%m-%dT%H:%M:%S.%fZ")
+            id_index = line.find(',"_id":"')
+            if id_index != -1:
+                dd_id = line[id_index + 8 : line.find('","', id_index + 8)]
         else:
             date_time_obj = datetime.strptime(line[11:31], "%Y-%m-%dT%H:%M:%SZ")
         date_time_obj = date_time_obj.replace(tzinfo=timezone.utc)
         lorem_index = line.find("Lorem")
         curr_id = line[lorem_index - UUID_LENGTH + 1 : lorem_index - 1]
-        if curr_id in blob_ids:
-            duplicates += 1
-        blob_ids[curr_id] = date_time_obj
-    return blob_ids, duplicates
+        log_id = LogID(uuid=curr_id, dd_id=dd_id, timestamp=date_time_obj)
+        blob_ids.append(log_id)
+
+    return blob_ids
 
 
 def submit_metric(metric_name: str, value: float | int, tags: dict | None = None):
@@ -136,7 +141,7 @@ def submit_metric(metric_name: str, value: float | int, tags: dict | None = None
 
 def get_logs_from_storage_account(
     connection_string: str | None, filter, container: str = CONTAINER
-) -> tuple[dict[str, datetime], int]:
+) -> list[LogID]:
     if not connection_string:
         raise Exception("No connection string found")
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -146,130 +151,122 @@ def get_logs_from_storage_account(
         minutes=LOOKBACK_MINUTES + END_MINUTES_AGO
     )
     blob_list = list(blob_iter)
-    log_ids = {}
-    duplicates = 0
+    log_ids = list()
     for blob in blob_list:
         if not filter(blob):
             continue
         if blob.creation_time < hours_ago:
             continue
-        blob_time_by_id, blob_duplicates = download_blob(
-            blob_service_client, blob.name, container
-        )
-        duplicates += blob_duplicates
-        # possible to have duplicates across blobs
-        for blob_id in blob_time_by_id:
-            if blob_id in log_ids:
-                duplicates += 1
-            log_ids[blob_id] = blob_time_by_id[blob_id]
+        blob_ids = download_blob(blob_service_client, blob.name, container)
+        log_ids.extend(blob_ids)
+    log_ids.sort(key=lambda e: e.timestamp)
+    return log_ids
 
-    return log_ids, duplicates
+
+def get_duplicates(input: list[LogID]) -> list[LogID]:
+    log_ids = list()
+    seen = set()
+    for log_id in input:
+        if log_id.uuid in seen:
+            log_ids.append(log_id)
+        else:
+            seen.add(log_id.uuid)
+    return log_ids
 
 
 def truncate_to_set(
-    data: list, start: datetime, end: datetime, storage_id_map: dict[str, datetime]
-) -> set:
+    data: list[LogID], start: datetime, end: datetime, callable=lambda x: x
+) -> set[str]:
     truncated_data = set()
     for item in data:
-        if (
-            storage_id_map.get(item)
-            and storage_id_map[item] > start
-            and storage_id_map[item] < end
-        ):
-            truncated_data.add(item)
+        if item.timestamp > start and item.timestamp < end:
+            truncated_data.add(callable(item))
     return truncated_data
 
 
 def run():
-    storage_timestamps_by_id = {}
-    storage_ids = []
-    native_ids = []
-    lfo_ids = []
-
     end = datetime.now(timezone.utc) - timedelta(minutes=END_MINUTES_AGO)
 
-    storage_timestamps_by_id, storage_duplicates = get_logs_from_storage_account(
+    storage_ids = get_logs_from_storage_account(
         AZURE_LOGS_CONNECTION_STRING, lambda blob: "loggya" in blob.name.lower()
     )
-    storage_ids = list(storage_timestamps_by_id.keys())
-    storage_ids.sort(key=lambda e: storage_timestamps_by_id[e])
     if not storage_ids:
         raise Exception("No logs found in storage account")
 
-    print(f"Duplicate storage ids: {storage_duplicates}")
+    storage_duplicates = get_duplicates(storage_ids)
+
+    print(f"Duplicate storage ids: {len(storage_duplicates)}")
     submit_metric(
         "azure.log.forwarding.duplicates",
-        storage_duplicates,
+        len(storage_duplicates),
         tags={"source": "storage"},
     )
 
-    native_timestamps_by_id, native_duplicates = get_logs_from_storage_account(
+    native_ids = get_logs_from_storage_account(
         DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="native"
     )
-    native_ids = list(native_timestamps_by_id.keys())
-    native_ids.sort(key=lambda e: native_timestamps_by_id[e])
 
-    print(f"Duplicate liftr ids: {native_duplicates}")
+    native_duplicates = get_duplicates(native_ids)
+
+    print(f"Duplicate liftr ids: {len(native_duplicates)}")
     submit_metric(
         "azure.log.forwarding.duplicates",
-        native_duplicates,
+        len(native_duplicates),
         tags={"source": NATIVE_SOURCE},
     )
 
     submit_metric(
         "azure.log.forwarding.totals",
-        len(native_timestamps_by_id.keys()) + native_duplicates,
+        len(native_ids),
         tags={"source": NATIVE_SOURCE},
     )
 
-    eventhub_timestamps_by_id, eventhub_duplicates = get_logs_from_storage_account(
+    eventhub_ids = get_logs_from_storage_account(
         DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="eventhub"
     )
-    eventhub_ids = list(eventhub_timestamps_by_id.keys())
-    eventhub_ids.sort(key=lambda e: eventhub_timestamps_by_id[e])
+    eventhub_duplicates = get_duplicates(eventhub_ids)
 
-    print(f"Duplicate event hub ids: {eventhub_duplicates}")
+    print(f"Duplicate event hub ids: {len(eventhub_duplicates)}")
     submit_metric(
         "azure.log.forwarding.duplicates",
-        eventhub_duplicates,
+        len(eventhub_duplicates),
         tags={"source": EVENT_HUB_SOURCE},
     )
 
     submit_metric(
         "azure.log.forwarding.totals",
-        len(eventhub_timestamps_by_id.keys()) + eventhub_duplicates,
+        len(eventhub_ids),
         tags={"source": EVENT_HUB_SOURCE},
     )
 
-    lfo_timestamps_by_id, lfo_duplicates = get_logs_from_storage_account(
+    lfo_ids = get_logs_from_storage_account(
         DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="lfo"
     )
-    lfo_ids = list(lfo_timestamps_by_id.keys())
-    lfo_ids.sort(key=lambda e: lfo_timestamps_by_id[e])
 
-    print(f"Duplicate LFO ids: {lfo_duplicates}")
+    lfo_duplicates = get_duplicates(lfo_ids)
+
+    print(f"Duplicate LFO ids: {len(lfo_duplicates)}")
     submit_metric(
         "azure.log.forwarding.duplicates",
-        lfo_duplicates,
+        len(lfo_duplicates),
         tags={"source": LFO_SOURCE},
     )
 
     submit_metric(
         "azure.log.forwarding.totals",
-        len(lfo_timestamps_by_id.keys()) + lfo_duplicates,
+        len(lfo_ids),
         tags={"source": LFO_SOURCE},
     )
 
-    start = get_start_time(storage_timestamps_by_id, storage_ids, lfo_ids, native_ids)
+    start = get_start_time(storage_ids, lfo_ids, native_ids)
     print(f"Start time: {start}, end time: {end}")
-    native_truncated = truncate_to_set(native_ids, start, end, native_timestamps_by_id)
-    lfo_truncated = truncate_to_set(lfo_ids, start, end, lfo_timestamps_by_id)
-    eventhub_truncated = truncate_to_set(
-        eventhub_ids, start, end, eventhub_timestamps_by_id
-    )
-    storage_truncated = truncate_to_set(
-        storage_ids, start, end, storage_timestamps_by_id
-    )
+    native_truncated = truncate_to_set(native_ids, start, end, lambda x: x.uuid)
+    lfo_truncated = truncate_to_set(lfo_ids, start, end, lambda x: x.uuid)
+    eventhub_truncated = truncate_to_set(eventhub_ids, start, end, lambda x: x.uuid)
+    storage_truncated = truncate_to_set(storage_ids, start, end, lambda x: x.uuid)
+    native_dd_ids = truncate_to_set(native_ids, start, end, lambda x: x.dd_id)
+    lfo_dd_ids = truncate_to_set(lfo_ids, start, end, lambda x: x.dd_id)
+    eventhub_dd_ids = truncate_to_set(eventhub_ids, start, end, lambda x: x.dd_id)
 
     print(
         f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(eventhub_truncated)}"
@@ -342,13 +339,35 @@ def run():
         tags={"source": EVENT_HUB_SOURCE},
     )
 
+    submit_metric(
+        "azure.log.forwarding.dd_log_ids",
+        len(lfo_dd_ids),
+        tags={"source": LFO_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.dd_log_ids",
+        len(native_dd_ids),
+        tags={"source": NATIVE_SOURCE},
+    )
+
+    submit_metric(
+        "azure.log.forwarding.dd_log_ids",
+        len(eventhub_dd_ids),
+        tags={"source": EVENT_HUB_SOURCE},
+    )
+
 
 while True:
-    print(f"Starting at {datetime.now()}")
+    start_time = datetime.now()
+    print(f"Starting at {start_time}")
     run()
     try:
         run()
     except Exception as e:
         print(f"Error: {e}")
-    print(f"Done at {datetime.now()}")
-    sleep(60)
+    end_time = datetime.now()
+    print(f"Done at {end_time}")
+    elapsed_time = (end_time - start_time).total_seconds()
+    sleep_time = max(0, 15 * 60 - elapsed_time)
+    sleep(sleep_time)
