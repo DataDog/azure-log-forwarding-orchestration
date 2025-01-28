@@ -22,7 +22,7 @@ from datadog_api_client.v1.models import EventCreateRequest
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import InvalidCacheError, LogForwarderType, read_cache, write_cache
-from cache.diagnostic_settings_event_cache import (
+from control_plane.cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
     EVENT_CACHE_BLOB,
     SENT_EVENT,
@@ -103,9 +103,7 @@ class DiagnosticSettingsTask(Task):
         self.initial_event_cache = event_cache
         if event_cache is None:
             log.warning("Detected invalid event cache, cache will be reset")
-            empty_resource_dict: ResourceDict = {}
-            sub_ids = self.assignment_cache.keys()
-            event_cache = {sub_id: empty_resource_dict for sub_id in sub_ids}
+            event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
         self.event_cache = event_cache
 

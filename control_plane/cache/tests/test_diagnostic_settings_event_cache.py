@@ -3,10 +3,10 @@ from json import dumps
 from unittest import TestCase
 
 # project
-from control_plane.cache.diagnostic_settings_event_cache import (
+from control_plane.cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
     SENT_EVENT,
-    DiagnosticSettingsEventCache,
+    DiagnosticSettingsCache,
     deserialize_event_cache,
 )
 
@@ -15,7 +15,7 @@ from cache.tests import sub_id1, sub_id2
 
 class TestDeserializeDiagnosticSettingsCache(TestCase):
     def test_valid_cache(self):
-        valid_cache: DiagnosticSettingsEventCache = {
+        valid_cache: DiagnosticSettingsCache = {
             sub_id1: {
                 "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
                 "resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 5, SENT_EVENT: True},

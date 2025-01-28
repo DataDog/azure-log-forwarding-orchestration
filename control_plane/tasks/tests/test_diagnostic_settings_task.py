@@ -12,7 +12,7 @@ from azure.mgmt.monitor.models import CategoryType
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
-from cache.diagnostic_settings_event_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsEventCache
+from control_plane.cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -55,7 +55,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         return async_generator(*mocks)
 
     async def run_diagnostic_settings_task(
-        self, assignment_cache: AssignmentCache, event_cache: DiagnosticSettingsEventCache | None
+        self, assignment_cache: AssignmentCache, event_cache: DiagnosticSettingsCache | None
     ):
         async with DiagnosticSettingsTask(dumps(assignment_cache), dumps(event_cache)) as task:
             await task.run()

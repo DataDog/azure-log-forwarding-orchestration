@@ -13,7 +13,7 @@ EventDict: TypeAlias = dict[str, int | bool]
 ResourceDict: TypeAlias = dict[str, EventDict]
 
 
-DiagnosticSettingsEventCache: TypeAlias = dict[str, ResourceDict]
+DiagnosticSettingsCache: TypeAlias = dict[str, ResourceDict]
 """
 ex) 
 {
@@ -42,6 +42,6 @@ SETTINGS_EVENT_CACHE_SCHEMA: dict[str, Any] = {
 }
 
 
-def deserialize_event_cache(cache_str: str) -> DiagnosticSettingsEventCache | None:
+def deserialize_event_cache(cache_str: str) -> DiagnosticSettingsCache | None:
     """Deserialize the diagnostic settings event cache. Returns None if the cache is invalid."""
     return deserialize_cache(cache_str, SETTINGS_EVENT_CACHE_SCHEMA)
