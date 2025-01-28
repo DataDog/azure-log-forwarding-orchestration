@@ -8,7 +8,12 @@ EVENT_CACHE_BLOB = "settings_event.json"
 DIAGNOSTIC_SETTINGS_COUNT = "diagnostic_settings_count"
 SENT_EVENT = "sent_event"
 
-DiagnosticSettingsEventCache: TypeAlias = dict[str, dict[str, dict[str, str | bool | int]]]
+
+EventDict: TypeAlias = dict[str, int | bool]
+ResourceDict: TypeAlias = dict[str, EventDict]
+
+
+DiagnosticSettingsEventCache: TypeAlias = dict[str, ResourceDict]
 """
 ex) 
 {

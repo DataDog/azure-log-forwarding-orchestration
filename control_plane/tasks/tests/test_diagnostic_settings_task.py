@@ -1,4 +1,5 @@
 # stdlib
+from collections.abc import AsyncIterable
 from json import dumps
 from os import environ
 from typing import Final
@@ -11,10 +12,12 @@ from azure.mgmt.monitor.models import CategoryType
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
+from cache.diagnostic_settings_event_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsEventCache
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_NAME,
+    MAX_DIAGNOSTIC_SETTINGS,
     DiagnosticSettingsTask,
 )
 from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator, mock
@@ -41,18 +44,25 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.create_or_update_setting: AsyncMock = client.diagnostic_settings.create_or_update
         client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
 
+        self.send_max_settings_reached_event = self.patch("DiagnosticSettingsTask.send_max_settings_reached_event")
         self.log = self.patch("log")
         env = patch.dict(environ, {"RESOURCE_GROUP": "lfo", "CONTROL_PLANE_ID": control_plane_id})
         env.start()
         self.addCleanup(env.stop)
 
-    async def run_diagnostic_settings_task(self, assignment_cache: AssignmentCache):
-        async with DiagnosticSettingsTask(dumps(assignment_cache)) as task:
+    def mock_diagnostic_settings(self, count: int) -> AsyncIterable[Mock]:
+        mocks = [mock(name=f"{DIAGNOSTIC_SETTING_NAME}{i}", category_type=CategoryType.LOGS) for i in range(count)]
+        return async_generator(*mocks)
+
+    async def run_diagnostic_settings_task(
+        self, assignment_cache: AssignmentCache, event_cache: DiagnosticSettingsEventCache | None
+    ):
+        async with DiagnosticSettingsTask(dumps(assignment_cache), dumps(event_cache)) as task:
             await task.run()
 
     def test_malformed_resources_cache_errors_in_constructor(self):
         with self.assertRaises(InvalidCacheError) as e:
-            DiagnosticSettingsTask("malformed")
+            DiagnosticSettingsTask("malformed", "")
         self.assertEqual(
             str(e.exception), "Assignment Cache is in an invalid format, failing this task until it is valid"
         )
@@ -72,6 +82,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
+            event_cache=None,
         )
 
         # check the diagnostic setting was created
@@ -101,6 +112,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
+            event_cache=None,
         )
         self.create_or_update_setting.assert_not_awaited()
 
@@ -121,6 +133,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
+            event_cache=None,
         )
 
         # check the diagnostic setting was created
@@ -154,6 +167,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
+            event_cache=None,
         )
 
         # check the diagnostic setting was created
@@ -189,8 +203,113 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
+            event_cache={},
         )
 
         self.log.warning.assert_called_once_with("Resource type for %s unsupported, skipping", resource_id1)
         self.list_diagnostic_settings_categories.assert_not_called()
         self.create_or_update_setting.assert_not_awaited()
+
+    async def test_max_diagnostic_settings_sends_event(self):
+        self.list_diagnostic_settings.return_value = self.mock_diagnostic_settings(MAX_DIAGNOSTIC_SETTINGS)
+        self.list_diagnostic_settings_categories.return_value = async_generator(
+            mock(name="cool_logs", category_type=CategoryType.LOGS),
+        )
+        event_cache = {
+            sub_id1: {
+                resource_id1: {DIAGNOSTIC_SETTINGS_COUNT: MAX_DIAGNOSTIC_SETTINGS, SENT_EVENT: False},
+            }
+        }
+
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            event_cache=event_cache,
+        )
+
+        self.create_or_update_setting.assert_not_awaited()
+        self.send_max_settings_reached_event.assert_called_once()
+
+    async def test_max_diagnostic_settings_avoid_duplicate_event(self):
+        self.list_diagnostic_settings.return_value = self.mock_diagnostic_settings(MAX_DIAGNOSTIC_SETTINGS)
+        self.list_diagnostic_settings_categories.return_value = async_generator(
+            mock(name="cool_logs", category_type=CategoryType.LOGS),
+        )
+        event_cache = {
+            sub_id1: {
+                resource_id1: {DIAGNOSTIC_SETTINGS_COUNT: MAX_DIAGNOSTIC_SETTINGS, SENT_EVENT: True},
+            }
+        }
+
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            event_cache=event_cache,
+        )
+
+        self.create_or_update_setting.assert_not_awaited()
+        self.send_max_settings_reached_event.assert_not_called()
+
+    async def test_max_diag_event_not_sent_on_empty(self):
+        self.list_diagnostic_settings.return_value = async_generator()
+        self.list_diagnostic_settings_categories.return_value = async_generator(
+            mock(name="cool_logs", category_type=CategoryType.LOGS),
+        )
+        event_cache = {
+            sub_id1: {
+                resource_id1: {DIAGNOSTIC_SETTINGS_COUNT: 0, SENT_EVENT: False},
+            }
+        }
+
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            event_cache=event_cache,
+        )
+
+        self.create_or_update_setting.assert_awaited_once()
+        self.send_max_settings_reached_event.assert_not_called()
+
+    async def test_max_diag_event_not_sent_on_some(self):
+        self.list_diagnostic_settings.return_value = self.mock_diagnostic_settings(2)
+        self.list_diagnostic_settings_categories.return_value = async_generator(
+            mock(name="cool_logs", category_type=CategoryType.LOGS),
+        )
+        event_cache = {
+            sub_id1: {
+                resource_id1: {DIAGNOSTIC_SETTINGS_COUNT: 2, SENT_EVENT: False},
+            }
+        }
+
+        await self.run_diagnostic_settings_task(
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            event_cache=event_cache,
+        )
+
+        self.create_or_update_setting.assert_awaited_once()
+        self.send_max_settings_reached_event.assert_not_called()

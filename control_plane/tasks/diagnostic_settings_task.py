@@ -28,6 +28,7 @@ from control_plane.cache.diagnostic_settings_event_cache import (
     SENT_EVENT,
     EVENT_CACHE_BLOB,
     deserialize_event_cache,
+    ResourceDict,
 )
 from tasks.common import (
     get_event_hub_name,
@@ -93,9 +94,6 @@ class DiagnosticSettingsTask(Task):
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
 
-        self.read_caches(assignment_cache_state, event_cache_state)
-
-    def read_caches(self, assignment_cache_state: str, event_cache_state: str):
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if assignment_cache is None:
             raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
@@ -104,7 +102,10 @@ class DiagnosticSettingsTask(Task):
         event_cache = deserialize_event_cache(event_cache_state)
         if event_cache is None:
             log.warning("Detected invalid event cache, cache will be reset")
-            event_cache = {}
+            empty_resource_dict: ResourceDict = {}
+            sub_ids = self.assignment_cache.keys()
+
+            event_cache = {sub_id: empty_resource_dict for sub_id in sub_ids}
         self.event_cache = event_cache
 
     async def run(self) -> None:
@@ -194,15 +195,16 @@ class DiagnosticSettingsTask(Task):
         ):
             return  # current diagnostic setting is correctly configured
 
-        if not self.event_cache[sub_id][resource_id]:
-            self.event_cache[sub_id][resource_id] = {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
-        else:
+        if self.event_cache[sub_id] and self.event_cache[sub_id][resource_id]:
             self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
+        else:
+            self.event_cache[sub_id][resource_id] = {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
 
-        if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS and self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
-            event_sent_success = self.send_max_settings_reached_event(sub_id, resource_id)
-            if event_sent_success:
-                self.event_cache[sub_id][resource_id][SENT_EVENT] = True
+        if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS:
+            if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
+                event_sent_success = self.send_max_settings_reached_event(sub_id, resource_id)
+                if event_sent_success:
+                    self.event_cache[sub_id][resource_id][SENT_EVENT] = True
             return
 
         await self.create_or_update_diagnostic_setting(
