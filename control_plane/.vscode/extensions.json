@@ -1,6 +1,8 @@
 {
     "recommendations": [
+        "ms-python.python",
         "charliermarsh.ruff",
-        "ms-python.python"
+        "fill-labs.dependi",
+        "tamasfe.even-better-toml"
     ]
 }
