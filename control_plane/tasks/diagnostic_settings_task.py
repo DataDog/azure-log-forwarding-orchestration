@@ -101,13 +101,14 @@ class DiagnosticSettingsTask(Task):
         self.assignment_cache = assignment_cache
 
         event_cache = deserialize_event_cache(event_cache_state)
+        self.initial_event_cache = event_cache
         if event_cache is None:
             log.warning("Detected invalid event cache, cache will be reset")
             empty_resource_dict: ResourceDict = {}
             sub_ids = self.assignment_cache.keys()
             event_cache = {sub_id: empty_resource_dict for sub_id in sub_ids}
+
         self.event_cache = event_cache
-        self.initial_event_cache = event_cache
 
     async def run(self) -> None:
         log.info("Processing %s subscriptions", len(self.assignment_cache))
@@ -149,7 +150,7 @@ class DiagnosticSettingsTask(Task):
             events_api = EventsApi(api_client)
             body = EventCreateRequest(
                 title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached",
-                text=f"{resource_id} in {sub_id} has reached the maximum number of diagnostic settings, can't add another to it",
+                text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings.",
                 tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
                 alert_type="warning",
             )
@@ -188,7 +189,7 @@ class DiagnosticSettingsTask(Task):
         new_setting_to_add = current_setting is None
 
         if (
-            not new_setting_to_add
+            current_setting
             and current_setting.storage_account_id
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
