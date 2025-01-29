@@ -26,7 +26,7 @@ from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
     EVENT_CACHE_BLOB,
     SENT_EVENT,
-    ResourceDict,
+    EventDict,
     deserialize_event_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
@@ -219,19 +219,9 @@ class DiagnosticSettingsTask(Task):
             self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
 
     def update_event_cache(self, sub_id: str, resource_id: str, num_diag_settings: int) -> None:
-        if self.event_cache.get(sub_id, None) is None:
-            init_resource_dict: ResourceDict = {
-                resource_id: {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
-            }
-            self.event_cache[sub_id] = init_resource_dict
-            return
-
-        if self.event_cache[sub_id].get(resource_id, None) is None:
-            self.event_cache[sub_id][resource_id] = {DIAGNOSTIC_SETTINGS_COUNT: num_diag_settings, SENT_EVENT: False}
-            return
-
-        if self.event_cache[sub_id] and self.event_cache[sub_id][resource_id]:
-            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
+        self.event_cache.setdefault(sub_id, {}).setdefault(
+            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
+        )
 
     async def create_or_update_diagnostic_setting(
         self,
@@ -241,6 +231,10 @@ class DiagnosticSettingsTask(Task):
         config: DiagnosticSettingConfiguration,
         categories: list[str] | None = None,
     ) -> bool:
+        """Creates or updates a diagnostic setting for an Azure resource
+
+        Returns True if the diagnostic setting was successfully created or updated, False otherwise
+        """
         try:
             categories = categories or [
                 cast(str, category.name)
@@ -283,14 +277,18 @@ class DiagnosticSettingsTask(Task):
         if self.event_cache == self.initial_event_cache:
             log.info("No changes to event cache, skipping write")
             return
-        await write_cache(EVENT_CACHE_BLOB, dumps(self.event_cache, default=list))
+        await write_cache(EVENT_CACHE_BLOB, dumps(self.event_cache))
 
 
 async def main() -> None:
     basicConfig(level=INFO)
     log.info("Started task at %s", now())
-    assignment_cache = await read_cache(ASSIGNMENT_CACHE_BLOB)
-    event_cache = await read_cache(EVENT_CACHE_BLOB)
+
+    assignment_cache, event_cache = await gather(
+        read_cache(ASSIGNMENT_CACHE_BLOB),
+        read_cache(EVENT_CACHE_BLOB),
+    )
+
     async with DiagnosticSettingsTask(assignment_cache, event_cache) as task:
         await task.run()
     log.info("Task finished at %s", now())
