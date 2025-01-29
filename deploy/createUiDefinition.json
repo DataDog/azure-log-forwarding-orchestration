@@ -71,7 +71,7 @@
         "visible": true,
         "options": {
           "icon": "Warning",
-          "text": "This resource group will be used across all subscriptions for the Control Plane and Forwarders. It is reccomended to not re-use an existing resource group name for simpler management and cleanup."
+          "text": "This resource group will be used across all subscriptions for the Control Plane and Forwarders. It is recommended to not re-use an existing resource group name for simpler management and cleanup."
         }
       }
     ],
