@@ -15,9 +15,9 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # dd
-from datadog_api_client.v1 import ApiClient, Configuration
+from datadog_api_client.v1 import AsyncApiClient, Configuration
 from datadog_api_client.v1.api.events_api import EventsApi
-from datadog_api_client.v1.models import EventCreateRequest
+from datadog_api_client.v1.models import EventCreateRequest, EventCreateResponse
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
@@ -43,8 +43,9 @@ from tasks.task import Task
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-MAX_DIAGNOSTIC_SETTINGS = 5
+DD_REQUEST_TIMEOUT = 5
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
+MAX_DIAGNOSTIC_SETTINGS = 5
 log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
 
 
@@ -106,6 +107,7 @@ class DiagnosticSettingsTask(Task):
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
         self.event_cache = event_cache
+        self.datadog_events_api = EventsApi(AsyncApiClient(Configuration(request_timeout=DD_REQUEST_TIMEOUT)))
 
     async def run(self) -> None:
         log.info("Processing %s subscriptions", len(self.assignment_cache))
@@ -141,22 +143,22 @@ class DiagnosticSettingsTask(Task):
         # i.e. client.subscription_diagnostic_settings.list()
         return
 
-    def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> bool:
-        config = Configuration()
-        with ApiClient(config) as api_client:
-            events_api = EventsApi(api_client)
-            body = EventCreateRequest(
-                title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached. This will prevent log forwarding for this resource.",
-                text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings. Enabling log forwarding requires the addition of a DataDog diagnostic setting.",
-                tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
-                alert_type="warning",
-            )
-            try:
-                events_api.create_event(body)  # type: ignore
-                return True
-            except Exception as e:
-                log.error(f"Error while sending event to the Datadog: {e}")
+    async def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> bool:
+        body = EventCreateRequest(
+            title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached. This will prevent log forwarding for this resource.",
+            text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings. Enabling log forwarding requires the addition of a DataDog diagnostic setting.",
+            tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
+            alert_type="warning",
+        )
+        try:
+            response: EventCreateResponse = await self.datadog_events_api.create_event(body)  # type: ignore
+            for error in response.get("errors", []):
+                log.error(f"Error while sending event to Datadog: {error}")
                 return False
+            return True
+        except Exception as e:
+            log.error(f"Error while sending event to Datadog: {e}")
+            return False
 
     async def process_resource(
         self,
@@ -195,9 +197,9 @@ class DiagnosticSettingsTask(Task):
 
         self.update_event_cache(sub_id, resource_id, num_diag_settings)
 
-        if num_diag_settings == MAX_DIAGNOSTIC_SETTINGS:
+        if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
-                event_sent_success = self.send_max_settings_reached_event(sub_id, resource_id)
+                event_sent_success = await self.send_max_settings_reached_event(sub_id, resource_id)
                 self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
             log.warning(
                 "Max number of diagnostic settings reached for resource %s in subscription %s, won't not add another",
