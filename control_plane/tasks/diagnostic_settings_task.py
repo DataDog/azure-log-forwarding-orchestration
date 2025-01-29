@@ -146,8 +146,8 @@ class DiagnosticSettingsTask(Task):
         with ApiClient(config) as api_client:
             events_api = EventsApi(api_client)
             body = EventCreateRequest(
-                title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached",
-                text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings.",
+                title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached. This will prevent log forwarding for this resource.",
+                text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings. Enabling log forwarding requires the addition of a DataDog diagnostic setting.",
                 tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
                 alert_type="warning",
             )
