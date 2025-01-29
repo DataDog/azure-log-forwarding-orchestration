@@ -1,5 +1,5 @@
 # stdlib
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, TypedDict
 
 # 3p
 from cache.common import deserialize_cache
@@ -9,9 +9,12 @@ DIAGNOSTIC_SETTINGS_COUNT = "diagnostic_settings_count"
 SENT_EVENT = "sent_event"
 
 
-EventDict: TypeAlias = dict[str, int | bool]
-ResourceDict: TypeAlias = dict[str, EventDict]
+class EventDict(TypedDict):
+    diagnostic_settings_count: int
+    sent_event: bool
 
+
+ResourceDict: TypeAlias = dict[str, EventDict]
 
 DiagnosticSettingsCache: TypeAlias = dict[str, ResourceDict]
 """
