@@ -40,14 +40,6 @@ func new(client *logs.Client, queue []datadogV2.HTTPLogItem) *DeadLetterQueue {
 
 // Bytes returns the a []byte representation of the dead letter queue.
 func (d *DeadLetterQueue) Bytes() ([]byte, error) {
-	//logBytesSlice := make([][]byte, 0, len(d.queue))
-	//for _, log := range d.queue {
-	//	logBytes, err := json.Marshal(log)
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	logBytesSlice = append(logBytesSlice, logBytes)
-	//}
 	return json.Marshal(d.queue)
 }
 
@@ -112,19 +104,10 @@ func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.C
 
 // FromBytes creates a DeadLetterQueue object from the given bytes.
 func FromBytes(logsClient *logs.Client, data []byte) (*DeadLetterQueue, error) {
-	//var logBytesSlice [][]byte
 	var datadogLogs []datadogV2.HTTPLogItem
 	err := json.Unmarshal(data, &datadogLogs)
 	if err != nil {
 		return nil, err
 	}
 	return new(logsClient, datadogLogs), nil
-	//for _, logBytes := range logBytesSlice {
-	//	datadogLog := datadogV2.HTTPLogItem{}
-	//	err = json.Unmarshal(logBytes, &datadogLog)
-	//	if err == nil {
-	//		datadogLogs = append(datadogLogs, datadogLog)
-	//	}
-	//}
-	//return new(logsClient, datadogLogs), nil
 }

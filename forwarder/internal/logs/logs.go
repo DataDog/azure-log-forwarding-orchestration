@@ -76,7 +76,7 @@ func (l *Log) Validate(logger *log.Entry) bool {
 	return true
 }
 
-// ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size.
+// ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
 func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
 	logBytes, err := log.MarshalJSON()
 	if err != nil {
