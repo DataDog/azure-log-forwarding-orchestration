@@ -352,11 +352,14 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	return nil
 }
 
+// ErrInvalidLog is an error for when a log is invalid.
+var ErrInvalidLog = errors.New("invalid log")
+
 // AddFormattedLog adds a datadog formatted log to the buffer for future submission.
 func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log datadogV2.HTTPLogItem) error {
 	logBytes, valid := ValidateDatadogLog(log, logger)
 	if !valid {
-		return nil
+		return ErrInvalidLog
 	}
 	if c.shouldFlushGivenBytes(logBytes) {
 		if err := c.Flush(ctx); err != nil {

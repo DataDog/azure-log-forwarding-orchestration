@@ -60,7 +60,7 @@ func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error 
 	var failedLogs []datadogV2.HTTPLogItem
 	for _, datadogLog := range d.queue {
 		err := d.client.AddFormattedLog(ctx, logger, datadogLog)
-		if err != nil {
+		if err != nil && !errors.Is(err, logs.ErrInvalidLog) {
 			failedLogs = append(failedLogs, datadogLog)
 		}
 	}
