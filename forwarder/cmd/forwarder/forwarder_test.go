@@ -610,7 +610,7 @@ func TestProcessDLQ(t *testing.T) {
 		}
 		queue := []datadogV2.HTTPLogItem{logItem}
 		dlq.Add(queue)
-		data, err := dlq.Bytes()
+		data, err := dlq.JSONBytes()
 		require.NoError(t, err)
 		reader := io.NopCloser(bytes.NewReader(data))
 		response := azblob.DownloadStreamResponse{

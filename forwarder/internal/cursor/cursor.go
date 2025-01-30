@@ -48,8 +48,8 @@ func (c *Cursors) Set(containerName string, blobName string, offset int64) {
 	c.data[blobKey(containerName, blobName)] = offset
 }
 
-// Bytes returns the a []byte representation of the cursors.
-func (c *Cursors) Bytes() ([]byte, error) {
+// JSONBytes returns the a []byte representation of the cursors.
+func (c *Cursors) JSONBytes() ([]byte, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return json.Marshal(c.data)
@@ -59,7 +59,7 @@ func (c *Cursors) Bytes() ([]byte, error) {
 func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "cursor.Cursors.Save")
 	defer span.Finish()
-	data, err := c.Bytes()
+	data, err := c.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("error marshalling cursors: %w", err)
 	}

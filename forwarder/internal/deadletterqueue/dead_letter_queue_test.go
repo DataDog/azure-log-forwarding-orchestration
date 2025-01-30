@@ -49,7 +49,7 @@ func TestLoadDLQ(t *testing.T) {
 			Message: testMessage,
 		})
 		dlq.Add(queue)
-		data, err := dlq.Bytes()
+		data, err := dlq.JSONBytes()
 		reader := io.NopCloser(bytes.NewReader(data))
 		response := azblob.DownloadStreamResponse{
 			DownloadResponse: blob.DownloadResponse{

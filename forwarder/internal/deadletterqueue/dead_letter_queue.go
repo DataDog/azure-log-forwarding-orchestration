@@ -29,17 +29,14 @@ type DeadLetterQueue struct {
 
 // new creates a new DeadLetterQueue object with the given data.
 func new(client *logs.Client, queue []datadogV2.HTTPLogItem) *DeadLetterQueue {
-	if len(queue) == 0 {
-		queue = make([]datadogV2.HTTPLogItem, 0)
-	}
 	return &DeadLetterQueue{
 		client: client,
 		queue:  queue,
 	}
 }
 
-// Bytes returns the a []byte representation of the dead letter queue.
-func (d *DeadLetterQueue) Bytes() ([]byte, error) {
+// JSONBytes returns the a []byte representation of the dead letter queue.
+func (d *DeadLetterQueue) JSONBytes() ([]byte, error) {
 	return json.Marshal(d.queue)
 }
 
@@ -47,7 +44,7 @@ func (d *DeadLetterQueue) Bytes() ([]byte, error) {
 func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Client.Save")
 	defer span.Finish()
-	data, err := d.Bytes()
+	data, err := d.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("error marshalling dlq: %w", err)
 	}
