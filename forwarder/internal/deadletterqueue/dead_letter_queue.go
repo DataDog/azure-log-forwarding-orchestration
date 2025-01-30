@@ -86,7 +86,7 @@ func (d *DeadLetterQueue) GetQueue() []datadogV2.HTTPLogItem {
 
 // New creates a new DeadLetterQueue object with the given data.
 func New(client *logs.Client, queue []datadogV2.HTTPLogItem) *DeadLetterQueue {
-	if queue == nil {
+	if len(queue) == 0 {
 		queue = make([]datadogV2.HTTPLogItem, 0)
 	}
 	return &DeadLetterQueue{
