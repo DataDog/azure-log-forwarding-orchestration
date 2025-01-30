@@ -637,7 +637,7 @@ func TestProcessDLQ(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err = processDeadLetterQueue(ctx, storageClient, logsClient, processedClients)
+		err = processDeadLetterQueue(ctx, nullLogger(), storageClient, logsClient, processedClients)
 
 		// THEN
 		assert.NoError(t, err)

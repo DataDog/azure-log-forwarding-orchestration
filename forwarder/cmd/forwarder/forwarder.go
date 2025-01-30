@@ -260,15 +260,15 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	return err
 }
 
-func processDeadLetterQueue(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client, logsClients []*logs.Client) error {
+func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
 	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
-	if err != nil || dlq == nil {
+	if err != nil {
 		return err
 	}
 
-	dlq.Process(ctx)
+	dlq.Process(ctx, logger)
 
-	for _, client := range logsClients {
+	for _, client := range flushedLogsClients {
 		dlq.Add(client.FailedLogs)
 	}
 
@@ -291,7 +291,7 @@ func run(ctx context.Context, logger *log.Entry, goroutineAmount int, datadogCli
 
 	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, time.Now)
 
-	dlqErr := processDeadLetterQueue(ctx, storageClient, logs.NewClient(logsApiClient), logsClients)
+	dlqErr := processDeadLetterQueue(ctx, logger, storageClient, logs.NewClient(logsApiClient), logsClients)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

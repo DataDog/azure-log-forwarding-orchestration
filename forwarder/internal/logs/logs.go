@@ -77,31 +77,44 @@ func (l *Log) Validate(logger *log.Entry) bool {
 }
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size.
-func ValidateDatadogLog(log datadogV2.HTTPLogItem) (int64, bool) {
+func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
 	logBytes, err := log.MarshalJSON()
 	if err != nil {
+		logger.WithError(err).Warning("Failed to marshal log")
+		return 0, false
+	}
+
+	var currLog *azureLog
+	decoder := json.NewDecoder(bytes.NewReader([]byte(log.Message)))
+	err = decoder.Decode(&currLog)
+	if err != nil {
+		logger.WithError(err).Warning("Failed to decode log to an azure log")
 		return 0, false
 	}
 
 	if len(logBytes) > MaxLogSize {
 		// log is too large to ever be delivered
+		logger.Warningf("Skipping large log with a size of %d for resource %s", len(logBytes), currLog.ResourceId())
 		return 0, false
 	}
 
 	timeString, ok := log.AdditionalProperties["time"]
 	if !ok {
 		// log does not have a time field and cannot be validated
+		logger.Warningf("Skipping log without a time field for resource %s", currLog.ResourceId())
 		return 0, false
 	}
 
 	parsedTime, err := time.Parse(time.RFC3339, timeString)
 	if err != nil {
 		// log has an invalid time field and cannot be validated
+		logger.WithError(err).Warningf("Skipping log with an invalid time field for resource %s", currLog.ResourceId())
 		return 0, false
 	}
 
 	if parsedTime.Before(time.Now().Add(-MaxLogAge)) {
 		// log is too old to be delivered
+		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", parsedTime.Format(time.RFC3339), currLog.ResourceId())
 		return 0, false
 	}
 	return int64(len(logBytes)), true
@@ -329,7 +342,8 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	if c.shouldFlush(log) {
 		err = c.Flush(ctx)
 	}
-	c.logsBuffer = append(c.logsBuffer, newHTTPLogItem(log))
+	newLog := newHTTPLogItem(log)
+	c.logsBuffer = append(c.logsBuffer, newLog)
 	c.currentSize += log.Length()
 
 	if err != nil {
@@ -339,18 +353,17 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 }
 
 // AddFormattedLog adds a datadog formatted log to the buffer for future submission.
-func (c *Client) AddFormattedLog(ctx context.Context, log datadogV2.HTTPLogItem) (err error) {
-	logBytes, valid := ValidateDatadogLog(log)
+func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log datadogV2.HTTPLogItem) error {
+	logBytes, valid := ValidateDatadogLog(log, logger)
 	if !valid {
 		return nil
 	}
-
 	if c.shouldFlushGivenBytes(logBytes) {
-		err = c.Flush(ctx)
+		if err := c.Flush(ctx); err != nil {
+			return err
+		}
 	}
-	if err != nil {
-		return err
-	}
+
 	c.logsBuffer = append(c.logsBuffer, log)
 	c.currentSize += logBytes
 	return nil

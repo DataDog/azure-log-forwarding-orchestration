@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	log "github.com/sirupsen/logrus"
+
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -54,16 +56,15 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) erro
 }
 
 // Process processes the dead letter queue by sending the logs to Datadog.
-func (d *DeadLetterQueue) Process(ctx context.Context) error {
+func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error {
 	var failedLogs []datadogV2.HTTPLogItem
 	for _, datadogLog := range d.queue {
-		err := d.client.AddFormattedLog(ctx, datadogLog)
+		err := d.client.AddFormattedLog(ctx, logger, datadogLog)
 		if err != nil {
 			failedLogs = append(failedLogs, datadogLog)
 		}
 	}
-	err := d.client.Flush(ctx)
-	if err != nil {
+	if err := d.client.Flush(ctx); err != nil {
 		return err
 	}
 	d.queue = failedLogs
