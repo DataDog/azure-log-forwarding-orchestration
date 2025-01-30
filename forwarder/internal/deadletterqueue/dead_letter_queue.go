@@ -73,7 +73,7 @@ func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error 
 
 // Add adds logs to the dead letter queue.
 func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
-	if logs == nil || len(logs) == 0 {
+	if len(logs) == 0 {
 		return
 	}
 	d.queue = append(d.queue, logs...)
