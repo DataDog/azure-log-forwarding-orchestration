@@ -14,6 +14,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	// datadog
@@ -42,7 +43,7 @@ func TestLoadDLQ(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		testMessage := "test"
-		dlq := deadletterqueue.New(nil, nil)
+		dlq, err := deadletterqueue.FromBytes(nil, []byte("[]"))
 		queue := make([]datadogV2.HTTPLogItem, 0)
 		queue = append(queue, datadogV2.HTTPLogItem{
 			Message: testMessage,
@@ -124,10 +125,11 @@ func TestSaveDLQ(t *testing.T) {
 		datadogClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
 		logsClient := logs.NewClient(datadogClient)
 
-		dlq := deadletterqueue.New(logsClient, nil)
+		dlq, err := deadletterqueue.FromBytes(logsClient, []byte("[]"))
+		require.NoError(t, err)
 
 		// WHEN
-		err := dlq.Save(context.Background(), client)
+		err = dlq.Save(context.Background(), client)
 
 		// THEN
 		assert.NoError(t, err)
