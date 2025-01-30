@@ -424,7 +424,7 @@ def list_users_subscriptions(sub_id=None) -> dict:
         raise SystemExit(1) from e
 
     print_progress(1, 1)
-    print(f'Found {subs_json["name"]} ({subs_json["id"]})')
+    print(f"Found {subs_json['name']} ({subs_json['id']})")
     return {subs_json["id"]: subs_json["name"]}
 
 
