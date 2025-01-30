@@ -600,11 +600,12 @@ func TestProcessDLQ(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		ctrl := gomock.NewController(t)
-		dlq := deadletterqueue.New(nil, nil)
+		dlq, err := deadletterqueue.FromBytes(nil, []byte("[]"))
+		require.NoError(t, err)
 		currentTime := time.Now().UTC()
 		formattedTime := currentTime.Format(time.RFC3339)
 		logItem := datadogV2.HTTPLogItem{
-			Message:              "test",
+			Message:              fmt.Sprintf("{\"time\":\"%s\"}", formattedTime),
 			AdditionalProperties: map[string]string{"time": formattedTime},
 		}
 		queue := []datadogV2.HTTPLogItem{logItem}
