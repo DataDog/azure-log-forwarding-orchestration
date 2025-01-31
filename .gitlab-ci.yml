@@ -58,9 +58,9 @@ build-tasks:
   image: $CI_IMAGE
   stage: build
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - ci/scripts/control_plane/build_tasks.sh
     - ci/scripts/forwarder/build_and_zip.sh
