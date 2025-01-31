@@ -63,18 +63,20 @@ build-tasks:
       - main
   script:
     - ci/scripts/control_plane/build_tasks.sh
+    - ci/scripts/forwarder/build_and_zip.sh
   artifacts:
     paths:
       - dist/diagnostic_settings_task.zip
+      - dist/forwarder.zip
       - dist/resources_task.zip
       - dist/scaling_task.zip
 publish-tasks:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+  #  rules:
+  #    - if: $CI_COMMIT_BRANCH == "main"
+  #      when: manual
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:

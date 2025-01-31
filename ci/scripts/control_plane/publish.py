@@ -18,6 +18,7 @@ from cache.manifest_cache import (
     RESOURCES_TASK_ZIP,
     SCALING_TASK_ZIP,
     DIAGNOSTIC_SETTINGS_TASK_ZIP,
+    FORWARDER_ZIP,
     MANIFEST_FILE_NAME,
     TASKS_CONTAINER,
 )
@@ -43,7 +44,7 @@ hashes: ManifestCache = {
     "resources": sha256(zips[RESOURCES_TASK_ZIP]).hexdigest(),
     "scaling": sha256(zips[SCALING_TASK_ZIP]).hexdigest(),
     "diagnostic_settings": sha256(zips[DIAGNOSTIC_SETTINGS_TASK_ZIP]).hexdigest(),
-    "forwarder": "",  # TODO(AZINTS-2780)
+    "forwarder": sha256(zips[FORWARDER_ZIP]).hexdigest(),
 }
 
 log.info(
@@ -68,15 +69,8 @@ with (
     if not client.exists():
         log.warning("Container %s does not exist, creating it...", TASKS_CONTAINER)
         client.create_container(public_access="container")
-    futures = [
-        executor.submit(client.upload_blob, zip, data, overwrite=True)
-        for zip, data in zips.items()
-    ]
-    futures.append(
-        executor.submit(
-            client.upload_blob, MANIFEST_FILE_NAME, dumps(hashes), overwrite=True
-        )
-    )
+    futures = [executor.submit(client.upload_blob, zip, data, overwrite=True) for zip, data in zips.items()]
+    futures.append(executor.submit(client.upload_blob, MANIFEST_FILE_NAME, dumps(hashes), overwrite=True))
     exceptions = [e for f in futures if (e := f.exception())]
     for e in exceptions:
         log.error("An error occurred while uploading a zip file", exc_info=e)
