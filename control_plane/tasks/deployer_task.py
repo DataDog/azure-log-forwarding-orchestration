@@ -13,15 +13,16 @@ from aiohttp import ClientSession
 from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
-from azure.storage.blob.aio import ContainerClient
+from azure.storage.blob.aio import BlobClient, ContainerClient
 from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
 # project
-from cache.common import InvalidCacheError, read_cache, write_cache
+from cache.common import BLOB_STORAGE_CACHE, InvalidCacheError, read_cache, write_cache
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
     STORAGE_ACCOUNT_URL_SETTING,
+    STORAGE_CONNECTION_SETTING,
     SUBSCRIPTION_ID_SETTING,
     get_config_option,
 )
@@ -176,7 +177,7 @@ class DeployerTask(Task):
     async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
         log.info(f"Deploying {component}")
         if component == "forwarder":
-            return await self.deploy_log_forwarder_image()
+            return await self.deploy_log_forwarder_function()
         task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
         if not function_app:
@@ -188,19 +189,30 @@ class DeployerTask(Task):
             log.info(f"Downloading function app data for {component}")
             zip_data = await self.download_function_app_data(component)
             log.info(f"Deploying {function_app}")
-            await self.upload_function_app_data(function_app, zip_data)
+            await self.deploy_function_app_data(function_app, zip_data)
         except Exception:
             log.exception(f"Failed to deploy {component}")
             return
         self.manifest_cache[component] = self.public_manifest[component]
         log.info(f"Finished deploying {component}")
 
-    async def deploy_log_forwarder_image(self) -> None:
+    async def deploy_log_forwarder_function(self) -> None:
         # TODO(AZINTS-2770): Implement this
+        log.info("Downloading function app data for forwarder")
+        zip_data = await self.download_function_app_data("forwarder")
+        log.info("Uploading log forwarder data")
+        await self.upload_function_app_data("forwarder.zip", zip_data)
         self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
+        async with BlobClient.from_connection_string(
+            get_config_option(STORAGE_CONNECTION_SETTING), BLOB_STORAGE_CACHE, function_app_name
+        ) as blob_client:
+            await blob_client.upload_blob(function_app_data, overwrite=True)
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def deploy_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
         resp = await self.rest_client.post(
             f"https://{function_app_name}.scm.azurewebsites.net/api/zipdeploy",
             data=function_app_data,

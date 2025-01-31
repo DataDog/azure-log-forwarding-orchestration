@@ -48,6 +48,7 @@ KEY_TO_ZIP = {
     "resources": RESOURCES_TASK_ZIP,
     "scaling": SCALING_TASK_ZIP,
     "diagnostic_settings": DIAGNOSTIC_SETTINGS_TASK_ZIP,
+    "forwarder": FORWARDER_ZIP,
 }
 
 
