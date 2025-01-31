@@ -175,7 +175,10 @@ if not SKIP_DOCKER:
 # build current version of tasks
 run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
 
-# upload current version of tasks to storage account
+# build current version of forwarder
+run(f"{lfo_dir}/ci/scripts/forwarder/build_and_zip.sh", cwd=lfo_dir)
+
+# upload current version of tasks and forwarder to storage account
 run(
     f"{lfo_dir}/ci/scripts/control_plane/publish.py https://{storage_account_name}.blob.core.windows.net {connection_string}",
     cwd=lfo_dir,
