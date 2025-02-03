@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # stdlib
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from gzip import GzipFile
 import os
-from time import sleep, time
+from time import time
 
 # 3p
 import requests
@@ -13,8 +14,8 @@ import requests
 # azure
 from azure.storage.blob import BlobServiceClient
 
-LOOKBACK_MINUTES = 120
-END_MINUTES_AGO = 60
+LOOKBACK_MINUTES = 60
+END_MINUTES_AGO = 15
 
 UUID_LENGTH = 36
 
@@ -25,7 +26,6 @@ NATIVE_SOURCE = "native"
 LFO_SOURCE = "lfo"
 EVENT_HUB_SOURCE = "event_hub"
 
-AZURE_LOGS_CONNECTION_STRING = os.environ.get("AzureWebJobsStorage")
 DD_ARCHIVES_CONNECTION_STRING = os.environ.get("LOG_ARCHIVING")
 
 LogID = namedtuple("LogID", ["uuid", "dd_id", "timestamp"])
@@ -84,7 +84,8 @@ def download_blob(
             return blob_ids
         print(f"Error downloading blob {blob_name}: {e}")
         raise e
-    print(f"Downloaded {len(content)} bytes from {blob_name}")
+    # print(f"Downloaded {len(content)} bytes from {blob_name}")
+    print(".", end="", flush=True)
     for line in content.split("\n"):
         if line and len(line) < 31:
             continue
@@ -152,12 +153,21 @@ def get_logs_from_storage_account(
     )
     blob_list = list(blob_iter)
     log_ids = list()
-    for blob in blob_list:
-        if not filter(blob):
-            continue
-        if blob.creation_time < hours_ago:
-            continue
-        blob_ids = download_blob(blob_service_client, blob.name, container)
+    blob_futures = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for blob in blob_list:
+            if not filter(blob):
+                continue
+            if blob.creation_time < hours_ago:
+                continue
+            blob_futures.append(
+                executor.submit(
+                    download_blob, blob_service_client, blob.name, container
+                )
+            )
+
+    for future in blob_futures:
+        blob_ids = future.result()
         log_ids.extend(blob_ids)
     log_ids.sort(key=lambda e: e.timestamp)
     return log_ids
@@ -185,189 +195,40 @@ def truncate_to_set(
 
 
 def run():
-    end = datetime.now(timezone.utc) - timedelta(minutes=END_MINUTES_AGO)
+    with ThreadPoolExecutor() as executor:
+        node_20_ids_future = executor.submit(
+            get_logs_from_storage_account,
+            DD_ARCHIVES_CONNECTION_STRING,
+            lambda _: True,
+            container="node20",
+        )
+        node_18_ids_future = executor.submit(
+            get_logs_from_storage_account,
+            DD_ARCHIVES_CONNECTION_STRING,
+            lambda _: True,
+            container="node18",
+        )
 
-    storage_ids = get_logs_from_storage_account(
-        AZURE_LOGS_CONNECTION_STRING, lambda blob: "loggya" in blob.name.lower()
-    )
-    if not storage_ids:
-        raise Exception("No logs found in storage account")
+    node_20_ids = node_20_ids_future.result()
+    node_18_ids = node_18_ids_future.result()
 
-    storage_duplicates = get_duplicates(storage_ids)
-
-    print(f"Duplicate storage ids: {len(storage_duplicates)}")
-    submit_metric(
-        "azure.log.forwarding.duplicates",
-        len(storage_duplicates),
-        tags={"source": "storage"},
-    )
-
-    native_ids = get_logs_from_storage_account(
-        DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="native"
-    )
-
-    native_duplicates = get_duplicates(native_ids)
-
-    print(f"Duplicate liftr ids: {len(native_duplicates)}")
-    submit_metric(
-        "azure.log.forwarding.duplicates",
-        len(native_duplicates),
-        tags={"source": NATIVE_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.totals",
-        len(native_ids),
-        tags={"source": NATIVE_SOURCE},
-    )
-
-    eventhub_ids = get_logs_from_storage_account(
-        DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="eventhub"
-    )
-    eventhub_duplicates = get_duplicates(eventhub_ids)
-
-    print(f"Duplicate event hub ids: {len(eventhub_duplicates)}")
-    submit_metric(
-        "azure.log.forwarding.duplicates",
-        len(eventhub_duplicates),
-        tags={"source": EVENT_HUB_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.totals",
-        len(eventhub_ids),
-        tags={"source": EVENT_HUB_SOURCE},
-    )
-
-    lfo_ids = get_logs_from_storage_account(
-        DD_ARCHIVES_CONNECTION_STRING, lambda blob: True, container="lfo"
-    )
-
-    lfo_duplicates = get_duplicates(lfo_ids)
-
-    print(f"Duplicate LFO ids: {len(lfo_duplicates)}")
-    submit_metric(
-        "azure.log.forwarding.duplicates",
-        len(lfo_duplicates),
-        tags={"source": LFO_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.totals",
-        len(lfo_ids),
-        tags={"source": LFO_SOURCE},
-    )
-
-    start = get_start_time(storage_ids, lfo_ids, native_ids)
-    print(f"Start time: {start}, end time: {end}")
-    native_truncated = truncate_to_set(native_ids, start, end, lambda x: x.uuid)
-    lfo_truncated = truncate_to_set(lfo_ids, start, end, lambda x: x.uuid)
-    eventhub_truncated = truncate_to_set(eventhub_ids, start, end, lambda x: x.uuid)
-    storage_truncated = truncate_to_set(storage_ids, start, end, lambda x: x.uuid)
-    native_dd_ids = truncate_to_set(native_ids, start, end, lambda x: x.dd_id)
-    lfo_dd_ids = truncate_to_set(lfo_ids, start, end, lambda x: x.dd_id)
-    eventhub_dd_ids = truncate_to_set(eventhub_ids, start, end, lambda x: x.dd_id)
-
+    node_20_duplicates = {log.dd_id for log in get_duplicates(node_20_ids)}
+    node_18_duplicates = {log.dd_id for log in get_duplicates(node_18_ids)}
+    print()
     print(
-        f"Storage ids: {len(storage_truncated)}, LFO ids: {len(lfo_truncated)}, Native ids: {len(native_truncated)}, Event Hub ids: {len(eventhub_truncated)}"
+        f"Duplicate node 20 ids: {len(node_20_duplicates)}, Unique: {len(node_20_ids)-len(node_20_duplicates)}"
     )
-
-    missing_lfo_ids = storage_truncated - lfo_truncated
-    print(f"Missing LFO ids: {len(missing_lfo_ids)}")
-    submit_metric(
-        "azure.log.forwarding.missing_percent",
-        (len(missing_lfo_ids) * 1.0 / len(storage_truncated)),
-        tags={"source": LFO_SOURCE},
+    print(
+        f"Duplicate node 18 ids: {len(node_18_duplicates)}, Unique: {len(node_18_ids)-len(node_18_duplicates)}"
     )
-
-    submit_metric(
-        "azure.log.forwarding.missing",
-        len(missing_lfo_ids),
-        tags={"source": LFO_SOURCE},
-    )
-
-    missing_native_ids = storage_truncated - native_truncated
-    print(f"Missing native ids: {len(missing_native_ids)}")
-
-    submit_metric(
-        "azure.log.forwarding.missing_percent",
-        (len(missing_native_ids) * 1.0 / len(storage_truncated)),
-        tags={"source": NATIVE_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.missing",
-        len(missing_native_ids),
-        tags={"source": NATIVE_SOURCE},
-    )
-
-    missing_eventhub_ids = storage_truncated - eventhub_truncated
-    print(f"Missing event hub ids: {len(missing_eventhub_ids)}")
-    submit_metric(
-        "azure.log.forwarding.missing_percent",
-        (len(missing_eventhub_ids) * 1.0 / len(storage_truncated)),
-        tags={"source": EVENT_HUB_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.missing",
-        len(missing_eventhub_ids),
-        tags={"source": EVENT_HUB_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.found",
-        len(storage_truncated),
-        tags={"source": STORAGE_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.found",
-        len(lfo_truncated),
-        tags={"source": LFO_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.found",
-        len(native_truncated),
-        tags={"source": NATIVE_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.found",
-        len(eventhub_truncated),
-        tags={"source": EVENT_HUB_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.dd_log_ids",
-        len(lfo_dd_ids),
-        tags={"source": LFO_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.dd_log_ids",
-        len(native_dd_ids),
-        tags={"source": NATIVE_SOURCE},
-    )
-
-    submit_metric(
-        "azure.log.forwarding.dd_log_ids",
-        len(eventhub_dd_ids),
-        tags={"source": EVENT_HUB_SOURCE},
-    )
+    # calculate percentage of duplicated logs of each
+    if node_20_ids:
+        percentage = len(node_20_duplicates) * 100.0 / len(node_20_ids)
+        print(f"Percentage of duplicated node 20 logs: {percentage:.2f}%")
+    if node_18_ids:
+        percentage = len(node_18_duplicates) * 100.0 / len(node_18_ids)
+        print(f"Percentage of duplicated node 18 logs: {percentage:.2f}%")
 
 
-while True:
-    start_time = datetime.now()
-    print(f"Starting at {start_time}")
+if __name__ == "__main__":
     run()
-    try:
-        run()
-    except Exception as e:
-        print(f"Error: {e}")
-    end_time = datetime.now()
-    print(f"Done at {end_time}")
-    elapsed_time = (end_time - start_time).total_seconds()
-    sleep_time = max(0, 15 * 60 - elapsed_time)
-    sleep(sleep_time)
