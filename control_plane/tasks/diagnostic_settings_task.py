@@ -7,6 +7,7 @@ from typing import NamedTuple, cast
 
 # 3p
 from azure.core.exceptions import HttpResponseError
+from azure.mgmt.core.tools import parse_resource_id
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
     CategoryType,
@@ -144,10 +145,20 @@ class DiagnosticSettingsTask(Task):
         return
 
     async def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> bool:
+        parsed_resource = parse_resource_id(resource_id)
+        parse_success = len(parsed_resource) > 1
+        if not parse_success:
+            log.error("Failed to parse resource id %s", resource_id)
+
         body = EventCreateRequest(
             title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached. This will prevent log forwarding for this resource.",
             text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings. Enabling log forwarding requires the addition of a DataDog diagnostic setting.",
-            tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
+            tags=[
+                "forwarder:lfo",
+                "subscription_id:" + sub_id,
+                ("resource_type:" + cast(str, parsed_resource["type"])) if parse_success else None,
+                ("resource_provider:" + cast(str, parsed_resource["namespace"])) if parse_success else None,
+            ],
             alert_type="warning",
         )
 
