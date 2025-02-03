@@ -217,6 +217,7 @@ class DiagnosticSettingsTask(Task):
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
                 event_sent_success = await self.send_max_settings_reached_event(sub_id, resource_id)
                 self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
+
             log.warning(
                 "Max number of diagnostic settings reached for resource %s in subscription %s, won't not add another",
                 resource_id,
