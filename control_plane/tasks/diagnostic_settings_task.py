@@ -150,15 +150,19 @@ class DiagnosticSettingsTask(Task):
             tags=["forwarder:lfo", "resource_id:" + resource_id, "subscription_id:" + sub_id],
             alert_type="warning",
         )
+
+        response: EventCreateResponse
         try:
-            response: EventCreateResponse = await self.datadog_events_api.create_event(body)  # type: ignore
-            for error in response.get("errors", []):
-                log.error(f"Error while sending event to Datadog: {error}")
-                return False
-            return True
+            response = await self.datadog_events_api.create_event(body)  # type: ignore
         except Exception as e:
             log.error(f"Error while sending event to Datadog: {e}")
             return False
+
+        for error in response.get("errors", []):
+            log.error(f"Error while sending event to Datadog: {error}")
+            return False
+
+        return True
 
     async def process_resource(
         self,
