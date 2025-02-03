@@ -12,13 +12,13 @@
 #   -y, --yes             Skip all user prompts. This will delete all detected installations without confirmation
 
 import argparse
-from itertools import cycle
 import json
 import subprocess
 from collections import defaultdict
-from collections.abc import Iterable, Callable
+from collections.abc import Callable, Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
+from itertools import cycle
 from logging import INFO, WARNING, basicConfig, getLogger
 from re import search
 from time import sleep
