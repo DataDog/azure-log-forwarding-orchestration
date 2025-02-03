@@ -162,6 +162,7 @@ class DiagnosticSettingsTask(Task):
             log.error(f"Error while sending event to Datadog: {error}")
             return False
 
+        log.info("Sent max diagnostic setting event for resource %s in subscription %s", resource_id, sub_id)
         return True
 
     async def process_resource(
