@@ -151,13 +151,14 @@ class DiagnosticSettingsTask(Task):
             log.error("Failed to parse resource id %s", resource_id)
 
         body = EventCreateRequest(
-            title="Can't add diagnostic setting to resource - maximum number of diagnostic settings reached. This will prevent log forwarding for this resource.",
-            text=f"Resource '{resource_id}' in subscription '{sub_id}' has reached the maximum number of diagnostic settings. Enabling log forwarding requires the addition of a DataDog diagnostic setting.",
+            title=f"Log forwarding disabled for Azure resource {cast(str, parsed_resource['name']) if parse_success else None}",
+            text=f"Log forwarding cannot be enabled for resource '{resource_id}' in subscription '{sub_id}' because it already has the maximum number of diagnostic settings configured. The addition of a DataDog diagnostic setting is necessary for log forwarding.",
             tags=[
                 "forwarder:lfo",
                 "subscription_id:" + sub_id,
                 ("resource_type:" + cast(str, parsed_resource["type"])) if parse_success else None,
                 ("resource_provider:" + cast(str, parsed_resource["namespace"])) if parse_success else None,
+                ("resource_group:" + cast(str, parsed_resource["resource_group"])) if parse_success else None,
             ],
             alert_type="warning",
         )
