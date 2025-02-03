@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # stdlib
 from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from gzip import GzipFile
@@ -152,12 +153,21 @@ def get_logs_from_storage_account(
     )
     blob_list = list(blob_iter)
     log_ids = list()
-    for blob in blob_list:
-        if not filter(blob):
-            continue
-        if blob.creation_time < hours_ago:
-            continue
-        blob_ids = download_blob(blob_service_client, blob.name, container)
+    blob_futures = []
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for blob in blob_list:
+            if not filter(blob):
+                continue
+            if blob.creation_time < hours_ago:
+                continue
+            blob_futures.append(
+                executor.submit(
+                    download_blob, blob_service_client, blob.name, container
+                )
+            )
+
+    for future in blob_futures:
+        blob_ids = future.result()
         log_ids.extend(blob_ids)
     log_ids.sort(key=lambda e: e.timestamp)
     return log_ids
