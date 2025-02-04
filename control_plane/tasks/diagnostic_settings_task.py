@@ -152,7 +152,7 @@ class DiagnosticSettingsTask(Task):
 
         body = EventCreateRequest(
             title=f"Log forwarding disabled for Azure resource {cast(str, parsed_resource['name']) if parse_success else None}",
-            text=f"Log forwarding cannot be enabled for resource '{resource_id}' in subscription '{sub_id}' because it already has the maximum number of diagnostic settings configured. The addition of a DataDog diagnostic setting is necessary for log forwarding.",
+            text=f"Log forwarding cannot be enabled for resource '{resource_id}' because it already has the maximum number of diagnostic settings configured. The addition of a DataDog diagnostic setting is necessary for log forwarding.",
             tags=[
                 "forwarder:lfo",
                 "subscription_id:" + sub_id,
