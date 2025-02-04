@@ -305,11 +305,7 @@ class AuthError(Exception):
 
 
 class RefreshTokenError(Exception):
-    def __init__(self, *args: object) -> None:
-        super().__init__(
-            "Refresh token is expired - can't complete operation. Use interactive login to refresh token if necessary.",
-            *args,
-        )
+    pass
 
 
 def try_regex_access_error(cmd: str, stderr: str):
@@ -415,12 +411,12 @@ def az(cmd: str) -> str:
                     continue
 
                 log.error("Rate limit exceeded. Please wait a few minutes and try again.")
-                raise SystemExit(1) from e
+                raise SystemExit(1) from None
             if REFRESH_TOKEN_EXPIRED_ERROR in stderr:
-                raise RefreshTokenError() from e
+                raise RefreshTokenError(f"Auth token is expired. Refresh token before running '{az_cmd}'") from None
             if AUTHORIZATION_ERROR in stderr:
                 try_regex_access_error(cmd, stderr)
-                raise AuthError(f"Insufficient permissions to access resource when executing '{cmd}'") from e
+                raise AuthError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from None
 
             log.error(f"Error running Azure command:\n{e.stderr}")
             raise
