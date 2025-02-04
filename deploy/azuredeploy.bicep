@@ -7,8 +7,6 @@ param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
 
 @secure()
-param datadogApplicationKey string
-@secure()
 param datadogApiKey string
 param datadogSite string
 
