@@ -15,7 +15,7 @@ resource forwarderResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' 
 
 // assign the resource group level permissions
 module resourceGroupPermissions './resource_group_permissions.bicep' = {
-  name: 'resourceGroupPermissions'
+  name: 'resourceGroupPermissions-${controlPlaneId}'
   scope: forwarderResourceGroup
   params: {
     controlPlaneId: controlPlaneId
