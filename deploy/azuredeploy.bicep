@@ -16,26 +16,6 @@ param imageRegistry string = 'datadoghq.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
-module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
-  name: 'controlPlaneResourceGroup'
-  scope: subscription(controlPlaneSubscriptionId)
-  params: {
-    controlPlaneResourceGroup: controlPlaneResourceGroupName
-    controlPlaneLocation: controlPlaneLocation
-  }
-}
-
-module validateAPIKey './validate_key.bicep' = {
-  name: 'validateAPIKey'
-  scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
-  params: {
-    datadogApiKey: datadogApiKey
-    datadogSite: datadogSite
-  }
-  dependsOn: [
-    controlPlaneResourceGroup
-  ]
-}
 
 // sub-uuid for the control plane is based on the identifiers below.
 // This is to be consistent if there are multiple deploys, while still making a unique id.
@@ -49,8 +29,30 @@ var controlPlaneId = toLower(substring(
   12
 ))
 
+module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
+  name: 'controlPlaneResourceGroup-${controlPlaneId}'
+  scope: subscription(controlPlaneSubscriptionId)
+  params: {
+    controlPlaneResourceGroup: controlPlaneResourceGroupName
+    controlPlaneLocation: controlPlaneLocation
+  }
+}
+
+module validateAPIKey './validate_key.bicep' = {
+  name: 'validateAPIKey-${controlPlaneId}'
+  scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
+  params: {
+    datadogApiKey: datadogApiKey
+    datadogSite: datadogSite
+  }
+  dependsOn: [
+    controlPlaneResourceGroup
+  ]
+}
+
+
 module controlPlane './control_plane.bicep' = {
-  name: 'controlPlane'
+  name: 'controlPlane-${controlPlaneId}'
   scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
   params: {
     controlPlaneId: controlPlaneId
