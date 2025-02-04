@@ -15,8 +15,10 @@ import argparse
 import json
 import subprocess
 from collections import defaultdict
-from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable, Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
+from datetime import datetime
+from itertools import cycle
 from logging import INFO, WARNING, basicConfig, getLogger
 from re import search
 from time import sleep
@@ -277,6 +279,25 @@ def print_progress(current: int, total: int):
         end="\tDone!\n" if is_done else "\r",
         flush=True,
     )
+
+
+SPINNER = cycle(["—", "\\", "|", "/"])
+
+
+def progress_spinner(total: int, current: Callable[[], int]):
+    if total == 0:
+        return
+    while (c := current()) != total:
+        progress = c / total
+        done_bar = int(PROGRESS_BAR_LENGTH * progress)
+        leftover_bar = PROGRESS_BAR_LENGTH - done_bar
+        print(
+            f" {next(SPINNER)} [{'#' * done_bar + '-' * (leftover_bar)}] {c}/{total} ({progress * 100:.0f}%)",
+            end="\r",
+            flush=True,
+        )
+        sleep(0.2)
+    print(f"   [{'#' * PROGRESS_BAR_LENGTH}] {total}/{total} (100%) Done!")
 
 
 def try_regex_access_error(stderr: str):
@@ -581,7 +602,7 @@ def delete_roles_diag_settings(
     log.info(dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log)
 
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
-        futures = []
+        futures: list[Future[None]] = []
         for sub_id, role_assignments_json in sub_role_assignment_deletions.items():
             if role_assignments_json:
                 futures.append(tpe.submit(delete_role_assignments, sub_id, role_assignments_json))
@@ -590,11 +611,7 @@ def delete_roles_diag_settings(
                 for ds_name in ds_names:
                     futures.append(tpe.submit(delete_diagnostic_setting, sub_id, resource_id, ds_name))
 
-    num_completed = 0
-    print_progress(num_completed, len(futures))
-    for _ in as_completed(futures):
-        num_completed += 1
-        print_progress(num_completed, len(futures))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
 
 def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
@@ -624,16 +641,22 @@ def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
         for rg in rg_list:
             total_resource_count += num_resources_in_group(sub_id, rg)
 
-    while True:
-        leftover_resource_count = 0
-        for sub_id, rg_list in sub_to_rg_deletions.items():
-            for rg in rg_list:
-                leftover_resource_count += num_resources_in_group(sub_id, rg)
-        deleted_resource_count = total_resource_count - leftover_resource_count
-        print_progress(deleted_resource_count, total_resource_count)
-        if leftover_resource_count == 0:
-            break
-        sleep(RESOURCE_GROUP_DELETION_POLLING_DELAY)
+    num_resources = [total_resource_count]
+    last_check = [datetime.now()]
+
+    def current_resources_left():
+        if (datetime.now() - last_check[0]).total_seconds() > RESOURCE_GROUP_DELETION_POLLING_DELAY:
+            last_check[0] = datetime.now()
+            with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+                futures = [
+                    tpe.submit(num_resources_in_group, sub_id, rg)
+                    for sub_id, rg_list in sub_to_rg_deletions.items()
+                    for rg in rg_list
+                ]
+            num_resources[0] = sum(f.result() for f in futures)
+        return total_resource_count - num_resources[0]
+
+    progress_spinner(total_resource_count, current_resources_left)
 
 
 # ===== User Interaction =====  #
