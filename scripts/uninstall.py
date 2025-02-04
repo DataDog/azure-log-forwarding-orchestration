@@ -300,7 +300,15 @@ def progress_spinner(total: int, current: Callable[[], int]):
     print(f"   [{'#' * PROGRESS_BAR_LENGTH}] {total}/{total} (100%) Done!")
 
 
-def try_regex_access_error(stderr: str):
+class AuthError(Exception):
+    pass
+
+
+class RefreshTokenError(Exception):
+    pass
+
+
+def try_regex_access_error(cmd: str, stderr: str):
     # Sample:
     # (AuthorizationFailed) The client 'ava.silver@devdatadoghq.onmicrosoft.com' with object id '5d1aa0c9-69bb-4617-b025-915ad02ac8b8'
     # does not have authorization to perform action 'Microsoft.Storage/storageAccounts/read'
@@ -315,8 +323,7 @@ def try_regex_access_error(stderr: str):
         client = client_match.group(1)
         action = action_match.group(1)
         scope = scope_match.group(1)
-        log.warning(f"Insufficient permissions for {client} to perform {action} on {scope}")
-        raise
+        raise AuthError(f"Insufficient permissions for {client} to perform {action} on {scope}")
 
 
 # ===== Artifact Deletion Summaries ===== #
@@ -404,16 +411,12 @@ def az(cmd: str) -> str:
                     continue
 
                 log.error("Rate limit exceeded. Please wait a few minutes and try again.")
-                raise SystemExit(1) from e
+                raise SystemExit(1) from None
             if REFRESH_TOKEN_EXPIRED_ERROR in stderr:
-                log.warning(
-                    "Refresh token is expired - can't complete operation. Use interactive login to refresh token if necessary."
-                )
-                raise
+                raise RefreshTokenError(f"Auth token is expired. Refresh token before running '{az_cmd}'") from None
             if AUTHORIZATION_ERROR in stderr:
-                try_regex_access_error(stderr)  # logs and raises if it finds match
-                log.warning(f"Insufficient permissions to access resource when executing '{cmd}'")
-                raise
+                try_regex_access_error(cmd, stderr)
+                raise AuthError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from None
 
             log.error(f"Error running Azure command:\n{e.stderr}")
             raise
@@ -476,49 +479,46 @@ def num_resources_in_group(sub_id: str, resource_group: str) -> int:
 def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     """Queries for LFO control planes in single subscription, returns mapping of resource group name to control plane storage account name"""
 
-    log.info(f"Searching for Datadog log forwarding instance in subscription '{sub_name}' ({sub_id})... ")
-    lfo_install_map = {}
-    print_progress(0, 1)
+    log.debug("Searching for Datadog log forwarding instance in subscription '%s' (%s)... ", sub_name, sub_id)
     cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
 
     try:
         storage_accounts_json = json.loads(az(cmd))
         lfo_install_map = {account["resourceGroup"]: account["name"] for account in storage_accounts_json}
-    except subprocess.CalledProcessError as e:
-        print_progress(1, 1)
-        if REFRESH_TOKEN_EXPIRED_ERROR in e.stderr:
-            log.warning(
-                f"Ran into authentication token error searching {sub_name} ({sub_id}) - excluding it from search results."
-            )
-            return {}
-        if AUTHORIZATION_ERROR in e.stderr:
-            log.warning(
-                f"Ran into authorization error searching {sub_name} ({sub_id}) - excluding it from search results."
-            )
-            return {}
-        raise
-
-    print_progress(1, 1)
-    print(f"Found {len(lfo_install_map)} log forwarding instance(s)")
-
-    return lfo_install_map
+        log.debug("Found %s log forwarding instance(s)", len(lfo_install_map))
+        return lfo_install_map
+    except RefreshTokenError as e:
+        log.warning(
+            f"Ran into authentication token error searching {sub_name} ({sub_id}) - excluding it from search results. Refresh your credentials if necessary."
+        )
+        log.debug("Authentication Error details for %s (%s)", sub_name, sub_id, exc_info=e)
+        return {}
+    except AuthError as e:
+        log.warning(f"Ran into authorization error searching {sub_name} ({sub_id}) - excluding it from search results.")
+        log.debug("Authorization Error details for %s (%s)", sub_name, sub_id, exc_info=e)
+        return {}
 
 
 def find_all_control_planes(
-    sub_id_to_name: dict,
+    sub_id_to_name: dict[str, str],
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """
     Queries for all LFO control planes that the user has access to.
     Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to control plane ID mapping
     """
 
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+        futures = [tpe.submit(find_sub_control_planes, sub_id, sub_name) for sub_id, sub_name in sub_id_to_name.items()]
+        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+
     sub_to_rg = defaultdict(list)
     rg_to_lfo_id = defaultdict(list)
-
-    for sub_id, sub_name in sub_id_to_name.items():
-        control_planes = find_sub_control_planes(sub_id, sub_name)
-        if not control_planes:
+    for control_planes_future, sub_id in zip(futures, sub_id_to_name, strict=True):
+        if e := control_planes_future.exception():
+            log.error(f"Unexpected error searching for control planes in {sub_id_to_name[sub_id]} ({sub_id}): {e}")
             continue
+
+        control_planes = control_planes_future.result()
 
         for resource_group_name, storage_account_name in control_planes.items():
             sub_to_rg[sub_id].append(resource_group_name)
@@ -571,13 +571,18 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
     log.info(f"Looking for DataDog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
     ds_count = 0
     diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
-    for i, resource_id in enumerate(resource_ids, start=1):
-        print_progress(i, resource_count)
-        ds_names = json.loads(
-            az(
-                f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"'
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+        ds_futures = [
+            tpe.submit(
+                az,
+                f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"',
             )
-        )
+            for resource_id in resource_ids
+        ]
+        progress_spinner(resource_count, lambda: sum(not f.running() for f in ds_futures))
+
+    for resource_id, ds_future in zip(resource_ids, ds_futures, strict=True):
+        ds_names = json.loads(ds_future.result())
         for ds_name in ds_names:
             resource_ds_map[resource_id].append(ds_name)
             ds_count += 1
@@ -611,7 +616,7 @@ def delete_roles_diag_settings(
                 for ds_name in ds_names:
                     futures.append(tpe.submit(delete_diagnostic_setting, sub_id, resource_id, ds_name))
 
-        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
+        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
 
 
 def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
