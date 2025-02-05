@@ -35,7 +35,8 @@ def get_error_telemetry(
     exc_type, exc, tb = exc_info
     if exc_type:
         telemetry["exception"] = exc_type.__name__
-    telemetry["exc_info"] = "".join(format_exception(exc_type, value=exc, tb=tb, limit=20))
+    if exc_type or exc or tb:
+        telemetry["exc_info"] = "".join(format_exception(exc_type, value=exc, tb=tb, limit=20))
     return telemetry
 
 
@@ -86,6 +87,7 @@ class Task(AbstractAsyncContextManager["Task"]):
             await self.write_caches()
         await self.credential.__aexit__(exc_type, exc_value, traceback)
         await submit_telemetry
+        await self._datadog_client.__aexit__(exc_type, exc_value, traceback)
 
     @abstractmethod
     async def write_caches(self) -> None: ...

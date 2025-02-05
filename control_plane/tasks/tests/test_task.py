@@ -1,8 +1,11 @@
 # stdlib
+from logging import INFO, basicConfig
 from unittest import TestCase
+from unittest.mock import AsyncMock, patch
 
 # project
-from tasks.task import get_error_telemetry
+from tasks.task import Task, get_error_telemetry
+from tasks.tests.common import AsyncMockClient, TaskTestCase
 
 
 class TestGetErrorTelemetry(TestCase):
@@ -30,3 +33,69 @@ class TestGetErrorTelemetry(TestCase):
             telemetry = get_error_telemetry(exc_info)
             self.assertEqual(telemetry["exception"], "CustomError")
             self.assertIn("CustomError: custom error occurred", telemetry["exc_info"])
+
+
+class DummyTask(Task):
+    NAME = "dummy_task"
+
+    async def run(self):
+        self.log.error("Hello World")
+
+    async def write_caches(self):
+        pass
+
+
+class TestTask(TaskTestCase):
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        self.cred = self.patch_path("tasks.task.DefaultAzureCredential").return_value
+        self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
+        self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
+        basicConfig(level=INFO)
+
+    @patch.dict("tasks.task.environ", {"DD_TELEMETRY": "false", "DD_API_KEY": "123"}, clear=True)
+    async def test_task_logging_disabled(self):
+        task = DummyTask()
+        self.assertFalse(task.telemetry_enabled)
+        self.assertEqual(task._logs, [])
+        self.assertEqual(task.dd_tags, "forwarder:lfocontrolplane,task:dummy_task,control_plane_id:unknown")
+        async with task:
+            await task.run()
+            self.assertEqual(task._logs, [])
+        task._logs_client.submit_log.assert_not_awaited()  # type: ignore
+        task._datadog_client.__aenter__.assert_called_once_with()  # type: ignore
+        task._datadog_client.__aexit__.assert_called_once_with(None, None, None)  # type: ignore
+        task._logs_client.submit_log.assert_not_called()  # type: ignore
+        self.assertEqual(task._logs, [])
+
+    @patch.dict("tasks.task.environ", {}, clear=True)
+    async def test_task_logging_not_specified_is_disabled(self):
+        task = DummyTask()
+        self.assertFalse(task.telemetry_enabled)
+        self.assertEqual(task._logs, [])
+        self.assertEqual(task.dd_tags, "forwarder:lfocontrolplane,task:dummy_task,control_plane_id:unknown")
+        async with task:
+            await task.run()
+            self.assertEqual(task._logs, [])
+        task._logs_client.submit_log.assert_not_awaited()  # type: ignore
+        task._datadog_client.__aenter__.assert_called_once_with()  # type: ignore
+        task._datadog_client.__aexit__.assert_called_once_with(None, None, None)  # type: ignore
+        task._logs_client.submit_log.assert_not_called()  # type: ignore
+        self.assertEqual(task._logs, [])
+
+    @patch.dict(
+        "tasks.task.environ", {"DD_TELEMETRY": "true", "DD_API_KEY": "123", "CONTROL_PLANE_ID": "456"}, clear=True
+    )
+    async def test_task_logging_enabled(self):
+        task = DummyTask()
+        self.assertTrue(task.telemetry_enabled)
+        self.assertEqual(task._logs, [])
+        self.assertEqual(task.dd_tags, "forwarder:lfocontrolplane,task:dummy_task,control_plane_id:456")
+        async with task:
+            await task.run()
+            self.assertEqual(len(task._logs), 1)
+            self.assertEqual(task._logs[0].message, "Hello World")
+        task._logs_client.submit_log.assert_awaited_once()  # type: ignore
+        task._datadog_client.__aenter__.assert_called_once_with()  # type: ignore
+        task._datadog_client.__aexit__.assert_called_once_with(None, None, None)  # type: ignore
+        self.assertEqual(task._logs, [])
