@@ -45,9 +45,8 @@ class Task(AbstractAsyncContextManager["Task"]):
 
         # Telemetry Logic
         self.execution_id = str(uuid4())
-        tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}"]
-        if control_plane_id := environ.get(CONTROL_PLANE_ID_SETTING):
-            tags.append(f"control_plane_id:{control_plane_id}")
+        self.control_plane_id = environ.get(CONTROL_PLANE_ID_SETTING, "unknown")
+        tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}", f"control_plane_id:{self.control_plane_id}"]
         self.dd_tags = ",".join(tags)
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
@@ -91,6 +90,7 @@ class Task(AbstractAsyncContextManager["Task"]):
                 lineno=str(record.lineno),
                 execution_id=self.execution_id,
                 funcname=record.funcName,
+                control_plane_id=self.control_plane_id,
                 **({"exc_info": str(record.exc_info)} if record.exc_info else {}),
             )
             for record in self._logs
