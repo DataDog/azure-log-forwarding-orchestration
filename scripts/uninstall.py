@@ -513,7 +513,7 @@ def find_all_control_planes(
 
     sub_to_rg = defaultdict(list)
     rg_to_lfo_id = defaultdict(list)
-    for control_planes_future, sub_id in zip(futures, sub_id_to_name, strict=True):
+    for control_planes_future, sub_id in zip(futures, sub_id_to_name):
         if e := control_planes_future.exception():
             log.error(f"Unexpected error searching for control planes in {sub_id_to_name[sub_id]} ({sub_id}): {e}")
             continue
@@ -581,7 +581,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
         ]
         progress_spinner(resource_count, lambda: sum(not f.running() for f in ds_futures))
 
-    for resource_id, ds_future in zip(resource_ids, ds_futures, strict=True):
+    for resource_id, ds_future in zip(resource_ids, ds_futures):
         ds_names = json.loads(ds_future.result())
         for ds_name in ds_names:
             resource_ds_map[resource_id].append(ds_name)
