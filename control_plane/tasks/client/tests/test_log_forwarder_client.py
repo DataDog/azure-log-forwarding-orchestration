@@ -51,7 +51,7 @@ STORAGE_ACCOUNT_NAME = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{CONFIG_ID1}"
 RESOURCE_GROUP_NAME = "test_lfo"
 
 
-containerAppSettings: dict[str, str] = {
+LOG_FORWARDER_CLIENT_SETTINGS: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
     "DD_API_KEY": "123123",
     "DD_APP_KEY": "456456",
@@ -86,7 +86,7 @@ class MockedLogForwarderClient(LogForwarderClient):
 
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
-        p = patch.dict(environ, containerAppSettings, clear=True)
+        p = patch.dict(environ, LOG_FORWARDER_CLIENT_SETTINGS, clear=True)
         p.start()
         self.addCleanup(p.stop)
         self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore

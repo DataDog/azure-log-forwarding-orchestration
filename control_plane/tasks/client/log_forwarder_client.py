@@ -4,7 +4,6 @@ from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import getLogger
-from os import environ
 from types import TracebackType
 from typing import Any, Self, TypeAlias, TypeVar, cast
 
@@ -70,9 +69,11 @@ from cache.env import (
     DD_API_KEY_SECRET,
     DD_API_KEY_SETTING,
     DD_SITE_SETTING,
+    DD_TELEMETRY_SETTING,
     FORWARDER_IMAGE_SETTING,
     STORAGE_CONNECTION_SETTING,
     get_config_option,
+    is_truthy,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
@@ -132,7 +133,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.dd_site = get_config_option(DD_SITE_SETTING)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
-        self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
+        self.should_submit_metrics = is_truthy(DD_TELEMETRY_SETTING)
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
