@@ -77,7 +77,7 @@ select = [
     "SIM", # flake8-simplify
     "I",   # isort
 ]
-ignore = ["E501"]
+ignore = ["E501", "B905"]
 
 [tool.ruff.format]
 quote-style = "double"
