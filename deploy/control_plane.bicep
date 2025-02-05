@@ -85,6 +85,8 @@ var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAcco
 
 var commonAppSettings = [
   { name: STORAGE_CONNECTION_SETTING, value: connectionString }
+  { name: DD_API_KEY_SETTING, value: datadogApiKey }
+  { name: DD_SITE_SETTING, value: datadogSite }
   { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
   { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
   { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
@@ -151,9 +153,7 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
         { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: FORWARDER_IMAGE_SETTING, value: forwarderImage }
-        { name: DD_API_KEY_SETTING, value: datadogApiKey }
         { name: DD_APP_KEY_SETTING, value: datadogApplicationKey }
-        { name: DD_SITE_SETTING, value: datadogSite }
         { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
         { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
       ])
