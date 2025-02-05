@@ -20,6 +20,7 @@ from cache.env import DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, is_truthy
 log = getLogger(__name__)
 
 LOG_FMT = "%(asctime)s %(levelname)s [%(name)s][%(filename)s:%(lineno)d] %(message)s"
+DD_TAGS = ["forwarder:lfocontrolplane"]
 
 
 class ListHandler(Handler):
@@ -73,10 +74,9 @@ class Task(AbstractAsyncContextManager["Task"]):
             HTTPLogItem(
                 message=message,
                 ddsource="azure",
-                ddtags=["forwarder:lfocontrolplane"],
                 service="lfo",
             )
             for message in self._logs
         ]
         self._logs.clear()
-        await self._logs_client.submit_log(HTTPLog(value=dd_logs))  # type: ignore
+        await self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=DD_TAGS)  # type: ignore
