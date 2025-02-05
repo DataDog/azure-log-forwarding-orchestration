@@ -2,10 +2,12 @@
 from abc import abstractmethod
 from asyncio import create_task, gather
 from contextlib import AbstractAsyncContextManager
-from logging import ERROR, Formatter, Handler, LogRecord, getLogger
+from datetime import UTC, datetime
+from logging import ERROR, Handler, LogRecord, getLogger
 from os import environ
 from types import TracebackType
 from typing import Self
+from uuid import uuid4
 
 # 3p
 from azure.identity.aio import DefaultAzureCredential
@@ -22,19 +24,17 @@ log = getLogger(__name__)
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-LOG_FMT = "%(asctime)s %(levelname)s [%(name)s][%(filename)s:%(lineno)d] %(message)s"
-
 
 class ListHandler(Handler):
     """A logging handler that appends log messages to a list"""
 
-    def __init__(self, logs: list[str]):
+    def __init__(self, logs: list[LogRecord]):
         super().__init__()
         self.log_list = logs
-        self.setFormatter(Formatter(LOG_FMT))
 
     def emit(self, record: LogRecord) -> None:
-        self.log_list.append(self.format(record))
+        record.asctime = datetime.now(UTC).isoformat()
+        self.log_list.append(record)
 
 
 class Task(AbstractAsyncContextManager["Task"]):
@@ -44,13 +44,14 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.credential = DefaultAzureCredential()
 
         # Telemetry Logic
+        self.execution_id = str(uuid4())
         tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}"]
         if control_plane_id := environ.get(CONTROL_PLANE_ID_SETTING):
             tags.append(f"control_plane_id:{control_plane_id}")
         self.dd_tags = ",".join(tags)
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
-        self._logs: list[str] = []
+        self._logs: list[LogRecord] = []
         self._datadog_client = AsyncApiClient(Configuration())
         self._logs_client = LogsApi(self._datadog_client)
         if self.telemetry_enabled:
@@ -81,11 +82,18 @@ class Task(AbstractAsyncContextManager["Task"]):
             return
         dd_logs = [
             HTTPLogItem(
-                message=message,
+                message=record.message,
                 ddsource="azure",
                 service="lfo",
+                time=record.asctime,
+                level=record.levelname,
+                filename=record.filename,
+                lineno=str(record.lineno),
+                execution_id=self.execution_id,
+                funcname=record.funcName,
+                **({"exc_info": str(record.exc_info)} if record.exc_info else {}),
             )
-            for message in self._logs
+            for record in self._logs
         ]
         self._logs.clear()
         await self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=self.dd_tags)  # type: ignore
