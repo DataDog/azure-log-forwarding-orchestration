@@ -2,7 +2,7 @@
 from abc import abstractmethod
 from asyncio import create_task, gather
 from contextlib import AbstractAsyncContextManager
-from logging import Formatter, Handler, LogRecord, getLogger
+from logging import ERROR, Formatter, Handler, LogRecord, getLogger
 from os import environ
 from types import TracebackType
 from typing import Self
@@ -18,6 +18,9 @@ from datadog_api_client.v2.model.http_log_item import HTTPLogItem
 from cache.env import CONTROL_PLANE_ID_SETTING, DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, is_truthy
 
 log = getLogger(__name__)
+
+# silence azure logging except for errors
+getLogger("azure").setLevel(ERROR)
 
 LOG_FMT = "%(asctime)s %(levelname)s [%(name)s][%(filename)s:%(lineno)d] %(message)s"
 
