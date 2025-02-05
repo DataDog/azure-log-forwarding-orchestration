@@ -1,5 +1,6 @@
 # stdlib
 from unittest import IsolatedAsyncioTestCase
+from unittest.mock import Mock
 
 # project
 from tasks.concurrency import collect, create_task_from_awaitable, safe_collect
@@ -48,7 +49,7 @@ class TestSafeCollect(IsolatedAsyncioTestCase):
             for i in range(3):
                 yield i
 
-        result = await safe_collect(async_gen())
+        result = await safe_collect(async_gen(), Mock())
         self.assertEqual(result, [0, 1, 2])
 
     async def test_safe_collect_empty(self):
@@ -56,14 +57,18 @@ class TestSafeCollect(IsolatedAsyncioTestCase):
             if False:
                 yield
 
-        result = await safe_collect(async_gen())
+        result = await safe_collect(async_gen(), Mock())
         self.assertEqual(result, [])
 
     async def test_safe_collect_with_exception(self):
+        err = ValueError("oops")
+
         async def async_gen():
             yield 1
-            raise ValueError("oops")
+            raise err
             yield 2
 
-        result = await safe_collect(async_gen())
+        log = Mock()
+        result = await safe_collect(async_gen(), log)
         self.assertEqual(result, [1])
+        log.warning.assert_called_once_with("Ignored error while collecting async iterable: %s", err)
