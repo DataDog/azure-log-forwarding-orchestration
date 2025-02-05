@@ -5,6 +5,7 @@ from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from logging import ERROR, Handler, LogRecord, getLogger
 from os import environ
+from traceback import format_tb
 from types import TracebackType
 from typing import Self
 from uuid import uuid4
@@ -23,6 +24,20 @@ log = getLogger(__name__)
 
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
+
+
+def get_error_telemetry(
+    exc_info: tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None] | None,
+) -> dict[str, str]:
+    telemetry = {}
+    if not exc_info:
+        return telemetry
+    exc_type, _, tb = exc_info
+    if exc_type:
+        telemetry["exception"] = exc_type.__name__
+    if tb:
+        telemetry["exc_info"] = "\n".join(format_tb(tb, limit=20))
+    return telemetry
 
 
 class ListHandler(Handler):
@@ -91,7 +106,7 @@ class Task(AbstractAsyncContextManager["Task"]):
                 execution_id=self.execution_id,
                 funcname=record.funcName,
                 control_plane_id=self.control_plane_id,
-                **({"exc_info": str(record.exc_info)} if record.exc_info else {}),
+                **get_error_telemetry(record.exc_info),
             )
             for record in self._logs
         ]
