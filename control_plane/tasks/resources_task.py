@@ -23,8 +23,6 @@ from tasks.task import Task
 
 RESOURCES_TASK_NAME = "resources_task"
 
-log = getLogger(RESOURCES_TASK_NAME)
-
 
 class ResourcesTask(Task):
     def __init__(self, resource_cache_state: str) -> None:
@@ -32,7 +30,7 @@ class ResourcesTask(Task):
         self.monitored_subscriptions = deserialize_monitored_subscriptions(getenv("MONITORED_SUBSCRIPTIONS") or "")
         resource_cache = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
-            log.warning("Resource Cache is in an invalid format, task will reset the cache")
+            self.log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}
         self._resource_cache_initial_state = resource_cache
 
@@ -45,12 +43,12 @@ class ResourcesTask(Task):
                 cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
             ]
 
-        log.info("Found %s subscriptions", len(subscriptions))
+        self.log.info("Found %s subscriptions", len(subscriptions))
 
         if self.monitored_subscriptions is not None:
             all_subscription_count = len(subscriptions)
             subscriptions = [sub for sub in subscriptions if sub in self.monitored_subscriptions]
-            log.info(
+            self.log.info(
                 "Filtered %s subscriptions down to the monitored subscriptions list (%s subscriptions)",
                 all_subscription_count,
                 len(subscriptions),
@@ -59,8 +57,8 @@ class ResourcesTask(Task):
         await gather(*map(self.process_subscription, subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
-        log.debug("Processing the following subscription: %s", subscription_id)
-        async with ResourceClient(self.credential, subscription_id) as client:
+        self.log.debug("Processing the following subscription: %s", subscription_id)
+        async with ResourceClient(self.log, self.credential, subscription_id) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 
     async def write_caches(self) -> None:
@@ -73,13 +71,13 @@ class ResourcesTask(Task):
         )
 
         if self.resource_cache == self._resource_cache_initial_state:
-            log.info("Resources have not changed, no update needed to %s resources", resources_count)
+            self.log.info("Resources have not changed, no update needed to %s resources", resources_count)
             return
 
         # since sets cannot be json serialized, we convert them to lists before storing
         await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
 
-        log.info(
+        self.log.info(
             "Updated Resources, monitoring %s resources stored in the cache across %s regions across %s subscriptions",
             resources_count,
             region_count,
@@ -89,6 +87,7 @@ class ResourcesTask(Task):
 
 async def main() -> None:
     basicConfig(level=INFO)
+    log = getLogger(RESOURCES_TASK_NAME)
     log.info("Started task at %s", now())
     resources_cache_state = await read_cache(RESOURCE_CACHE_BLOB)
     async with ResourcesTask(resources_cache_state) as task:
