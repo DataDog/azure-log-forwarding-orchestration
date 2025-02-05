@@ -44,15 +44,17 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.credential = DefaultAzureCredential()
 
         # Telemetry Logic
-        self.dd_tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}"]
+        tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}"]
         if control_plane_id := environ.get(CONTROL_PLANE_ID_SETTING):
-            self.dd_tags.append(f"control_plane_id:{control_plane_id}")
+            tags.append(f"control_plane_id:{control_plane_id}")
+        self.dd_tags = ",".join(tags)
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[str] = []
         self._datadog_client = AsyncApiClient(Configuration())
         self._logs_client = LogsApi(self._datadog_client)
         if self.telemetry_enabled:
+            log.info("Telemetry enabled, will submit logs for %s", self.NAME)
             self.log.addHandler(ListHandler(self._logs))
 
     @abstractmethod
