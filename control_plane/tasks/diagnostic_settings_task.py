@@ -3,7 +3,8 @@ from asyncio import gather, run
 from json import dumps
 from logging import ERROR, INFO, basicConfig, getLogger
 from random import shuffle
-from typing import NamedTuple, cast
+from types import TracebackType
+from typing import NamedTuple, Self, cast
 
 # 3p
 from azure.core.exceptions import HttpResponseError
@@ -108,7 +109,19 @@ class DiagnosticSettingsTask(Task):
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
         self.event_cache = event_cache
-        self.datadog_events_api = EventsApi(AsyncApiClient(Configuration(request_timeout=DD_REQUEST_TIMEOUT)))
+        self._datadog_client = AsyncApiClient(Configuration(request_timeout=DD_REQUEST_TIMEOUT))
+        self.events_api = EventsApi(self._datadog_client)
+
+    async def __aenter__(self) -> Self:
+        await super().__aenter__()
+        await self._datadog_client.__aenter__()
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> None:
+        await self._datadog_client.__aexit__(exc_type, exc_val, exc_tb)
+        await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
         log.info("Processing %s subscriptions", len(self.assignment_cache))
@@ -165,13 +178,13 @@ class DiagnosticSettingsTask(Task):
 
         response: EventCreateResponse
         try:
-            response = await self.datadog_events_api.create_event(body)  # type: ignore
+            response = await self.events_api.create_event(body)  # type: ignore
         except Exception as e:
             log.error(f"Error while sending event to Datadog: {e}")
             return False
 
-        for error in response.get("errors", []):
-            log.error(f"Error while sending event to Datadog: {error}")
+        if errors := response.get("errors", []):
+            log.error(f"Error(s) while sending event to Datadog: {errors}")
             return False
 
         log.info("Sent max diagnostic setting event for resource %s in subscription %s", resource_id, sub_id)
@@ -202,7 +215,6 @@ class DiagnosticSettingsTask(Task):
         )
 
         num_diag_settings = len(current_diagnostic_settings)
-        new_setting_to_add = current_setting is None
 
         if (
             current_setting
@@ -212,7 +224,9 @@ class DiagnosticSettingsTask(Task):
         ):
             return  # current diagnostic setting is correctly configured
 
-        self.update_event_cache(sub_id, resource_id, num_diag_settings)
+        self.event_cache.setdefault(sub_id, {}).setdefault(
+            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
+        )
 
         if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
@@ -235,13 +249,9 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
+        new_setting_to_add = current_setting is None
         if new_setting_to_add and success:
             self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
-
-    def update_event_cache(self, sub_id: str, resource_id: str, num_diag_settings: int) -> None:
-        self.event_cache.setdefault(sub_id, {}).setdefault(
-            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
-        )
 
     async def create_or_update_diagnostic_setting(
         self,

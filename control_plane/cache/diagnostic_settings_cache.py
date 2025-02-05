@@ -14,9 +14,7 @@ class EventDict(TypedDict):
     sent_event: bool
 
 
-ResourceDict: TypeAlias = dict[str, EventDict]
-
-DiagnosticSettingsCache: TypeAlias = dict[str, ResourceDict]
+DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, EventDict]]
 """
 ex) 
 {
@@ -31,15 +29,18 @@ ex)
 }
 """
 
-
 SETTINGS_EVENT_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "propertyNames": {"format": "uuid"},
+    "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
-        "type": "object",
+        "type": "object",  # resource_id
         "additionalProperties": {
             "type": "object",
-            "additionalProperties": {"type": ["integer", "boolean"]},
+            "properties": {
+                "diagnostic_settings_count": {"type": "integer"},
+                "sent_event": {"type": "boolean"},
+            },
+            "required": ["diagnostic_settings_count", "sent_event"],
         },
     },
 }
