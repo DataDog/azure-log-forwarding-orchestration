@@ -20,6 +20,8 @@ param datadogApplicationKey string
 @description('Datadog Site')
 param datadogSite string
 
+param datadogTelemetry bool
+
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
 var forwarderImage = '${imageRegistry}/forwarder:latest'
 
@@ -28,6 +30,7 @@ var STORAGE_CONNECTION_SETTING = 'AzureWebJobsStorage'
 var DD_SITE_SETTING = 'DD_SITE'
 var DD_API_KEY_SETTING = 'DD_API_KEY'
 var DD_APP_KEY_SETTING = 'DD_APP_KEY'
+var DD_TELEMETRY_SETTING = 'DD_TELEMETRY'
 var FORWARDER_IMAGE_SETTING = 'FORWARDER_IMAGE'
 var SUBSCRIPTION_ID_SETTING = 'SUBSCRIPTION_ID'
 var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
@@ -87,6 +90,7 @@ var commonAppSettings = [
   { name: STORAGE_CONNECTION_SETTING, value: connectionString }
   { name: DD_API_KEY_SETTING, value: datadogApiKey }
   { name: DD_SITE_SETTING, value: datadogSite }
+  { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
   { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
   { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
   { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
