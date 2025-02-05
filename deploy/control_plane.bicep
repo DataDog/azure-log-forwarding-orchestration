@@ -215,6 +215,7 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: DD_API_KEY_SETTING, secretRef: DD_API_KEY_SECRET }
             { name: DD_APP_KEY_SETTING, secretRef: DD_APP_KEY_SECRET }
             { name: DD_SITE_SETTING, value: datadogSite }
+            { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
             { name: STORAGE_ACCOUNT_URL_SETTING, value: storageAccountUrl }
           ]
         }
