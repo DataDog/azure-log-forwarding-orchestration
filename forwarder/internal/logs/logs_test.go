@@ -19,9 +19,9 @@ import (
 	"go.uber.org/mock/gomock"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
 func azureTimestamp(t time.Time) string {
@@ -34,6 +34,8 @@ func getLogWithContent(content string, delay time.Duration) []byte {
 }
 
 const functionAppContainer = "insights-logs-functionapplogs"
+const controlPlaneId = "9b008b0cc1ab"
+const configId = "8e0ce1e1e048"
 
 func MockLogger() (*log.Entry, *bytes.Buffer) {
 	var output []byte
@@ -41,6 +43,18 @@ func MockLogger() (*log.Entry, *bytes.Buffer) {
 	logger := log.New()
 	logger.SetOutput(buffer)
 	return log.NewEntry(logger), buffer
+}
+
+func TestMain(m *testing.M) {
+	os.Setenv(environment.CONTROL_PLANE_ID, controlPlaneId)
+	os.Setenv(environment.CONFIG_ID, configId)
+
+	code := m.Run()
+
+	os.Unsetenv(environment.CONTROL_PLANE_ID)
+	os.Unsetenv(environment.CONFIG_ID)
+
+	os.Exit(code)
 }
 
 func TestAddLog(t *testing.T) {
@@ -84,12 +98,6 @@ func TestAddLog(t *testing.T) {
 }
 
 var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
-
-var validBlob = storage.Blob{
-	Container:     storage.Container{Name: functionAppContainer},
-	Name:          "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING/y=2024/m=10/d=28/h=16/m=00/PT1H.json",
-	ContentLength: int64(len(validLog)),
-}
 
 func TestNewLog(t *testing.T) {
 	t.Parallel()
@@ -142,6 +150,27 @@ func TestNewLog(t *testing.T) {
 		assert.Contains(t, log.Tags, "forwarder:lfo")
 		assert.NotNil(t, log)
 
+	})
+
+	t.Run("applies correct tags", func(t *testing.T) {
+		t.Parallel()
+
+		// GIVEN
+
+		// WHEN
+		log, err := logs.NewLog(validLog, functionAppContainer)
+
+		// THEN
+		assert.NoError(t, err)
+		assert.Equal(t, log.ResourceId, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING")
+		assert.Equal(t, "FunctionAppLogs", log.Category)
+		assert.Contains(t, log.Tags, "forwarder:lfo")
+		assert.Contains(t, log.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
+		assert.Contains(t, log.Tags, "source:azure.web.sites")
+		assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
+		assert.Contains(t, log.Tags, fmt.Sprintf("control_plane_id:%s", controlPlaneId))
+		assert.Contains(t, log.Tags, fmt.Sprintf("config_id:%s", configId))
+		assert.NotNil(t, log)
 	})
 
 	t.Run("returns custom error on incomplete json for standard logs", func(t *testing.T) {

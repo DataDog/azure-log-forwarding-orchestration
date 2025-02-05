@@ -221,7 +221,7 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 }
 
 func sourceTag(source string) string {
-	sourceTag := strings.Replace(source, "/", ".", -1)
+	sourceTag := strings.ToLower(strings.Replace(source, "/", ".", -1))
 	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
 }
 
