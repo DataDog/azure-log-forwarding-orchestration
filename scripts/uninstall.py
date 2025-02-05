@@ -2,7 +2,7 @@
 
 # usage: uninstall.py [-h] [-d] [-s SUBSCRIPTION] [-y]
 #
-# Uninstall DataDog Log Forwarding Orchestration from an Azure environment
+# Uninstall Datadog Log Forwarding Orchestration from an Azure environment
 #
 # optional arguments:
 #   -h, --help            show this help message and exit
@@ -532,7 +532,7 @@ def find_all_control_planes(
 def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> list[dict[str, str]]:
     """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
 
-    log.info(f"Looking for DataDog role assignments in {sub_name} ({sub_id})... ")
+    log.info(f"Looking for Datadog role assignments in {sub_name} ({sub_id})... ")
 
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
     role_assignment_json = json.loads(
@@ -568,7 +568,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
     if not resource_ids:
         return resource_ds_map
 
-    log.info(f"Looking for DataDog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
+    log.info(f"Looking for Datadog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
     ds_count = 0
     diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
@@ -738,7 +738,7 @@ def mark_rg_deletions_per_sub(
 
     sub_id_to_rg_deletions = {}
     if not sub_id_to_rgs:
-        log.info("Did not find any DataDog log forwarding installations")
+        log.info("Did not find any Datadog log forwarding installations")
         return sub_id_to_rg_deletions
 
     if len(sub_id_to_rgs) == 1:
@@ -802,7 +802,7 @@ def mark_diagnostic_setting_deletions(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Uninstall DataDog Log Forwarding Orchestration from an Azure environment"
+        description="Uninstall Datadog Log Forwarding Orchestration from an Azure environment"
     )
     parser.add_argument(
         "-d",
@@ -834,7 +834,7 @@ def parse_args():
             "Deletion of resource groups (& ALL resources within), role assignments, and diagnostic settings will occur as a result of the uninstall process."
         )
         log.warning(
-            "If you have created any Azure resources in resource groups managed by DataDog log forwarding, they will be deleted. Perform backups if necessary!"
+            "If you have created any Azure resources in resource groups managed by Datadog log forwarding, they will be deleted. Perform backups if necessary!"
         )
 
     if args.yes:
