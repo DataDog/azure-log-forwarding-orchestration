@@ -63,6 +63,8 @@ class DeployError(Exception):
 
 
 class DeployerTask(Task):
+    NAME = DEPLOYER_TASK_NAME
+
     def __init__(self) -> None:
         super().__init__()
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)

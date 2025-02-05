@@ -25,6 +25,8 @@ RESOURCES_TASK_NAME = "resources_task"
 
 
 class ResourcesTask(Task):
+    NAME = RESOURCES_TASK_NAME
+
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
         self.monitored_subscriptions = deserialize_monitored_subscriptions(getenv("MONITORED_SUBSCRIPTIONS") or "")

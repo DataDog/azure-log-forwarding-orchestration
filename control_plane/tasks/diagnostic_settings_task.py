@@ -71,6 +71,8 @@ def get_diagnostic_setting(
 
 
 class DiagnosticSettingsTask(Task):
+    NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
+
     def __init__(self, assignment_cache_state: str) -> None:
         super().__init__()
 

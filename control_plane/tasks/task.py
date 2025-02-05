@@ -15,12 +15,11 @@ from datadog_api_client.v2.model.http_log import HTTPLog
 from datadog_api_client.v2.model.http_log_item import HTTPLogItem
 
 # project
-from cache.env import DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, is_truthy
+from cache.env import CONTROL_PLANE_ID_SETTING, DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, is_truthy
 
 log = getLogger(__name__)
 
 LOG_FMT = "%(asctime)s %(levelname)s [%(name)s][%(filename)s:%(lineno)d] %(message)s"
-DD_TAGS = ["forwarder:lfocontrolplane"]
 
 
 class ListHandler(Handler):
@@ -36,10 +35,15 @@ class ListHandler(Handler):
 
 
 class Task(AbstractAsyncContextManager["Task"]):
+    NAME: str
+
     def __init__(self) -> None:
         self.credential = DefaultAzureCredential()
 
         # Telemetry Logic
+        self.dd_tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}"]
+        if control_plane_id := environ.get(CONTROL_PLANE_ID_SETTING):
+            self.dd_tags.append(f"control_plane_id:{control_plane_id}")
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[str] = []
@@ -79,4 +83,4 @@ class Task(AbstractAsyncContextManager["Task"]):
             for message in self._logs
         ]
         self._logs.clear()
-        await self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=DD_TAGS)  # type: ignore
+        await self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=self.dd_tags)  # type: ignore

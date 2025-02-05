@@ -119,6 +119,8 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
 
 
 class ScalingTask(Task):
+    NAME = SCALING_TASK_NAME
+
     def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
         super().__init__()
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
