@@ -102,11 +102,11 @@ class Task(AbstractAsyncContextManager["Task"]):
                 service="lfo",
                 time=record.asctime,
                 level=record.levelname,
-                filename=record.filename,
                 lineno=str(record.lineno),
                 execution_id=self.execution_id,
                 funcname=record.funcName,
                 control_plane_id=self.control_plane_id,
+                task=self.NAME,
                 **get_error_telemetry(record.exc_info),
             )
             for record in self._logs
