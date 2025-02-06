@@ -41,15 +41,15 @@ type resourceBytes struct {
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, logsChannel chan<- *logs.Log) (err error) {
-	currentOffset := cursors.Get(blob.Container.Name, blob.Name)
-	if currentOffset == blob.ContentLength {
+	cursorOffset := cursors.Get(blob.Container.Name, blob.Name)
+	if cursorOffset == blob.ContentLength {
 		// Cursor is at the end of the blob, no need to process
 		return nil
 	}
-	if currentOffset > blob.ContentLength {
+	if cursorOffset > blob.ContentLength {
 		return fmt.Errorf("cursor is ahead of blob length for %s", blob.Name)
 	}
-	content, err := storageClient.DownloadSegment(ctx, blob, currentOffset, blob.ContentLength)
+	content, err := storageClient.DownloadSegment(ctx, blob, cursorOffset, blob.ContentLength)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
@@ -59,18 +59,18 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	// linux newlines are 1 byte, but windows newlines are 2
 	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
 	// we know we have hit the end and can safely set our cursor to the end of the file.
-	if processedBytes+processedLogs+currentOffset == blob.ContentLength {
-		processedBytes = blob.ContentLength - currentOffset
+	if processedBytes+processedLogs+cursorOffset == blob.ContentLength {
+		processedBytes = blob.ContentLength - cursorOffset
 	}
 
-	if processedBytes+currentOffset > blob.ContentLength {
+	if processedBytes+cursorOffset > blob.ContentLength {
 		// we have processed more bytes than expected
 		// unsafe to save cursor
 		return errors.Join(err, fmt.Errorf("processed more bytes than expected for %s", blob.Name))
 	}
 
-	// we have processed and submitted logs up to currentOffset+processedBytes whether the error is nil or not
-	cursors.Set(blob.Container.Name, blob.Name, currentOffset+processedBytes)
+	// we have processed and submitted logs up to cursorOffset+processedBytes whether the error is nil or not
+	cursors.Set(blob.Container.Name, blob.Name, cursorOffset+processedBytes)
 
 	return err
 }
@@ -275,7 +275,7 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 	return dlq.Save(ctx, storageClient)
 }
 
-func run(ctx context.Context, logger *log.Entry, goroutineAmount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client) error {
+func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client) error {
 	start := time.Now()
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
@@ -285,7 +285,7 @@ func run(ctx context.Context, logger *log.Entry, goroutineAmount int, datadogCli
 	logsApiClient := datadogV2.NewLogsApi(datadogClient)
 
 	var logsClients []*logs.Client
-	for range goroutineAmount {
+	for range goroutineCount {
 		logsClients = append(logsClients, logs.NewClient(logsApiClient))
 	}
 
@@ -369,9 +369,9 @@ func main() {
 	if goroutineString == "" {
 		goroutineString = "10"
 	}
-	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
+	goroutineCount, err := strconv.ParseInt(goroutineString, 10, 64)
 	if err != nil {
-		logger.Fatalf(fmt.Errorf("error parsing MAX_GOROUTINES: %w", err).Error())
+		logger.Fatalf(fmt.Errorf("error parsing %s: %w", environment.NUM_GOROUTINES, err).Error())
 	}
 
 	// Initialize storage client
@@ -382,7 +382,7 @@ func main() {
 		return
 	}
 
-	err = run(ctx, logger, int(goroutineAmount), datadogClient, azBlobClient)
+	err = run(ctx, logger, int(goroutineCount), datadogClient, azBlobClient)
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
