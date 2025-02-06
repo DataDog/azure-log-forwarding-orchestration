@@ -5,7 +5,6 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
 from json import dumps
-from logging import INFO, basicConfig, getLogger
 from typing import cast
 
 # 3p
@@ -22,7 +21,6 @@ from cache.assignment_cache import (
 from cache.common import (
     InvalidCacheError,
     LogForwarder,
-    read_cache,
     write_cache,
 )
 from cache.env import (
@@ -35,9 +33,9 @@ from cache.env import (
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import average, chunks, generate_unique_id, log_errors, now
+from tasks.common import average, chunks, generate_unique_id, log_errors
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
-from tasks.task import Task
+from tasks.task import Task, task_main
 
 SCALING_TASK_NAME = "scaling_task"
 
@@ -654,16 +652,7 @@ class ScalingTask(Task):
 
 
 async def main() -> None:
-    basicConfig(level=INFO)
-    log = getLogger(SCALING_TASK_NAME)
-    log.info("Started task at %s", now())
-    resources_cache_state, assignment_cache_state = await gather(
-        read_cache(RESOURCE_CACHE_BLOB),
-        read_cache(ASSIGNMENT_CACHE_BLOB),
-    )
-    async with ScalingTask(resources_cache_state, assignment_cache_state) as task:
-        await task.run()
-    log.info("Task finished at %s", now())
+    await task_main(ScalingTask, [RESOURCE_CACHE_BLOB, ASSIGNMENT_CACHE_BLOB])
 
 
 if __name__ == "__main__":  # pragma: no cover

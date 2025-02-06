@@ -3,7 +3,6 @@
 from asyncio import gather, run
 from collections.abc import Iterable
 from json import dumps
-from logging import INFO, basicConfig
 from os import environ
 from types import TracebackType
 from typing import NamedTuple, Self, cast
@@ -43,7 +42,7 @@ from tasks.common import (
     Resource,
 )
 from tasks.concurrency import collect
-from tasks.task import Task
+from tasks.task import Task, task_main
 
 DEPLOYER_TASK_NAME = "deployer_task"
 
@@ -221,11 +220,5 @@ class DeployerTask(Task):
         await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
 
 
-async def main() -> None:
-    async with DeployerTask() as deployer:
-        await deployer.run()
-
-
 if __name__ == "__main__":
-    basicConfig(level=INFO)
-    run(main())
+    run(task_main(DeployerTask, []))

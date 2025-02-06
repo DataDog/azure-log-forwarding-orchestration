@@ -1,6 +1,5 @@
 # stdlib
 from asyncio import gather, run
-from logging import INFO, basicConfig, getLogger
 from random import shuffle
 from typing import NamedTuple, cast
 
@@ -18,7 +17,6 @@ from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment
 from cache.common import (
     InvalidCacheError,
     LogForwarderType,
-    read_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
 from tasks.common import (
@@ -26,10 +24,9 @@ from tasks.common import (
     get_event_hub_namespace,
     get_resource_group_id,
     get_storage_account_id,
-    now,
 )
 from tasks.concurrency import collect
-from tasks.task import Task
+from tasks.task import Task, task_main
 
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 
@@ -211,13 +208,7 @@ class DiagnosticSettingsTask(Task):
 
 
 async def main() -> None:
-    basicConfig(level=INFO)
-    log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
-    log.info("Started task at %s", now())
-    assignment_cache = await read_cache(ASSIGNMENT_CACHE_BLOB)
-    async with DiagnosticSettingsTask(assignment_cache) as task:
-        await task.run()
-    log.info("Task finished at %s", now())
+    await task_main(DiagnosticSettingsTask, [ASSIGNMENT_CACHE_BLOB])
 
 
 if __name__ == "__main__":  # pragma: no cover
