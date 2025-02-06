@@ -530,7 +530,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         return MetricPayload(  # type: ignore
             series=[
                 MetricSeries(
-                    metric="Runtime",
+                    metric="azure.log_forwarding.runtime_seconds",
                     type=MetricIntakeType.UNSPECIFIED,
                     points=[
                         MetricPoint(
