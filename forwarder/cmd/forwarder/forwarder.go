@@ -226,6 +226,7 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 			// Skip blobs that are not recent
 			// Blobs may have old data that we don't want to process
 			if !blob.IsCurrent(currNow) {
+				cursors.DeleteCursor(blob.Container.Name, blob.Name)
 				continue
 			}
 			downloadEg.Go(func() error {
