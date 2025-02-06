@@ -220,11 +220,16 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 	return currLog.ToLog()
 }
 
+func sourceTag(source string) string {
+	sourceTag := strings.ToLower(strings.Replace(source, "/", ".", -1))
+	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
+}
+
 func getTags(id *arm.ResourceID) []string {
 	return []string{
 		fmt.Sprintf("subscription_id:%s", id.SubscriptionID),
 		fmt.Sprintf("resource_group:%s", id.ResourceGroupName),
-		fmt.Sprintf("source:%s", strings.Replace(id.ResourceType.String(), "/", ".", -1)),
+		fmt.Sprintf("source:%s", sourceTag(id.ResourceType.String())),
 		fmt.Sprintf("forwarder:%s", "lfo"),
 		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
 		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
