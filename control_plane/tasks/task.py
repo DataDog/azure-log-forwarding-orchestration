@@ -122,7 +122,7 @@ async def task_main(task_class: type[Task], caches: list[str]) -> None:
     if level not in {"ERROR", "WARN", "WARNING", "INFO", "DEBUG"}:
         level = "INFO"
     basicConfig(level=level)
-    log.info("Started %s at %s", task_class.NAME, now())
+    log.info("Started %s at %s (log level %s)", task_class.NAME, now(), level)
     cache_states = await gather(*map(read_cache, caches))
     async with task_class(*cache_states) as task:
         await task.run()
