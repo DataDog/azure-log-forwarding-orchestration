@@ -65,15 +65,7 @@ func (l *Log) Length() int64 {
 
 // Validate checks if the log is valid to send to Datadog.
 func (l *Log) Validate(logger *log.Entry) bool {
-	if l.ByteSize > MaxLogSize {
-		logger.Warningf("Skipping large log at %s from %s with a size of %d", l.Time.Format(time.RFC3339), l.ResourceId, l.Length())
-		return false
-	}
-	if l.Time.Before(time.Now().Add(-MaxLogAge)) {
-		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", l.Time.Format(time.RFC3339), l.ResourceId)
-		return false
-	}
-	return true
+	return validateLog(l.ResourceId, l.ByteSize, l.Time, logger)
 }
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
@@ -92,12 +84,6 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		return 0, false
 	}
 
-	if len(logBytes) > MaxLogSize {
-		// log is too large to ever be delivered
-		logger.Warningf("Skipping large log with a size of %d for resource %s", len(logBytes), currLog.ResourceId())
-		return 0, false
-	}
-
 	timeString, ok := log.AdditionalProperties["time"]
 	if !ok {
 		// log does not have a time field and cannot be validated
@@ -112,12 +98,21 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		return 0, false
 	}
 
-	if parsedTime.Before(time.Now().Add(-MaxLogAge)) {
-		// log is too old to be delivered
-		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", parsedTime.Format(time.RFC3339), currLog.ResourceId())
-		return 0, false
+	valid := validateLog(currLog.ResourceId(), int64(len(logBytes)), parsedTime, logger)
+	return int64(len(logBytes)), valid
+}
+
+// validateLog checks if a log is valid to send to Datadog given a set of constraints.
+func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *log.Entry) bool {
+	if byteSize > MaxLogSize {
+		logger.Warningf("Skipping large log at %s from %s with a size of %d", logTime.Format(time.RFC3339), resourceId, byteSize)
+		return false
 	}
-	return int64(len(logBytes)), true
+	if logTime.Before(time.Now().Add(-MaxLogAge)) {
+		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", logTime.Format(time.RFC3339), resourceId)
+		return false
+	}
+	return true
 }
 
 type azureLog struct {
