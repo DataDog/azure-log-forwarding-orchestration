@@ -3,7 +3,7 @@ from abc import abstractmethod
 from asyncio import create_task, gather
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
-from logging import ERROR, Handler, LogRecord, getLogger
+from logging import ERROR, Handler, LogRecord, basicConfig, getLogger
 from os import environ
 from traceback import format_exception
 from types import TracebackType
@@ -18,7 +18,9 @@ from datadog_api_client.v2.model.http_log import HTTPLog
 from datadog_api_client.v2.model.http_log_item import HTTPLogItem
 
 # project
-from cache.env import CONTROL_PLANE_ID_SETTING, DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, is_truthy
+from cache.common import read_cache
+from cache.env import CONTROL_PLANE_ID_SETTING, DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, LOG_LEVEL_SETTING, is_truthy
+from tasks.common import now
 
 log = getLogger(__name__)
 
@@ -113,3 +115,15 @@ class Task(AbstractAsyncContextManager["Task"]):
         ]
         self._logs.clear()
         await self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=self.dd_tags)  # type: ignore
+
+
+async def task_main(task_class: type[Task], caches: list[str]) -> None:
+    level = environ.get(LOG_LEVEL_SETTING, "INFO").upper()
+    if level not in {"ERROR", "WARN", "WARNING", "INFO", "DEBUG"}:
+        level = "INFO"
+    basicConfig(level=level)
+    log.info("Started %s at %s (log level %s)", task_class.NAME, now(), level)
+    cache_states = await gather(*map(read_cache, caches))
+    async with task_class(*cache_states) as task:
+        await task.run()
+    log.info("%s finished at %s", task_class.NAME, now())

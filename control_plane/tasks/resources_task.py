@@ -1,7 +1,6 @@
 # stdlib
 from asyncio import gather, run
 from json import dumps
-from logging import INFO, basicConfig, getLogger
 from os import getenv
 from typing import cast
 
@@ -9,7 +8,7 @@ from typing import cast
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
-from cache.common import read_cache, write_cache
+from cache.common import write_cache
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -18,8 +17,7 @@ from cache.resources_cache import (
     prune_resource_cache,
 )
 from tasks.client.resource_client import ResourceClient
-from tasks.common import now
-from tasks.task import Task
+from tasks.task import Task, task_main
 
 RESOURCES_TASK_NAME = "resources_task"
 
@@ -88,13 +86,7 @@ class ResourcesTask(Task):
 
 
 async def main() -> None:
-    basicConfig(level=INFO)
-    log = getLogger(RESOURCES_TASK_NAME)
-    log.info("Started task at %s", now())
-    resources_cache_state = await read_cache(RESOURCE_CACHE_BLOB)
-    async with ResourcesTask(resources_cache_state) as task:
-        await task.run()
-    log.info("Task finished at %s", now())
+    await task_main(ResourcesTask, [RESOURCE_CACHE_BLOB])
 
 
 if __name__ == "__main__":  # pragma: no cover

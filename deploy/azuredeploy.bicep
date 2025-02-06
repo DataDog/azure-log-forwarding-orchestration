@@ -13,6 +13,7 @@ param datadogApiKey string
 param datadogSite string
 
 param datadogTelemetry bool = false
+param logLevel string = 'INFO'
 
 param imageRegistry string = 'datadoghq.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
@@ -67,6 +68,7 @@ module controlPlane './control_plane.bicep' = {
     datadogTelemetry: datadogTelemetry
     imageRegistry: imageRegistry
     storageAccountUrl: storageAccountUrl
+    logLevel: logLevel
   }
   dependsOn: [
     controlPlaneResourceGroup
