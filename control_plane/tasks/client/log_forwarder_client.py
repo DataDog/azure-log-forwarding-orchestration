@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import Logger
 from types import TracebackType
-from typing import Any, Self, TypeAlias, TypeVar, cast
+from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -75,7 +75,7 @@ from cache.env import (
     get_config_option,
     is_truthy,
 )
-from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
+from cache.metric_blob_cache import METRIC_NAMES, MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
@@ -91,6 +91,8 @@ from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
+
+INTERNAL_METRIC_PREFIX = "azure.log_forwarding."
 
 FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
@@ -123,6 +125,15 @@ ResourcePoller: TypeAlias = tuple[AsyncLROPoller[T], Callable[[], Awaitable[T]]]
 
 def get_datetime_str(time: datetime) -> str:
     return f"{time:%Y-%m-%d-%H}"
+
+
+def get_metric_value(
+    metric_entry: MetricBlobEntry, metric_name: Literal["resource_log_volume", "resource_log_bytes", "runtime_seconds"]
+) -> float:
+    value = metric_entry[metric_name]
+    if isinstance(value, dict):
+        return sum(value.values())
+    return value
 
 
 class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
@@ -527,26 +538,31 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
     def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
         # type ignore hack to get pyright typing to work since the SDK overrides __new__
-        return MetricPayload(  # type: ignore
-            series=[
-                MetricSeries(
-                    metric="azure.log_forwarding.runtime_seconds",
-                    type=MetricIntakeType.UNSPECIFIED,
-                    points=[
-                        MetricPoint(
-                            timestamp=int(metric["timestamp"]),
-                            value=metric["runtime_seconds"],
-                        )
-                        for metric in metric_entries
-                    ],
-                    resources=[
-                        MetricResource(
-                            name=get_container_app_name(log_forwarder_id),
-                            type="logforwarder",
-                        ),
-                    ],
-                ),
-            ]
+        log_forwarder_name = get_container_app_name(log_forwarder_id)
+        return cast(
+            MetricPayload,
+            MetricPayload(
+                series=[
+                    MetricSeries(
+                        metric=INTERNAL_METRIC_PREFIX + metric_name,
+                        type=MetricIntakeType.UNSPECIFIED,
+                        points=[
+                            MetricPoint(
+                                timestamp=int(metric_entry["timestamp"]),
+                                value=get_metric_value(metric_entry, metric_name),
+                            )
+                            for metric_entry in metric_entries
+                        ],
+                        resources=[
+                            MetricResource(
+                                name=log_forwarder_name,
+                                type="logforwarder",
+                            ),
+                        ],
+                    )
+                    for metric_name in METRIC_NAMES
+                ]
+            ),
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:
