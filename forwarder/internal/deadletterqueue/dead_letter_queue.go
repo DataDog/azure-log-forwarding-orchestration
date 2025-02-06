@@ -91,7 +91,7 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) erro
 }
 
 // Process processes the DeadLetterQueue by sending the logs to Datadog.
-func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error {
+func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) {
 	var failedLogs []datadogV2.HTTPLogItem
 	for _, datadogLog := range d.queue {
 		err := d.client.AddFormattedLog(ctx, logger, datadogLog)
@@ -100,5 +100,8 @@ func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error 
 		}
 	}
 	d.queue = failedLogs
-	return d.client.Flush(ctx)
+	err := d.client.Flush(ctx)
+	if err != nil {
+		d.queue = append(d.queue, d.client.FailedLogs...)
+	}
 }

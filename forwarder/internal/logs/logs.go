@@ -356,7 +356,7 @@ func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log dat
 	if !valid {
 		return ErrInvalidLog
 	}
-	if c.shouldFlushGivenBytes(logBytes) {
+	if c.shouldFlushBytes(logBytes) {
 		if err := c.Flush(ctx); err != nil {
 			return err
 		}
@@ -388,11 +388,11 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
-	return c.shouldFlushGivenBytes(log.Length())
+	return c.shouldFlushBytes(log.Length())
 }
 
-// shouldFlushGivenBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
-func (c *Client) shouldFlushGivenBytes(bytes int64) bool {
+// shouldFlushBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
+func (c *Client) shouldFlushBytes(bytes int64) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+bytes >= MaxPayloadSize
 }
 
