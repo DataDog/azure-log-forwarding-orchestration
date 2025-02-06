@@ -104,8 +104,6 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("creates a Log from raw log", func(t *testing.T) {
 		t.Parallel()
-		// GIVEN
-
 		// WHEN
 		log, err := logs.NewLog(validLog, functionAppContainer)
 
@@ -155,8 +153,6 @@ func TestNewLog(t *testing.T) {
 	t.Run("applies correct tags", func(t *testing.T) {
 		t.Parallel()
 
-		// GIVEN
-
 		// WHEN
 		log, err := logs.NewLog(validLog, functionAppContainer)
 
@@ -199,6 +195,7 @@ func TestNewLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		invalidResourceId := []byte("{ \"resourceId\": \"something\"}")
+
 		// WHEN
 		log, err := logs.NewLog(invalidResourceId, "something normal")
 
@@ -212,6 +209,7 @@ func TestNewLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		invalidResourceId := []byte("{ \"resourceId\": \"something\"}")
+
 		// WHEN
 		log, err := logs.NewLog(invalidResourceId, functionAppContainer)
 
@@ -242,7 +240,7 @@ func TestValid(t *testing.T) {
 
 	t.Run("valid returns false and warns for an too large log", func(t *testing.T) {
 		t.Parallel()
-		// Given
+		// GIVEN
 		content := strings.Repeat("a", logs.MaxPayloadSize)
 		l, err := logs.NewLog(getLogWithContent(content, 5*time.Minute), functionAppContainer)
 		require.NoError(t, err)
@@ -257,7 +255,7 @@ func TestValid(t *testing.T) {
 	})
 	t.Run("valid returns false and warns for an too old log", func(t *testing.T) {
 		t.Parallel()
-		// Given
+		// GIVEN
 		l, err := logs.NewLog(getLogWithContent("short content", (18*time.Hour)+time.Minute), functionAppContainer)
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
