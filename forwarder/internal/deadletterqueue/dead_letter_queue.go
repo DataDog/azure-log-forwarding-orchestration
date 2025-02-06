@@ -60,9 +60,19 @@ func newDeadLetterQueue(client *logs.Client, queue []datadogV2.HTTPLogItem) *Dea
 	}
 }
 
+// GetQueue returns the DeadLetterQueue.
+func (d *DeadLetterQueue) GetQueue() []datadogV2.HTTPLogItem {
+	return d.queue
+}
+
 // JSONBytes returns the a []byte representation of the DeadLetterQueue.
 func (d *DeadLetterQueue) JSONBytes() ([]byte, error) {
 	return json.Marshal(d.queue)
+}
+
+// Add adds logs to the DeadLetterQueue.
+func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
+	d.queue = append(d.queue, logs...)
 }
 
 // Save saves the DeadLetterQueue to storage
@@ -91,14 +101,4 @@ func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error 
 	}
 	d.queue = failedLogs
 	return d.client.Flush(ctx)
-}
-
-// Add adds logs to the DeadLetterQueue.
-func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
-	d.queue = append(d.queue, logs...)
-}
-
-// GetQueue returns the DeadLetterQueue.
-func (d *DeadLetterQueue) GetQueue() []datadogV2.HTTPLogItem {
-	return d.queue
 }
