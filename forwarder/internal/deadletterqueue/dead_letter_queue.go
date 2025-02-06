@@ -46,11 +46,11 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) erro
 	defer span.Finish()
 	data, err := d.JSONBytes()
 	if err != nil {
-		return fmt.Errorf("error marshalling dlq: %w", err)
+		return fmt.Errorf("unable to marshall dead letter queue: %w", err)
 	}
 	err = client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
 	if err != nil {
-		return fmt.Errorf("uploading dlq failed: %w", err)
+		return fmt.Errorf("uploading dead letter queue failed: %w", err)
 	}
 	return nil
 }
@@ -88,7 +88,7 @@ func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.C
 		if errors.As(err, &notFoundError) {
 			return new(logsClient, nil), nil
 		}
-		return nil, fmt.Errorf("failed to download dlq: %w", err)
+		return nil, fmt.Errorf("failed to download dead letter queue: %w", err)
 	}
 	return FromBytes(logsClient, data)
 }
