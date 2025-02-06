@@ -27,20 +27,45 @@ type DeadLetterQueue struct {
 	client *logs.Client
 }
 
+// Load loads the DeadLetterQueue from the storage client.
+func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client) (*DeadLetterQueue, error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Load")
+	defer span.Finish()
+	data, err := storageClient.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
+	if err != nil {
+		var notFoundError *storage.NotFoundError
+		if errors.As(err, &notFoundError) {
+			return newDeadLetterQueue(logsClient, nil), nil
+		}
+		return nil, fmt.Errorf("failed to download dead letter queue: %w", err)
+	}
+	return FromBytes(logsClient, data)
+}
+
+// FromBytes creates a DeadLetterQueue object from the given bytes.
+func FromBytes(logsClient *logs.Client, data []byte) (*DeadLetterQueue, error) {
+	var datadogLogs []datadogV2.HTTPLogItem
+	err := json.Unmarshal(data, &datadogLogs)
+	if err != nil {
+		return nil, err
+	}
+	return newDeadLetterQueue(logsClient, datadogLogs), nil
+}
+
 // new creates a new DeadLetterQueue object with the given data.
-func new(client *logs.Client, queue []datadogV2.HTTPLogItem) *DeadLetterQueue {
+func newDeadLetterQueue(client *logs.Client, queue []datadogV2.HTTPLogItem) *DeadLetterQueue {
 	return &DeadLetterQueue{
 		client: client,
 		queue:  queue,
 	}
 }
 
-// JSONBytes returns the a []byte representation of the dead letter queue.
+// JSONBytes returns the a []byte representation of the DeadLetterQueue.
 func (d *DeadLetterQueue) JSONBytes() ([]byte, error) {
 	return json.Marshal(d.queue)
 }
 
-// Save saves the dead letter queue to storage
+// Save saves the DeadLetterQueue to storage
 func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Client.Save")
 	defer span.Finish()
@@ -55,7 +80,7 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) erro
 	return nil
 }
 
-// Process processes the dead letter queue by sending the logs to Datadog.
+// Process processes the DeadLetterQueue by sending the logs to Datadog.
 func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error {
 	var failedLogs []datadogV2.HTTPLogItem
 	for _, datadogLog := range d.queue {
@@ -68,37 +93,12 @@ func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) error 
 	return d.client.Flush(ctx)
 }
 
-// Add adds logs to the dead letter queue.
+// Add adds logs to the DeadLetterQueue.
 func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 	d.queue = append(d.queue, logs...)
 }
 
-// GetQueue returns the dead letter queue.
+// GetQueue returns the DeadLetterQueue.
 func (d *DeadLetterQueue) GetQueue() []datadogV2.HTTPLogItem {
 	return d.queue
-}
-
-// Load loads the Dead Letter Queue from the storage client.
-func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client) (*DeadLetterQueue, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Load")
-	defer span.Finish()
-	data, err := storageClient.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
-	if err != nil {
-		var notFoundError *storage.NotFoundError
-		if errors.As(err, &notFoundError) {
-			return new(logsClient, nil), nil
-		}
-		return nil, fmt.Errorf("failed to download dead letter queue: %w", err)
-	}
-	return FromBytes(logsClient, data)
-}
-
-// FromBytes creates a DeadLetterQueue object from the given bytes.
-func FromBytes(logsClient *logs.Client, data []byte) (*DeadLetterQueue, error) {
-	var datadogLogs []datadogV2.HTTPLogItem
-	err := json.Unmarshal(data, &datadogLogs)
-	if err != nil {
-		return nil, err
-	}
-	return new(logsClient, datadogLogs), nil
 }
