@@ -92,7 +92,7 @@ from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
-INTERNAL_METRIC_PREFIX = "azure.log_forwarding."
+INTERNAL_METRIC_PREFIX = "azure.log_forwarder."
 
 FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
