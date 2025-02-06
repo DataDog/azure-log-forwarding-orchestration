@@ -31,16 +31,16 @@ class TestResourcesTask(TaskTestCase):
         self.patch("SubscriptionClient").return_value = self.sub_client
         self.resource_client = self.patch("ResourceClient")
         self.resource_client_mapping: dict[str, dict[str, set[str]]] = {}
+        self.log = self.patch_path("tasks.task.log").getChild.return_value
 
-        def create_resource_client(_: Any, sub_id: str):
+        def create_resource_client(_log: Any, _cred: Any, sub_id: str):
             c = AsyncMockClient()
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             c.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
+            c.log = self.log
             return c
 
         self.resource_client.side_effect = create_resource_client
-
-        self.log = self.patch("log")
 
     async def run_resources_task(self, cache: ResourceCache):
         async with ResourcesTask(dumps(cache, default=list)) as task:

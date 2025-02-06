@@ -12,6 +12,8 @@ param datadogApplicationKey string
 param datadogApiKey string
 param datadogSite string
 
+param datadogTelemetry bool = false
+
 param imageRegistry string = 'datadoghq.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
@@ -62,6 +64,7 @@ module controlPlane './control_plane.bicep' = {
     datadogApiKey: datadogApiKey
     datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
+    datadogTelemetry: datadogTelemetry
     imageRegistry: imageRegistry
     storageAccountUrl: storageAccountUrl
   }

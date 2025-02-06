@@ -32,6 +32,9 @@ fi
 if [ -z "${DD_SITE+x}" ]; then
     export DD_SITE="datadoghq.com"
 fi
+if [ -z "${DD_TELEMETRY+x}" ]; then
+    export DD_TELEMETRY="true"
+fi
 if [ -z "${FORWARDER_IMAGE+x}" ]; then
     export FORWARDER_IMAGE="datadoghq.azurecr.io/forwarder:latest"
 fi

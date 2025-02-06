@@ -1,6 +1,6 @@
 # stdlib
 from asyncio import gather, run
-from logging import ERROR, INFO, basicConfig, getLogger
+from logging import INFO, basicConfig, getLogger
 from random import shuffle
 from typing import NamedTuple, cast
 
@@ -31,12 +31,7 @@ from tasks.common import (
 from tasks.concurrency import collect
 from tasks.task import Task
 
-# silence azure logging except for errors
-getLogger("azure").setLevel(ERROR)
-
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
-log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
-
 
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
@@ -76,6 +71,8 @@ def get_diagnostic_setting(
 
 
 class DiagnosticSettingsTask(Task):
+    NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
+
     def __init__(self, assignment_cache_state: str) -> None:
         super().__init__()
 
@@ -91,11 +88,11 @@ class DiagnosticSettingsTask(Task):
         self.assignment_cache = assignment_cache
 
     async def run(self) -> None:
-        log.info("Processing %s subscriptions", len(self.assignment_cache))
+        self.log.info("Processing %s subscriptions", len(self.assignment_cache))
         await gather(*map(self.process_subscription, self.assignment_cache))
 
     async def process_subscription(self, sub_id: str) -> None:
-        log.info("Processing subscription %s", sub_id)
+        self.log.info("Processing subscription %s", sub_id)
         # we assume if a resource isn't in the assignment cache then is has been deleted
         async with MonitorManagementClient(self.credential, sub_id) as client:
             # TODO: do we want to do anything with management group diagnostic settings?
@@ -135,9 +132,9 @@ class DiagnosticSettingsTask(Task):
             current_diagnostic_settings = await collect(client.diagnostic_settings.list(resource_id))
         except HttpResponseError as e:
             if e.error and e.error.code and e.error.code.lower() == "resourcetypenotsupported":
-                log.warning("Resource type for %s unsupported, skipping", resource_id)
+                self.log.warning("Resource type for %s unsupported, skipping", resource_id)
                 return
-            log.exception("Failed to get diagnostic settings for resource %s", resource_id)
+            self.log.exception("Failed to get diagnostic settings for resource %s", resource_id)
             return
 
         current_setting = next(
@@ -181,7 +178,7 @@ class DiagnosticSettingsTask(Task):
                 if category.category_type == CategoryType.LOGS
             ]
             if not categories:
-                log.debug("No log categories found for resource %s", resource_id)
+                self.log.debug("No log categories found for resource %s", resource_id)
                 return
 
             await client.diagnostic_settings.create_or_update(
@@ -189,7 +186,7 @@ class DiagnosticSettingsTask(Task):
                 self.diagnostic_settings_name,
                 get_diagnostic_setting(sub_id, self.resource_group, config, categories),
             )
-            log.info("Added diagnostic setting for resource %s", resource_id)
+            self.log.info("Added diagnostic setting for resource %s", resource_id)
         except HttpResponseError as e:
             if e.error and e.error.code == "ResourceTypeNotSupported":
                 # This resource does not support diagnostic settings
@@ -198,14 +195,14 @@ class DiagnosticSettingsTask(Task):
                 # todo this should not happen in the real implementation, for now ignore
                 return
             if "reused in different settings on the same category for the same resource" in str(e):
-                log.error(
+                self.log.error(
                     "Resource %s already has a diagnostic setting with the same configuration: %s", resource_id, config
                 )
                 return
 
-            log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
+            self.log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
         except Exception:
-            log.error(
+            self.log.error(
                 "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
             )
 
@@ -215,6 +212,7 @@ class DiagnosticSettingsTask(Task):
 
 async def main() -> None:
     basicConfig(level=INFO)
+    log = getLogger(DIAGNOSTIC_SETTINGS_TASK_NAME)
     log.info("Started task at %s", now())
     assignment_cache = await read_cache(ASSIGNMENT_CACHE_BLOB)
     async with DiagnosticSettingsTask(assignment_cache) as task:

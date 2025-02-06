@@ -118,7 +118,7 @@ class TestScalingTask(TaskTestCase):
             Secret(name=DD_API_KEY_SECRET, value="some_api_key"),
             Secret(name=CONNECTION_STRING_SECRET, value="some_connection_string"),
         ]
-        self.log = self.patch("log")
+        self.log = self.patch_path("tasks.task.log").getChild.return_value
         self.generate_unique_id = self.patch("generate_unique_id")
         p = patch.dict(
             environ,

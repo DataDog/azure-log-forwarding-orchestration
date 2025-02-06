@@ -92,6 +92,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        self.log = mock()
         self.cred = mock()
         self.mock_clients = {}
         for client in self.MOCKED_CLIENTS:
@@ -102,7 +103,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             self.mock_clients[client] = c
 
     async def test_clients_mocked_properly(self):
-        resource_client = ResourceClient(self.cred, sub_id1)
+        resource_client = ResourceClient(self.log, self.cred, sub_id1)
         for client, _ in resource_client._get_sub_resources_map.values():
             if client is None:
                 continue
@@ -122,7 +123,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 mock(id="res2", location="global", type="Microsoft.Network/applicationGateways"),
             )
         )
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
         self.assertEqual(resources, {})
 
@@ -138,7 +139,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 ),
             )
         )
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
         self.assertEqual(resources, {SUPPORTED_REGION_1: {"res2"}})
 
@@ -155,7 +156,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
         self.assertEqual(resources, {SUPPORTED_REGION_1: {"res1"}})
 
@@ -172,7 +173,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
 
         self.assertEqual(
@@ -212,7 +213,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
         self.assertEqual(
             resources,
@@ -250,7 +251,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
 
         self.assertEqual(
@@ -283,7 +284,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
 
         self.assertEqual(
@@ -327,7 +328,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1) as client:
             resources = await client.get_resources_per_region()
 
         self.assertEqual(
