@@ -121,7 +121,8 @@ async def task_main(task_class: type[Task], caches: list[str]) -> None:
     level = environ.get(LOG_LEVEL_SETTING, "INFO").upper()
     if level not in {"ERROR", "WARN", "WARNING", "INFO", "DEBUG"}:
         level = "INFO"
-    basicConfig(level=level)
+    basicConfig()
+    log.setLevel(level)
     log.info("Started %s at %s (log level %s)", task_class.NAME, now(), level)
     cache_states = await gather(*map(read_cache, caches))
     async with task_class(*cache_states) as task:
