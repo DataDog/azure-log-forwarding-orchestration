@@ -76,9 +76,20 @@ func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 }
 
 // Save saves the DeadLetterQueue to storage
-func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) error {
+func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, logger *log.Entry) error {
 	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Client.Save")
 	defer span.Finish()
+
+	// prune invalid logs
+	queue := make([]datadogV2.HTTPLogItem, 0)
+	for _, failedLog := range d.client.FailedLogs {
+		_, valid := logs.ValidateDatadogLog(failedLog, logger)
+		if valid {
+			queue = append(queue, failedLog)
+		}
+	}
+	d.queue = queue
+
 	data, err := d.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("unable to marshall dead letter queue: %w", err)
@@ -92,16 +103,17 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client) erro
 
 // Process processes the DeadLetterQueue by sending the logs to Datadog.
 func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) {
-	var failedLogs []datadogV2.HTTPLogItem
+	var err error
 	for _, datadogLog := range d.queue {
-		err := d.client.AddFormattedLog(ctx, logger, datadogLog)
-		if err != nil && !errors.Is(err, logs.ErrInvalidLog) {
-			failedLogs = append(failedLogs, datadogLog)
+		addLogErr := d.client.AddFormattedLog(ctx, logger, datadogLog)
+		if addLogErr != nil && !errors.Is(addLogErr, logs.ErrInvalidLog) {
+			errors.Join(err, addLogErr)
 		}
 	}
-	d.queue = failedLogs
-	err := d.client.Flush(ctx)
+	flushErr := d.client.Flush(ctx)
+	errors.Join(err, flushErr)
 	if err != nil {
-		d.queue = append(d.queue, d.client.FailedLogs...)
+		logger.Errorf("failed to process dead letter queue: %v", err)
+		d.queue = d.client.FailedLogs
 	}
 }
