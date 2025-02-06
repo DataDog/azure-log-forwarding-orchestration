@@ -17,6 +17,7 @@ log.setLevel(DEBUG)
 T = TypeVar("T")
 
 BLOB_STORAGE_CACHE = "control-plane-cache"
+FORWARDER_BLOB_NAME = "forwarder.zip"
 
 EVENT_HUB_TYPE: Final = "eventhub"
 STORAGE_ACCOUNT_TYPE: Final = "storageaccount"

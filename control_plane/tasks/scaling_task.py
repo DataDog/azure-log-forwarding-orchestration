@@ -144,6 +144,8 @@ class ScalingTask(Task):
         self._assignment_cache_initial_state = assignment_cache
         self.assignment_cache = prune_assignment_cache(resource_cache, assignment_cache)
 
+        self.use_function_apps = True
+
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
         all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
@@ -180,7 +182,10 @@ class ScalingTask(Task):
         If container apps are not supported in the region, the forwarder is created in the same region as the control plane."""
         config_id = generate_unique_id()
         try:
-            config_type = await client.create_log_forwarder(region, config_id)
+            if self.use_function_apps:
+                config_type = await client.create_log_forwarder_function_app(region, config_id)
+            else:
+                config_type = await client.create_log_forwarder(region, config_id)
             return LogForwarder(config_id, config_type)
         except Exception:
             log.exception("Failed to create log forwarder %s, cleaning up", config_id)
@@ -192,10 +197,16 @@ class ScalingTask(Task):
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> None:
         """Creates a log forwarder env for the given region. If the creation fails, the env is (attempted to be) deleted"""
         try:
+            if self.use_function_apps:
+                await client.create_log_forwarder_service_plan(region)
+                return
             await client.create_log_forwarder_managed_environment(region)
         except Exception:
             log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
-            success = await client.delete_log_forwarder_env(region, raise_error=False)
+            if self.use_function_apps:
+                success = await client.delete_log_forwarder_service_plan(region, raise_error=False)
+            else:
+                success = await client.delete_log_forwarder_env(region, raise_error=False)
             if not success:
                 log.error("Failed to clean up log forwarder env for region %s, manual intervention required", region)
 
@@ -240,7 +251,10 @@ class ScalingTask(Task):
             # if the region is supported by container apps, it has its own env and should be deleted
             if region != self.control_plane_region and region in ALLOWED_CONTAINER_APP_REGIONS:
                 log.info("Deleting log forwarder managed env for subscription %s in region %s", subscription_id, region)
-                await client.delete_log_forwarder_env(region, raise_error=False)
+                if self.use_function_apps:
+                    await client.delete_log_forwarder_service_plan(region, raise_error=False)
+                else:
+                    await client.delete_log_forwarder_env(region, raise_error=False)
 
             self.assignment_cache.get(subscription_id, {}).pop(region, None)
             await self.write_caches()
@@ -419,6 +433,8 @@ class ScalingTask(Task):
 
     async def check_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
         """Checks to see if the forwarder env exists for a given region"""
+        if self.use_function_apps:
+            return bool(await client.get_log_forwarder_service_plan(region))
         return bool(await client.get_log_forwarder_managed_environment(region))
 
     async def collect_region_forwarder_metrics(
@@ -617,7 +633,10 @@ class ScalingTask(Task):
         self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_id: str
     ) -> None:
         """Deletes a forwarder and removes it from the configurations"""
-        await client.delete_log_forwarder(config_id)
+        if self.use_function_apps:
+            await client.delete_log_forwarder_function_app(config_id)
+        else:
+            await client.delete_log_forwarder(config_id)
         region_config["configurations"].pop(config_id, None)
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:

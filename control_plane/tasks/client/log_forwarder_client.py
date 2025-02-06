@@ -9,6 +9,7 @@ from types import TracebackType
 from typing import Any, Self, TypeAlias, TypeVar, cast
 
 # 3p
+from aiohttp import ClientSession
 from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
 from azure.core.polling import AsyncLROPoller
@@ -45,6 +46,14 @@ from azure.mgmt.storage.v2023_05_01.models import (
     StorageAccountCreateParameters,
     StorageAccountKey,
 )
+from azure.mgmt.web.aio import WebSiteManagementClient
+from azure.mgmt.web.v2023_12_01.models import (
+    AppServicePlan,
+    ManagedServiceIdentity,
+    Site,
+    SiteConfig,
+    SkuDescription,
+)
 from azure.storage.blob.aio import ContainerClient
 from azure.storage.blob.aio._download_async import StorageStreamDownloader
 from datadog_api_client import AsyncApiClient, Configuration
@@ -59,6 +68,8 @@ from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
 from cache.common import (
+    BLOB_STORAGE_CACHE,
+    FORWARDER_BLOB_NAME,
     STORAGE_ACCOUNT_TYPE,
     LogForwarderType,
 )
@@ -127,6 +138,7 @@ def get_datetime_str(time: datetime) -> str:
 
 class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
+        self._credential = credential
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
         self.dd_site = get_config_option(DD_SITE_SETTING)
@@ -137,9 +149,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.subscription_id = subscription_id
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
+        self.web_client = WebSiteManagementClient(credential, subscription_id)
         self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
         self.metrics_client = MetricsApi(self._datadog_client)
         self._blob_forwarder_data_lock = Lock()
+        self.rest_client = ClientSession()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
 
@@ -149,6 +163,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             self.storage_client.__aenter__(),
             self._datadog_client.__aenter__(),
         )
+        token = await self._credential.get_token("https://management.azure.com/.default")
+        self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
 
     async def __aexit__(
@@ -189,6 +205,23 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return_exceptions=True,
         )
         log_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True)
+
+        # for now this is the only type we support
+        return STORAGE_ACCOUNT_TYPE
+
+    async def create_log_forwarder_function_app(self, region: str, config_id: str) -> LogForwarderType:
+        storage_account_name = get_storage_account_name(config_id)
+
+        await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
+
+        maybe_errors = await gather(
+            wait_for_resource(*await self.create_or_update_log_forwarder_function_app(region, config_id)),
+            self.create_log_forwarder_storage_management_policy(storage_account_name),
+            return_exceptions=True,
+        )
+        log_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True)
+
+        await self.upload_log_forwarder_function_app(region, config_id)
 
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
@@ -252,10 +285,40 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         if wait:
             await poller.result()
 
+    async def create_log_forwarder_service_plan(self, region: str, wait: bool = False) -> None:
+        # TODO: figure out regions for app service plans
+        container_app_region = self.get_container_app_region(region)
+        env_name = get_managed_env_name(container_app_region, self.control_plane_id)
+        log.info("Creating app service plan %s for region %s in %s", env_name, region, container_app_region)
+        poller = await self.web_client.app_service_plans.begin_create_or_update(
+            self.resource_group,
+            env_name,
+            AppServicePlan(
+                location=region,
+                kind="linux",
+                reserved=True,
+                sku=SkuDescription(
+                    # TODO: figure out which SKU we should be using here
+                    tier="Basic",
+                    name="B1",
+                ),
+            ),
+        )
+        if wait:
+            await poller.result()
+
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
         env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
+        except ResourceNotFoundError:
+            return None
+        return str(managed_env.id)
+
+    async def get_log_forwarder_service_plan(self, region: str) -> str | None:
+        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
+        try:
+            managed_env = await self.web_client.app_service_plans.get(self.resource_group, env_name)
         except ResourceNotFoundError:
             return None
         return str(managed_env.id)
@@ -303,6 +366,79 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 ),
             ),
         ), lambda: self.container_apps_client.jobs.get(self.resource_group, job_name)
+
+    async def create_or_update_log_forwarder_function_app(
+        self,
+        region: str,
+        config_id: str,
+        *,
+        env: list[EnvironmentVar] | None = None,
+        secrets: list[Secret] | None = None,
+    ) -> ResourcePoller[Job]:
+        app_service_plan = await self.web_client.app_service_plans.get(
+            self.resource_group, get_managed_env_name(region, self.control_plane_id)
+        )
+        job_name = get_container_app_name(config_id)
+        region = self.get_container_app_region(region)
+        env = env or self.generate_forwarder_settings(config_id)
+        secrets = secrets or await self.generate_forwarder_secrets(config_id)
+        return await self.web_client.web_apps.begin_create_or_update(
+            self.resource_group,
+            job_name,
+            Site(
+                location=region,
+                kind="functionapp",
+                identity=ManagedServiceIdentity(type="SystemAssigned"),
+                server_farm_id=app_service_plan.id,
+                https_only=True,
+                site_config=SiteConfig(
+                    app_settings=env
+                    + [
+                        EnvironmentVar(name="FUNCTIONS_WORKER_RUNTIME", value="custom"),
+                        EnvironmentVar(name="FUNCTIONS_EXTENSION_VERSION", value="~4"),
+                    ],
+                    connection_strings=secrets,
+                ),
+            ),
+        ), lambda: self.web_client.web_apps.get(self.resource_group, job_name)
+
+    async def upload_log_forwarder_function_app(
+        self,
+        region: str,
+        config_id: str,
+    ):
+        try:
+            blob_forwarder_data = await self.get_blob_forwarder_data()
+        except Exception:
+            log.exception("Failed to get blob forwarder data")
+            raise
+
+        function_app_name = get_container_app_name(config_id)
+
+        # deploy code to function app
+        log.info("Deploying log forwarder code to function app: %s", function_app_name)
+        resp = await self.rest_client.post(
+            f"https://{function_app_name}.scm.azurewebsites.net/api/publish?type=zip",
+            data=blob_forwarder_data,
+        )
+        resp.raise_for_status()
+        body = await resp.text()
+        log.info(
+            "Deployed log forwarder code to function app (zip size %s)\nstatus code: %s\nbody: %s",
+            len(blob_forwarder_data),
+            resp.status,
+            body,
+        )
+
+    async def get_blob_forwarder_data(self, control_plane_storage_connection_string) -> bytes:
+        async with self._blob_forwarder_data_lock:
+            if self._blob_forwarder_data is None:
+                async with ContainerClient.from_connection_string(
+                    control_plane_storage_connection_string, BLOB_STORAGE_CACHE
+                ) as client:
+                    stream = await client.download_blob(FORWARDER_BLOB_NAME)
+                    self._blob_forwarder_data = await stream.content_as_bytes(max_concurrency=4)
+            return self._blob_forwarder_data
 
     async def generate_forwarder_secrets(self, config_id: str) -> list[Secret]:
         connection_string = await self.get_connection_string(get_storage_account_name(config_id))
@@ -412,6 +548,43 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 raise
             return False
 
+    async def delete_log_forwarder_function_app(
+        self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3
+    ) -> bool:
+        """Deletes the Log forwarder, returns True if successful, False otherwise"""
+
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
+        async def _delete_forwarder() -> None:
+            log.info("Attempting to delete log forwarder %s", forwarder_id)
+
+            # start deleting the storage account now, it has no dependencies
+            delete_storage_account_task = create_task(
+                ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.storage_client.storage_accounts.delete(
+                        self.resource_group, get_storage_account_name(forwarder_id)
+                    ),
+                )
+            )
+
+            poller = await ignore_exception_type(
+                ResourceNotFoundError,
+                self.web_client.web_apps.begin_delete(self.resource_group, get_container_app_name(forwarder_id)),
+            )
+            if poller:
+                await poller.result()
+
+                await delete_storage_account_task
+            log.info("Deleted log forwarder %s", forwarder_id)
+
+        try:
+            await _delete_forwarder()
+            return True
+        except Exception:
+            if raise_error:
+                raise
+            return False
+
     async def delete_log_forwarder_env(self, region: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
         """Deletes the Log forwarder env, returns True if successful, False otherwise"""
 
@@ -436,6 +609,42 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         try:
             await _delete_forwarder_env()
+            return True
+        except Exception:
+            if raise_error:
+                raise
+            return False
+
+    async def delete_log_forwarder_service_plan(
+        self, region: str, *, raise_error: bool = True, max_attempts: int = 3
+    ) -> bool:
+        """Deletes the Log forwarder env, returns True if successful, False otherwise"""
+
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
+        async def _delete_forwarder_service_plan() -> None:
+            log.info(
+                "Attempting to delete log forwarder app service plan for region %s and control plane %s",
+                region,
+                self.control_plane_id,
+            )
+
+            poller = await ignore_exception_type(
+                ResourceNotFoundError,
+                self.web_client.app_service_plans.begin_delete(
+                    self.resource_group, get_managed_env_name(region, self.control_plane_id)
+                ),
+            )
+            if poller:
+                await poller.result()
+
+            log.info(
+                "Deleted log forwarder app service plan for region %s and control plane %s",
+                region,
+                self.control_plane_id,
+            )
+
+        try:
+            await _delete_forwarder_service_plan()
             return True
         except Exception:
             if raise_error:
