@@ -22,6 +22,8 @@ param datadogSite string
 
 param datadogTelemetry bool
 
+param logLevel string
+
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
 var forwarderImage = '${imageRegistry}/forwarder:latest'
 
@@ -37,6 +39,7 @@ var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
 var CONTROL_PLANE_REGION_SETTING = 'CONTROL_PLANE_REGION'
 var CONTROL_PLANE_ID_SETTING = 'CONTROL_PLANE_ID'
 var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
+var LOG_LEVEL_SETTING = 'LOG_LEVEL'
 
 // Secret Names
 var DD_API_KEY_SECRET = 'dd-api-key'
@@ -96,6 +99,7 @@ var commonAppSettings = [
   { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
   { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
   { name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING', value: connectionString }
+  { name: LOG_LEVEL_SETTING, value: logLevel }
 ]
 
 var resourceTaskName = 'resources-task-${controlPlaneId}'
