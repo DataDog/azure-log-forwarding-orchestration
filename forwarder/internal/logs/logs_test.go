@@ -287,7 +287,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.ParseLogs(closer, "insights-logs-kube-audit") {
+		for currLog, err := range logs.Parse(closer, "insights-logs-kube-audit") {
 			require.NoError(t, err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, "", currLog.ResourceId)
@@ -314,7 +314,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.ParseLogs(closer, functionAppContainer) {
+		for currLog, err := range logs.Parse(closer, functionAppContainer) {
 			require.NoError(t, err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, "", currLog.ResourceId)

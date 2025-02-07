@@ -2,7 +2,7 @@ package main
 
 import (
 	// stdlib
-
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -15,6 +15,7 @@ import (
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/go-autorest/autorest/to"
@@ -30,6 +31,7 @@ import (
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/deadletterqueue"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
@@ -137,7 +139,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	ctx := context.Background()
 
-	err := run(ctx, client, []*logs.Client{logClient}, nullLogger(), time.Now)
+	err := fetchAndProcessLogs(ctx, client, []*logs.Client{logClient}, nullLogger(), time.Now)
 	return submittedLogs, err
 }
 
@@ -470,7 +472,7 @@ func TestCursors(t *testing.T) {
 		var currentLogData []byte
 		now := time.Now()
 
-		lastCursor := cursor.NewCursors(nil)
+		lastCursor := cursor.New(nil)
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
@@ -507,7 +509,7 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.GetCursor(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, "azure", *logItem.Ddsource)
@@ -537,7 +539,7 @@ func TestCursors(t *testing.T) {
 		var currentLogData []byte
 		now := time.Now()
 
-		lastCursor := cursor.NewCursors(nil)
+		lastCursor := cursor.New(nil)
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
@@ -574,7 +576,7 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.GetCursor(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, "azure", *logItem.Ddsource)
@@ -584,11 +586,70 @@ func TestCursors(t *testing.T) {
 	})
 }
 
+type FaultyRoundTripper struct {
+}
+
+func (f *FaultyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("faulty")
+}
+
+func TestProcessDLQ(t *testing.T) {
+	t.Parallel()
+
+	t.Run("processes the dead letter queue", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		ctrl := gomock.NewController(t)
+		dlq, err := deadletterqueue.FromBytes(nil, []byte("[]"))
+		require.NoError(t, err)
+		currentTime := time.Now().UTC()
+		formattedTime := currentTime.Format(time.RFC3339)
+		logItem := datadogV2.HTTPLogItem{
+			Message:              fmt.Sprintf("{\"time\":\"%s\"}", formattedTime),
+			AdditionalProperties: map[string]string{"time": formattedTime},
+		}
+		queue := []datadogV2.HTTPLogItem{logItem}
+		dlq.Add(queue)
+		data, err := dlq.JSONBytes()
+		require.NoError(t, err)
+		reader := io.NopCloser(bytes.NewReader(data))
+		response := azblob.DownloadStreamResponse{
+			DownloadResponse: blob.DownloadResponse{
+				Body: reader,
+			},
+		}
+		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, nil).Return(response, nil)
+		createContainerResponse := azblob.CreateContainerResponse{}
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, nil)
+		uploadResponse := azblob.UploadBufferResponse{}
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, gomock.Any(), gomock.Any()).Return(uploadResponse, nil)
+
+		storageClient := storage.NewClient(mockClient)
+
+		datadogClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
+		datadogClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+		logsClient := logs.NewClient(datadogClient)
+
+		processedDatadogClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
+		processedLogsClient := logs.NewClient(processedDatadogClient)
+		processedClients := []*logs.Client{processedLogsClient}
+
+		ctx := context.Background()
+
+		// WHEN
+		err = processDeadLetterQueue(ctx, nullLogger(), storageClient, logsClient, processedClients)
+
+		// THEN
+		assert.NoError(t, err)
+	})
+}
+
 // TestRunMain exists for performance testing purposes.
 func TestRunMain(t *testing.T) {
 	t.Parallel()
 
-	t.Run("run main", func(t *testing.T) {
+	t.Run("fetchAndProcessLogs main", func(t *testing.T) {
 		t.Parallel()
 		if os.Getenv("CI") != "" {
 			t.Skip("Skipping testing in CI environment")
