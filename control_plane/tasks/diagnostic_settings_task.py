@@ -105,18 +105,15 @@ class DiagnosticSettingsTask(Task):
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
         self.event_cache = event_cache
-        self._datadog_client = AsyncApiClient(Configuration(request_timeout=DD_REQUEST_TIMEOUT))
         self.events_api = EventsApi(self._datadog_client)
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
-        await self._datadog_client.__aenter__()
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
     ) -> None:
-        await self._datadog_client.__aexit__(exc_type, exc_val, exc_tb)
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
