@@ -16,7 +16,6 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 )
 
 # dd
-from datadog_api_client.v1 import AsyncApiClient, Configuration
 from datadog_api_client.v1.api.events_api import EventsApi
 from datadog_api_client.v1.models import EventCreateRequest, EventCreateResponse
 
@@ -40,11 +39,9 @@ from tasks.common import (
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
 
-DD_REQUEST_TIMEOUT = 5
+DD_REQUEST_TIMEOUT = 5  # seconds
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 MAX_DIAGNOSTIC_SETTINGS = 5
-
-
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 
@@ -153,25 +150,29 @@ class DiagnosticSettingsTask(Task):
     async def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> bool:
         parsed_resource = parse_resource_id(resource_id)
         parse_success = len(parsed_resource) > 1
-        if not parse_success:
+        event_tags = ["forwarder:lfo", "subscription_id:" + sub_id]
+        if parse_success:
+            event_tags.extend(
+                [
+                    "resource_type:" + cast(str, parsed_resource["type"]),
+                    "resource_provider:" + cast(str, parsed_resource["namespace"]),
+                    "resource_group:" + cast(str, parsed_resource["resource_group"]),
+                ]
+            )
+        else:
             self.log.error("Failed to parse resource id %s", resource_id)
 
         body = EventCreateRequest(
             title=f"Log forwarding disabled for Azure resource {cast(str, parsed_resource['name']) if parse_success else None}",
             text=f"Log forwarding cannot be enabled for resource '{resource_id}' because it already has the maximum number of diagnostic settings configured. The addition of a DataDog diagnostic setting is necessary for log forwarding.",
-            tags=[
-                "forwarder:lfo",
-                "subscription_id:" + sub_id,
-                ("resource_type:" + cast(str, parsed_resource["type"])) if parse_success else None,
-                ("resource_provider:" + cast(str, parsed_resource["namespace"])) if parse_success else None,
-                ("resource_group:" + cast(str, parsed_resource["resource_group"])) if parse_success else None,
-            ],
+            tags=event_tags,
             alert_type="warning",
         )
 
         response: EventCreateResponse
         try:
             response = await self.events_api.create_event(body)  # type: ignore
+            response.raise_for_status()
         except Exception as e:
             self.log.error(f"Error while sending event to Datadog: {e}")
             return False
@@ -227,7 +228,7 @@ class DiagnosticSettingsTask(Task):
                 self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
 
             self.log.warning(
-                "Max number of diagnostic settings reached for resource %s in subscription %s, won't not add another",
+                "Max number of diagnostic settings reached for resource %s in subscription %s, will not add another",
                 resource_id,
                 sub_id,
             )
