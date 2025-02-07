@@ -272,7 +272,7 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 		dlq.Add(client.FailedLogs)
 	}
 
-	return dlq.Save(ctx, storageClient)
+	return dlq.Save(ctx, storageClient, logger)
 }
 
 func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client) error {

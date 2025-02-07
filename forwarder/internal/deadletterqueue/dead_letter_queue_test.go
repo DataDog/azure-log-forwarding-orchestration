@@ -129,7 +129,7 @@ func TestSaveDLQ(t *testing.T) {
 		require.NoError(t, err)
 
 		// WHEN
-		err = dlq.Save(context.Background(), client)
+		err = dlq.Save(context.Background(), client, log.NewEntry(log.New()))
 
 		// THEN
 		assert.NoError(t, err)
