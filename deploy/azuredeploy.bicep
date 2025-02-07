@@ -19,7 +19,7 @@ param imageRegistry string = 'datadoghq.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
-func sub_uuid(uuid string) string => toLower(substring(uuid, 24, 12))
+func subUuid(uuid string) string => toLower(substring(uuid, 24, 12))
 
 // sub-uuid for the control plane is based on the identifiers below.
 // This is to be consistent if there are multiple deploys, while still making a unique id.
@@ -27,7 +27,7 @@ func sub_uuid(uuid string) string => toLower(substring(uuid, 24, 12))
 // - control plane subscription id
 // - control plane resource group name
 // - control plane region
-var controlPlaneId = sub_uuid(guid(
+var controlPlaneId = subUuid(guid(
   managementGroup().id,
   controlPlaneSubscriptionId,
   controlPlaneResourceGroupName,
@@ -84,7 +84,7 @@ var scalingTaskPrincipalId = controlPlane.outputs.scalingTaskPrincipalId
 // create the subscription level permissions, as well as the resource group for forwarders and the permissions on that resource group
 module subscriptionPermissions './subscription_permissions.bicep' = [
   for subscriptionId in json(monitoredSubscriptions): {
-    name: 'subscriptionPermissions-${sub_uuid(subscriptionId)}-${controlPlaneId}'
+    name: 'subscriptionPermissions-${subUuid(subscriptionId)}-${controlPlaneId}'
     scope: subscription(subscriptionId)
     params: {
       resourceGroupName: controlPlaneResourceGroupName
