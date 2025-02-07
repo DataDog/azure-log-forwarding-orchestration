@@ -150,7 +150,7 @@ func TestNewLog(t *testing.T) {
 
 	})
 
-	t.Run("applies correct tags", func(t *testing.T) {
+	t.Run("applies correct metadata", func(t *testing.T) {
 		t.Parallel()
 
 		// WHEN
@@ -166,6 +166,7 @@ func TestNewLog(t *testing.T) {
 		assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
 		assert.Contains(t, log.Tags, fmt.Sprintf("control_plane_id:%s", controlPlaneId))
 		assert.Contains(t, log.Tags, fmt.Sprintf("config_id:%s", configId))
+		assert.Contains(t, log.Source, "azure.web.sites")
 		assert.NotNil(t, log)
 	})
 

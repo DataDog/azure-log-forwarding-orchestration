@@ -49,6 +49,7 @@ type Log struct {
 	Tags       []string
 	Category   string
 	ResourceId string
+	Source     string
 	Time       time.Time
 	Level      string
 }
@@ -147,6 +148,7 @@ func (l *azureLog) ToLog() (*Log, error) {
 		ByteSize:   l.ByteSize,
 		Category:   l.Category,
 		ResourceId: l.ResourceId(),
+		Source:     sourceTag(parsedId.ResourceType.String()),
 		Time:       l.Time,
 		Level:      l.Level,
 		Tags:       getTags(parsedId),
@@ -302,7 +304,8 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	}
 
 	logItem := datadogV2.HTTPLogItem{
-		Ddsource:             ptr("azure"),
+		Service:              ptr("azure"),
+		Ddsource:             ptr(log.Source),
 		Ddtags:               ptr(strings.Join(log.Tags, ",")),
 		Message:              log.Content(),
 		AdditionalProperties: additionalProperties,
