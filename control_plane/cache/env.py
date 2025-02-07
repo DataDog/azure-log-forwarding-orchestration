@@ -13,6 +13,7 @@ log = getLogger(__name__)
 STORAGE_CONNECTION_SETTING = "AzureWebJobsStorage"
 DD_SITE_SETTING = "DD_SITE"
 DD_API_KEY_SETTING = "DD_API_KEY"
+DD_TELEMETRY_SETTING = "DD_TELEMETRY"
 FORWARDER_IMAGE_SETTING = "FORWARDER_IMAGE"
 SCALING_PERCENTAGE_SETTING = "SCALING_PERCENTAGE"
 CONFIG_ID_SETTING = "CONFIG_ID"
@@ -21,6 +22,7 @@ RESOURCE_GROUP_SETTING = "RESOURCE_GROUP"
 CONTROL_PLANE_REGION_SETTING = "CONTROL_PLANE_REGION"
 CONTROL_PLANE_ID_SETTING = "CONTROL_PLANE_ID"
 STORAGE_ACCOUNT_URL_SETTING = "STORAGE_ACCOUNT_URL"
+LOG_LEVEL_SETTING = "LOG_LEVEL"
 
 # Secret Names
 DD_API_KEY_SECRET = "dd-api-key"
@@ -53,3 +55,7 @@ def parse_config_option(name: str, parse: Callable[[str], T | None], default: T)
     except ValueError:
         log.error(f"Invalid value for configuration option {name}: {environ.get(name)}")
         return default
+
+
+def is_truthy(setting_name: str) -> bool:
+    return environ.get(setting_name, "").lower().strip() in {"t", "true", "1", "y", "yes"}

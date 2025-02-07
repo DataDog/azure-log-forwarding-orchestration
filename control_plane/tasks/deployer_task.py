@@ -3,7 +3,6 @@
 from asyncio import gather, run
 from collections.abc import Iterable
 from json import dumps
-from logging import INFO, basicConfig, getLogger
 from os import environ
 from types import TracebackType
 from typing import NamedTuple, Self, cast
@@ -43,16 +42,13 @@ from tasks.common import (
     Resource,
 )
 from tasks.concurrency import collect
-from tasks.task import Task
+from tasks.task import Task, task_main
 
 DEPLOYER_TASK_NAME = "deployer_task"
 
 
 MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
-
-
-log = getLogger(DEPLOYER_TASK_NAME)
 
 
 class ControlPlaneResources(NamedTuple):
@@ -66,6 +62,8 @@ class DeployError(Exception):
 
 
 class DeployerTask(Task):
+    NAME = DEPLOYER_TASK_NAME
+
     def __init__(self) -> None:
         super().__init__()
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
@@ -105,7 +103,7 @@ class DeployerTask(Task):
             self.get_public_manifests(), self.get_private_manifests(), self.get_current_components()
         )
         if not private_manifest:
-            log.info("Failed to read private manifest. Deploying all components.")
+            self.log.info("Failed to read private manifest. Deploying all components.")
         self.public_manifest = public_manifest
         self.private_manifest = private_manifest
         self.manifest_cache = (
@@ -142,7 +140,7 @@ class DeployerTask(Task):
         try:
             blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_FILE_NAME)
         except RetryError as e:
-            log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
+            self.log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
             return None
         return deserialize_manifest_cache(blob_data)
 
@@ -174,26 +172,26 @@ class DeployerTask(Task):
         )
 
     async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
-        log.info(f"Deploying {component}")
+        self.log.info(f"Deploying {component}")
         if component == "forwarder":
             return await self.deploy_log_forwarder_image()
         task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
         if not function_app:
-            log.error(
+            self.log.error(
                 f"Function app for {component} not found in {current_components.function_apps}, skipping deployment"
             )
             return
         try:
-            log.info(f"Downloading function app data for {component}")
+            self.log.info(f"Downloading function app data for {component}")
             zip_data = await self.download_function_app_data(component)
-            log.info(f"Deploying {function_app}")
+            self.log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
         except Exception:
-            log.exception(f"Failed to deploy {component}")
+            self.log.exception(f"Failed to deploy {component}")
             return
         self.manifest_cache[component] = self.public_manifest[component]
-        log.info(f"Finished deploying {component}")
+        self.log.info(f"Finished deploying {component}")
 
     async def deploy_log_forwarder_image(self) -> None:
         # TODO(AZINTS-2770): Implement this
@@ -222,11 +220,5 @@ class DeployerTask(Task):
         await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
 
 
-async def main() -> None:
-    async with DeployerTask() as deployer:
-        await deployer.run()
-
-
 if __name__ == "__main__":
-    basicConfig(level=INFO)
-    run(main())
+    run(task_main(DeployerTask, []))

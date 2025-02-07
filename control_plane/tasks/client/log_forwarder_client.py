@@ -3,8 +3,7 @@ from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
-from logging import getLogger
-from os import environ
+from logging import Logger
 from types import TracebackType
 from typing import Any, Self, TypeAlias, TypeVar, cast
 
@@ -70,9 +69,11 @@ from cache.env import (
     DD_API_KEY_SECRET,
     DD_API_KEY_SETTING,
     DD_SITE_SETTING,
+    DD_TELEMETRY_SETTING,
     FORWARDER_IMAGE_SETTING,
     STORAGE_CONNECTION_SETTING,
     get_config_option,
+    is_truthy,
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
@@ -97,7 +98,6 @@ MAX_ATTEMPS = 5
 
 FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
 
-log = getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -126,13 +126,16 @@ def get_datetime_str(time: datetime) -> str:
 
 
 class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
-    def __init__(self, credential: DefaultAzureCredential, subscription_id: str, resource_group: str) -> None:
+    def __init__(
+        self, log: Logger, credential: DefaultAzureCredential, subscription_id: str, resource_group: str
+    ) -> None:
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
         self.dd_site = get_config_option(DD_SITE_SETTING)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
-        self.should_submit_metrics = bool(environ.get("DD_APP_KEY") and environ.get("SHOULD_SUBMIT_METRICS"))
+        self.should_submit_metrics = is_truthy(DD_TELEMETRY_SETTING)
+        self.log = log
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
@@ -166,7 +169,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         def _done_callback(task: AsyncTask[Any]) -> None:
             self._background_tasks.discard(task)
             if e := task.exception():
-                log.error("Background task failed with an exception", exc_info=e)
+                self.log.error("Background task failed with an exception", exc_info=e)
 
         task = create_task(coro)
         self._background_tasks.add(task)
@@ -188,7 +191,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             self.create_log_forwarder_storage_management_policy(storage_account_name),
             return_exceptions=True,
         )
-        log_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True)
+        log_errors(
+            self.log, "Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True
+        )
 
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
@@ -222,7 +227,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def create_log_forwarder_storage_account(
         self, region: str, storage_account_name: str
     ) -> ResourcePoller[StorageAccount]:
-        log.info("Creating storage account %s for region %s", storage_account_name, region)
+        self.log.info("Creating storage account %s for region %s", storage_account_name, region)
         return await self.storage_client.storage_accounts.begin_create(
             self.resource_group,
             storage_account_name,
@@ -240,7 +245,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
         container_app_region = self.get_container_app_region(region)
         env_name = get_managed_env_name(container_app_region, self.control_plane_id)
-        log.info("Creating managed environment %s for region %s in %s", env_name, region, container_app_region)
+        self.log.info("Creating managed environment %s for region %s in %s", env_name, region, container_app_region)
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
@@ -382,7 +387,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder() -> None:
-            log.info("Attempting to delete log forwarder %s", forwarder_id)
+            self.log.info("Attempting to delete log forwarder %s", forwarder_id)
 
             # start deleting the storage account now, it has no dependencies
             delete_storage_account_task = create_task(
@@ -402,7 +407,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 await poller.result()
 
                 await delete_storage_account_task
-            log.info("Deleted log forwarder %s", forwarder_id)
+            self.log.info("Deleted log forwarder %s", forwarder_id)
 
         try:
             await _delete_forwarder()
@@ -417,7 +422,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder_env() -> None:
-            log.info(
+            self.log.info(
                 "Attempting to delete log forwarder env for region %s and control plane %s",
                 region,
                 self.control_plane_id,
@@ -432,7 +437,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if poller:
                 await poller.result()
 
-            log.info("Deleted log forwarder env for region %s and control plane %s", region, self.control_plane_id)
+            self.log.info("Deleted log forwarder env for region %s and control plane %s", region, self.control_plane_id)
 
         try:
             await _delete_forwarder_env()
@@ -451,7 +456,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
         ]
         if not forwarder_metrics:
-            log.warning("No valid metrics found for forwarder %s", config_id)
+            self.log.warning("No valid metrics found for forwarder %s", config_id)
         self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics))
         return forwarder_metrics
 
@@ -490,7 +495,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         msg += f"HttpResponseError with Response Code: {result.status_code}\nError: {result.error or result.reason or result.message}"
                     else:
                         msg += str(result)
-                    log.error(
+                    self.log.error(
                         "Unable to fetch metrics in %s for forwarder %s:\n%s",
                         blob,
                         config_id,
@@ -518,7 +523,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             body=self.create_metric_payload(metrics, log_forwarder_id)
         )  # type: ignore
         for error in response.get("errors", []):
-            log.error(error)
+            self.log.error(error)
 
     def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
         # type ignore hack to get pyright typing to work since the SDK overrides __new__

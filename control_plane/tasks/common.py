@@ -1,12 +1,10 @@
 # stdlib
 from collections.abc import Iterable
 from datetime import datetime
-from logging import getLogger
+from logging import Logger
 from math import inf
 from typing import Final, Protocol, TypeVar
 from uuid import uuid4
-
-log = getLogger(__name__)
 
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "ddlfocontrol"
@@ -102,7 +100,7 @@ def chunks(lst: list[T], n: int) -> Iterable[tuple[T, ...]]:
     return zip(*(lst[i::n] for i in range(n)), strict=False)
 
 
-def log_errors(message: str, *maybe_errors: object | Exception, reraise: bool = False) -> list[Exception]:
+def log_errors(log: Logger, message: str, *maybe_errors: object | Exception, reraise: bool = False) -> list[Exception]:
     """Log and return any errors in `maybe_errors`.
     If reraise is True, the first error will be raised"""
     errors = [e for e in maybe_errors if isinstance(e, Exception)]

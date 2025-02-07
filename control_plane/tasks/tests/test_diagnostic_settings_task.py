@@ -50,7 +50,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         client.subscription_diagnostic_settings.list = Mock(return_value=async_generator())  # nothing to test here yet
 
         self.send_max_settings_reached_event = self.patch("DiagnosticSettingsTask.send_max_settings_reached_event")
-        self.log = self.patch("log")
+        self.log = self.patch_path("tasks.task.log").getChild.return_value
         env = patch.dict(environ, {"RESOURCE_GROUP": "lfo", "CONTROL_PLANE_ID": control_plane_id})
         env.start()
         self.addCleanup(env.stop)

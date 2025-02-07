@@ -2,6 +2,7 @@
 from asyncio import sleep
 from json import dumps
 from os import environ
+from typing import cast
 from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
 
 # 3p
@@ -51,7 +52,7 @@ STORAGE_ACCOUNT_NAME = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{CONFIG_ID1}"
 RESOURCE_GROUP_NAME = "test_lfo"
 
 
-containerAppSettings: dict[str, str] = {
+LOG_FORWARDER_CLIENT_SETTINGS: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
     "DD_API_KEY": "123123",
     "DD_APP_KEY": "456456",
@@ -86,11 +87,15 @@ class MockedLogForwarderClient(LogForwarderClient):
 
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
-        p = patch.dict(environ, containerAppSettings, clear=True)
+        p = patch.dict(environ, LOG_FORWARDER_CLIENT_SETTINGS, clear=True)
         p.start()
         self.addCleanup(p.stop)
-        self.client: MockedLogForwarderClient = LogForwarderClient(  # type: ignore
-            credential=AsyncMock(), subscription_id=SUB_ID1, resource_group=RESOURCE_GROUP_NAME
+        self.log = mock()
+        self.client: MockedLogForwarderClient = cast(
+            MockedLogForwarderClient,
+            LogForwarderClient(
+                log=self.log, credential=AsyncMock(), subscription_id=SUB_ID1, resource_group=RESOURCE_GROUP_NAME
+            ),
         )
         await self.client.__aexit__(None, None, None)
         self.client.container_apps_client = AsyncMockClient()
@@ -99,8 +104,6 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
-
-        self.log = self.patch_path("tasks.client.log_forwarder_client.log")
 
         self.container_client = AsyncMockClient()
         self.container_client_class.from_connection_string.return_value = self.container_client
@@ -252,7 +255,7 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(Mock(), Mock(), Mock()) as client:
+        async with LogForwarderClient(self.log, Mock(), Mock(), Mock()) as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
