@@ -13,3 +13,9 @@ How was this tested?
 - Unit tests: Test should cover core behavior as well as edge cases.
 - Manual testing: Screenshots/logs of real executions in the portal.
 -->
+
+## Rollout
+<!--
+We are now in Beta, customers are not expected to reinstall. Is this PR backwards compatible? If not, how will we handle the rollout?
+-->
+ - [ ] This change is backwards compatible.
