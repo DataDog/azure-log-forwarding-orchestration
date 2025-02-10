@@ -202,6 +202,7 @@ func TestRun(t *testing.T) {
 
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, "azure", *logItem.Service)
+			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -269,6 +270,7 @@ func TestRun(t *testing.T) {
 
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, "azure", *logItem.Service)
+			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -322,6 +324,7 @@ func TestProcessLogs(t *testing.T) {
 		assert.Len(t, submittedLogs, 3)
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, "azure", *logItem.Service)
+			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -513,6 +516,7 @@ func TestCursors(t *testing.T) {
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, "azure", *logItem.Service)
+				assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
@@ -580,6 +584,7 @@ func TestCursors(t *testing.T) {
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, "azure", *logItem.Service)
+				assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
