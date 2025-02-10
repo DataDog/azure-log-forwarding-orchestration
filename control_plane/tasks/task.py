@@ -27,7 +27,7 @@ log = getLogger(__name__)
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args", "message"}
+IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args"}
 
 
 def get_error_telemetry(
@@ -101,16 +101,20 @@ class Task(AbstractAsyncContextManager["Task"]):
             return
         dd_logs = [
             HTTPLogItem(
-                **{k: str(v) for k, v in record.__dict__.items() if k not in IGNORED_LOG_EXTRAS},
-                message=record.getMessage(),
-                ddsource="azure",
-                service="lfo",
-                time=record.asctime,
-                level=record.levelname,
-                execution_id=self.execution_id,
-                control_plane_id=self.control_plane_id,
-                task=self.NAME,
-                **get_error_telemetry(record.exc_info),
+                **{
+                    **{k: str(v) for k, v in record.__dict__.items() if k not in IGNORED_LOG_EXTRAS},
+                    **{
+                        "message": record.getMessage(),
+                        "ddsource": "azure",
+                        "service": "lfo",
+                        "time": record.asctime,
+                        "level": record.levelname,
+                        "execution_id": self.execution_id,
+                        "control_plane_id": self.control_plane_id,
+                        "task": self.NAME,
+                    },
+                    **get_error_telemetry(record.exc_info),
+                }
             )
             for record in self._logs
         ]
