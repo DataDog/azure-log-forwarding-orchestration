@@ -5,6 +5,7 @@ param controlPlaneId string
 param controlPlaneLocation string
 param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
+param monitoredSubscriptions string
 
 param imageRegistry string
 param storageAccountUrl string
@@ -38,6 +39,7 @@ var SUBSCRIPTION_ID_SETTING = 'SUBSCRIPTION_ID'
 var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
 var CONTROL_PLANE_REGION_SETTING = 'CONTROL_PLANE_REGION'
 var CONTROL_PLANE_ID_SETTING = 'CONTROL_PLANE_ID'
+var MONITORED_SUBSCRIPTIONS_SETTING = 'MONITORED_SUBSCRIPTIONS'
 var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
 var LOG_LEVEL_SETTING = 'LOG_LEVEL'
 
@@ -115,6 +117,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
     siteConfig: {
       appSettings: union(commonAppSettings, [
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
+        { name: MONITORED_SUBSCRIPTIONS_SETTING, value: monitoredSubscriptions }
       ])
       linuxFxVersion: 'Python|3.11'
     }
