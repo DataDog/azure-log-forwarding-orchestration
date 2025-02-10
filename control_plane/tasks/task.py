@@ -99,14 +99,12 @@ class Task(AbstractAsyncContextManager["Task"]):
             return
         dd_logs = [
             HTTPLogItem(
-                message=record.message,
+                **{k: str(v) for k, v in record.__dict__.items()},
                 ddsource="azure",
                 service="lfo",
                 time=record.asctime,
                 level=record.levelname,
-                lineno=str(record.lineno),
                 execution_id=self.execution_id,
-                funcname=record.funcName,
                 control_plane_id=self.control_plane_id,
                 task=self.NAME,
                 **get_error_telemetry(record.exc_info),
