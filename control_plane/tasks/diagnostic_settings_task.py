@@ -2,8 +2,7 @@
 from asyncio import gather, run
 from json import dumps
 from random import shuffle
-from types import TracebackType
-from typing import NamedTuple, Self, cast
+from typing import NamedTuple, cast
 
 # 3p
 from azure.core.exceptions import HttpResponseError
