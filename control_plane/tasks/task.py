@@ -34,8 +34,6 @@ getLogger("azure").setLevel(ERROR)
 
 IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args", "msg"}
 
-START_TIME = time()
-
 
 def get_error_telemetry(
     exc_info: tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None] | None,
@@ -70,6 +68,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.credential = DefaultAzureCredential()
 
         # Telemetry Logic
+        self.start_time = time()
         self.execution_id = str(uuid4())
         self.control_plane_id = environ.get(CONTROL_PLANE_ID_SETTING, "unknown")
         self.tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}", f"control_plane_id:{self.control_plane_id}"]
@@ -128,7 +127,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         self._logs.clear()
         dd_metric = MetricSeries(
             metric=CONTROL_PLANE_METRIC_PREFIX + "runtime_seconds",
-            points=[MetricPoint(timestamp=int(START_TIME), value=time() - START_TIME)],
+            points=[MetricPoint(timestamp=int(self.start_time), value=time() - self.start_time)],
             tags=self.tags,
         )
         await gather(
