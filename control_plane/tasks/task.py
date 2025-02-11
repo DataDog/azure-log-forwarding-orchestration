@@ -27,6 +27,8 @@ log = getLogger(__name__)
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
+IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args", "msg"}
+
 
 def get_error_telemetry(
     exc_info: tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None] | None,
@@ -99,17 +101,20 @@ class Task(AbstractAsyncContextManager["Task"]):
             return
         dd_logs = [
             HTTPLogItem(
-                message=record.message,
-                ddsource="azure",
-                service="lfo",
-                time=record.asctime,
-                level=record.levelname,
-                lineno=str(record.lineno),
-                execution_id=self.execution_id,
-                funcname=record.funcName,
-                control_plane_id=self.control_plane_id,
-                task=self.NAME,
-                **get_error_telemetry(record.exc_info),
+                **{
+                    **{k: str(v) for k, v in record.__dict__.items() if k not in IGNORED_LOG_EXTRAS},
+                    **{
+                        "message": record.getMessage(),
+                        "ddsource": "azure",
+                        "service": "lfo",
+                        "time": record.asctime,
+                        "level": record.levelname,
+                        "execution_id": self.execution_id,
+                        "control_plane_id": self.control_plane_id,
+                        "task": self.NAME,
+                    },
+                    **get_error_telemetry(record.exc_info),
+                }
             )
             for record in self._logs
         ]
@@ -121,7 +126,8 @@ async def task_main(task_class: type[Task], caches: list[str]) -> None:
     level = environ.get(LOG_LEVEL_SETTING, "INFO").upper()
     if level not in {"ERROR", "WARN", "WARNING", "INFO", "DEBUG"}:
         level = "INFO"
-    basicConfig(level=level)
+    basicConfig()
+    log.setLevel(level)
     log.info("Started %s at %s (log level %s)", task_class.NAME, now(), level)
     cache_states = await gather(*map(read_cache, caches))
     async with task_class(*cache_states) as task:

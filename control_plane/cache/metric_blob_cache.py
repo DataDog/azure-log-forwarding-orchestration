@@ -20,6 +20,8 @@ class MetricBlobEntry(TypedDict, total=True):
     "A mapping of resource id ->log volume in number of bytes"
 
 
+METRIC_NAMES = ("resource_log_volume", "resource_log_bytes", "runtime_seconds")
+
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
