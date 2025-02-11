@@ -29,10 +29,7 @@ resources_task = [
     "azure-mgmt-synapse==2.0.0",
     "azure-mgmt-web==7.3.0",
 ]
-diagnostic_settings_task = [
-    "azure-mgmt-monitor==6.0.2",
-    "datadog-api-client==2.26.0",
-]
+diagnostic_settings_task = ["azure-mgmt-monitor==6.0.2"]
 scaling_task = [
     "azure-mgmt-appcontainers==3.1.0",
     "azure-mgmt-storage==22.0.0",

@@ -104,15 +104,6 @@ class DiagnosticSettingsTask(Task):
         self.event_cache = event_cache
         self.events_api = EventsApi(self._datadog_client)
 
-    async def __aenter__(self) -> Self:
-        await super().__aenter__()
-        return self
-
-    async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
-    ) -> None:
-        await super().__aexit__(exc_type, exc_val, exc_tb)
-
     async def run(self) -> None:
         self.log.info("Processing %s subscriptions", len(self.assignment_cache))
         await gather(*map(self.process_subscription, self.assignment_cache))
@@ -228,9 +219,9 @@ class DiagnosticSettingsTask(Task):
                 self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
 
             self.log.warning(
-                "Max number of diagnostic settings reached for resource %s in subscription %s, will not add another",
+                "Max number of diagnostic settings reached for resource %s, will not add another",
                 resource_id,
-                sub_id,
+                extra={"subscription_id": sub_id},
             )
             return
 
