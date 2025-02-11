@@ -12,6 +12,7 @@ import (
 	"iter"
 	"math"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -233,15 +234,50 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 	return json.Marshal(logMap)
 }
 
+var scrubberRuleConfigs = map[string]struct {
+	pattern     string
+	replacement string
+}{
+	"REDACT_IP": {
+		pattern:     `[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`,
+		replacement: "xxx.xxx.xxx.xxx",
+	},
+	"REDACT_EMAIL": {
+		pattern:     `[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+`,
+		replacement: "xxxx@xxxx.com",
+	},
+	"REDACT_MICROSOFT": {
+		pattern:     `Microsoft`,
+		replacement: "apple",
+	},
+}
+
+func scrubPii(logBytes []byte) []byte {
+	content := string(logBytes)
+
+	for _, scrubRule := range scrubberRuleConfigs {
+		regex, err := regexp.Compile(scrubRule.pattern)
+		if err != nil {
+			// logger.Warningf("Failed to compile regex for pattern %s: %v", pattern, err)
+		}
+
+		content = regex.ReplaceAllString(content, scrubRule.replacement)
+	}
+
+	return []byte(content)
+}
+
 // NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte, containerName string) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
-	logSize := len(logBytes) + newlineBytes
+	scrubbedLog := scrubPii(logBytes)
+
+	logSize := len(scrubbedLog) + newlineBytes
 
 	if containerName == functionAppContainer {
-		logBytes, err = BytesFromJSON(logBytes)
+		logBytes, err = BytesFromJSON(scrubbedLog)
 		if err != nil {
 			if strings.Contains(err.Error(), "Unexpected token ;") {
 				return nil, ErrUnexpectedToken

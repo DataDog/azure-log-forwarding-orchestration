@@ -127,6 +127,22 @@ func TestNewLog(t *testing.T) {
 
 	})
 
+	t.Run("scrubs PII from logs", func(t *testing.T) {
+		t.Parallel()
+
+		// WHEN
+		log, err := logs.NewLog(validLog, functionAppContainer)
+
+		// THEN
+		x := log.Content()
+		fmt.Println(x)
+		assert.NoError(t, err)
+		assert.Equal(t, "FunctionAppLogs", log.Category)
+		assert.NotContains(t, log.Content(), "Microsoft")
+		assert.Contains(t, log.Content(), "apple")
+
+	})
+
 	t.Run("handles an array of strings", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
