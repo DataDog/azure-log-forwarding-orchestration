@@ -248,8 +248,8 @@ output scalingTaskPrincipalId string = scalingTask.identity.principalId
 
 // DEPLOYER TASK INITIAL RUN
 
-resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'runInitialDeployIdentity'
+resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'initialRunIdentity'
   location: controlPlaneLocation
 }
 
@@ -266,23 +266,23 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
   }
 }
 
-resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneResourceGroupName)
+resource initialRunIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('initialRunIdentityRoleAssignment', controlPlaneResourceGroupName)
   properties: {
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: containerAppStartRole.id
-    principalId: runInitialDeployIdentity.properties.principalId
+    principalId: initialRunIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'runInitialDeploy'
+resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: 'initialRun'
   location: controlPlaneLocation
-  kind: 'AzurePowerShell'
+  kind: 'AzureCLI'
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: { '${runInitialDeployIdentity.id}': {} }
+    userAssignedIdentities: { '${initialRunIdentity.id}': {} }
   }
   properties: {
     storageAccountSettings: {
@@ -290,14 +290,14 @@ resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       storageAccountName: storageAccount.name
       storageAccountKey: storageAccountKey
     }
-    azPowerShellVersion: '12.3'
-    scriptContent: 'Start-AzContainerAppJob -Name ${deployerTaskName} -ResourceGroupName ${controlPlaneResourceGroupName}'
+    azCliVersion: '2.65.0'
+    scriptContent: loadTextContent('../build/initial_run.sh')
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
   }
   dependsOn: [
-    runInitialDeployIdentityRoleAssignment
+    initialRunIdentityRoleAssignment
     deployerTaskRole
   ]
 }
