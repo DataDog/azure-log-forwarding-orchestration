@@ -29,6 +29,8 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
+const AzureService = "azure"
+
 // maxBufferSize is the maximum buffer to use for scanning logs.
 // Logs greater than this buffer will be dropped by bufio.Scanner.
 // The buffer is defaulted to the maximum value of an integer.
@@ -149,7 +151,7 @@ func (l *azureLog) ToLog() (*Log, error) {
 		ByteSize:   l.ByteSize,
 		Category:   l.Category,
 		ResourceId: l.ResourceId(),
-		Service:    "azure",
+		Service:    AzureService,
 		Source:     sourceTag(parsedId.ResourceType.String()),
 		Time:       l.Time,
 		Level:      l.Level,
