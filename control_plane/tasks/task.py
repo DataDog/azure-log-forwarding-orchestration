@@ -27,7 +27,7 @@ log = getLogger(__name__)
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args"}
+IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args", "msg"}
 
 
 def get_error_telemetry(
