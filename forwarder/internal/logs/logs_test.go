@@ -97,6 +97,17 @@ func TestAddLog(t *testing.T) {
 	})
 }
 
+func assertTags(t *testing.T, log *logs.Log) {
+	assert.Contains(t, log.Tags, "forwarder:lfo")
+	assert.Contains(t, log.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
+	assert.Contains(t, log.Tags, "source:azure.web.sites")
+	assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
+	assert.Contains(t, log.Tags, fmt.Sprintf("control_plane_id:%s", controlPlaneId))
+	assert.Contains(t, log.Tags, fmt.Sprintf("config_id:%s", configId))
+	assert.Contains(t, log.Source, "azure.web.sites")
+	assert.Contains(t, log.Service, logs.AzureService)
+}
+
 var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
 func TestNewLog(t *testing.T) {
@@ -111,7 +122,7 @@ func TestNewLog(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, log.ResourceId, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING")
 		assert.Equal(t, "FunctionAppLogs", log.Category)
-		assert.Contains(t, log.Tags, "forwarder:lfo")
+		assertTags(t, log)
 		assert.NotNil(t, log)
 
 	})
@@ -128,7 +139,7 @@ func TestNewLog(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, log.ResourceId, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING")
 		assert.Equal(t, "FunctionAppLogs", log.Category)
-		assert.Contains(t, log.Tags, "forwarder:lfo")
+		assertTags(t, log)
 		assert.NotNil(t, log)
 
 	})
@@ -145,7 +156,7 @@ func TestNewLog(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, log.ResourceId, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING")
 		assert.Equal(t, "FunctionAppLogs", log.Category)
-		assert.Contains(t, log.Tags, "forwarder:lfo")
+		assertTags(t, log)
 		assert.NotNil(t, log)
 
 	})
@@ -160,12 +171,7 @@ func TestNewLog(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, log.ResourceId, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING")
 		assert.Equal(t, "FunctionAppLogs", log.Category)
-		assert.Contains(t, log.Tags, "forwarder:lfo")
-		assert.Contains(t, log.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
-		assert.Contains(t, log.Tags, "source:azure.web.sites")
-		assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
-		assert.Contains(t, log.Tags, fmt.Sprintf("control_plane_id:%s", controlPlaneId))
-		assert.Contains(t, log.Tags, fmt.Sprintf("config_id:%s", configId))
+		assertTags(t, log)
 		assert.NotNil(t, log)
 	})
 

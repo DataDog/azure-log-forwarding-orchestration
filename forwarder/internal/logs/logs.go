@@ -29,6 +29,8 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
+const AzureService = "azure"
+
 // maxBufferSize is the maximum buffer to use for scanning logs.
 // Logs greater than this buffer will be dropped by bufio.Scanner.
 // The buffer is defaulted to the maximum value of an integer.
@@ -49,6 +51,8 @@ type Log struct {
 	Tags       []string
 	Category   string
 	ResourceId string
+	Service    string
+	Source     string
 	Time       time.Time
 	Level      string
 }
@@ -147,6 +151,8 @@ func (l *azureLog) ToLog() (*Log, error) {
 		ByteSize:   l.ByteSize,
 		Category:   l.Category,
 		ResourceId: l.ResourceId(),
+		Service:    AzureService,
+		Source:     sourceTag(parsedId.ResourceType.String()),
 		Time:       l.Time,
 		Level:      l.Level,
 		Tags:       getTags(parsedId),
@@ -302,7 +308,8 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	}
 
 	logItem := datadogV2.HTTPLogItem{
-		Ddsource:             ptr("azure"),
+		Service:              ptr(log.Service),
+		Ddsource:             ptr(log.Source),
 		Ddtags:               ptr(strings.Join(log.Tags, ",")),
 		Message:              log.Content(),
 		AdditionalProperties: additionalProperties,
