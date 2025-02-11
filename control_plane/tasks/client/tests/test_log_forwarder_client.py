@@ -294,14 +294,18 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(self.log, Mock(), Mock(), Mock()) as client:
+        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1") as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
             client.submit_background_task(AsyncMock(side_effect=failing_task_error)())
 
         self.assertEqual(m.call_count, 3)
-        self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
+        self.log.error.assert_called_once_with(
+            "Background task failed with an exception",
+            exc_info=failing_task_error,
+            extra={"subscription_id": "sub1", "resource_group": "rg1"},
+        )
 
     async def test_create_log_forwarder_no_keys(self):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
@@ -556,6 +560,7 @@ class TestLogForwarderClient(AsyncTestCase):
             ANY,
             "test",
             "Max retries attempted, failed due to:\noops",
+            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
         )
 
     async def test_get_blob_unretryable_exception(self):
@@ -569,6 +574,7 @@ class TestLogForwarderClient(AsyncTestCase):
             ANY,
             "test",
             "HttpResponseError with Response Code: 402\nError: {'code': 'something related to 402'}",
+            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
         )
 
     async def test_submit_metrics_normal_execution(self):
@@ -631,7 +637,10 @@ class TestLogForwarderClient(AsyncTestCase):
                 ],
             )
 
-        self.log.error.assert_called_once_with("oops something went wrong")
+        self.log.error.assert_called_once_with(
+            "oops something went wrong",
+            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
+        )
 
     async def test_log_forwarder_container_created(self):
         async with self.client as client:
