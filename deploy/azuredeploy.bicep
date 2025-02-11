@@ -63,6 +63,7 @@ module controlPlane './control_plane.bicep' = {
     controlPlaneLocation: controlPlaneLocation
     controlPlaneResourceGroupName: controlPlaneResourceGroupName
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
+    monitoredSubscriptions: monitoredSubscriptions
     datadogApiKey: datadogApiKey
     datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite

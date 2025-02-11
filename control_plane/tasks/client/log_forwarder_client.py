@@ -5,7 +5,7 @@ from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import Logger
 from types import TracebackType
-from typing import Any, Self, TypeAlias, TypeVar, cast
+from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -75,7 +75,7 @@ from cache.env import (
     get_config_option,
     is_truthy,
 )
-from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
+from cache.metric_blob_cache import METRIC_NAMES, MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
@@ -91,6 +91,8 @@ from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
+
+INTERNAL_METRIC_PREFIX = "azure.log_forwarder."
 
 FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
@@ -125,6 +127,15 @@ def get_datetime_str(time: datetime) -> str:
     return f"{time:%Y-%m-%d-%H}"
 
 
+def get_metric_value(
+    metric_entry: MetricBlobEntry, metric_name: Literal["resource_log_volume", "resource_log_bytes", "runtime_seconds"]
+) -> float:
+    value = metric_entry[metric_name]
+    if isinstance(value, dict):
+        return sum(value.values())
+    return value
+
+
 class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     def __init__(
         self, log: Logger, credential: DefaultAzureCredential, subscription_id: str, resource_group: str
@@ -145,6 +156,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
+        self.log_extra = {"subscription_id": self.subscription_id, "resource_group": self.resource_group}
 
     async def __aenter__(self) -> Self:
         await gather(
@@ -169,7 +181,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         def _done_callback(task: AsyncTask[Any]) -> None:
             self._background_tasks.discard(task)
             if e := task.exception():
-                self.log.error("Background task failed with an exception", exc_info=e)
+                self.log.error("Background task failed with an exception", exc_info=e, extra=self.log_extra)
 
         task = create_task(coro)
         self._background_tasks.add(task)
@@ -192,7 +204,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return_exceptions=True,
         )
         log_errors(
-            self.log, "Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True
+            self.log,
+            "Failed to create function app and/or get blob forwarder data",
+            *maybe_errors,
+            reraise=True,
+            extra=self.log_extra,
         )
 
         # for now this is the only type we support
@@ -227,7 +243,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def create_log_forwarder_storage_account(
         self, region: str, storage_account_name: str
     ) -> ResourcePoller[StorageAccount]:
-        self.log.info("Creating storage account %s for region %s", storage_account_name, region)
+        self.log.info("Creating storage account %s for region %s", storage_account_name, region, extra=self.log_extra)
         return await self.storage_client.storage_accounts.begin_create(
             self.resource_group,
             storage_account_name,
@@ -245,7 +261,13 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def create_log_forwarder_managed_environment(self, region: str, wait: bool = False) -> None:
         container_app_region = self.get_container_app_region(region)
         env_name = get_managed_env_name(container_app_region, self.control_plane_id)
-        self.log.info("Creating managed environment %s for region %s in %s", env_name, region, container_app_region)
+        self.log.info(
+            "Creating managed environment %s for region %s in %s",
+            env_name,
+            region,
+            container_app_region,
+            extra=self.log_extra,
+        )
         poller = await self.container_apps_client.managed_environments.begin_create_or_update(
             self.resource_group,
             env_name,
@@ -387,7 +409,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder() -> None:
-            self.log.info("Attempting to delete log forwarder %s", forwarder_id)
+            self.log.info("Attempting to delete log forwarder %s", forwarder_id, extra=self.log_extra)
 
             # start deleting the storage account now, it has no dependencies
             delete_storage_account_task = create_task(
@@ -407,7 +429,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 await poller.result()
 
                 await delete_storage_account_task
-            self.log.info("Deleted log forwarder %s", forwarder_id)
+            self.log.info("Deleted log forwarder %s", forwarder_id, extra=self.log_extra)
 
         try:
             await _delete_forwarder()
@@ -426,6 +448,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 "Attempting to delete log forwarder env for region %s and control plane %s",
                 region,
                 self.control_plane_id,
+                extra=self.log_extra,
             )
 
             poller = await ignore_exception_type(
@@ -437,7 +460,12 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if poller:
                 await poller.result()
 
-            self.log.info("Deleted log forwarder env for region %s and control plane %s", region, self.control_plane_id)
+            self.log.info(
+                "Deleted log forwarder env for region %s and control plane %s",
+                region,
+                self.control_plane_id,
+                extra=self.log_extra,
+            )
 
         try:
             await _delete_forwarder_env()
@@ -456,7 +484,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
         ]
         if not forwarder_metrics:
-            self.log.warning("No valid metrics found for forwarder %s", config_id)
+            self.log.warning("No valid metrics found for forwarder %s", config_id, extra=self.log_extra)
         self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics))
         return forwarder_metrics
 
@@ -500,6 +528,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         blob,
                         config_id,
                         msg,
+                        extra=self.log_extra,
                     )
 
             return metric_lines
@@ -523,30 +552,35 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             body=self.create_metric_payload(metrics, log_forwarder_id)
         )  # type: ignore
         for error in response.get("errors", []):
-            self.log.error(error)
+            self.log.error(error, extra=self.log_extra)
 
     def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
         # type ignore hack to get pyright typing to work since the SDK overrides __new__
-        return MetricPayload(  # type: ignore
-            series=[
-                MetricSeries(
-                    metric="Runtime",
-                    type=MetricIntakeType.UNSPECIFIED,
-                    points=[
-                        MetricPoint(
-                            timestamp=int(metric["timestamp"]),
-                            value=metric["runtime_seconds"],
-                        )
-                        for metric in metric_entries
-                    ],
-                    resources=[
-                        MetricResource(
-                            name=get_container_app_name(log_forwarder_id),
-                            type="logforwarder",
-                        ),
-                    ],
-                ),
-            ]
+        log_forwarder_name = get_container_app_name(log_forwarder_id)
+        return cast(
+            MetricPayload,
+            MetricPayload(
+                series=[
+                    MetricSeries(
+                        metric=INTERNAL_METRIC_PREFIX + metric_name,
+                        type=MetricIntakeType.UNSPECIFIED,
+                        points=[
+                            MetricPoint(
+                                timestamp=int(metric_entry["timestamp"]),
+                                value=get_metric_value(metric_entry, metric_name),
+                            )
+                            for metric_entry in metric_entries
+                        ],
+                        resources=[
+                            MetricResource(
+                                name=log_forwarder_name,
+                                type="logforwarder",
+                            ),
+                        ],
+                    )
+                    for metric_name in METRIC_NAMES
+                ]
+            ),
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:

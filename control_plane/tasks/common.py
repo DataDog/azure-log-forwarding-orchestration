@@ -1,5 +1,5 @@
 # stdlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from logging import Logger
 from math import inf
@@ -100,12 +100,18 @@ def chunks(lst: list[T], n: int) -> Iterable[tuple[T, ...]]:
     return zip(*(lst[i::n] for i in range(n)), strict=False)
 
 
-def log_errors(log: Logger, message: str, *maybe_errors: object | Exception, reraise: bool = False) -> list[Exception]:
+def log_errors(
+    log: Logger,
+    message: str,
+    *maybe_errors: object | Exception,
+    reraise: bool = False,
+    extra: Mapping[str, str] | None = None,
+) -> list[Exception]:
     """Log and return any errors in `maybe_errors`.
     If reraise is True, the first error will be raised"""
     errors = [e for e in maybe_errors if isinstance(e, Exception)]
     if errors:
-        log.exception("%s: %s", message, errors)
+        log.exception("%s: %s", message, errors, extra=extra)
         if reraise:
             raise errors[0]
 
