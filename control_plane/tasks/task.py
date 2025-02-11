@@ -25,7 +25,7 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 # project
 from cache.common import read_cache
 from cache.env import CONTROL_PLANE_ID_SETTING, DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, LOG_LEVEL_SETTING, is_truthy
-from tasks.common import now
+from tasks.common import CONTROL_PLANE_METRIC_PREFIX, now
 
 log = getLogger(__name__)
 
@@ -127,7 +127,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         ]
         self._logs.clear()
         dd_metric = MetricSeries(
-            metric="azure.lfo.control_plane_runtime_seconds",
+            metric=CONTROL_PLANE_METRIC_PREFIX + "runtime_seconds",
             points=[MetricPoint(timestamp=int(START_TIME), value=time() - START_TIME)],
             tags=self.tags,
         )

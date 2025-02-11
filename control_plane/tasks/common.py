@@ -6,6 +6,10 @@ from math import inf
 from typing import Final, Protocol, TypeVar
 from uuid import uuid4
 
+LFO_METRIC_PREFIX = "azure.lfo."
+CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
+FORWARDER_METRIC_PREFIX = LFO_METRIC_PREFIX + "forwarder."
+
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "ddlfocontrol"
 SCALING_TASK_PREFIX: Final = "scaling-task-"
