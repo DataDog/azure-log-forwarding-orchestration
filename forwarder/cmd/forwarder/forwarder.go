@@ -397,7 +397,7 @@ func main() {
 	// 		Replacement: "apple",
 	// 	},
 	// }
-	piiConfigString := environment.Get(environment.PII_SCRUB_CONFIG)
+	piiConfigString := environment.Get(environment.SCRUBBER_RULE_CONFIGS)
 	var piiScrubRules map[string]logs.ScrubberRuleConfig
 	err = json.Unmarshal([]byte(piiConfigString), &piiScrubRules)
 	if err != nil {
