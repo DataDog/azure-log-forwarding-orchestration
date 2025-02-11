@@ -54,6 +54,10 @@ func nullLogger() *log.Entry {
 	return log.NewEntry(l)
 }
 
+func nullPiiScrubber() logs.PiiScrubber {
+	return logs.NewPiiScrubber(nil)
+}
+
 func newContainerItem(name string) *service.ContainerItem {
 	return &service.ContainerItem{
 		Name: to.StringPtr(name),
@@ -139,7 +143,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	ctx := context.Background()
 
-	err := fetchAndProcessLogs(ctx, client, []*logs.Client{logClient}, nullLogger(), time.Now)
+	err := fetchAndProcessLogs(ctx, client, []*logs.Client{logClient}, nullLogger(), nullPiiScrubber(), time.Now)
 	return submittedLogs, err
 }
 
@@ -314,7 +318,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", logsCh)
+			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", nullPiiScrubber(), logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -362,7 +366,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, logsCh)
+			_, _, err := parseLogs(reader, containerName, nullPiiScrubber(), logsCh)
 			return err
 		})
 
@@ -401,7 +405,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, logsCh)
+			_, _, err := parseLogs(reader, containerName, nullPiiScrubber(), logsCh)
 			return err
 		})
 
@@ -440,7 +444,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", logsChannel)
+			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", nullPiiScrubber(), logsChannel)
 			return err
 		})
 		err := eg.Wait()
