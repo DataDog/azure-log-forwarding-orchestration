@@ -12,7 +12,7 @@ INITIAL_RUN_FILE = "./control_plane/tasks/initial_run.py"
 INITIAL_RUN_BUILD = "initial_run.py"
 INITIAL_RUN_SCRIPT = "initial_run.sh"
 ARM_TEMPLATE_FILE = "./deploy/azuredeploy.bicep"
-ARM_TEMPLATE_BUILD = "azuredeploy.json"
+ARM_TEMPLATE_BUILD = "./build/azuredeploy.json"
 
 
 def read(file: str) -> str:
