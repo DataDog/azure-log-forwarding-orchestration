@@ -1,5 +1,6 @@
 # stdlib
 from asyncio import gather, run
+from copy import deepcopy
 from json import dumps
 from random import shuffle
 from typing import NamedTuple, cast
@@ -100,7 +101,7 @@ class DiagnosticSettingsTask(Task):
             self.log.warning("Detected invalid event cache, cache will be reset")
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
-        self.event_cache = event_cache
+        self.event_cache = deepcopy(event_cache)
         self.events_api = EventsApi(self._datadog_client)
 
     async def run(self) -> None:
@@ -159,19 +160,25 @@ class DiagnosticSettingsTask(Task):
             alert_type="warning",
         )
 
-        response: EventCreateResponse
+        response: EventCreateResponse = await self.events_api.create_event(body)  # type: ignore
         try:
             response = await self.events_api.create_event(body)  # type: ignore
-            response.raise_for_status()
         except Exception as e:
             self.log.error(f"Error while sending event to Datadog: {e}")
             return False
 
+        if response.status != "ok":
+            self.log.error(f"Http error while sending event to Datadog: {response}")
+            return False
         if errors := response.get("errors", []):
             self.log.error(f"Error(s) while sending event to Datadog: {errors}")
             return False
 
-        self.log.info("Sent max diagnostic setting event for resource %s in subscription %s", resource_id, sub_id)
+        self.log.info(
+            "Sent max diagnostic setting event for resource %s",
+            resource_id,
+            extra={"subscription_id": sub_id},
+        )
         return True
 
     async def process_resource(
