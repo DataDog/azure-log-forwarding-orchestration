@@ -12,7 +12,7 @@ from azure.mgmt.monitor.models import CategoryType
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
-from cache.diagnostic_settings_cache import DiagnosticSettingsCache, EventDict
+from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -58,9 +58,10 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
     async def run_diagnostic_settings_task(
         self, assignment_cache: AssignmentCache, event_cache: DiagnosticSettingsCache | None
-    ):
+    ) -> DiagnosticSettingsTask:
         async with DiagnosticSettingsTask(dumps(assignment_cache), dumps(event_cache)) as task:
             await task.run()
+        return task
 
     def test_malformed_resources_cache_errors_in_constructor(self):
         with self.assertRaises(InvalidCacheError) as e:
@@ -221,7 +222,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=False)}
         }
 
-        await self.run_diagnostic_settings_task(
+        task = await self.run_diagnostic_settings_task(
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -234,7 +235,9 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         self.create_or_update_setting.assert_not_awaited()
-        self.send_max_settings_reached_event.assert_called_once()
+        self.send_max_settings_reached_event.assert_called_once_with(sub_id1, resource_id1)
+        self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], MAX_DIAGNOSTIC_SETTINGS)
+        self.assertTrue(task.event_cache[sub_id1][resource_id1][SENT_EVENT])
 
     async def test_max_diagnostic_settings_avoid_duplicate_event(self):
         self.list_diagnostic_settings.return_value = mock_diagnostic_settings(MAX_DIAGNOSTIC_SETTINGS)
@@ -245,7 +248,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=True)}
         }
 
-        await self.run_diagnostic_settings_task(
+        task = await self.run_diagnostic_settings_task(
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -259,6 +262,8 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
         self.create_or_update_setting.assert_not_awaited()
         self.send_max_settings_reached_event.assert_not_called()
+        self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], MAX_DIAGNOSTIC_SETTINGS)
+        self.assertTrue(task.event_cache[sub_id1][resource_id1][SENT_EVENT])
 
     async def test_max_diag_event_not_sent_on_empty(self):
         self.list_diagnostic_settings.return_value = async_generator()
@@ -267,7 +272,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
         event_cache = {sub_id1: {resource_id1: EventDict(diagnostic_settings_count=0, sent_event=False)}}
 
-        await self.run_diagnostic_settings_task(
+        task = await self.run_diagnostic_settings_task(
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -281,6 +286,8 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
         self.create_or_update_setting.assert_awaited_once()
         self.send_max_settings_reached_event.assert_not_called()
+        self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], 1)
+        self.assertFalse(task.event_cache[sub_id1][resource_id1][SENT_EVENT])
 
     async def test_max_diag_event_not_sent_on_existing_setting(self):
         self.list_diagnostic_settings.return_value = mock_diagnostic_settings(2)
@@ -289,7 +296,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
         event_cache = {sub_id1: {resource_id1: EventDict(diagnostic_settings_count=2, sent_event=False)}}
 
-        await self.run_diagnostic_settings_task(
+        task = await self.run_diagnostic_settings_task(
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -303,3 +310,5 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
         self.create_or_update_setting.assert_awaited_once()
         self.send_max_settings_reached_event.assert_not_called()
+        self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], 3)
+        self.assertFalse(task.event_cache[sub_id1][resource_id1][SENT_EVENT])
