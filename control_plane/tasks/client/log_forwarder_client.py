@@ -2,7 +2,7 @@
 from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from logging import Logger
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
@@ -498,7 +498,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         async with ContainerClient.from_connection_string(
             conn_str, FORWARDER_METRIC_CONTAINER_NAME
         ) as container_client:
-            current_time: datetime = datetime.now(UTC)
+            current_time: datetime = datetime.now(timezone.utc)
             previous_hour: datetime = current_time - timedelta(hours=1)
             current_blob_name = f"metrics_{get_datetime_str(current_time)}.json"
             previous_blob_name = f"metrics_{get_datetime_str(previous_hour)}.json"

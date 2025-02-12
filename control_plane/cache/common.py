@@ -33,12 +33,14 @@ LOG_FORWARDER_TYPE_SCHEMA: dict[str, Any] = {
 
 
 class LogForwarder(NamedTuple):
+    """A log forwarder configuration"""
+
     config_id: str
     type: LogForwarderType
 
 
 class InvalidCacheError(Exception):
-    pass
+    """Raised when the cache is in an invalid state"""
 
 
 async def read_cache(blob_name: str) -> str:
