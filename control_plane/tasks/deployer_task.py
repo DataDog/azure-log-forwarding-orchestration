@@ -58,7 +58,7 @@ class ControlPlaneResources(NamedTuple):
 
 
 class DeployError(Exception):
-    pass
+    """Raised when a deployment fails"""
 
 
 class DeployerTask(Task):
