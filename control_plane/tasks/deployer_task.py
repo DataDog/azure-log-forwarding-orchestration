@@ -51,14 +51,23 @@ MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
 
 
-class ControlPlaneResources(NamedTuple):
-    app_service_plans: set[str]
-    storage_accounts: set[str]
-    function_apps: set[str]
+# TODO(AZINTS-3139)
+ControlPlaneResources = NamedTuple(  # noqa: UP014
+    "ControlPlaneResources",
+    [
+        ("app_service_plans", set[str]),
+        ("storage_accounts", set[str]),
+        ("function_apps", set[str]),
+    ],
+)
+# class ControlPlaneResources(NamedTuple):
+#     app_service_plans: set[str]
+#     storage_accounts: set[str]
+#     function_apps: set[str]
 
 
 class DeployError(Exception):
-    """Raised when a deployment fails"""
+    pass
 
 
 class DeployerTask(Task):

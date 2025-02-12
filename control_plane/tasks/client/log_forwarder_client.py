@@ -498,7 +498,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         async with ContainerClient.from_connection_string(
             conn_str, FORWARDER_METRIC_CONTAINER_NAME
         ) as container_client:
-            current_time: datetime = datetime.now(timezone.utc)
+            current_time: datetime = datetime.now(timezone.utc)  # noqa: UP017 TODO(AZINTS-3139)
             previous_hour: datetime = current_time - timedelta(hours=1)
             current_blob_name = f"metrics_{get_datetime_str(current_time)}.json"
             previous_blob_name = f"metrics_{get_datetime_str(previous_hour)}.json"

@@ -57,7 +57,7 @@ class ListHandler(Handler):
         self.log_list = logs
 
     def emit(self, record: LogRecord) -> None:
-        record.asctime = datetime.now(timezone.utc).isoformat()
+        record.asctime = datetime.now(timezone.utc).isoformat()  # noqa: UP017 TODO(AZINTS-3139)
         self.log_list.append(record)
 
 
