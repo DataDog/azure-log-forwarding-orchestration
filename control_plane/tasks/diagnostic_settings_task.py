@@ -167,11 +167,11 @@ class DiagnosticSettingsTask(Task):
             self.log.error(f"Error while sending event to Datadog: {e}")
             return False
 
-        if response.status != "ok":
-            self.log.error(f"Http error while sending event to Datadog: {response}")
-            return False
         if errors := response.get("errors", []):
             self.log.error(f"Error(s) while sending event to Datadog: {errors}")
+            return False
+        if response.status != "ok":
+            self.log.error(f"Http error while sending event to Datadog: {response}")
             return False
 
         self.log.info(
