@@ -30,6 +30,7 @@ if os.path.isdir("./build"):
 
 os.makedirs("./build", exist_ok=True)
 
+# TODO(AZINTS-3139) begin clean up
 # make a copy
 copytree("./control_plane", "./build/control_plane")
 os.chdir("./build")
@@ -43,7 +44,7 @@ for root, _, files in os.walk("."):
             content: str = strip_string_to_string(content, to_empty=True, strip_nl=True, no_ast=True)  # type: ignore
             write(path, content)
 
-
+# TODO(AZINTS-3139) end clean up
 # ========================= INITIAL RUN BUILD =========================
 print("Building initial run python script")
 run(["stickytape", INITIAL_RUN_FILE, "--add-python-path", "./control_plane", "--output-file", INITIAL_RUN_BUILD])
