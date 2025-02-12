@@ -1,28 +1,51 @@
 # stdlib
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, TypedDict
 
 # 3p
 from cache.common import deserialize_cache
 
-DIAGNOSTIC_SETTINGS_CACHE_BLOB = "settings.json"
+EVENT_CACHE_BLOB = "settings_event.json"
+DIAGNOSTIC_SETTINGS_COUNT = "diagnostic_settings_count"
+SENT_EVENT = "sent_event"
 
 
-DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, str]]
-"Mapping of subscription_id to resource_id to DiagnosticSettingConfiguration"
+class EventDict(TypedDict):
+    diagnostic_settings_count: int
+    sent_event: bool
 
 
-DIAGNOSTIC_SETTINGS_CACHE_SCHEMA: dict[str, Any] = {
+DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, EventDict]]
+"""
+ex) 
+{
+    "subscription_uuid1": {
+        "resource_id1": {
+            "diagnostic_settings_count": 5,
+            "sent_event": true,
+        },
+        "resource_id2": { ... },
+    },
+    "subscription_uuid2": { .... }
+}
+"""
+
+SETTINGS_EVENT_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},  # subscription_id
     "additionalProperties": {
         "type": "object",  # resource_id
         "additionalProperties": {
-            "type": "string",  # config id
+            "type": "object",
+            "properties": {
+                "diagnostic_settings_count": {"type": "integer"},
+                "sent_event": {"type": "boolean"},
+            },
+            "required": ["diagnostic_settings_count", "sent_event"],
         },
     },
 }
 
 
-def deserialize_diagnostic_settings_cache(cache_str: str) -> DiagnosticSettingsCache | None:
-    """Deserialize the diagnostic settings cache. Returns None if the cache is invalid."""
-    return deserialize_cache(cache_str, DIAGNOSTIC_SETTINGS_CACHE_SCHEMA)
+def deserialize_event_cache(cache_str: str) -> DiagnosticSettingsCache | None:
+    """Deserialize the diagnostic settings event cache. Returns None if the cache is invalid."""
+    return deserialize_cache(cache_str, SETTINGS_EVENT_CACHE_SCHEMA)
