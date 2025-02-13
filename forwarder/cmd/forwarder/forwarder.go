@@ -56,7 +56,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 
 	resourceId, err := blob.ResourceId()
 	if err != nil {
-		resourceId = "" // resourceId is optional
+		resourceId = "" // resourceId from blob name is optional, there are other possible sources
 	}
 	processedBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, resourceId, logsChannel)
 
