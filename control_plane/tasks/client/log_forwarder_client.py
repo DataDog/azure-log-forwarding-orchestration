@@ -79,6 +79,7 @@ from cache.env import (
 from cache.metric_blob_cache import METRIC_NAMES, MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
+    FORWARDER_METRIC_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
     get_container_app_name,
@@ -93,7 +94,6 @@ from tasks.deploy_common import wait_for_resource
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
-INTERNAL_METRIC_PREFIX = "azure.log_forwarder."
 
 FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
@@ -565,7 +565,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             MetricPayload(
                 series=[
                     MetricSeries(
-                        metric=INTERNAL_METRIC_PREFIX + metric_name,
+                        metric=FORWARDER_METRIC_PREFIX + metric_name,
                         type=MetricIntakeType.UNSPECIFIED,
                         points=[
                             MetricPoint(

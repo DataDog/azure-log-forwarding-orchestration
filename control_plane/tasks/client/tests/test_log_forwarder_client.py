@@ -103,19 +103,19 @@ FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
 FAKE_METRIC_PAYLOAD = MetricPayload(
     series=[
         MetricSeries(
-            metric="azure.log_forwarder.resource_log_volume",
+            metric="azure.lfo.forwarder.resource_log_volume",
             type=MetricIntakeType.UNSPECIFIED,
             points=[MetricPoint(timestamp=1723040910, value=10), MetricPoint(timestamp=1723040911, value=11)],
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
         ),
         MetricSeries(
-            metric="azure.log_forwarder.resource_log_bytes",
+            metric="azure.lfo.forwarder.resource_log_bytes",
             type=MetricIntakeType.UNSPECIFIED,
             points=[MetricPoint(timestamp=1723040910, value=1000), MetricPoint(timestamp=1723040911, value=1101)],
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
         ),
         MetricSeries(
-            metric="azure.log_forwarder.runtime_seconds",
+            metric="azure.lfo.forwarder.runtime_seconds",
             type=MetricIntakeType.UNSPECIFIED,
             points=[MetricPoint(timestamp=1723040910, value=2.80), MetricPoint(timestamp=1723040911, value=2.81)],
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
