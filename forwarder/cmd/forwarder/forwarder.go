@@ -383,21 +383,7 @@ func main() {
 		return
 	}
 
-	// var scrubberRuleConfigs = map[string]logs.ScrubberRuleConfig{
-	// 	"REDACT_IP": {
-	// 		Pattern:     `[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`,
-	// 		Replacement: "xxx.xxx.xxx.xxx",
-	// 	},
-	// 	"REDACT_EMAIL": {
-	// 		Pattern:     `[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+`,
-	// 		Replacement: "xxxx@xxxx.com",
-	// 	},
-	// 	"REDACT_MICROSOFT": {
-	// 		Pattern:     `Microsoft`,
-	// 		Replacement: "apple",
-	// 	},
-	// }
-	piiConfigString := environment.Get(environment.SCRUBBER_RULE_CONFIGS)
+	piiConfigString := environment.Get(environment.PII_SCRUBBER_RULES)
 	var piiScrubRules map[string]logs.ScrubberRuleConfig
 	err = json.Unmarshal([]byte(piiConfigString), &piiScrubRules)
 	if err != nil {

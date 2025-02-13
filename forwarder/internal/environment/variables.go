@@ -14,7 +14,7 @@ const (
 	DD_FORCE_PROFILE       = "DD_FORCE_PROFILE"
 	DD_SITE                = "DD_SITE"
 	NUM_GOROUTINES         = "NUM_GOROUTINES"
-	SCRUBBER_RULE_CONFIGS  = "SCRUBBER_RULE_CONFIGS"
+	PII_SCRUBBER_RULES     = "PII_SCRUBBER_RULES"
 )
 
 func Get(envVar string) string {

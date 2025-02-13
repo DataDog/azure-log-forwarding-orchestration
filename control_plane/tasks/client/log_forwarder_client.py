@@ -71,7 +71,7 @@ from cache.env import (
     DD_SITE_SETTING,
     DD_TELEMETRY_SETTING,
     FORWARDER_IMAGE_SETTING,
-    SCRUBBER_RULE_CONFIGS_SETTING,
+    PII_SCRUBBER_RULES_SETTING,
     STORAGE_CONNECTION_SETTING,
     get_config_option,
     is_truthy,
@@ -146,7 +146,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.dd_site = get_config_option(DD_SITE_SETTING)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
-        self.scrubber_rule_configs = get_config_option(SCRUBBER_RULE_CONFIGS_SETTING)
+        self.pii_scrubber_rules = get_config_option(PII_SCRUBBER_RULES_SETTING)
         self.should_submit_metrics = is_truthy(DD_TELEMETRY_SETTING)
         self.log = log
         self.resource_group = resource_group
@@ -347,7 +347,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
             EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
-            EnvironmentVar(name=SCRUBBER_RULE_CONFIGS_SETTING, value=self.scrubber_rule_configs),
+            EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_scrubber_rules),
         ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:

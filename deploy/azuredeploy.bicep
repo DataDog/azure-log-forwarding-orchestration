@@ -11,6 +11,7 @@ param datadogApplicationKey string
 @secure()
 param datadogApiKey string
 param datadogSite string
+param piiScrubberRules string
 
 param datadogTelemetry bool = false
 param logLevel string = 'INFO'
@@ -69,6 +70,7 @@ module controlPlane './control_plane.bicep' = {
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
     imageRegistry: imageRegistry
+    piiScrubberRules: piiScrubberRules
     storageAccountUrl: storageAccountUrl
     logLevel: logLevel
   }
