@@ -22,9 +22,11 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// datadog
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
 const AzureService = "azure"
@@ -143,6 +145,11 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 	return nil
 }
 
+func sourceTag(resourceType string) string {
+	sourceTag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
+	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
+}
+
 func (l *azureLog) ToLog() *Log {
 	var source string
 	var resourceId string
@@ -255,7 +262,7 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName, resourceId string) (*Log, error) {
+func NewLog(logBytes []byte, containerName, blobNameResourceId string) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
@@ -283,14 +290,9 @@ func NewLog(logBytes []byte, containerName, resourceId string) (*Log, error) {
 
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
-	currLog.BlobResourceId = resourceId
+	currLog.BlobResourceId = blobNameResourceId
 
 	return currLog.ToLog(), nil
-}
-
-func sourceTag(source string) string {
-	sourceTag := strings.ToLower(strings.Replace(source, "/", ".", -1))
-	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
 }
 
 // bufferSize is the maximum number of logs per post to Logs API.
@@ -421,7 +423,7 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, containerName, resourceId string) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, containerName, blobNameResourceId string) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -431,7 +433,7 @@ func Parse(reader io.ReadCloser, containerName, resourceId string) iter.Seq2[*Lo
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(currBytes, containerName, resourceId)
+			currLog, err := NewLog(currBytes, containerName, blobNameResourceId)
 			if err != nil {
 				if !yield(nil, err) {
 					return

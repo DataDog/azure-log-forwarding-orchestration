@@ -54,11 +54,11 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	resourceId, err := blob.ResourceId()
+	blobNameResourceId, err := blob.ResourceId()
 	if err != nil {
-		resourceId = "" // resourceId from blob name is optional, there are other possible sources
+		blobNameResourceId = "" // resourceId from blob name is optional, there are other possible sources
 	}
-	processedBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, resourceId, logsChannel)
+	processedBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, blobNameResourceId, logsChannel)
 
 	// linux newlines are 1 byte, but windows newlines are 2
 	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
@@ -79,13 +79,13 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	return err
 }
 
-func parseLogs(reader io.ReadCloser, containerName, resourceId string, logsChannel chan<- *logs.Log) (int64, int64, error) {
+func parseLogs(reader io.ReadCloser, containerName, blobNameResourceId string, logsChannel chan<- *logs.Log) (int64, int64, error) {
 	var processedBytes int64
 	var processedLogs int64
 
 	var currLog *logs.Log
 	var err error
-	for currLog, err = range logs.Parse(reader, containerName, resourceId) {
+	for currLog, err = range logs.Parse(reader, containerName, blobNameResourceId) {
 		if err != nil {
 			break
 		}
