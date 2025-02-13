@@ -25,7 +25,6 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	// project
 )
 
 const AzureService = "azure"
