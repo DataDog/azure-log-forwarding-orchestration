@@ -89,7 +89,7 @@ resource cacheContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
 }
 
 var storageAccountKey = listKeys(storageAccount.id, '2019-06-01').keys[0].value
-var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccountKey}'
+var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};${environment().suffixes.storage};AccountKey=${storageAccountKey}'
 
 var commonAppSettings = [
   { name: STORAGE_CONNECTION_SETTING, value: connectionString }
