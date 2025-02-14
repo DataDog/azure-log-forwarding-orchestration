@@ -17,15 +17,17 @@ param jobName string = 'datadog-log-forwarder'
 param storageAccountName string = 'datadoglogstorage'
 
 @description('The SKU of the storage account')
-param storageAccountSku
-  | 'Premium_LRS'
-  | 'Premium_ZRS'
-  | 'Standard_GRS'
-  | 'Standard_GZRS'
-  | 'Standard_LRS'
-  | 'Standard_RAGRS'
-  | 'Standard_RAGZRS'
-  | 'Standard_ZRS' = 'Standard_LRS'
+@allowed([
+  'Premium_LRS'
+  'Premium_ZRS'
+  'Standard_GRS'
+  'Standard_GZRS'
+  'Standard_LRS'
+  'Standard_RAGRS'
+  'Standard_RAGZRS'
+  'Standard_ZRS'
+])
+param storageAccountSku string = 'Standard_LRS'
 
 @description('The number of days to retain logs (and internal metrics) in the storage account')
 @minValue(1)
