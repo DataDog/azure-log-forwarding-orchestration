@@ -4,12 +4,16 @@ targetScope = 'resourceGroup'
 
 
 @description('Name of the Container App Managed Environment for the Forwarder')
+@maxLength(60)
 param environmentName string = 'datadog-log-forwarder-env'
 
 @description('Name of the Forwarder Container App Job')
+@maxLength(260)
 param jobName string = 'datadog-log-forwarder'
 
 @description('Name of the Log Storage Account')
+@minLength(3)
+@maxLength(24)
 param storageAccountName string = 'datadoglogstorage'
 
 @description('The SKU of the storage account')
@@ -23,8 +27,25 @@ param storageAccountSku
   | 'Standard_RAGZRS'
   | 'Standard_ZRS' = 'Standard_LRS'
 
+@description('The number of days to retain logs (and internal metrics) in the storage account')
+@minValue(1)
+param storageAccountRetentionDays int = 1
+
 @secure()
+@description('Datadog API Key')
+@minLength(32)
+@maxLength(32)
 param datadogApiKey string
+
+@allowed([
+  'datadoghq.com'
+  'datadoghq.eu'
+  'ap1.datadoghq.com'
+  'us3.datadoghq.com'
+  'us5.datadoghq.com'
+  'ddog-gov.com'
+])
+param datadogSite string = 'datadoghq.com'
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
@@ -36,6 +57,42 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   properties: {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
+  }
+}
+
+resource storageManagementPolicy 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05-01' = {
+  name: 'default'
+  parent: storageAccount
+  properties: {
+    policy: {
+      rules: [
+        {
+          enabled: true
+          name: 'Delete Old Blobs'
+          type: 'Lifecycle'
+          definition: {
+            actions: {
+              baseBlob: {
+                delete: {
+                  daysAfterModificationGreaterThan: storageAccountRetentionDays
+                }
+              }
+              snapshot: {
+                delete: {
+                  daysAfterCreationGreaterThan: storageAccountRetentionDays
+                }
+              }
+            }
+            filters: {
+              blobTypes: [
+                'blockBlob'
+                'appendBlob'
+              ]
+            }
+          }
+        }
+      ]
+    }
   }
 }
 
@@ -79,6 +136,9 @@ resource forwarder 'Microsoft.App/jobs@2023-05-01' = {
           env: [
             { name: 'AzureWebJobsStorage', secretRef: 'storage-connection-string' }
             { name: 'DD_API_KEY', secretRef: 'dd-api-key' }
+            { name: 'DD_SITE', value: datadogSite }
+            { name: 'CONTROL_PLANE_ID', value: 'none' }
+            { name: 'CONFIG_ID', value: resourceId('Microsoft.App/jobs', jobName) }
           ]
         }
       ]
