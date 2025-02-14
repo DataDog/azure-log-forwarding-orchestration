@@ -55,29 +55,29 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	processedBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, piiScrubber, logsChannel)
+	processedRawBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, piiScrubber, logsChannel)
 
 	// linux newlines are 1 byte, but windows newlines are 2
 	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
 	// we know we have hit the end and can safely set our cursor to the end of the file.
-	if processedBytes+processedLogs+cursorOffset == blob.ContentLength {
-		processedBytes = blob.ContentLength - cursorOffset
+	if processedRawBytes+processedLogs+cursorOffset == blob.ContentLength {
+		processedRawBytes = blob.ContentLength - cursorOffset
 	}
 
-	if processedBytes+cursorOffset > blob.ContentLength {
+	if processedRawBytes+cursorOffset > blob.ContentLength {
 		// we have processed more bytes than expected
 		// unsafe to save cursor
 		return errors.Join(err, fmt.Errorf("processed more bytes than expected for %s", blob.Name))
 	}
 
-	// we have processed and submitted logs up to cursorOffset+processedBytes whether the error is nil or not
-	cursors.Set(blob.Container.Name, blob.Name, cursorOffset+processedBytes)
+	// we have processed and submitted logs up to cursorOffset+processedRawBytes whether the error is nil or not
+	cursors.Set(blob.Container.Name, blob.Name, cursorOffset+processedRawBytes)
 
 	return err
 }
 
 func parseLogs(reader io.ReadCloser, containerName string, piiScrubber logs.PiiScrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
-	var processedBytes int64
+	var processedRawBytes int64
 	var processedLogs int64
 
 	var currLog *logs.Log
@@ -87,11 +87,11 @@ func parseLogs(reader io.ReadCloser, containerName string, piiScrubber logs.PiiS
 			break
 		}
 
-		processedBytes += currLog.ByteSize
+		processedRawBytes += currLog.RawByteSize
 		processedLogs += 1
 		logsChannel <- currLog
 	}
-	return processedBytes, processedLogs, err
+	return processedRawBytes, processedLogs, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
@@ -101,7 +101,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.AddLog(ctx, logger, logItem)
 		err = errors.Join(err, currErr)
-		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: int64(logItem.Length())}
+		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: int64(logItem.ScrubbedLogLength())}
 	}
 	flushErr := logsClient.Flush(ctx)
 	err = errors.Join(err, flushErr)

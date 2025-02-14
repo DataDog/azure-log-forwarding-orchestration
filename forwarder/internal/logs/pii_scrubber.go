@@ -15,8 +15,9 @@ func NewPiiScrubber(scrubberRuleConfigs map[string]ScrubberRuleConfig) PiiScrubb
 	return PiiScrubber{scrubberRuleConfigs: scrubberRuleConfigs}
 }
 
-func (ps PiiScrubber) Scrub(logBytes []byte) []byte {
-	content := string(logBytes)
+// Scrub will match regex patterns specified by the user and replace them with their specified replacement string
+func (ps PiiScrubber) Scrub(logBytes *[]byte) *[]byte {
+	content := string(*logBytes)
 
 	for _, scrubRule := range ps.scrubberRuleConfigs {
 		regex, err := regexp.Compile(scrubRule.Pattern)
@@ -28,5 +29,6 @@ func (ps PiiScrubber) Scrub(logBytes []byte) []byte {
 		content = regex.ReplaceAllString(content, scrubRule.Replacement)
 	}
 
-	return []byte(content)
+	scrubbedBytes := []byte(content)
+	return &scrubbedBytes
 }

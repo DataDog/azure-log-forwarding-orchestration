@@ -46,15 +46,16 @@ const functionAppContainer = "insights-logs-functionapplogs"
 
 // Log represents a log to send to Datadog.
 type Log struct {
-	content    *[]byte
-	ByteSize   int64
-	Tags       []string
-	Category   string
-	ResourceId string
-	Service    string
-	Source     string
-	Time       time.Time
-	Level      string
+	content          *[]byte
+	RawByteSize      int64
+	ScrubbedByteSize int64
+	Tags             []string
+	Category         string
+	ResourceId       string
+	Service          string
+	Source           string
+	Time             time.Time
+	Level            string
 }
 
 // Content converts the log content to a string.
@@ -62,14 +63,19 @@ func (l *Log) Content() string {
 	return string(*l.content)
 }
 
-// Length returns the length of the log content.
-func (l *Log) Length() int64 {
-	return l.ByteSize
+// RawLogLength returns the length of the original Azure log content.
+func (l *Log) RawLogLength() int64 {
+	return l.RawByteSize
+}
+
+// ScrubbedLogLength returns the length of the log content after it has been scrubbed for PII.
+func (l *Log) ScrubbedLogLength() int64 {
+	return l.ScrubbedByteSize
 }
 
 // Validate checks if the log is valid to send to Datadog.
 func (l *Log) Validate(logger *log.Entry) bool {
-	return validateLog(l.ResourceId, l.ByteSize, l.Time, logger)
+	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, logger)
 }
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
@@ -136,7 +142,7 @@ func (l *azureLog) ResourceId() string {
 	return l.ResourceIdUpper
 }
 
-func (l *azureLog) ToLog() (*Log, error) {
+func (l *azureLog) ToLog(scrubber PiiScrubber) (*Log, error) {
 	parsedId, err := arm.ParseResourceID(l.ResourceId())
 	if err != nil {
 		return nil, err
@@ -146,16 +152,20 @@ func (l *azureLog) ToLog() (*Log, error) {
 		l.Level = "Informational"
 	}
 
+	scrubbedLog := scrubber.Scrub(l.Raw)
+	scrubbedByteSize := len(*scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
+
 	return &Log{
-		content:    l.Raw,
-		ByteSize:   l.ByteSize,
-		Category:   l.Category,
-		ResourceId: l.ResourceId(),
-		Service:    AzureService,
-		Source:     sourceTag(parsedId.ResourceType.String()),
-		Time:       l.Time,
-		Level:      l.Level,
-		Tags:       getTags(parsedId),
+		content:          scrubbedLog,
+		RawByteSize:      l.ByteSize,
+		ScrubbedByteSize: int64(scrubbedByteSize),
+		Category:         l.Category,
+		ResourceId:       l.ResourceId(),
+		Service:          AzureService,
+		Source:           sourceTag(parsedId.ResourceType.String()),
+		Time:             l.Time,
+		Level:            l.Level,
+		Tags:             getTags(parsedId),
 	}, nil
 }
 
@@ -238,12 +248,10 @@ func NewLog(logBytes []byte, containerName string, scrubber PiiScrubber) (*Log, 
 	var err error
 	var currLog *azureLog
 
-	scrubbedLog := scrubber.Scrub(logBytes)
-
-	logSize := len(scrubbedLog) + newlineBytes
+	logSize := len(logBytes) + newlineBytes
 
 	if containerName == functionAppContainer {
-		logBytes, err = BytesFromJSON(scrubbedLog)
+		logBytes, err = BytesFromJSON(logBytes)
 		if err != nil {
 			if strings.Contains(err.Error(), "Unexpected token ;") {
 				return nil, ErrUnexpectedToken
@@ -264,7 +272,7 @@ func NewLog(logBytes []byte, containerName string, scrubber PiiScrubber) (*Log, 
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
 
-	return currLog.ToLog()
+	return currLog.ToLog(scrubber)
 }
 
 func sourceTag(source string) string {
@@ -353,7 +361,7 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	}
 	newLog := newHTTPLogItem(log)
 	c.logsBuffer = append(c.logsBuffer, newLog)
-	c.currentSize += log.Length()
+	c.currentSize += log.ScrubbedLogLength()
 
 	if err != nil {
 		return err
@@ -402,7 +410,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
-	return c.shouldFlushBytes(log.Length())
+	return c.shouldFlushBytes(log.ScrubbedLogLength())
 }
 
 // shouldFlushBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
