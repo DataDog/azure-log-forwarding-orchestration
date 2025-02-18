@@ -38,14 +38,6 @@ const controlPlaneId = "9b008b0cc1ab"
 const configId = "8e0ce1e1e048"
 
 var scrubberRuleConfigs = map[string]logs.ScrubberRuleConfig{
-	"REDACT_IP": {
-		Pattern:     `[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}`,
-		Replacement: "xxx.xxx.xxx.xxx",
-	},
-	"REDACT_EMAIL": {
-		Pattern:     `[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+`,
-		Replacement: "xxxx@xxxx.com",
-	},
 	"REDACT_MICROSOFT": {
 		Pattern:     `Microsoft`,
 		Replacement: "apple",
