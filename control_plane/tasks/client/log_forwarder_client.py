@@ -85,6 +85,7 @@ from tasks.common import (
     get_managed_env_id,
     get_managed_env_name,
     get_storage_account_name,
+    get_storage_endpoint_suffix,
     log_errors,
 )
 from tasks.concurrency import collect, create_task_from_awaitable
@@ -296,16 +297,16 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         secrets: list[Secret] | None = None,
     ) -> ResourcePoller[Job]:
         job_name = get_container_app_name(config_id)
-        region = self.get_container_app_region(region)
+        forwarder_region = self.get_container_app_region(region)
         env = env or self.generate_forwarder_settings(config_id)
-        secrets = secrets or await self.generate_forwarder_secrets(config_id)
+        secrets = secrets or await self.generate_forwarder_secrets(config_id, region)
         return await self.container_apps_client.jobs.begin_create_or_update(
             self.resource_group,
             job_name,
             Job(
-                location=region,
+                location=forwarder_region,
                 environment_id=get_managed_env_id(
-                    self.subscription_id, self.resource_group, region, self.control_plane_id
+                    self.subscription_id, self.resource_group, forwarder_region, self.control_plane_id
                 ),
                 configuration=JobConfiguration(
                     trigger_type="Schedule",
@@ -331,8 +332,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.container_apps_client.jobs.get(self.resource_group, job_name)
 
-    async def generate_forwarder_secrets(self, config_id: str) -> list[Secret]:
-        connection_string = await self.get_connection_string(get_storage_account_name(config_id))
+    async def generate_forwarder_secrets(self, config_id: str, storage_region: str) -> list[Secret]:
+        connection_string = await self.get_connection_string(get_storage_account_name(config_id), storage_region)
         return [
             Secret(name=DD_API_KEY_SECRET, value=self.dd_api_key),
             Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
@@ -390,19 +391,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         )
 
-    async def get_connection_string(self, storage_account_name: str) -> str:
+    async def get_connection_string(self, storage_account_name: str, storage_account_region: str) -> str:
         keys_result = await self.storage_client.storage_accounts.list_keys(self.resource_group, storage_account_name)
         keys: list[StorageAccountKey] = keys_result.keys  # type: ignore
         if len(keys) == 0:
             raise ValueError("No keys found for storage account")
         key: str = keys[0].value  # type: ignore
-        return (
-            "DefaultEndpointsProtocol=https;AccountName="
-            + storage_account_name
-            + ";AccountKey="
-            + key
-            + ";EndpointSuffix=core.windows.net"
-        )
+        endpoint_suffix = get_storage_endpoint_suffix(storage_account_region)
+        return f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key};EndpointSuffix={endpoint_suffix}"
 
     async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
         """Deletes the Log forwarder, returns True if successful, False otherwise"""
@@ -475,9 +471,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 raise
             return False
 
-    async def collect_forwarder_metrics(self, config_id: str, oldest_valid_timestamp: float) -> list[MetricBlobEntry]:
+    async def collect_forwarder_metrics(
+        self, config_id: str, region: str, oldest_valid_timestamp: float
+    ) -> list[MetricBlobEntry]:
         """Collects metrics for a given forwarder and submits them to the metrics endpoint"""
-        metric_lines = await self.get_blob_metrics_lines(config_id)
+        metric_lines = await self.get_blob_metrics_lines(config_id, region)
         forwarder_metrics = [
             metric_entry
             for metric_line in metric_lines
@@ -488,14 +486,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics))
         return forwarder_metrics
 
-    async def get_blob_metrics_lines(self, config_id: str) -> list[str]:
+    async def get_blob_metrics_lines(self, config_id: str, region) -> list[str]:
         """
         Returns a list of json decodable strings that represent metrics
         json string takes form of {'Values': [metric_dict]}
         metric_dict is as follows {'Name': str, 'Value': float, 'Time': float}
         Time is a unix timestamp
         """
-        conn_str = await self.get_connection_string(get_storage_account_name(config_id))
+        conn_str = await self.get_connection_string(get_storage_account_name(config_id), region)
         async with ContainerClient.from_connection_string(
             conn_str, FORWARDER_METRIC_CONTAINER_NAME
         ) as container_client:
