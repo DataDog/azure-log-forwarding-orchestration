@@ -15,10 +15,10 @@ import (
 
 var piiLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"ip\": \"100.1.34.201\", \"contact\": \"peanutbutter@jelly.com\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
-func TestScrubber(t *testing.T) {
+func TestPiiScrubber(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no scrub occurs when pii config pattern doesn't match", func(t *testing.T) {
+	t.Run("no scrub occurs when pii pattern doesn't have match in log string", func(t *testing.T) {
 		var scrubberRuleConfigs = map[string]logs.ScrubberRuleConfig{
 			"no_matches": {
 				Pattern:     `[0-9]*not in the log`,
@@ -52,7 +52,7 @@ func TestScrubber(t *testing.T) {
 		scrubbed := piiScrubber.Scrub(&piiLog)
 
 		assert.Contains(t, string(*scrubbed), fmt.Sprintf(`"ip": "%s"`, replacement))
-		assertScrubbed(t, string(piiLog), string(*scrubbed), piiStr, replacement)
+		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
 	})
 
 	t.Run("default email regex scrub should remove emails", func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestScrubber(t *testing.T) {
 		scrubbed := piiScrubber.Scrub(&source)
 
 		assert.Contains(t, string(*scrubbed), fmt.Sprintf(`"contact": "%s"`, replacement))
-		assertScrubbed(t, string(piiLog), string(*scrubbed), piiStr, replacement)
+		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
 	})
 
 	t.Run("multiple string matches should replace all of them", func(t *testing.T) {
@@ -93,10 +93,10 @@ func TestScrubber(t *testing.T) {
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
 		scrubbed := piiScrubber.Scrub(&piiLog)
 
-		assertScrubbed(t, string(piiLog), string(*scrubbed), piiStr, replacement)
+		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
 	})
 
-	t.Run("multiple defined regex rules should all execute", func(t *testing.T) {
+	t.Run("multiple defined regex rules should all execute and replace", func(t *testing.T) {
 		versionPii := `'hostVersion':'4.34.2'`
 		idPii := `'hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48'`
 
@@ -125,7 +125,7 @@ func TestScrubber(t *testing.T) {
 	})
 }
 
-func assertScrubbed(t *testing.T, original string, scrubbed string, piiStr string, replacement string) {
+func verifyScrubbedLog(t *testing.T, original string, scrubbed string, piiStr string, replacement string) {
 	assert.NotContains(t, scrubbed, piiStr, "scrubbed string has '%s' when it shouldn't", piiStr)
 	assert.Contains(t, scrubbed, replacement, "scrubbed string does not have '%s' when it should", replacement)
 

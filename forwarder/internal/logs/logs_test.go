@@ -16,7 +16,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
+	gomock "go.uber.org/mock/gomock"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
@@ -37,21 +37,19 @@ const functionAppContainer = "insights-logs-functionapplogs"
 const controlPlaneId = "9b008b0cc1ab"
 const configId = "8e0ce1e1e048"
 
-var scrubberRuleConfigs = map[string]logs.ScrubberRuleConfig{
-	"REDACT_MICROSOFT": {
-		Pattern:     `Microsoft`,
-		Replacement: "apple",
-	},
-}
-
-var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
-
 func MockLogger() (*log.Entry, *bytes.Buffer) {
 	var output []byte
 	buffer := bytes.NewBuffer(output)
 	logger := log.New()
 	logger.SetOutput(buffer)
 	return log.NewEntry(logger), buffer
+}
+
+func MockScrubber(t *testing.T, scrubbedLog []byte) *mocks.MockScrubber {
+	ctrl := gomock.NewController(t)
+	mockScrubber := mocks.NewMockScrubber(ctrl)
+	mockScrubber.EXPECT().Scrub(gomock.Any()).Return(&scrubbedLog).AnyTimes()
+	return mockScrubber
 }
 
 func TestMain(m *testing.M) {
@@ -79,7 +77,7 @@ func TestAddLog(t *testing.T) {
 		logString := fmt.Sprintf("%s%s%s", prefix, strings.Repeat("a", targetSize), suffix)
 		logBytes := []byte(logString)
 		for range 12 {
-			currLog, err := logs.NewLog(logBytes, functionAppContainer, piiScrubber)
+			currLog, err := logs.NewLog(logBytes, functionAppContainer, MockScrubber(t, logBytes))
 			currLog.Time = time.Now().Add(-5 * time.Minute)
 			require.NoError(t, err)
 			payload = append(payload, currLog)
@@ -125,7 +123,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("creates a Log from raw log", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog(validLog, functionAppContainer, piiScrubber)
+		log, err := logs.NewLog(validLog, functionAppContainer, MockScrubber(t, validLog))
 
 		// THEN
 		assert.NoError(t, err)
@@ -136,29 +134,13 @@ func TestNewLog(t *testing.T) {
 
 	})
 
-	t.Run("scrubs PII from logs", func(t *testing.T) {
-		t.Parallel()
-
-		// WHEN
-		log, err := logs.NewLog(validLog, functionAppContainer, piiScrubber)
-
-		// THEN
-		x := log.Content()
-		fmt.Println(x)
-		assert.NoError(t, err)
-		assert.Equal(t, "FunctionAppLogs", log.Category)
-		assert.NotContains(t, log.Content(), "Microsoft")
-		assert.Contains(t, log.Content(), "apple")
-
-	})
-
 	t.Run("handles an array of strings", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':['app1', 'app2'],'roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
 		// WHEN
-		log, err := logs.NewLog(validLog, functionAppContainer, piiScrubber)
+		log, err := logs.NewLog(validLog, functionAppContainer, MockScrubber(t, validLog))
 
 		// THEN
 		assert.NoError(t, err)
@@ -175,7 +157,7 @@ func TestNewLog(t *testing.T) {
 		var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':[{'app1': null, 'app2': true}, {'app3': 3.0}],'roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 
 		// WHEN
-		log, err := logs.NewLog(validLog, functionAppContainer, piiScrubber)
+		log, err := logs.NewLog(validLog, functionAppContainer, MockScrubber(t, validLog))
 
 		// THEN
 		assert.NoError(t, err)
@@ -190,7 +172,7 @@ func TestNewLog(t *testing.T) {
 		t.Parallel()
 
 		// WHEN
-		log, err := logs.NewLog(validLog, functionAppContainer, piiScrubber)
+		log, err := logs.NewLog(validLog, functionAppContainer, MockScrubber(t, validLog))
 
 		// THEN
 		assert.NoError(t, err)
@@ -200,10 +182,12 @@ func TestNewLog(t *testing.T) {
 		assert.NotNil(t, log)
 	})
 
+	var incompleteJsonLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", ")
+
 	t.Run("returns custom error on incomplete json for standard logs", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "), "something normal", piiScrubber)
+		log, err := logs.NewLog(incompleteJsonLog, "something normal", MockScrubber(t, incompleteJsonLog))
 
 		// THEN
 		assert.Error(t, err)
@@ -214,7 +198,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("returns custom error on incomplete json for function apps", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "), functionAppContainer, piiScrubber)
+		log, err := logs.NewLog(incompleteJsonLog, functionAppContainer, MockScrubber(t, incompleteJsonLog))
 
 		// THEN
 		assert.Error(t, err)
@@ -222,13 +206,12 @@ func TestNewLog(t *testing.T) {
 		assert.Nil(t, log)
 	})
 
+	var invalidResourceIdLog = []byte("{ \"resourceId\": \"something\"}")
+
 	t.Run("returns error on invalid resource id", func(t *testing.T) {
 		t.Parallel()
-		// GIVEN
-		invalidResourceId := []byte("{ \"resourceId\": \"something\"}")
-
 		// WHEN
-		log, err := logs.NewLog(invalidResourceId, "something normal", piiScrubber)
+		log, err := logs.NewLog(invalidResourceIdLog, "something normal", MockScrubber(t, invalidResourceIdLog))
 
 		// THEN
 		assert.Error(t, err)
@@ -238,11 +221,8 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("returns error on invalid resource id for function apps", func(t *testing.T) {
 		t.Parallel()
-		// GIVEN
-		invalidResourceId := []byte("{ \"resourceId\": \"something\"}")
-
 		// WHEN
-		log, err := logs.NewLog(invalidResourceId, functionAppContainer, piiScrubber)
+		log, err := logs.NewLog(invalidResourceIdLog, functionAppContainer, MockScrubber(t, invalidResourceIdLog))
 
 		// THEN
 		assert.Error(t, err)
@@ -257,7 +237,8 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns true for a valid log", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		l, err := logs.NewLog(getLogWithContent("test", 5*time.Minute), functionAppContainer, piiScrubber)
+		content := getLogWithContent("test", 5*time.Minute)
+		l, err := logs.NewLog(content, functionAppContainer, MockScrubber(t, []byte(content)))
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
 
@@ -272,8 +253,8 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns false and warns for an too large log", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		content := strings.Repeat("a", logs.MaxPayloadSize)
-		l, err := logs.NewLog(getLogWithContent(content, 5*time.Minute), functionAppContainer, piiScrubber)
+		content := getLogWithContent(strings.Repeat("a", logs.MaxPayloadSize), 5*time.Minute)
+		l, err := logs.NewLog(content, functionAppContainer, MockScrubber(t, []byte(content)))
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
 
@@ -287,7 +268,8 @@ func TestValid(t *testing.T) {
 	t.Run("valid returns false and warns for an too old log", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		l, err := logs.NewLog(getLogWithContent("short content", (18*time.Hour)+time.Minute), functionAppContainer, piiScrubber)
+		content := getLogWithContent("short content", (18*time.Hour)+time.Minute)
+		l, err := logs.NewLog(content, functionAppContainer, MockScrubber(t, []byte(content)))
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
 
@@ -318,7 +300,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.Parse(closer, "insights-logs-kube-audit", piiScrubber) {
+		for currLog, err := range logs.Parse(closer, "insights-logs-kube-audit", MockScrubber(t, data)) {
 			require.NoError(t, err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, "", currLog.ResourceId)
@@ -345,7 +327,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.Parse(closer, functionAppContainer, piiScrubber) {
+		for currLog, err := range logs.Parse(closer, functionAppContainer, MockScrubber(t, data)) {
 			require.NoError(t, err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, "", currLog.ResourceId)

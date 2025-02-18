@@ -142,7 +142,7 @@ func (l *azureLog) ResourceId() string {
 	return l.ResourceIdUpper
 }
 
-func (l *azureLog) ToLog(scrubber PiiScrubber) (*Log, error) {
+func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	parsedId, err := arm.ParseResourceID(l.ResourceId())
 	if err != nil {
 		return nil, err
@@ -244,7 +244,7 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName string, scrubber PiiScrubber) (*Log, error) {
+func NewLog(logBytes []byte, containerName string, scrubber Scrubber) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
@@ -419,7 +419,7 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, containerName string, piiScrubber PiiScrubber) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, containerName string, piiScrubber Scrubber) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb

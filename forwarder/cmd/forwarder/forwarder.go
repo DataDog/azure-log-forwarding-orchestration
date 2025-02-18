@@ -41,7 +41,7 @@ type resourceBytes struct {
 	bytes      int64
 }
 
-func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, piiScrubber logs.PiiScrubber, logsChannel chan<- *logs.Log) (err error) {
+func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (err error) {
 	cursorOffset := cursors.Get(blob.Container.Name, blob.Name)
 	if cursorOffset == blob.ContentLength {
 		// Cursor is at the end of the blob, no need to process
@@ -76,7 +76,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	return err
 }
 
-func parseLogs(reader io.ReadCloser, containerName string, piiScrubber logs.PiiScrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
+func parseLogs(reader io.ReadCloser, containerName string, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
 	var processedRawBytes int64
 	var processedLogs int64
 
@@ -154,7 +154,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	return logCount, nil
 }
 
-func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.PiiScrubber, now customtime.Now) (err error) {
+func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now) (err error) {
 	start := now()
 
 	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
@@ -276,7 +276,7 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 	return dlq.Save(ctx, storageClient, logger)
 }
 
-func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client, piiScrubber logs.PiiScrubber) error {
+func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client, piiScrubber logs.Scrubber) error {
 	start := time.Now()
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
