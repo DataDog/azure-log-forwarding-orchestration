@@ -89,7 +89,7 @@ func newBlobItem(name string, contentLength int64) *container.BlobItem {
 }
 
 func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobsFlatResponse {
-	if containers == nil || len(containers) == 0 {
+	if len(containers) == 0 {
 		return azblob.ListBlobsFlatResponse{}
 	}
 	return azblob.ListBlobsFlatResponse{
