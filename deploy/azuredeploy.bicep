@@ -7,8 +7,6 @@ param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
 
 @secure()
-param datadogApplicationKey string
-@secure()
 param datadogApiKey string
 param datadogSite string
 param piiScrubberRules string
@@ -66,7 +64,6 @@ module controlPlane './control_plane.bicep' = {
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
     monitoredSubscriptions: monitoredSubscriptions
     datadogApiKey: datadogApiKey
-    datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
     imageRegistry: imageRegistry

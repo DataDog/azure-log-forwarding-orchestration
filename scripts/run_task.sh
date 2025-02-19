@@ -31,9 +31,6 @@ export STORAGE_ACCOUNT_URL='https://ddazurelfo.blob.core.windows.net'
 if [ -z "${DD_API_KEY+x}" ]; then
     export DD_API_KEY="not_a_real_key"
 fi
-if [ -z "${DD_APP_KEY+x}" ]; then
-    export DD_APP_KEY="not_a_real_key"
-fi
 if [ -z "${DD_SITE+x}" ]; then
     export DD_SITE="datadoghq.com"
 fi

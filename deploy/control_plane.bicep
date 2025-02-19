@@ -14,10 +14,6 @@ param storageAccountUrl string
 @secure()
 param datadogApiKey string
 
-@description('Datadog App Key')
-@secure()
-param datadogApplicationKey string
-
 @description('Datadog Site')
 param datadogSite string
 
@@ -35,7 +31,6 @@ var forwarderImage = '${imageRegistry}/forwarder:latest'
 var STORAGE_CONNECTION_SETTING = 'AzureWebJobsStorage'
 var DD_SITE_SETTING = 'DD_SITE'
 var DD_API_KEY_SETTING = 'DD_API_KEY'
-var DD_APP_KEY_SETTING = 'DD_APP_KEY'
 var DD_TELEMETRY_SETTING = 'DD_TELEMETRY'
 var FORWARDER_IMAGE_SETTING = 'FORWARDER_IMAGE'
 var SUBSCRIPTION_ID_SETTING = 'SUBSCRIPTION_ID'
@@ -49,7 +44,6 @@ var LOG_LEVEL_SETTING = 'LOG_LEVEL'
 
 // Secret Names
 var DD_API_KEY_SECRET = 'dd-api-key'
-var DD_APP_KEY_SECRET = 'dd-app-key'
 var CONNECTION_STRING_SECRET = 'connection-string'
 // CONTROL PLANE RESOURCES
 
@@ -168,7 +162,6 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
         { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: FORWARDER_IMAGE_SETTING, value: forwarderImage }
-        { name: DD_APP_KEY_SETTING, value: datadogApplicationKey }
         { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
         { name: PII_SCRUBBER_RULES_SETTING, value: piiScrubberRules }
       ])
@@ -206,7 +199,6 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
       secrets: [
         { name: CONNECTION_STRING_SECRET, value: connectionString }
         { name: DD_API_KEY_SECRET, value: datadogApiKey }
-        { name: DD_APP_KEY_SECRET, value: datadogApplicationKey }
       ]
     }
     template: {
@@ -225,7 +217,6 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
             { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
             { name: DD_API_KEY_SETTING, secretRef: DD_API_KEY_SECRET }
-            { name: DD_APP_KEY_SETTING, secretRef: DD_APP_KEY_SECRET }
             { name: DD_SITE_SETTING, value: datadogSite }
             { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
             { name: STORAGE_ACCOUNT_URL_SETTING, value: storageAccountUrl }

@@ -55,7 +55,6 @@ RESOURCE_GROUP_NAME = "test_lfo"
 LOG_FORWARDER_CLIENT_SETTINGS: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
     "DD_API_KEY": "123123",
-    "DD_APP_KEY": "456456",
     "DD_SITE": "datadoghq.com",
     "FORWARDER_IMAGE": "ddlfo.azurecr.io/blobforwarder:latest",
     "CONTROL_PLANE_REGION": EAST_US,
