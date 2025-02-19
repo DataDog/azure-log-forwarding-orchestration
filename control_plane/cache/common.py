@@ -31,21 +31,14 @@ LOG_FORWARDER_TYPE_SCHEMA: dict[str, Any] = {
     ],
 }
 
-# TODO(AZINTS-3139)
-LogForwarder = NamedTuple(  # noqa: UP014
-    "LogForwarder",
-    [
-        ("config_id", str),
-        ("type", LogForwarderType),
-    ],
-)
-# class LogForwarder(NamedTuple):
-#     config_id: str
-#     type: LogForwarderType
+
+class LogForwarder(NamedTuple):
+    config_id: str
+    type: LogForwarderType
 
 
 class InvalidCacheError(Exception):
-    """Raised when the cache is in an invalid state"""
+    pass
 
 
 async def read_cache(blob_name: str) -> str:
