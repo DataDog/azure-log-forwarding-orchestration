@@ -2,7 +2,7 @@
 from abc import abstractmethod
 from asyncio import create_task, gather
 from contextlib import AbstractAsyncContextManager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from logging import ERROR, Handler, LogRecord, basicConfig, getLogger
 from os import environ
 from time import time
@@ -57,7 +57,7 @@ class ListHandler(Handler):
         self.log_list = logs
 
     def emit(self, record: LogRecord) -> None:
-        record.asctime = datetime.now(timezone.utc).isoformat()  # noqa: UP017 TODO(AZINTS-3139)
+        record.asctime = datetime.now(UTC).isoformat()
         self.log_list.append(record)
 
 
