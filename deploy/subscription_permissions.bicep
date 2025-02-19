@@ -6,6 +6,7 @@ param controlPlaneId string
 param resourceTaskPrincipalId string
 param diagnosticSettingsTaskPrincipalId string
 param scalingTaskPrincipalId string
+param initialRunIdentityPrincipalId string
 
 // create the resource group for the forwarders in this subscription
 resource forwarderResourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -21,6 +22,7 @@ module resourceGroupPermissions './resource_group_permissions.bicep' = {
     controlPlaneId: controlPlaneId
     diagnosticSettingsTaskPrincipalId: diagnosticSettingsTaskPrincipalId
     scalingTaskPrincipalId: scalingTaskPrincipalId
+    initialRunPrincipalId: initialRunIdentityPrincipalId
   }
 }
 
@@ -50,5 +52,15 @@ resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignme
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: monitoringContributorRole.id
     principalId: diagnosticSettingsTaskPrincipalId
+  }
+}
+
+
+resource initialRunMonitorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, 'initialRun', controlPlaneId)
+  properties: {
+    description: 'ddlfo${controlPlaneId}'
+    roleDefinitionId: monitoringContributorRole.id
+    principalId: initialRunIdentityPrincipalId
   }
 }

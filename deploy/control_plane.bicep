@@ -242,10 +242,6 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-output resourceTaskPrincipalId string = resourceTask.identity.principalId
-output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
-output scalingTaskPrincipalId string = scalingTask.identity.principalId
-
 // DEPLOYER TASK INITIAL RUN
 
 resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -253,6 +249,7 @@ resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@20
   location: controlPlaneLocation
 }
 
+var x = initialRunIdentity.id
 var containerAppStartRoleName = 'ContainerAppStartRole${controlPlaneId}'
 
 resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
@@ -276,28 +273,9 @@ resource initialRunIdentityRoleAssignment 'Microsoft.Authorization/roleAssignmen
   }
 }
 
-resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'initialRun'
-  location: controlPlaneLocation
-  kind: 'AzureCLI'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: { '${initialRunIdentity.id}': {} }
-  }
-  properties: {
-    storageAccountSettings: {
-      // reuse the storage account from before
-      storageAccountName: storageAccount.name
-      storageAccountKey: storageAccountKey
-    }
-    azCliVersion: '2.65.0'
-    scriptContent: loadTextContent('../build/initial_run.sh')
-    timeout: 'PT30M'
-    retentionInterval: 'PT1H'
-    cleanupPreference: 'OnSuccess'
-  }
-  dependsOn: [
-    initialRunIdentityRoleAssignment
-    deployerTaskRole
-  ]
-}
+output resourceTaskPrincipalId string = resourceTask.identity.principalId
+output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
+output scalingTaskPrincipalId string = scalingTask.identity.principalId
+output initialRunIdentityPrincipalId string = initialRunIdentity.properties.principalId
+output initialRunIdentityId string = initialRunIdentity.id
+output storageAccountName string = storageAccount.name
