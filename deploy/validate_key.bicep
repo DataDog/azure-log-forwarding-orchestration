@@ -9,7 +9,7 @@ resource validateAPIKeyScript 'Microsoft.Resources/deploymentScripts@2020-10-01'
   location: resourceGroup().location
   kind: 'AzureCLI'
   properties: {
-    azCliVersion: '2.64.0'
+    azCliVersion: '2.65.0'
     environmentVariables: [
       { name: 'DD_API_KEY', secureValue: datadogApiKey }
       { name: 'DD_SITE', value: datadogSite }

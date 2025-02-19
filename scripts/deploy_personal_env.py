@@ -184,7 +184,7 @@ run(
 # deployment has not happened, deploy LFO
 if initial_deploy or FORCE_ARM_DEPLOY:
     print("Building ARM template...")
-    run("./ci/scripts/arm-template/build.py", cwd=lfo_dir)
+    run("./ci/scripts/arm-template/build_initial_run.py", cwd=lfo_dir)
     print(f"Deploying LFO to {resource_group_name}...")
     api_key = environ["DD_API_KEY"]
     params = {
@@ -205,7 +205,7 @@ if initial_deploy or FORCE_ARM_DEPLOY:
             *("--management-group-id", "Azure-Integrations-Mg"),
             *("--location", LOCATION),
             *("--name", resource_group_name),
-            *("--template-file", "./build/azuredeploy.json"),
+            *("--template-file", "./deploy/azuredeploy.bicep"),
             *(paramPart for k, v in params.items() for paramPart in ("--parameters", f"{k}={v}")),
         ],
         cwd=lfo_dir,
