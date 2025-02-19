@@ -13,17 +13,6 @@ INITIAL_RUN_SCRIPT = "./build/initial_run.sh"
 ARM_TEMPLATE_FILE = "./deploy/azuredeploy.bicep"
 ARM_TEMPLATE_BUILD = "./build/azuredeploy.json"
 
-
-def read(file: str) -> str:
-    with open(file) as f:
-        return f.read()
-
-
-def write(file: str, content: str) -> None:
-    with open(file, "w") as f:
-        f.write(content)
-
-
 if os.path.isdir("./build"):
     rmtree("./build")
 
@@ -33,15 +22,16 @@ os.makedirs("./build", exist_ok=True)
 print("Building initial run python script")
 run(["stickytape", INITIAL_RUN_FILE, "--add-python-path", "./control_plane", "--output-file", INITIAL_RUN_BUILD])
 
-project = tomllib.loads(read("./control_plane/pyproject.toml"))["project"]
+with open("./control_plane/pyproject.toml", "b") as f:
+    project = tomllib.load(f)["project"]
 
 
 deps: set[str] = set(project["dependencies"])
 for task in ["resources_task", "diagnostic_settings_task", "scaling_task"]:
     deps.update(project["optional-dependencies"][task])
 
-
-python_content = read(INITIAL_RUN_BUILD).replace("'", "'\"'\"'")  # Escape single quotes
+with open(INITIAL_RUN_BUILD) as f:
+    python_content = f.read().replace("'", "'\"'\"'")  # Escape single quotes
 
 script_content = f"""#!/usr/bin/env bash
 # Bash script intended to be run on the azure-cli:2.65.0 image
@@ -51,5 +41,6 @@ pip install {" ".join(deps)}
 python3 -c '{python_content}'
 """
 
-write(INITIAL_RUN_SCRIPT, script_content)
+with open(INITIAL_RUN_SCRIPT, "w") as f:
+    f.write(script_content)
 print("Initial run script built and written to", INITIAL_RUN_SCRIPT)
