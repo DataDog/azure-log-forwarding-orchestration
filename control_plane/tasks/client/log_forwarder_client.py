@@ -87,6 +87,7 @@ from cache.env import (
 )
 from cache.metric_blob_cache import MetricBlobEntry, deserialize_blob_metric_entry
 from tasks.common import (
+    CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
@@ -209,7 +210,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
 
-    async def create_log_forwarder_function_app(self, region: str, config_id: str) -> LogForwarderType:
+    async def create_log_forwarder_function_app(
+        self, region: str, config_id: str, control_plane_id: str
+    ) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
 
         await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
@@ -221,7 +224,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         )
         log_errors("Failed to create function app and/or get blob forwarder data", *maybe_errors, reraise=True)
 
-        await self.upload_log_forwarder_function_app(region, config_id)
+        await self.upload_log_forwarder_function_app(config_id, control_plane_id)
 
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
@@ -402,13 +405,12 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ),
         ), lambda: self.web_client.web_apps.get(self.resource_group, job_name)
 
-    async def upload_log_forwarder_function_app(
-        self,
-        region: str,
-        config_id: str,
-    ):
+    async def upload_log_forwarder_function_app(self, config_id: str, control_plane_id: str):
         try:
-            blob_forwarder_data = await self.get_blob_forwarder_data()
+            connection_string = await self.get_connection_string(
+                f"{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}{control_plane_id}"
+            )
+            blob_forwarder_data = await self.get_blob_forwarder_data(connection_string)
         except Exception:
             log.exception("Failed to get blob forwarder data")
             raise

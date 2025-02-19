@@ -1,8 +1,16 @@
 {
     "version": "2.0",
+    "extensionBundle": {
+        "id": "Microsoft.Azure.Functions.ExtensionBundle",
+        "version": "[4.0.0, 5.0.0)"
+    },
+    "functions": [ "logforwarder", "storage" ],
     "customHandler": {
         "description": {
-            "defaultExecutablePath": "forwarder"
-        }
+            "defaultExecutablePath": "forwarder",
+            "workingDirectory": "",
+            "arguments": []
+        },
+        "enableForwardingHttpRequest": true
     }
 }

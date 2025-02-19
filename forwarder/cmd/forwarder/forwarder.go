@@ -3,20 +3,23 @@ package main
 import (
 	// stdlib
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"os"
 	"strconv"
 	"time"
 
-	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
@@ -29,6 +32,11 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
+
+type InvokeRequest struct {
+	Data     map[string]interface{}
+	Metadata map[string]interface{}
+}
 
 // serviceName is the service tag used for APM and logs about this forwarder.
 const serviceName = "dd-azure-forwarder"
@@ -259,6 +267,120 @@ func run(ctx context.Context, storageClient *storage.Client, logsClients []*logs
 	return err
 }
 
+func triggerHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		w.WriteHeader(http.StatusOK)
+		err := r.Body.Close()
+		if err != nil {
+			fmt.Println("Error closing request body:", err)
+		}
+	}()
+	fmt.Println("Starting timer trigger handler")
+	var invokeReq InvokeRequest
+	d := json.NewDecoder(r.Body)
+	decodeErr := d.Decode(&invokeReq)
+	if decodeErr != nil {
+		// bad JSON or unrecognized json field
+		http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Println("The JSON data is:invokeReq metadata......")
+	fmt.Println(invokeReq.Metadata)
+	fmt.Println("The JSON data is:invokeReq data......")
+	fmt.Println(invokeReq.Data)
+
+	apmEnabled := environment.APMEnabled()
+
+	if apmEnabled {
+		tracer.Start()
+		defer tracer.Stop()
+	}
+	var err error
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
+	defer span.Finish(tracer.WithError(err))
+
+	// Set Datadog API Key
+	ctx = context.WithValue(
+		ctx,
+		datadog.ContextAPIKeys,
+		map[string]datadog.APIKey{
+			"apiKeyAuth": {
+				Key: environment.Get(environment.DD_API_KEY),
+			},
+		},
+	)
+
+	// Set Datadog site
+	ddSite := environment.Get(environment.DD_SITE)
+	if ddSite == "" {
+		ddSite = "datadoghq.com"
+	}
+	ctx = context.WithValue(ctx,
+		datadog.ContextServerVariables,
+		map[string]string{
+			"site": ddSite,
+		})
+
+	log.SetFormatter(&log.JSONFormatter{})
+	logger := log.WithFields(log.Fields{"service": serviceName})
+
+	goroutineString := environment.Get(environment.NUM_GOROUTINES)
+	if goroutineString == "" {
+		goroutineString = "10"
+	}
+	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
+	if err != nil {
+		logger.Fatalf(fmt.Errorf("error parsing MAX_GOROUTINES: %w", err).Error())
+	}
+
+	// Initialize storage client
+	storageAccountConnectionString := environment.Get(environment.AZURE_WEB_JOBS_STORAGE)
+	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+	if err != nil {
+		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
+		return
+	}
+	storageClient := storage.NewClient(azBlobClient)
+
+	// Initialize log submission client
+	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+	apiClient := datadog.NewAPIClient(datadogConfig)
+	logsApiClient := datadogV2.NewLogsApi(apiClient)
+
+	var logsClients []*logs.Client
+	for range goroutineAmount {
+		logsClients = append(logsClients, logs.NewClient(logsApiClient))
+	}
+
+	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
+
+	err = errors.Join(runErr, err)
+}
+
+func storageHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		w.WriteHeader(http.StatusOK)
+		err := r.Body.Close()
+		if err != nil {
+			fmt.Println("Error closing request body:", err)
+		}
+	}()
+	fmt.Println("Starting storage handler")
+	var invokeReq InvokeRequest
+	d := json.NewDecoder(r.Body)
+	decodeErr := d.Decode(&invokeReq)
+	if decodeErr != nil {
+		// bad JSON or unrecognized json field
+		http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+		return
+	}
+	fmt.Println("The JSON data is:invokeReq metadata......")
+	fmt.Println(invokeReq.Metadata)
+	fmt.Println("The JSON data is:invokeReq data......")
+	fmt.Println(invokeReq.Data)
+}
+
 func main() {
 	apmEnabled := environment.APMEnabled()
 
@@ -323,38 +445,50 @@ func main() {
 		time.Sleep(5 * time.Second)
 	}
 
-	goroutineString := environment.Get(environment.NUM_GOROUTINES)
-	if goroutineString == "" {
-		goroutineString = "10"
-	}
-	goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
-	if err != nil {
-		logger.Fatalf(fmt.Errorf("error parsing MAX_GOROUTINES: %w", err).Error())
-	}
+	//goroutineString := environment.Get(environment.NUM_GOROUTINES)
+	//if goroutineString == "" {
+	//	goroutineString = "10"
+	//}
+	//goroutineAmount, err := strconv.ParseInt(goroutineString, 10, 64)
+	//if err != nil {
+	//	logger.Fatalf(fmt.Errorf("error parsing MAX_GOROUTINES: %w", err).Error())
+	//}
 
 	// Initialize storage client
-	storageAccountConnectionString := environment.Get(environment.AZURE_WEB_JOBS_STORAGE)
-	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
-	if err != nil {
-		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
-		return
-	}
-	storageClient := storage.NewClient(azBlobClient)
+	//storageAccountConnectionString := environment.Get(environment.AZURE_WEB_JOBS_STORAGE)
+	//azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+	//if err != nil {
+	//	logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
+	//	return
+	//}
+	//storageClient := storage.NewClient(azBlobClient)
 
 	// Initialize log submission client
-	datadogConfig := datadog.NewConfiguration()
-	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
-	apiClient := datadog.NewAPIClient(datadogConfig)
-	logsApiClient := datadogV2.NewLogsApi(apiClient)
+	//datadogConfig := datadog.NewConfiguration()
+	//datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+	//apiClient := datadog.NewAPIClient(datadogConfig)
+	//logsApiClient := datadogV2.NewLogsApi(apiClient)
 
-	var logsClients []*logs.Client
-	for range goroutineAmount {
-		logsClients = append(logsClients, logs.NewClient(logsApiClient))
+	//var logsClients []*logs.Client
+	//for range goroutineAmount {
+	//	logsClients = append(logsClients, logs.NewClient(logsApiClient))
+	//}
+	//
+	//runErr := run(ctx, storageClient, logsClients, logger, time.Now)
+	//
+	//err = errors.Join(runErr, err)
+
+	customHandlerPort, exists := os.LookupEnv("FUNCTIONS_CUSTOMHANDLER_PORT")
+	if exists {
+		fmt.Println("FUNCTIONS_CUSTOMHANDLER_PORT: " + customHandlerPort)
+	} else {
+		customHandlerPort = "8080"
 	}
-
-	runErr := run(ctx, storageClient, logsClients, logger, time.Now)
-
-	err = errors.Join(runErr, err)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/logforwarder", triggerHandler)
+	mux.HandleFunc("/storage", storageHandler)
+	fmt.Println("Go server Listening...on FUNCTIONS_CUSTOMHANDLER_PORT:", customHandlerPort)
+	log.Fatal(http.ListenAndServe(":"+customHandlerPort, mux))
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

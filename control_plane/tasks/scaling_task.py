@@ -26,6 +26,7 @@ from cache.common import (
     write_cache,
 )
 from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
@@ -127,6 +128,7 @@ class ScalingTask(Task):
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.scaling_percentage = parse_config_option(SCALING_PERCENTAGE_SETTING, float, DEFAULT_SCALING_PERCENTAGE)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
+        self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
 
         self.now = datetime.now()
 
@@ -148,7 +150,8 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
-        all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
+        # all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
+        all_subscriptions = set(["0b62a232-b8db-4380-9da6-640f7272ed6d"])
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
@@ -176,14 +179,16 @@ class ScalingTask(Task):
             await self.clean_up_orphaned_forwarders(client, subscription_id)
 
     @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
-    async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
+    async def create_log_forwarder(
+        self, client: LogForwarderClient, region: str, control_plane_id: str
+    ) -> LogForwarder | None:
         """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned.
         If container apps are not supported in the region, the forwarder is created in the same region as the control plane."""
         config_id = generate_unique_id()
         try:
             if self.use_function_apps:
-                config_type = await client.create_log_forwarder_function_app(region, config_id)
+                config_type = await client.create_log_forwarder_function_app(region, config_id, control_plane_id)
             else:
                 config_type = await client.create_log_forwarder(region, config_id)
             return LogForwarder(config_id, config_type)
@@ -228,7 +233,7 @@ class ScalingTask(Task):
             # log forwarder environments take multiple minutes to be ready, so we should wait until the next run
             return
 
-        log_forwarder = await self.create_log_forwarder(client, region)
+        log_forwarder = await self.create_log_forwarder(client, region, self.control_plane_id)
         if log_forwarder is None:
             return
         config_id, config_type = log_forwarder
@@ -509,7 +514,9 @@ class ScalingTask(Task):
         region_config = self.assignment_cache[subscription_id][region]
 
         # create a second forwarder for each forwarder that needs to scale up
-        new_forwarders = await gather(*[self.create_log_forwarder(client, region) for _ in forwarders_to_scale_up])
+        new_forwarders = await gather(
+            *[self.create_log_forwarder(client, region, self.control_plane_id) for _ in forwarders_to_scale_up]
+        )
         if any(new_forwarders):
             log.info("Scaled up %s forwarders in region %s", len(new_forwarders), region)
             region_config["on_cooldown"] = True

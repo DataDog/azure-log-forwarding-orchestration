@@ -56,6 +56,8 @@ class ResourcesTask(Task):
                 len(subscriptions),
             )
 
+        subscriptions = ["0b62a232-b8db-4380-9da6-640f7272ed6d"]
+
         await gather(*map(self.process_subscription, subscriptions))
 
     async def process_subscription(self, subscription_id: str) -> None:
