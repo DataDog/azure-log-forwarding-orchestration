@@ -520,7 +520,7 @@ class TestLogForwarderClient(AsyncTestCase):
         (await self.blob_client.download_blob()).readall.return_value = b"hi\nbye"
 
         async with self.client as client:
-            res = await client.get_blob_metrics_lines("test")
+            res = await client.get_blob_metrics_lines("test", EAST_US)
             self.assertEqual(res, ["hi", "bye", "hi", "bye"])
 
     async def test_get_blob_metrics_missing_blob(self):
@@ -528,7 +528,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client.download_blob.side_effect = [ResourceNotFoundError(), DEFAULT]
 
         async with self.client as client:
-            res = await client.get_blob_metrics_lines("test")
+            res = await client.get_blob_metrics_lines("test", EAST_US)
             self.assertEqual(res, ["hi", "bye"])
 
     async def test_get_blob_timeout_retries(self):
@@ -545,7 +545,7 @@ class TestLogForwarderClient(AsyncTestCase):
         ]
 
         async with self.client as client:
-            res = await client.get_blob_metrics_lines("test")
+            res = await client.get_blob_metrics_lines("test", EAST_US)
             self.assertEqual(res, ["hi", "bye", "hi", "bye"])
             self.assertEqual(self.blob_client.download_blob.call_count, 6)  # 1 call is from where res_str is set
 
@@ -553,7 +553,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client.download_blob.side_effect = ServiceResponseTimeoutError("oops")
 
         async with self.client as client:
-            await client.get_blob_metrics_lines("test")
+            await client.get_blob_metrics_lines("test", EAST_US)
         self.assertEqual(self.blob_client.download_blob.call_count, 2 * MAX_ATTEMPS)
         self.log.error.assert_called_with(
             "Unable to fetch metrics in %s for forwarder %s:\n%s",
@@ -567,7 +567,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client.download_blob.side_effect = FakeHttpError(402)
 
         async with self.client as client:
-            await client.get_blob_metrics_lines("test")
+            await client.get_blob_metrics_lines("test", EAST_US)
         self.assertEqual(self.blob_client.download_blob.call_count, 2)
         self.log.error.assert_called_with(
             "Unable to fetch metrics in %s for forwarder %s:\n%s",
@@ -612,9 +612,9 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.get_blob_metrics_lines = AsyncMock(return_value=list(map(dumps, metrics)))
 
         async with self.client as client:
-            res = await client.collect_forwarder_metrics(CONFIG_ID1, oldest_valid_timestamp=minutes_ago(15))
+            res = await client.collect_forwarder_metrics(CONFIG_ID1, EAST_US, oldest_valid_timestamp=minutes_ago(15))
 
-        self.client.get_blob_metrics_lines.assert_called_once_with(CONFIG_ID1)
+        self.client.get_blob_metrics_lines.assert_called_once_with(CONFIG_ID1, EAST_US)
         self.assertEqual(res, [])
 
     async def test_submit_metrics_errors_logged(self):

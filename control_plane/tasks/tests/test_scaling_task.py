@@ -86,8 +86,8 @@ def generate_forwarder_ids(count: int) -> list[str]:
 
 def collect_metrics_side_effect(
     mapping: dict[str, list[MetricBlobEntry]],
-) -> Callable[[str, float], list[MetricBlobEntry]]:
-    return lambda config_id, _t: mapping.get(config_id, [])
+) -> Callable[[str, str, float], list[MetricBlobEntry]]:
+    return lambda config_id, _region, _timestamp: mapping.get(config_id, [])
 
 
 class TestScalingTask(TaskTestCase):
@@ -585,7 +585,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, ANY)
+        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, EAST_US, ANY)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -640,7 +640,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, ANY)
+        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, EAST_US, ANY)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )

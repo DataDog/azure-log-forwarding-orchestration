@@ -94,21 +94,26 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		return 0, false
 	}
 
+	resourceId := "unknown"
+	if r := currLog.ResourceId(); r != nil {
+		resourceId = r.String()
+	}
+
 	timeString, ok := log.AdditionalProperties["time"]
 	if !ok {
 		// log does not have a time field and cannot be validated
-		logger.Warningf("Skipping log without a time field for resource %s", currLog.ResourceId())
+		logger.Warningf("Skipping log without a time field for resource %s", resourceId)
 		return 0, false
 	}
 
 	parsedTime, err := time.Parse(time.RFC3339, timeString)
 	if err != nil {
 		// log has an invalid time field and cannot be validated
-		logger.WithError(err).Warningf("Skipping log with an invalid time field for resource %s", currLog.ResourceId())
+		logger.WithError(err).Warningf("Skipping log with an invalid time field for resource %s", resourceId)
 		return 0, false
 	}
 
-	valid := validateLog(currLog.ResourceId(), int64(len(logBytes)), parsedTime, logger)
+	valid := validateLog(resourceId, int64(len(logBytes)), parsedTime, logger)
 	return int64(len(logBytes)), valid
 }
 
@@ -128,24 +133,47 @@ func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *l
 type azureLog struct {
 	Raw             *[]byte
 	ByteSize        int64
-	Category        string    `json:"category"`
-	ResourceIdLower string    `json:"resourceId,omitempty"`
-	ResourceIdUpper string    `json:"ResourceId,omitempty"`
-	Time            time.Time `json:"time"`
-	Level           string    `json:"level,omitempty"`
+	Category        string `json:"category"`
+	ResourceIdLower string `json:"resourceId,omitempty"`
+	ResourceIdUpper string `json:"ResourceId,omitempty"`
+	// resource ID from blob name, used as a backup
+	BlobResourceId string
+	Time           time.Time `json:"time"`
+	Level          string    `json:"level,omitempty"`
 }
 
-func (l *azureLog) ResourceId() string {
-	if l.ResourceIdLower != "" {
-		return l.ResourceIdLower
+func (l *azureLog) ResourceId() *arm.ResourceID {
+	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.BlobResourceId} {
+		if r, err := arm.ParseResourceID(resourceId); err == nil {
+			return r
+		}
 	}
-	return l.ResourceIdUpper
+	return nil
 }
 
-func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
-	parsedId, err := arm.ParseResourceID(l.ResourceId())
-	if err != nil {
-		return nil, err
+func sourceTag(resourceType string) string {
+	sourceTag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
+	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
+}
+
+func (l *azureLog) ToLog(scrubber Scrubber) *Log {
+	var source string
+	var resourceId string
+	tags := []string{
+		"forwarder:lfo",
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
+	}
+
+	// Try to add additional tags, source, and resource ID
+	if parsedId := l.ResourceId(); parsedId != nil {
+		source = sourceTag(parsedId.ResourceType.String())
+		resourceId = parsedId.String()
+		tags = append(tags,
+			fmt.Sprintf("subscription_id:%s", parsedId.SubscriptionID),
+			fmt.Sprintf("resource_group:%s", parsedId.ResourceGroupName),
+			fmt.Sprintf("source:%s", source),
+		)
 	}
 
 	if l.Level == "" {
@@ -160,13 +188,13 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 		RawByteSize:      l.ByteSize,
 		ScrubbedByteSize: int64(scrubbedByteSize),
 		Category:         l.Category,
-		ResourceId:       l.ResourceId(),
+		ResourceId:       resourceId,
 		Service:          AzureService,
-		Source:           sourceTag(parsedId.ResourceType.String()),
+		Source:           source,
 		Time:             l.Time,
 		Level:            l.Level,
-		Tags:             getTags(parsedId),
-	}, nil
+		Tags:             tags,
+	}
 }
 
 // ErrUnexpectedToken is an error for when an unexpected token is found in a log.
@@ -244,7 +272,7 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName string, scrubber Scrubber) (*Log, error) {
+func NewLog(logBytes []byte, containerName, blobNameResourceId string, scrubber Scrubber) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
@@ -266,29 +294,15 @@ func NewLog(logBytes []byte, containerName string, scrubber Scrubber) (*Log, err
 		if errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, ErrIncompleteLogFile
 		}
-		return nil, err
+		// log is not in JSON format, treat it as plaintext
+		currLog = &azureLog{Time: time.Now()}
 	}
 
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
+	currLog.BlobResourceId = blobNameResourceId
 
-	return currLog.ToLog(scrubber)
-}
-
-func sourceTag(source string) string {
-	sourceTag := strings.ToLower(strings.Replace(source, "/", ".", -1))
-	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
-}
-
-func getTags(id *arm.ResourceID) []string {
-	return []string{
-		fmt.Sprintf("subscription_id:%s", id.SubscriptionID),
-		fmt.Sprintf("resource_group:%s", id.ResourceGroupName),
-		fmt.Sprintf("source:%s", sourceTag(id.ResourceType.String())),
-		fmt.Sprintf("forwarder:%s", "lfo"),
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
-	}
+	return currLog.ToLog(), nil
 }
 
 // bufferSize is the maximum number of logs per post to Logs API.
@@ -419,7 +433,7 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, containerName string, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, containerName, blobNameResourceId string, piiScrubber Scrubber) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -429,7 +443,7 @@ func Parse(reader io.ReadCloser, containerName string, piiScrubber Scrubber) ite
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(currBytes, containerName, piiScrubber)
+			currLog, err := NewLog(currBytes, containerName, blobNameResourceId, piiScrubber)
 			if err != nil {
 				if !yield(nil, err) {
 					return
