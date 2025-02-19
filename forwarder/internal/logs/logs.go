@@ -302,7 +302,7 @@ func NewLog(logBytes []byte, containerName, blobNameResourceId string, scrubber 
 	currLog.Raw = &logBytes
 	currLog.BlobResourceId = blobNameResourceId
 
-	return currLog.ToLog(), nil
+	return currLog.ToLog(scrubber), nil
 }
 
 // bufferSize is the maximum number of logs per post to Logs API.

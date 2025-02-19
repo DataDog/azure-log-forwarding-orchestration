@@ -223,7 +223,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("uses resource id from blob on invalid resource id for function apps", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog(invalidResourceId, functionAppContainer, resourceId, MockScrubber(t, invalidResourceIdLog))
+		log, err := logs.NewLog(invalidResourceIdLog, functionAppContainer, resourceId, MockScrubber(t, invalidResourceIdLog))
 
 		// THEN
 		assert.NoError(t, err)
@@ -233,7 +233,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("Creates a valid log for plaintext logs outside of function app logs", func(t *testing.T) {
 		t.Parallel()
 		plaintextLog := "[2024-08-21T15:12:24] This is a plaintext log"
-		log, err := logs.NewLog([]byte(plaintextLog), "something normal", resourceId)
+		log, err := logs.NewLog([]byte(plaintextLog), "something normal", resourceId, MockScrubber(t, []byte(plaintextLog)))
 		assert.NoError(t, err)
 		assert.NotNil(t, log)
 		assert.Equal(t, plaintextLog, log.Content())
@@ -255,7 +255,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("Creates a valid log for plaintext logs without valid blob resource id", func(t *testing.T) {
 		t.Parallel()
 		plaintextLog := "[2024-08-21T15:12:24] This is a plaintext log"
-		log, err := logs.NewLog([]byte(plaintextLog), "something normal", "/some/blob/path")
+		log, err := logs.NewLog([]byte(plaintextLog), "something normal", "/some/blob/path", MockScrubber(t, []byte(plaintextLog)))
 		assert.NoError(t, err)
 		assert.NotNil(t, log)
 		assert.Equal(t, plaintextLog, log.Content())
