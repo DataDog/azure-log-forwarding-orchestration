@@ -230,10 +230,11 @@ func TestNewLog(t *testing.T) {
 		assert.Equal(t, resourceId, log.ResourceId)
 	})
 
+	var plaintextLog = []byte("[2024-08-21T15:12:24] This is a plaintext log")
+
 	t.Run("Creates a valid log for plaintext logs outside of function app logs", func(t *testing.T) {
 		t.Parallel()
-		plaintextLog := "[2024-08-21T15:12:24] This is a plaintext log"
-		log, err := logs.NewLog([]byte(plaintextLog), "something normal", resourceId, MockScrubber(t, []byte(plaintextLog)))
+		log, err := logs.NewLog(plaintextLog, "something normal", resourceId, MockScrubber(t, plaintextLog))
 		assert.NoError(t, err)
 		assert.NotNil(t, log)
 		assert.Equal(t, plaintextLog, log.Content())
@@ -254,8 +255,7 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("Creates a valid log for plaintext logs without valid blob resource id", func(t *testing.T) {
 		t.Parallel()
-		plaintextLog := "[2024-08-21T15:12:24] This is a plaintext log"
-		log, err := logs.NewLog([]byte(plaintextLog), "something normal", "/some/blob/path", MockScrubber(t, []byte(plaintextLog)))
+		log, err := logs.NewLog(plaintextLog, "something normal", "/some/blob/path", MockScrubber(t, plaintextLog))
 		assert.NoError(t, err)
 		assert.NotNil(t, log)
 		assert.Equal(t, plaintextLog, log.Content())
