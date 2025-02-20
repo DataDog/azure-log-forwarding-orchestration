@@ -108,6 +108,8 @@ module initialRun './initial_run.bicep' = {
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
     logLevel: logLevel
+    monitoredSubscriptions: monitoredSubscriptions
+    forwarderImage: '${imageRegistry}/forwarder:latest'
   }
   dependsOn: [
     subscriptionPermissions
