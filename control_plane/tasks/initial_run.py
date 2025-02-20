@@ -26,10 +26,10 @@ async def main() -> None:
     async with ResourcesTask("") as resources_task:
         await resources_task.run()
         resource_cache = dumps(resources_task.resource_cache, default=list)
-    async with ScalingTask("", resource_cache, wait_on_envs=True) as scaling_task:
+    async with ScalingTask(resource_cache, "", wait_on_envs=True) as scaling_task:
         await scaling_task.run()
         assignment_cache = dumps(scaling_task.assignment_cache)
-    async with ScalingTask(assignment_cache, resource_cache) as scaling_task:
+    async with ScalingTask(resource_cache, assignment_cache) as scaling_task:
         await scaling_task.run()
         assignment_cache = dumps(scaling_task.assignment_cache)
     async with DiagnosticSettingsTask(assignment_cache, "") as diagnostic_settings_task:
