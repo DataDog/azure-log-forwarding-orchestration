@@ -37,7 +37,7 @@ script_content = f"""#!/usr/bin/env bash
 # Bash script intended to be run on the azure-cli:2.67.0 image
 set -euo pipefail
 curl https://bootstrap.pypa.io/get-pip.py | python3
-pip install {" ".join(deps)}
+pip install {" ".join(deps)} > /dev/null
 python3 -c '{python_content}'
 """
 

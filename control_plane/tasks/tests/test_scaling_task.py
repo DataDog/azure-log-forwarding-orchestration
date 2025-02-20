@@ -174,7 +174,7 @@ class TestScalingTask(TaskTestCase):
 
         # THEN
         self.client.create_log_forwarder.assert_not_awaited()
-        self.client.create_log_forwarder_managed_environment.assert_called_once_with(EAST_US)
+        self.client.create_log_forwarder_managed_environment.assert_called_once_with(EAST_US, wait=False)
         self.assertEqual(self.cache, expected_cache)
 
     async def test_new_regions_are_added_second_run(self):
@@ -220,7 +220,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         # THEN
-        self.client.create_log_forwarder_managed_environment.assert_awaited_once_with(EAST_US)
+        self.client.create_log_forwarder_managed_environment.assert_awaited_once_with(EAST_US, wait=False)
         self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
 
     async def test_errors_raised_when_forwarder_creation_fails(self):
