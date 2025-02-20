@@ -28,20 +28,26 @@ async def is_initial_deploy() -> bool:
     return await read_cache(RESOURCE_CACHE_BLOB) == ""
 
 
+async def run_tasks() -> None:
+    basicConfig(level=INFO)
+    async with ResourcesTask("") as resources_task:
+        await resources_task.run()
+        resource_cache = dumps(resources_task.resource_cache, default=list)
+    async with ScalingTask(resource_cache, "", wait_on_envs=True) as scaling_task:
+        await scaling_task.run()
+        assignment_cache = dumps(scaling_task.assignment_cache)
+    async with ScalingTask(resource_cache, assignment_cache) as scaling_task:
+        await scaling_task.run()
+        assignment_cache = dumps(scaling_task.assignment_cache)
+    async with DiagnosticSettingsTask(assignment_cache, "") as diagnostic_settings_task:
+        await diagnostic_settings_task.run()
+
+
 async def main() -> None:
     if await is_initial_deploy():
-        basicConfig(level=INFO)
-        async with ResourcesTask("") as resources_task:
-            await resources_task.run()
-            resource_cache = dumps(resources_task.resource_cache, default=list)
-        async with ScalingTask(resource_cache, "", wait_on_envs=True) as scaling_task:
-            await scaling_task.run()
-            assignment_cache = dumps(scaling_task.assignment_cache)
-        async with ScalingTask(resource_cache, assignment_cache) as scaling_task:
-            await scaling_task.run()
-            assignment_cache = dumps(scaling_task.assignment_cache)
-        async with DiagnosticSettingsTask(assignment_cache, "") as diagnostic_settings_task:
-            await diagnostic_settings_task.run()
+        await run_tasks()
+    else:
+        print("This is a re-deploy, starting deployer instead")
     await start_deployer()
 
 
