@@ -39,6 +39,7 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'FORWARDER_IMAGE', value: forwarderImage }
       { name: 'CONTROL_PLANE_REGION', value: resourceGroup().location}
       { name: 'RESOURCE_GROUP', value: resourceGroup().name }
+      { name: 'SUBSCRIPTION_ID', value: subscription().subscriptionId }
       { name: 'LOG_LEVEL', value: logLevel }
       { name: 'MONITORED_SUBSCRIPTIONS', value: monitoredSubscriptions }
     ]
