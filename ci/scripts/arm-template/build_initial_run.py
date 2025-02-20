@@ -22,7 +22,7 @@ os.makedirs("./build", exist_ok=True)
 print("Building initial run python script")
 run(["stickytape", INITIAL_RUN_FILE, "--add-python-path", "./control_plane", "--output-file", INITIAL_RUN_BUILD])
 
-with open("./control_plane/pyproject.toml", "b") as f:
+with open("./control_plane/pyproject.toml", "rb") as f:
     project = tomllib.load(f)["project"]
 
 
@@ -34,7 +34,7 @@ with open(INITIAL_RUN_BUILD) as f:
     python_content = f.read().replace("'", "'\"'\"'")  # Escape single quotes
 
 script_content = f"""#!/usr/bin/env bash
-# Bash script intended to be run on the azure-cli:2.65.0 image
+# Bash script intended to be run on the azure-cli:2.67.0 image
 set -euo pipefail
 curl https://bootstrap.pypa.io/get-pip.py | python3
 pip install {" ".join(deps)}

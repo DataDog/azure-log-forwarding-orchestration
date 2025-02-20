@@ -36,7 +36,7 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'CONTROL_PLANE_ID', value: controlPlaneId }
       { name: 'LOG_LEVEL', value: logLevel }
     ]
-    azCliVersion: '2.65.0'
+    azCliVersion: '2.67.0'
     scriptContent: loadTextContent('../build/initial_run.sh')
     timeout: 'PT30M'
     retentionInterval: 'PT1H'

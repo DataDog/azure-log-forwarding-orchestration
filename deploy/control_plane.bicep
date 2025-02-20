@@ -249,13 +249,10 @@ resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@20
   location: controlPlaneLocation
 }
 
-var x = initialRunIdentity.id
-var containerAppStartRoleName = 'ContainerAppStartRole${controlPlaneId}'
-
 resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' = {
-  name: guid(containerAppStartRoleName)
+  name: guid('containerAppStartRole', controlPlaneId)
   properties: {
-    roleName: containerAppStartRoleName
+    roleName: 'ContainerAppStartRole${controlPlaneId}'
     description: 'Custom role to start container app jobs'
     type: 'customRole'
     permissions: [{ actions: ['Microsoft.App/jobs/start/action'] }]
@@ -264,7 +261,7 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
 }
 
 resource initialRunIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('initialRunIdentityRoleAssignment', controlPlaneResourceGroupName)
+  name: guid('initialRunIdentityRoleAssignment', controlPlaneId)
   properties: {
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: containerAppStartRole.id

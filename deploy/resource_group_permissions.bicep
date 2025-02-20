@@ -37,18 +37,8 @@ resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
   }
 }
 
-resource initialRunStorageRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, 'storage', 'diagnosticSettings', controlPlaneId)
-  scope: resourceGroup()
-  properties: {
-    description: 'ddlfo${controlPlaneId}'
-    roleDefinitionId: readerAndDataAccessRole.id
-    principalId: initialRunPrincipalId
-  }
-}
-
 resource initialRunRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, 'scaling', controlPlaneId)
+  name: guid(subscription().id, 'initialRun', controlPlaneId)
   scope: resourceGroup()
   properties: {
     description: 'ddlfo${controlPlaneId}'
