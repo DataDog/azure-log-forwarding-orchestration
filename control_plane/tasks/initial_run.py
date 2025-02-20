@@ -1,7 +1,7 @@
 # stdlib
 from asyncio import run
 from json import dumps
-from logging import basicConfig
+from logging import INFO, basicConfig
 
 # 3p
 from azure.identity.aio import DefaultAzureCredential
@@ -30,7 +30,7 @@ async def is_initial_deploy() -> bool:
 
 async def main() -> None:
     if await is_initial_deploy():
-        basicConfig(level="INFO")
+        basicConfig(level=INFO)
         async with ResourcesTask("") as resources_task:
             await resources_task.run()
             resource_cache = dumps(resources_task.resource_cache, default=list)
