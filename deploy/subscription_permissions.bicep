@@ -57,7 +57,7 @@ resource diagnosticSettingsTaskMonitorRole 'Microsoft.Authorization/roleAssignme
 
 
 resource initialRunMonitorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, 'initialRun', controlPlaneId)
+  name: guid(subscription().id, 'initialRunMonitoringContributor', controlPlaneId)
   properties: {
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: monitoringContributorRole.id

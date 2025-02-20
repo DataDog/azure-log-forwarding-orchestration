@@ -245,7 +245,7 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 // DEPLOYER TASK INITIAL RUN
 
 resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'initialRunIdentity'
+  name: 'initialRunIdentity${controlPlaneId}'
   location: controlPlaneLocation
 }
 
@@ -262,8 +262,8 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
   }
 }
 
-resource initialRunIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('initialRunIdentityRoleAssignment', controlPlaneId)
+resource initialRunContainerAppRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('initialRunContainerAppRoleAssignment', controlPlaneId)
   properties: {
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: containerAppStartRole.id

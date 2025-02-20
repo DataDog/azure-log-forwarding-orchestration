@@ -38,7 +38,7 @@ resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
 }
 
 resource initialRunRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, 'initialRun', controlPlaneId)
+  name: guid(subscription().id, 'initialRunContributor', controlPlaneId)
   scope: resourceGroup()
   properties: {
     description: 'ddlfo${controlPlaneId}'
