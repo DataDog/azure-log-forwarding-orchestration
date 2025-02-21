@@ -99,6 +99,8 @@ FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
     },
 ]
 
+METRIC_TAGS = ["control_plane_id:e90ecb54476d", "region:eastus"]
+
 FAKE_METRIC_PAYLOAD = MetricPayload(
     series=[
         MetricSeries(
@@ -106,18 +108,21 @@ FAKE_METRIC_PAYLOAD = MetricPayload(
             type=MetricIntakeType.UNSPECIFIED,
             points=[MetricPoint(timestamp=1723040910, value=10), MetricPoint(timestamp=1723040911, value=11)],
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+            tags=METRIC_TAGS,
         ),
         MetricSeries(
             metric="azure.lfo.forwarder.resource_log_bytes",
             type=MetricIntakeType.UNSPECIFIED,
             points=[MetricPoint(timestamp=1723040910, value=1000), MetricPoint(timestamp=1723040911, value=1101)],
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+            tags=METRIC_TAGS,
         ),
         MetricSeries(
             metric="azure.lfo.forwarder.runtime_seconds",
             type=MetricIntakeType.UNSPECIFIED,
             points=[MetricPoint(timestamp=1723040910, value=2.80), MetricPoint(timestamp=1723040911, value=2.81)],
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+            tags=METRIC_TAGS,
         ),
     ],
 )
@@ -582,7 +587,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.should_submit_metrics = True
         self.client.metrics_client.submit_metrics.return_value = {}
         async with self.client as client:
-            await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS)
+            await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
 
         self.client.metrics_client.submit_metrics.assert_called_once_with(body=FAKE_METRIC_PAYLOAD)
 
@@ -593,7 +598,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
-                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS)
+                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
         self.client.metrics_client.submit_metrics.assert_called_with(body=FAKE_METRIC_PAYLOAD)
         self.assertEqual(self.client.metrics_client.submit_metrics.call_count, MAX_ATTEMPS)
 
@@ -604,7 +609,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
-                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS)
+                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
         self.client.metrics_client.submit_metrics.assert_called_with(body=FAKE_METRIC_PAYLOAD)
         self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 1)
 
@@ -636,6 +641,7 @@ class TestLogForwarderClient(AsyncTestCase):
                         "resource_log_bytes": {},
                     }
                 ],
+                EAST_US,
             )
 
         self.log.error.assert_called_once_with(
