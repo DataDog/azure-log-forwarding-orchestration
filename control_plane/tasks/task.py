@@ -32,7 +32,7 @@ log = getLogger(__name__)
 # silence azure logging except for errors
 getLogger("azure").setLevel(ERROR)
 
-IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args", "msg"}
+IGNORED_LOG_EXTRAS = {"created", "relativeCreated", "thread", "args", "msg", "message"}
 
 
 def get_error_telemetry(
@@ -96,7 +96,10 @@ class Task(AbstractAsyncContextManager["Task"]):
         if exc_type is None and exc_value is None and traceback is None:
             await self.write_caches()
         await self.credential.__aexit__(exc_type, exc_value, traceback)
-        await submit_telemetry
+        try:
+            await submit_telemetry
+        except Exception:
+            log.exception("Failed to submit telemetry")
         await self._datadog_client.__aexit__(exc_type, exc_value, traceback)
 
     @abstractmethod
@@ -108,7 +111,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         dd_logs = [
             HTTPLogItem(
                 **{
-                    **{k: str(v) for k, v in record.__dict__.items() if k not in IGNORED_LOG_EXTRAS},
+                    **{k: str(v) for k, v in record.__dict__.items() if k.lower() not in IGNORED_LOG_EXTRAS},
                     **{
                         "message": record.getMessage(),
                         "ddsource": "azure",
