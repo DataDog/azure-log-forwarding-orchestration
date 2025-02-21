@@ -78,10 +78,10 @@ func NewBlob(container Container, item *container.BlobItem) Blob {
 }
 
 // ListBlobs returns an iterator over a sequence of blobs in a container.
-func (c *Client) ListBlobs(ctx context.Context, container Container, logger *log.Entry) iter.Seq[Blob] {
+func (c *Client) ListBlobs(ctx context.Context, storageContainer Container, logger *log.Entry) iter.Seq[Blob] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.ListBlobs")
 	defer span.Finish()
-	blobPager := c.azBlobClient.NewListBlobsFlatPager(container.Name, &azblob.ListBlobsFlatOptions{
+	blobPager := c.azBlobClient.NewListBlobsFlatPager(storageContainer.Name, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
 
@@ -89,14 +89,9 @@ func (c *Client) ListBlobs(ctx context.Context, container Container, logger *log
 		if item.Segment == nil {
 			return nil
 		}
-		blobs := make([]Blob, 0, len(item.Segment.BlobItems))
-		for _, blobItem := range item.Segment.BlobItems {
-			if blobItem == nil {
-				continue
-			}
-			blobs = append(blobs, NewBlob(container, blobItem))
-		}
-		return blobs
+		return collections.FilterMap(item.Segment.BlobItems, func(blobItem *container.BlobItem) (Blob, bool) {
+			return NewBlob(storageContainer, blobItem), blobItem != nil
+		})
 	}, logger)
 }
 

@@ -14,6 +14,7 @@ import (
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
@@ -81,14 +82,10 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, logg
 	defer span.Finish()
 
 	// prune invalid logs
-	queue := make([]datadogV2.HTTPLogItem, 0)
-	for _, failedLog := range d.client.FailedLogs {
-		_, valid := logs.ValidateDatadogLog(failedLog, logger)
-		if valid {
-			queue = append(queue, failedLog)
-		}
-	}
-	d.queue = queue
+	d.queue = collections.Filter(d.client.FailedLogs, func(log datadogV2.HTTPLogItem) bool {
+		_, valid := logs.ValidateDatadogLog(log, logger)
+		return valid
+	})
 
 	data, err := d.JSONBytes()
 	if err != nil {
