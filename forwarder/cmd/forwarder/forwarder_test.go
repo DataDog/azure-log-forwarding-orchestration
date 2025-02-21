@@ -172,9 +172,9 @@ func TestRun(t *testing.T) {
 			return resp
 		}
 
-		cursorsWithExpiredBlob := cursor.NewCursors(nil)
-		cursorsWithExpiredBlob.SetCursor(containerName, *expiredBlob.Name, 300)
-		cursorBytes, err := cursorsWithExpiredBlob.Bytes()
+		cursorsWithExpiredBlob := cursor.New(nil)
+		cursorsWithExpiredBlob.Set(containerName, *expiredBlob.Name, 300)
+		cursorBytes, err := cursorsWithExpiredBlob.JSONBytes()
 
 		cursorResp := azblob.DownloadStreamResponse{}
 		cursorResp.Body = io.NopCloser(strings.NewReader(string(cursorBytes)))
@@ -214,7 +214,7 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
-		assert.Equal(t, int64(0), finalCursors.GetCursor(containerName, *expiredBlob.Name))
+		assert.Equal(t, int64(0), finalCursors.Get(containerName, *expiredBlob.Name))
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, logs.AzureService, *logItem.Service)
 			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
