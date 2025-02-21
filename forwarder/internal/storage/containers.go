@@ -11,7 +11,6 @@ import (
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 
 	// "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/generated"
 	log "github.com/sirupsen/logrus"
@@ -39,9 +38,16 @@ func (c *Client) GetLogContainers(ctx context.Context, logger *log.Entry) iter.S
 	defer span.Finish()
 	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
 	return collections.New(ctx, containerPager, func(item azblob.ListContainersResponse) []Container {
-		return collections.FilterMap(item.ContainerItems, func(container *service.ContainerItem) (Container, bool) {
-			return Container{Name: *container.Name}, !slices.Contains(IgnoredContainers, *container.Name)
-		})
+		var containers []Container
+		for _, container := range item.ContainerItems {
+			if slices.Contains(IgnoredContainers, *container.Name) {
+				continue
+			}
+			containers = append(containers, Container{
+				Name: *container.Name,
+			})
+		}
+		return containers
 	}, logger)
 }
 
