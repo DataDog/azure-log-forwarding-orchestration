@@ -167,6 +167,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     "kind": "StorageV2",
                     "location": EAST_US,
                     "public_network_access": "Enabled",
+                    "minimum_tls_version": "TLS1_2",
                 }
             ),
         )
@@ -235,6 +236,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     "kind": "StorageV2",
                     "location": NEW_ZEALAND_NORTH,
                     "public_network_access": "Enabled",
+                    "minimum_tls_version": "TLS1_2",
                 }
             ),
         )
