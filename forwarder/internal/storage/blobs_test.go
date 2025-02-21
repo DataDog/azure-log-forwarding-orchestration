@@ -28,6 +28,8 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
+const LogContainerName = "insights-logs-functionapps"
+
 func newBlobItem(name string) *container.BlobItem {
 	return &container.BlobItem{
 		Name: to.StringPtr(name),
@@ -50,9 +52,9 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 func listBlobs(t *testing.T, ctx context.Context, blobContainer storage.Container, responses [][]*container.BlobItem, fetcherError error) []storage.Blob {
 	ctrl := gomock.NewController(t)
 
-	handler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse](responses, fetcherError, getListBlobsFlatResponse)
+	handler := collections.NewPagingHandler(responses, fetcherError, getListBlobsFlatResponse)
 
-	pager := runtime.NewPager[azblob.ListBlobsFlatResponse](handler)
+	pager := runtime.NewPager(handler)
 
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
 	mockClient.EXPECT().NewListBlobsFlatPager(blobContainer.Name, gomock.Any()).Return(pager)
@@ -84,7 +86,7 @@ func TestListBlobs(t *testing.T) {
 		}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, [][]*container.BlobItem{firstPage}, nil)
+		results := listBlobs(t, context.Background(), storage.Container{Name: LogContainerName}, [][]*container.BlobItem{firstPage}, nil)
 
 		// THEN
 		assert.Len(t, results, 2)
@@ -98,7 +100,7 @@ func TestListBlobs(t *testing.T) {
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, blobs, nil)
+		results := listBlobs(t, context.Background(), storage.Container{Name: LogContainerName}, blobs, nil)
 
 		// THEN
 		assert.Len(t, results, 0)
@@ -113,7 +115,7 @@ func TestListBlobs(t *testing.T) {
 		blobs := [][]*container.BlobItem{}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, blobs, fetcherError)
+		results := listBlobs(t, context.Background(), storage.Container{Name: LogContainerName}, blobs, fetcherError)
 
 		// THEN
 		assert.Len(t, results, 0)
@@ -132,7 +134,7 @@ func TestListBlobs(t *testing.T) {
 		pages := [][]*container.BlobItem{firstPage, secondPage}
 
 		// WHEN
-		results := listBlobs(t, context.Background(), storage.Container{Name: storage.LogContainerPrefix}, pages, nil)
+		results := listBlobs(t, context.Background(), storage.Container{Name: LogContainerName}, pages, nil)
 
 		// THEN
 		assert.Len(t, results, 2)

@@ -36,11 +36,11 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 	}
 }
 
-func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix string, responses [][]*service.ContainerItem, fetcherError error) []storage.Container {
+func getLogContainers(t *testing.T, ctx context.Context, responses [][]*service.ContainerItem, fetcherError error) []storage.Container {
 	ctrl := gomock.NewController(t)
-	handler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse](responses, fetcherError, getListContainersResponse)
+	handler := collections.NewPagingHandler(responses, fetcherError, getListContainersResponse)
 
-	pager := runtime.NewPager[azblob.ListContainersResponse](handler)
+	pager := runtime.NewPager(handler)
 
 	mockClient := mocks.NewMockAzureBlobClient(ctrl)
 	mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(pager)
@@ -53,7 +53,7 @@ func getContainersMatchingPrefix(t *testing.T, ctx context.Context, prefix strin
 	logger.SetOutput(buffer)
 
 	var containers []storage.Container
-	seq := client.GetContainersMatchingPrefix(ctx, prefix, log.NewEntry(logger))
+	seq := client.GetLogContainers(ctx, log.NewEntry(logger))
 	for item := range seq {
 		containers = append(containers, item)
 	}
@@ -72,7 +72,7 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		}
 
 		// WHEN
-		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, [][]*service.ContainerItem{firstPage}, nil)
+		results := getLogContainers(t, context.Background(), [][]*service.ContainerItem{firstPage}, nil)
 
 		// THEN
 		assert.Len(t, results, 2)
@@ -86,7 +86,7 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		containers := [][]*service.ContainerItem{}
 
 		// WHEN
-		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, nil)
+		results := getLogContainers(t, context.Background(), containers, nil)
 
 		// THEN
 		assert.Len(t, results, 0)
@@ -101,7 +101,7 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		containers := [][]*service.ContainerItem{}
 
 		// WHEN
-		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, containers, fetcherError)
+		results := getLogContainers(t, context.Background(), containers, fetcherError)
 
 		// THEN
 		assert.Len(t, results, 0)
@@ -120,7 +120,7 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		pages := [][]*service.ContainerItem{firstPage, secondPage}
 
 		// WHEN
-		results := getContainersMatchingPrefix(t, context.Background(), storage.LogContainerPrefix, pages, nil)
+		results := getLogContainers(t, context.Background(), pages, nil)
 
 		// THEN
 		assert.Len(t, results, 2)

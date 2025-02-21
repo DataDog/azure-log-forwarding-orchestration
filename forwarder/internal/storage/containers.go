@@ -5,11 +5,15 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"slices"
 	"strings"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+
+	// "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/generated"
 	log "github.com/sirupsen/logrus"
 
 	// datadog
@@ -29,19 +33,15 @@ func (c *Container) Category() string {
 	return parts[len(parts)-1]
 }
 
-// GetContainersMatchingPrefix returns an iterator over a sequence of containers with a given prefix.
-func (c *Client) GetContainersMatchingPrefix(ctx context.Context, prefix string, logger *log.Entry) iter.Seq[Container] {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
+// GetLogContainers returns an iterator over a sequence of containers with a given prefix.
+func (c *Client) GetLogContainers(ctx context.Context, logger *log.Entry) iter.Seq[Container] {
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetLogContainers")
 	defer span.Finish()
-	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Prefix: &prefix, Include: azblob.ListContainersInclude{Metadata: true}})
-	return collections.New[Container, azblob.ListContainersResponse](ctx, containerPager, func(item azblob.ListContainersResponse) []Container {
-		containers := make([]Container, 0, len(item.ContainerItems))
-		for _, container := range item.ContainerItems {
-			containers = append(containers, Container{
-				Name: *container.Name,
-			})
-		}
-		return containers
+	containerPager := c.azBlobClient.NewListContainersPager(&azblob.ListContainersOptions{Include: azblob.ListContainersInclude{Metadata: true}})
+	return collections.New(ctx, containerPager, func(item azblob.ListContainersResponse) []Container {
+		return collections.FilterMap(item.ContainerItems, func(container *service.ContainerItem) (Container, bool) {
+			return Container{Name: *container.Name}, !slices.Contains(IgnoredContainers, *container.Name)
+		})
 	}, logger)
 }
 
