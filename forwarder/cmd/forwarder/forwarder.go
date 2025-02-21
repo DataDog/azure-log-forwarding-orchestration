@@ -231,7 +231,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 			// Skip blobs that are not recent
 			// Blobs may have old data that we don't want to process
 			if !blob.IsCurrent(currNow) {
-				cursors.DeleteCursor(blob.Container.Name, blob.Name)
+				cursors.Delete(blob.Container.Name, blob.Name)
 				continue
 			}
 			downloadEg.Go(func() error {
