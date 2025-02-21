@@ -484,7 +484,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         ]
         if not forwarder_metrics:
             self.log.warning("No valid metrics found for forwarder %s", config_id, extra=self.log_extra)
-        self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics))
+        self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics, region))
         return forwarder_metrics
 
     async def get_blob_metrics_lines(self, config_id: str, region) -> list[str]:
@@ -543,19 +543,26 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return ""
 
     @retry(retry=is_exception_retryable, stop=stop_after_attempt(MAX_ATTEMPS))
-    async def submit_log_forwarder_metrics(self, log_forwarder_id: str, metrics: list[MetricBlobEntry]) -> None:
+    async def submit_log_forwarder_metrics(
+        self, log_forwarder_id: str, metrics: list[MetricBlobEntry], region: str
+    ) -> None:
         if not self.should_submit_metrics or not metrics:
             return
 
         response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(
-            body=self.create_metric_payload(metrics, log_forwarder_id)
+            body=self.create_metric_payload(metrics, log_forwarder_id, region)
         )  # type: ignore
         for error in response.get("errors", []):
             self.log.error(error, extra=self.log_extra)
 
-    def create_metric_payload(self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str) -> MetricPayload:
-        # type ignore hack to get pyright typing to work since the SDK overrides __new__
+    def create_metric_payload(
+        self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str, region: str
+    ) -> MetricPayload:
         log_forwarder_name = get_container_app_name(log_forwarder_id)
+        tags = [
+            f"control_plane_id:{self.control_plane_id}",
+            f"region:{region}",
+        ]
         return cast(
             MetricPayload,
             MetricPayload(
@@ -576,6 +583,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                                 type="logforwarder",
                             ),
                         ],
+                        tags=tags,
                     )
                     for metric_name in METRIC_NAMES
                 ]
