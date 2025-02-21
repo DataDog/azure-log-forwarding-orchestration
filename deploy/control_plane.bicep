@@ -60,7 +60,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: 'lfostorage${controlPlaneId}'
   kind: 'StorageV2'
   location: controlPlaneLocation
-  properties: { accessTier: 'Hot' }
+  properties: {
+    minimumTlsVersion: 'TLS1_2'
+    accessTier: 'Hot'
+  }
   sku: { name: 'Standard_LRS' }
 }
 
