@@ -91,6 +91,27 @@ module subscriptionPermissions './subscription_permissions.bicep' = [
       resourceTaskPrincipalId: resourceTaskPrincipalId
       diagnosticSettingsTaskPrincipalId: diagnosticSettingsTaskPrincipalId
       scalingTaskPrincipalId: scalingTaskPrincipalId
+      initialRunIdentityPrincipalId: controlPlane.outputs.initialRunIdentityPrincipalId
     }
   }
 ]
+
+
+module initialRun './initial_run.bicep' = {
+  name: 'initialRun-${controlPlaneId}'
+  scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
+  params: {
+    controlPlaneId: controlPlaneId
+    initialRunIdentity: controlPlane.outputs.initialRunIdentityId
+    storageAccountName: controlPlane.outputs.storageAccountName
+    datadogApiKey: datadogApiKey
+    datadogSite: datadogSite
+    datadogTelemetry: datadogTelemetry
+    logLevel: logLevel
+    monitoredSubscriptions: monitoredSubscriptions
+    forwarderImage: '${imageRegistry}/forwarder:latest'
+  }
+  dependsOn: [
+    subscriptionPermissions
+  ]
+}

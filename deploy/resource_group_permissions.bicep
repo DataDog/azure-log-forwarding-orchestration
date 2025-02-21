@@ -3,6 +3,7 @@ targetScope = 'resourceGroup'
 param controlPlaneId string
 param diagnosticSettingsTaskPrincipalId string
 param scalingTaskPrincipalId string
+param initialRunPrincipalId string
 
 resource readerAndDataAccessRole 'Microsoft.Authorization/roleDefinitions@2022-04-01' existing = {
   scope: resourceGroup()
@@ -33,5 +34,15 @@ resource scalingTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = 
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: contributorRole.id
     principalId: scalingTaskPrincipalId
+  }
+}
+
+resource initialRunRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, 'initialRunContributor', controlPlaneId)
+  scope: resourceGroup()
+  properties: {
+    description: 'ddlfo${controlPlaneId}'
+    roleDefinitionId: contributorRole.id
+    principalId: initialRunPrincipalId
   }
 }
