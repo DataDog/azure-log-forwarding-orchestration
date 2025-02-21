@@ -280,4 +280,5 @@ deploy-qa-env:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
   script:
+    - ci/scripts/arm-template/build_initial_run.py
     - ci/scripts/deploy/deploy_qa_env.sh
