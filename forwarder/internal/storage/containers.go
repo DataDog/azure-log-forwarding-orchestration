@@ -33,7 +33,7 @@ func (c *Container) Category() string {
 	return parts[len(parts)-1]
 }
 
-// GetLogContainers returns an iterator over a sequence of containers with a given prefix.
+// GetLogContainers returns an iterator over a sequence of containers to look for logs in.
 func (c *Client) GetLogContainers(ctx context.Context, logger *log.Entry) iter.Seq[Container] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetLogContainers")
 	defer span.Finish()

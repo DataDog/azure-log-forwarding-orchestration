@@ -60,7 +60,7 @@ func getLogContainers(t *testing.T, ctx context.Context, responses [][]*service.
 	return containers
 }
 
-func TestGetContainersMatchingPrefix(t *testing.T) {
+func TestGetLogContainers(t *testing.T) {
 	t.Parallel()
 
 	t.Run("returns names of containers", func(t *testing.T) {
