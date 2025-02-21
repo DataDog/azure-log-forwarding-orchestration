@@ -58,9 +58,9 @@ build-tasks:
   image: $CI_IMAGE
   stage: build
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - ci/scripts/control_plane/build_tasks.sh
   artifacts:
@@ -72,9 +72,9 @@ publish-tasks:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+  #  rules:
+  #    - if: $CI_COMMIT_BRANCH == "main"
+  #      when: manual
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
@@ -85,9 +85,9 @@ publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
@@ -99,9 +99,9 @@ arm-template-publish-qa:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - ./ci/scripts/arm-template/build_initial_run.py
     - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
@@ -112,9 +112,9 @@ arm-template-publish:
   image: $CI_IMAGE
   stage: publish
   tags: ['arch:amd64']
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+  #  rules:
+  #    - if: $CI_COMMIT_BRANCH == "main"
+  #      when: manual
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
@@ -145,9 +145,9 @@ uninstall-script-publish:
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   tags: ['arch:amd64']
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
