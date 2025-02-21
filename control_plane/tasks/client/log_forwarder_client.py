@@ -256,6 +256,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 kind="StorageV2",
                 location=region,
                 public_network_access=PublicNetworkAccess.ENABLED,
+                minimum_tls_version="TLS1_2",
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
