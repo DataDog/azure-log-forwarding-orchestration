@@ -7,6 +7,13 @@
 
 Jira issue:
 
+This change affects:
+ - [ ] Control Plane Tasks
+ - [ ] Forwarder
+ - [ ] ARM Templates (Bicep)
+ - [ ] Uninstall Script
+ - [ ] CI/Documentation
+
 ## Testing
 <!--
 How was this tested?
@@ -17,5 +24,11 @@ How was this tested?
 ## Rollout
 <!--
 We are now in Beta, customers are not expected to reinstall. Is this PR backwards compatible? If not, how will we handle the rollout?
+
+A good way to test this is by freshly installing LFO, and then deploying your change to the personal environment.
+
+If you are making ARM/bicep changes, ensure that re-deploying the arm template from a fresh install works as expected.
+There should be no conflicts or other errors when re-deploying.
 -->
- - [ ] This change is backwards compatible.
+
+ - [ ] I have verified that this change is backwards compatible.
