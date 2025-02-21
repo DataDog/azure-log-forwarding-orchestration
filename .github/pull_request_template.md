@@ -18,7 +18,7 @@ This change affects:
 <!--
 How was this tested?
 - Unit tests: Test should cover core behavior as well as edge cases.
-- Manual testing: Screenshots/logs of real executions in the portal.
+- Manual testing: Link to dashboard, or screenshots of logs or output in the portal.
 -->
 
 ## Rollout
