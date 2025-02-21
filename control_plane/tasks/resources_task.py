@@ -9,6 +9,7 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import write_cache
+from cache.env import MONITORED_SUBSCRIPTIONS_SETTING
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -27,7 +28,9 @@ class ResourcesTask(Task):
 
     def __init__(self, resource_cache_state: str) -> None:
         super().__init__()
-        self.monitored_subscriptions = deserialize_monitored_subscriptions(getenv("MONITORED_SUBSCRIPTIONS") or "")
+        self.monitored_subscriptions = deserialize_monitored_subscriptions(
+            getenv(MONITORED_SUBSCRIPTIONS_SETTING) or ""
+        )
         resource_cache = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             self.log.warning("Resource Cache is in an invalid format, task will reset the cache")

@@ -1,11 +1,11 @@
 # stdlib
 from logging import INFO, basicConfig
 from unittest import TestCase
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 # project
 from tasks.task import Task, get_error_telemetry
-from tasks.tests.common import AsyncMockClient, TaskTestCase
+from tasks.tests.common import TaskTestCase
 
 
 class TestGetErrorTelemetry(TestCase):
@@ -49,8 +49,6 @@ class TestTask(TaskTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.cred = self.patch_path("tasks.task.DefaultAzureCredential").return_value
-        self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
-        self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
         basicConfig(level=INFO)
 
     @patch.dict("tasks.task.environ", {"DD_TELEMETRY": "false", "DD_API_KEY": "123"}, clear=True)
@@ -58,7 +56,7 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.dd_tags, "forwarder:lfocontrolplane,task:dummy_task,control_plane_id:unknown")
+        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown"])
         async with task:
             await task.run()
             self.assertEqual(task._logs, [])
@@ -73,7 +71,7 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.dd_tags, "forwarder:lfocontrolplane,task:dummy_task,control_plane_id:unknown")
+        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown"])
         async with task:
             await task.run()
             self.assertEqual(task._logs, [])
@@ -90,7 +88,7 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertTrue(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.dd_tags, "forwarder:lfocontrolplane,task:dummy_task,control_plane_id:456")
+        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:456"])
         async with task:
             await task.run()
             self.assertEqual(len(task._logs), 1)

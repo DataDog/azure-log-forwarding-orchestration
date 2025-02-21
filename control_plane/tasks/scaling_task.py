@@ -119,12 +119,13 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
 class ScalingTask(Task):
     NAME = SCALING_TASK_NAME
 
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str, wait_on_envs: bool = False) -> None:
         super().__init__()
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.scaling_percentage = parse_config_option(SCALING_PERCENTAGE_SETTING, float, DEFAULT_SCALING_PERCENTAGE)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
 
+        self.wait_on_envs = wait_on_envs
         self.now = datetime.now()
 
         # Resource Cache
@@ -189,7 +190,7 @@ class ScalingTask(Task):
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> None:
         """Creates a log forwarder env for the given region. If the creation fails, the env is (attempted to be) deleted"""
         try:
-            await client.create_log_forwarder_managed_environment(region)
+            await client.create_log_forwarder_managed_environment(region, wait=self.wait_on_envs)
         except Exception:
             self.log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
             success = await client.delete_log_forwarder_env(region, raise_error=False)
@@ -250,7 +251,7 @@ class ScalingTask(Task):
         # not needed, but useful to indicate all resources are gone
         self.assignment_cache[subscription_id][region]["resources"].clear()
 
-        forwarder_metrics = await self.collect_region_forwarder_metrics(client, forwarders)
+        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region, forwarders)
         forwarders_to_delete = [
             forwarder
             for forwarder, metrics in forwarder_metrics.items()
@@ -297,7 +298,9 @@ class ScalingTask(Task):
             self.log.info("Region %s is on cooldown, skipping scaling this run", region)
             del region_config["on_cooldown"]
             return
-        all_forwarder_metrics = await self.collect_region_forwarder_metrics(client, region_config["configurations"])
+        all_forwarder_metrics = await self.collect_region_forwarder_metrics(
+            client, region, region_config["configurations"]
+        )
         if not any(all_forwarder_metrics.values()):
             self.log.warning("No valid metrics found for forwarders in region %s", region)
             return
@@ -392,7 +395,7 @@ class ScalingTask(Task):
         self, client: LogForwarderClient, region: str, config_id: str, forwarder: Job
     ) -> None:
         """Ensures that the forwarder has the correct settings, updating them if not"""
-        expected_secrets = await client.generate_forwarder_secrets(config_id)
+        expected_secrets = await client.generate_forwarder_secrets(config_id, region)
         expected_settings = client.generate_forwarder_settings(config_id)
         if (
             forwarder.template
@@ -423,12 +426,15 @@ class ScalingTask(Task):
         return bool(await client.get_log_forwarder_managed_environment(region))
 
     async def collect_region_forwarder_metrics(
-        self, client: LogForwarderClient, log_forwarders: Iterable[str]
+        self, client: LogForwarderClient, region: str, log_forwarders: Iterable[str]
     ) -> dict[str, list[MetricBlobEntry]]:
         """Collects metrics for all forwarders in a region and returns them as a dictionary by config_id. Returns an empty dict on failure."""
         oldest_metric_timestamp = (self.now - timedelta(minutes=METRIC_COLLECTION_PERIOD_MINUTES)).timestamp()
         maybe_metrics = await gather(
-            *(client.collect_forwarder_metrics(config_id, oldest_metric_timestamp) for config_id in log_forwarders),
+            *(
+                client.collect_forwarder_metrics(config_id, region, oldest_metric_timestamp)
+                for config_id in log_forwarders
+            ),
             return_exceptions=True,
         )
         errors = log_errors(self.log, "Failed to collect metrics for forwarders", *maybe_metrics, reraise=False)

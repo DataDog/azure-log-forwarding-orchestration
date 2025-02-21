@@ -10,24 +10,26 @@ fi
 task_name="$1"
 export RESOURCE_GROUP="$2"
 export SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+echo Using Subscription ID: "$SUBSCRIPTION_ID"
 
 # Env Vars
+echo Looking for LFO Storage Account in "$RESOURCE_GROUP"
 storage_account_prefix="lfostorage"
-storage_account_id=$(az storage account list --resource-group $RESOURCE_GROUP --query "[?starts_with(name, '$storage_account_prefix')].id" -o tsv)
+storage_account_id=$(az storage account list --resource-group "$RESOURCE_GROUP" --query "[?starts_with(name, '$storage_account_prefix')].id" -o tsv)
+echo Using Storage Account: "$storage_account_id"
 storage_account_name=$(cut -d'/' -f 9 <<<$storage_account_id)
 export AzureWebJobsStorage=$(az storage account show-connection-string --ids $storage_account_id --query connectionString -o tsv)
+echo Using Storage Connection String for "$storage_account_name"
 export MONITORED_SUBSCRIPTIONS="[\"$SUBSCRIPTION_ID\"]"
 export CONTROL_PLANE_ID=${storage_account_name#"$storage_account_prefix"}
 export CONTROL_PLANE_REGION=$(az group show --name $RESOURCE_GROUP --query location -o tsv)
+echo Control Plane Region: "$CONTROL_PLANE_REGION"
 export REGION=$CONTROL_PLANE_REGION
 export STORAGE_ACCOUNT_URL='https://ddazurelfo.blob.core.windows.net'
 
 # Set default vars
 if [ -z "${DD_API_KEY+x}" ]; then
     export DD_API_KEY="not_a_real_key"
-fi
-if [ -z "${DD_APP_KEY+x}" ]; then
-    export DD_APP_KEY="not_a_real_key"
 fi
 if [ -z "${DD_SITE+x}" ]; then
     export DD_SITE="datadoghq.com"
@@ -43,4 +45,5 @@ if [ -z "${FORWARDER_IMAGE+x}" ]; then
 fi
 
 cd ./control_plane
+echo "Running task $task_name"
 python -m "tasks.$task_name"

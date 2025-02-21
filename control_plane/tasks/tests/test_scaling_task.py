@@ -86,8 +86,8 @@ def generate_forwarder_ids(count: int) -> list[str]:
 
 def collect_metrics_side_effect(
     mapping: dict[str, list[MetricBlobEntry]],
-) -> Callable[[str, float], list[MetricBlobEntry]]:
-    return lambda config_id, _t: mapping.get(config_id, [])
+) -> Callable[[str, str, float], list[MetricBlobEntry]]:
+    return lambda config_id, _region, _timestamp: mapping.get(config_id, [])
 
 
 class TestScalingTask(TaskTestCase):
@@ -174,7 +174,7 @@ class TestScalingTask(TaskTestCase):
 
         # THEN
         self.client.create_log_forwarder.assert_not_awaited()
-        self.client.create_log_forwarder_managed_environment.assert_called_once_with(EAST_US)
+        self.client.create_log_forwarder_managed_environment.assert_called_once_with(EAST_US, wait=False)
         self.assertEqual(self.cache, expected_cache)
 
     async def test_new_regions_are_added_second_run(self):
@@ -220,7 +220,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         # THEN
-        self.client.create_log_forwarder_managed_environment.assert_awaited_once_with(EAST_US)
+        self.client.create_log_forwarder_managed_environment.assert_awaited_once_with(EAST_US, wait=False)
         self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
 
     async def test_errors_raised_when_forwarder_creation_fails(self):
@@ -585,7 +585,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, ANY)
+        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, EAST_US, ANY)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )
@@ -640,7 +640,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, ANY)
+        self.client.collect_forwarder_metrics.assert_called_once_with(OLD_LOG_FORWARDER_ID, EAST_US, ANY)
         self.assertTrue(
             call("No valid metrics found for forwarder %s", OLD_LOG_FORWARDER_ID) not in self.log.warning.call_args_list
         )

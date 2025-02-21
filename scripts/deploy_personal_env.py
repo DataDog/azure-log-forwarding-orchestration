@@ -183,15 +183,15 @@ run(
 
 # deployment has not happened, deploy LFO
 if initial_deploy or FORCE_ARM_DEPLOY:
+    print("Building ARM template...")
+    run("./ci/scripts/arm-template/build_initial_run.py", cwd=lfo_dir)
     print(f"Deploying LFO to {resource_group_name}...")
-    app_key = environ["DD_APP_KEY"]
     api_key = environ["DD_API_KEY"]
     params = {
         "monitoredSubscriptions": dumps([subscription_id]),
         "controlPlaneLocation": LOCATION,
         "controlPlaneSubscriptionId": subscription_id,
         "controlPlaneResourceGroupName": resource_group_name,
-        "datadogApplicationKey": app_key,
         "datadogApiKey": api_key,
         "datadogTelemetry": "true",
         "datadogSite": environ.get("DD_SITE", "datadoghq.com"),

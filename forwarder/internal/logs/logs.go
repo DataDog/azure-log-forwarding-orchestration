@@ -29,6 +29,8 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
+const AzureService = "azure"
+
 // maxBufferSize is the maximum buffer to use for scanning logs.
 // Logs greater than this buffer will be dropped by bufio.Scanner.
 // The buffer is defaulted to the maximum value of an integer.
@@ -49,21 +51,10 @@ type Log struct {
 	Tags       []string
 	Category   string
 	ResourceId string
+	Service    string
+	Source     string
 	Time       time.Time
 	Level      string
-}
-
-// Validate checks if the log is valid to send to Datadog.
-func (l *Log) Validate(logger *log.Entry) bool {
-	if l.ByteSize > MaxLogSize {
-		logger.Warningf("Skipping large log at %s from %s with a size of %d", l.Time.Format(time.RFC3339), l.ResourceId, l.Length())
-		return false
-	}
-	if l.Time.Before(time.Now().Add(-MaxLogAge)) {
-		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", l.Time.Format(time.RFC3339), l.ResourceId)
-		return false
-	}
-	return true
 }
 
 // Content converts the log content to a string.
@@ -76,27 +67,107 @@ func (l *Log) Length() int64 {
 	return l.ByteSize
 }
 
+// Validate checks if the log is valid to send to Datadog.
+func (l *Log) Validate(logger *log.Entry) bool {
+	return validateLog(l.ResourceId, l.ByteSize, l.Time, logger)
+}
+
+// ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
+func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
+	logBytes, err := log.MarshalJSON()
+	if err != nil {
+		logger.WithError(err).Warning("Failed to marshal log")
+		return 0, false
+	}
+
+	var currLog *azureLog
+	decoder := json.NewDecoder(bytes.NewReader([]byte(log.Message)))
+	err = decoder.Decode(&currLog)
+	if err != nil {
+		logger.WithError(err).Warning("Failed to decode log to an azure log")
+		return 0, false
+	}
+
+	resourceId := "unknown"
+	if r := currLog.ResourceId(); r != nil {
+		resourceId = r.String()
+	}
+
+	timeString, ok := log.AdditionalProperties["time"]
+	if !ok {
+		// log does not have a time field and cannot be validated
+		logger.Warningf("Skipping log without a time field for resource %s", resourceId)
+		return 0, false
+	}
+
+	parsedTime, err := time.Parse(time.RFC3339, timeString)
+	if err != nil {
+		// log has an invalid time field and cannot be validated
+		logger.WithError(err).Warningf("Skipping log with an invalid time field for resource %s", resourceId)
+		return 0, false
+	}
+
+	valid := validateLog(resourceId, int64(len(logBytes)), parsedTime, logger)
+	return int64(len(logBytes)), valid
+}
+
+// validateLog checks if a log is valid to send to Datadog given a set of constraints.
+func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *log.Entry) bool {
+	if byteSize > MaxLogSize {
+		logger.Warningf("Skipping large log at %s from %s with a size of %d", logTime.Format(time.RFC3339), resourceId, byteSize)
+		return false
+	}
+	if logTime.Before(time.Now().Add(-MaxLogAge)) {
+		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", logTime.Format(time.RFC3339), resourceId)
+		return false
+	}
+	return true
+}
+
 type azureLog struct {
 	Raw             *[]byte
 	ByteSize        int64
-	Category        string    `json:"category"`
-	ResourceIdLower string    `json:"resourceId,omitempty"`
-	ResourceIdUpper string    `json:"ResourceId,omitempty"`
-	Time            time.Time `json:"time"`
-	Level           string    `json:"level,omitempty"`
+	Category        string `json:"category"`
+	ResourceIdLower string `json:"resourceId,omitempty"`
+	ResourceIdUpper string `json:"ResourceId,omitempty"`
+	// resource ID from blob name, used as a backup
+	BlobResourceId string
+	Time           time.Time `json:"time"`
+	Level          string    `json:"level,omitempty"`
 }
 
-func (l *azureLog) ResourceId() string {
-	if l.ResourceIdLower != "" {
-		return l.ResourceIdLower
+func (l *azureLog) ResourceId() *arm.ResourceID {
+	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.BlobResourceId} {
+		if r, err := arm.ParseResourceID(resourceId); err == nil {
+			return r
+		}
 	}
-	return l.ResourceIdUpper
+	return nil
 }
 
-func (l *azureLog) ToLog() (*Log, error) {
-	parsedId, err := arm.ParseResourceID(l.ResourceId())
-	if err != nil {
-		return nil, err
+func sourceTag(resourceType string) string {
+	sourceTag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
+	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
+}
+
+func (l *azureLog) ToLog() *Log {
+	var source string
+	var resourceId string
+	tags := []string{
+		"forwarder:lfo",
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
+	}
+
+	// Try to add additional tags, source, and resource ID
+	if parsedId := l.ResourceId(); parsedId != nil {
+		source = sourceTag(parsedId.ResourceType.String())
+		resourceId = parsedId.String()
+		tags = append(tags,
+			fmt.Sprintf("subscription_id:%s", parsedId.SubscriptionID),
+			fmt.Sprintf("resource_group:%s", parsedId.ResourceGroupName),
+			fmt.Sprintf("source:%s", source),
+		)
 	}
 
 	if l.Level == "" {
@@ -107,11 +178,13 @@ func (l *azureLog) ToLog() (*Log, error) {
 		content:    l.Raw,
 		ByteSize:   l.ByteSize,
 		Category:   l.Category,
-		ResourceId: l.ResourceId(),
+		ResourceId: resourceId,
+		Service:    AzureService,
+		Source:     source,
 		Time:       l.Time,
 		Level:      l.Level,
-		Tags:       getTags(parsedId),
-	}, nil
+		Tags:       tags,
+	}
 }
 
 // ErrUnexpectedToken is an error for when an unexpected token is found in a log.
@@ -189,7 +262,7 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName string) (*Log, error) {
+func NewLog(logBytes []byte, containerName, blobNameResourceId string) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
@@ -211,29 +284,15 @@ func NewLog(logBytes []byte, containerName string) (*Log, error) {
 		if errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, ErrIncompleteLogFile
 		}
-		return nil, err
+		// log is not in JSON format, treat it as plaintext
+		currLog = &azureLog{Time: time.Now()}
 	}
 
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
+	currLog.BlobResourceId = blobNameResourceId
 
-	return currLog.ToLog()
-}
-
-func sourceTag(source string) string {
-	sourceTag := strings.ToLower(strings.Replace(source, "/", ".", -1))
-	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
-}
-
-func getTags(id *arm.ResourceID) []string {
-	return []string{
-		fmt.Sprintf("subscription_id:%s", id.SubscriptionID),
-		fmt.Sprintf("resource_group:%s", id.ResourceGroupName),
-		fmt.Sprintf("source:%s", sourceTag(id.ResourceType.String())),
-		fmt.Sprintf("forwarder:%s", "lfo"),
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
-	}
+	return currLog.ToLog(), nil
 }
 
 // bufferSize is the maximum number of logs per post to Logs API.
@@ -263,7 +322,8 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	}
 
 	logItem := datadogV2.HTTPLogItem{
-		Ddsource:             ptr("azure"),
+		Service:              ptr(log.Service),
+		Ddsource:             ptr(log.Source),
 		Ddtags:               ptr(strings.Join(log.Tags, ",")),
 		Message:              log.Content(),
 		AdditionalProperties: additionalProperties,
@@ -283,8 +343,9 @@ type DatadogLogsSubmitter interface {
 // Client is not thread safe.
 type Client struct {
 	logsSubmitter DatadogLogsSubmitter
-	logsBuffer    []*Log
+	logsBuffer    []datadogV2.HTTPLogItem
 	currentSize   int64
+	FailedLogs    []datadogV2.HTTPLogItem
 }
 
 // NewClient creates a new Client.
@@ -302,12 +363,33 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	if c.shouldFlush(log) {
 		err = c.Flush(ctx)
 	}
-	c.logsBuffer = append(c.logsBuffer, log)
+	newLog := newHTTPLogItem(log)
+	c.logsBuffer = append(c.logsBuffer, newLog)
 	c.currentSize += log.Length()
 
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+// ErrInvalidLog is an error for when a log is invalid.
+var ErrInvalidLog = errors.New("invalid log")
+
+// AddFormattedLog adds a datadog formatted log to the buffer for future submission.
+func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log datadogV2.HTTPLogItem) error {
+	logBytes, valid := ValidateDatadogLog(log, logger)
+	if !valid {
+		return ErrInvalidLog
+	}
+	if c.shouldFlushBytes(logBytes) {
+		if err := c.Flush(ctx); err != nil {
+			return err
+		}
+	}
+
+	c.logsBuffer = append(c.logsBuffer, log)
+	c.currentSize += logBytes
 	return nil
 }
 
@@ -317,11 +399,12 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 	defer span.Finish(tracer.WithError(err))
 
 	if len(c.logsBuffer) > 0 {
-		logs := make([]datadogV2.HTTPLogItem, 0, len(c.logsBuffer))
-		for _, currLog := range c.logsBuffer {
-			logs = append(logs, newHTTPLogItem(currLog))
+		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer)
+
+		if err != nil {
+			c.FailedLogs = append(c.FailedLogs, c.logsBuffer...)
 		}
-		_, _, err = c.logsSubmitter.SubmitLog(ctx, logs)
+
 		c.logsBuffer = c.logsBuffer[:0]
 		c.currentSize = 0
 	}
@@ -331,11 +414,16 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
-	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+log.Length() >= MaxPayloadSize
+	return c.shouldFlushBytes(log.Length())
 }
 
-// ParseLogs reads logs from a reader and parses them into Log objects.
-func ParseLogs(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error] {
+// shouldFlushBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
+func (c *Client) shouldFlushBytes(bytes int64) bool {
+	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+bytes >= MaxPayloadSize
+}
+
+// Parse reads logs from a reader and parses them into Log objects.
+func Parse(reader io.ReadCloser, containerName, blobNameResourceId string) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -345,7 +433,7 @@ func ParseLogs(reader io.ReadCloser, containerName string) iter.Seq2[*Log, error
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(currBytes, containerName)
+			currLog, err := NewLog(currBytes, containerName, blobNameResourceId)
 			if err != nil {
 				if !yield(nil, err) {
 					return

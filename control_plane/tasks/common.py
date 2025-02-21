@@ -1,10 +1,14 @@
 # stdlib
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from logging import Logger
 from math import inf
 from typing import Final, Protocol, TypeVar
 from uuid import uuid4
+
+LFO_METRIC_PREFIX = "azure.lfo."
+CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
+FORWARDER_METRIC_PREFIX = LFO_METRIC_PREFIX + "forwarder."
 
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "ddlfocontrol"
@@ -16,6 +20,9 @@ DIAGNOSTIC_SETTINGS_TASK_PREFIX: Final = "diagnostic-settings-task-"
 FORWARDER_CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
 FORWARDER_MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 FORWARDER_STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
+
+AZURE_PUBLIC_STORAGE_ENDPOINT_SUFFIX: Final = "core.windows.net"
+AZURE_GOV_STORAGE_ENDPOINT_SUFFIX: Final = "core.usgovcloudapi.net"
 
 # TODO We will need to add prefixes for these when we implement event hub support
 EVENT_HUB_NAME_PREFIX: Final = NotImplemented
@@ -62,6 +69,12 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
     ).lower()
 
 
+def get_storage_endpoint_suffix(region: str) -> str:
+    if region.startswith("usgov"):
+        return AZURE_GOV_STORAGE_ENDPOINT_SUFFIX
+    return AZURE_PUBLIC_STORAGE_ENDPOINT_SUFFIX
+
+
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
     return EVENT_HUB_NAME_PREFIX + config_id  # type: ignore
 
@@ -100,12 +113,18 @@ def chunks(lst: list[T], n: int) -> Iterable[tuple[T, ...]]:
     return zip(*(lst[i::n] for i in range(n)), strict=False)
 
 
-def log_errors(log: Logger, message: str, *maybe_errors: object | Exception, reraise: bool = False) -> list[Exception]:
+def log_errors(
+    log: Logger,
+    message: str,
+    *maybe_errors: object | Exception,
+    reraise: bool = False,
+    extra: Mapping[str, str] | None = None,
+) -> list[Exception]:
     """Log and return any errors in `maybe_errors`.
     If reraise is True, the first error will be raised"""
     errors = [e for e in maybe_errors if isinstance(e, Exception)]
     if errors:
-        log.exception("%s: %s", message, errors)
+        log.exception("%s: %s", message, errors, extra=extra)
         if reraise:
             raise errors[0]
 

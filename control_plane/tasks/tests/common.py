@@ -33,6 +33,10 @@ class TaskTestCase(AsyncTestCase):
     def setUp(self) -> None:
         self.credential = self.patch_path("tasks.task.DefaultAzureCredential")
         self.credential.side_effect = AsyncMock
+        self.datadog_api_client = self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
+        self.datadog_logs_api = self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
+        self.datadog_metrics_api = self.patch_path("tasks.task.MetricsApi", return_value=AsyncMock())
+
         with suppress(AttributeError):
             self.write_cache: AsyncMock = self.patch("write_cache")
 

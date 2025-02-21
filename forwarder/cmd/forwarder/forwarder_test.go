@@ -2,7 +2,7 @@ package main
 
 import (
 	// stdlib
-
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -15,6 +15,7 @@ import (
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 	"github.com/Azure/go-autorest/autorest/to"
@@ -30,12 +31,15 @@ import (
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/deadletterqueue"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	datadogmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/metrics"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
+
+const resourceId string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
 
 func azureTimestamp(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05Z")
@@ -136,7 +140,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	ctx := context.Background()
 
-	err := run(ctx, client, []*logs.Client{logClient}, nullLogger(), time.Now)
+	err := fetchAndProcessLogs(ctx, client, []*logs.Client{logClient}, nullLogger(), time.Now)
 	return submittedLogs, err
 }
 
@@ -212,7 +216,8 @@ func TestRun(t *testing.T) {
 
 		assert.Equal(t, int64(0), finalCursors.GetCursor(containerName, *expiredBlob.Name))
 		for _, logItem := range submittedLogs {
-			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Equal(t, logs.AzureService, *logItem.Service)
+			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -238,7 +243,7 @@ func TestRun(t *testing.T) {
 			resp := azblob.DownloadStreamResponse{}
 			if firstBlob {
 				firstBlob = false
-				resp.Body = io.NopCloser(strings.NewReader("{\"test\": \"invalid\"}"))
+				resp.Body = io.NopCloser(strings.NewReader("{\"test\": \"invalid..."))
 			} else {
 				resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
 			}
@@ -279,7 +284,8 @@ func TestRun(t *testing.T) {
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		for _, logItem := range submittedLogs {
-			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Equal(t, logs.AzureService, *logItem.Service)
+			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -291,7 +297,7 @@ func TestProcessLogs(t *testing.T) {
 	t.Run("submits logs to dd", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		validLog := "{ \"time\": \"" + azureTimestamp(time.Now().Add(-5*time.Minute)) + "\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n"
+		validLog := "{ \"time\": \"" + azureTimestamp(time.Now().Add(-5*time.Minute)) + "\", \"resourceId\": \"" + resourceId + "\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}\n"
 		var content string
 		for range 3 {
 			content += validLog
@@ -323,7 +329,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", logsCh)
+			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -332,7 +338,8 @@ func TestProcessLogs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, submittedLogs, 3)
 		for _, logItem := range submittedLogs {
-			assert.Equal(t, "azure", *logItem.Ddsource)
+			assert.Equal(t, logs.AzureService, *logItem.Service)
+			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -370,7 +377,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, logsCh)
+			_, _, err := parseLogs(reader, containerName, resourceId, logsCh)
 			return err
 		})
 
@@ -409,7 +416,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, logsCh)
+			_, _, err := parseLogs(reader, containerName, resourceId, logsCh)
 			return err
 		})
 
@@ -448,7 +455,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", logsChannel)
+			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, logsChannel)
 			return err
 		})
 		err := eg.Wait()
@@ -483,7 +490,7 @@ func TestCursors(t *testing.T) {
 		var currentLogData []byte
 		now := time.Now()
 
-		lastCursor := cursor.NewCursors(nil)
+		lastCursor := cursor.New(nil)
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
@@ -520,10 +527,11 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.GetCursor(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
-				assert.Equal(t, "azure", *logItem.Ddsource)
+				assert.Equal(t, logs.AzureService, *logItem.Service)
+				assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
@@ -550,7 +558,7 @@ func TestCursors(t *testing.T) {
 		var currentLogData []byte
 		now := time.Now()
 
-		lastCursor := cursor.NewCursors(nil)
+		lastCursor := cursor.New(nil)
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
@@ -587,13 +595,73 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.GetCursor(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
-				assert.Equal(t, "azure", *logItem.Ddsource)
+				assert.Equal(t, logs.AzureService, *logItem.Service)
+				assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
+	})
+}
+
+type FaultyRoundTripper struct {
+}
+
+func (f *FaultyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("faulty")
+}
+
+func TestProcessDLQ(t *testing.T) {
+	t.Parallel()
+
+	t.Run("processes the dead letter queue", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		ctrl := gomock.NewController(t)
+		dlq, err := deadletterqueue.FromBytes(nil, []byte("[]"))
+		require.NoError(t, err)
+		currentTime := time.Now().UTC()
+		formattedTime := currentTime.Format(time.RFC3339)
+		logItem := datadogV2.HTTPLogItem{
+			Message:              fmt.Sprintf("{\"time\":\"%s\"}", formattedTime),
+			AdditionalProperties: map[string]string{"time": formattedTime},
+		}
+		queue := []datadogV2.HTTPLogItem{logItem}
+		dlq.Add(queue)
+		data, err := dlq.JSONBytes()
+		require.NoError(t, err)
+		reader := io.NopCloser(bytes.NewReader(data))
+		response := azblob.DownloadStreamResponse{
+			DownloadResponse: blob.DownloadResponse{
+				Body: reader,
+			},
+		}
+		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, nil).Return(response, nil)
+		createContainerResponse := azblob.CreateContainerResponse{}
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, nil)
+		uploadResponse := azblob.UploadBufferResponse{}
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, gomock.Any(), gomock.Any()).Return(uploadResponse, nil)
+
+		storageClient := storage.NewClient(mockClient)
+
+		datadogClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
+		datadogClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, nil)
+		logsClient := logs.NewClient(datadogClient)
+
+		processedDatadogClient := datadogmocks.NewMockDatadogLogsSubmitter(ctrl)
+		processedLogsClient := logs.NewClient(processedDatadogClient)
+		processedClients := []*logs.Client{processedLogsClient}
+
+		ctx := context.Background()
+
+		// WHEN
+		err = processDeadLetterQueue(ctx, nullLogger(), storageClient, logsClient, processedClients)
+
+		// THEN
+		assert.NoError(t, err)
 	})
 }
 
@@ -601,7 +669,7 @@ func TestCursors(t *testing.T) {
 func TestRunMain(t *testing.T) {
 	t.Parallel()
 
-	t.Run("run main", func(t *testing.T) {
+	t.Run("fetchAndProcessLogs main", func(t *testing.T) {
 		t.Parallel()
 		if os.Getenv("CI") != "" {
 			t.Skip("Skipping testing in CI environment")

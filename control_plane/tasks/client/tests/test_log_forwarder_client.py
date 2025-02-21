@@ -55,7 +55,6 @@ RESOURCE_GROUP_NAME = "test_lfo"
 LOG_FORWARDER_CLIENT_SETTINGS: dict[str, str] = {
     "AzureWebJobsStorage": "connection-string",
     "DD_API_KEY": "123123",
-    "DD_APP_KEY": "456456",
     "DD_SITE": "datadoghq.com",
     "FORWARDER_IMAGE": "ddlfo.azurecr.io/blobforwarder:latest",
     "CONTROL_PLANE_REGION": EAST_US,
@@ -83,6 +82,45 @@ class MockedLogForwarderClient(LogForwarderClient):
     storage_client: AsyncMock
     _datadog_client: AsyncMock
     metrics_client: AsyncMock
+
+
+FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
+    {
+        "timestamp": 1723040910,
+        "runtime_seconds": 2.80,
+        "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
+        "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
+    },
+    {
+        "timestamp": 1723040911,
+        "runtime_seconds": 2.81,
+        "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 7},
+        "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 701},
+    },
+]
+
+FAKE_METRIC_PAYLOAD = MetricPayload(
+    series=[
+        MetricSeries(
+            metric="azure.lfo.forwarder.resource_log_volume",
+            type=MetricIntakeType.UNSPECIFIED,
+            points=[MetricPoint(timestamp=1723040910, value=10), MetricPoint(timestamp=1723040911, value=11)],
+            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+        ),
+        MetricSeries(
+            metric="azure.lfo.forwarder.resource_log_bytes",
+            type=MetricIntakeType.UNSPECIFIED,
+            points=[MetricPoint(timestamp=1723040910, value=1000), MetricPoint(timestamp=1723040911, value=1101)],
+            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+        ),
+        MetricSeries(
+            metric="azure.lfo.forwarder.runtime_seconds",
+            type=MetricIntakeType.UNSPECIFIED,
+            points=[MetricPoint(timestamp=1723040910, value=2.80), MetricPoint(timestamp=1723040911, value=2.81)],
+            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+        ),
+    ],
+)
 
 
 class TestLogForwarderClient(AsyncTestCase):
@@ -129,6 +167,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     "kind": "StorageV2",
                     "location": EAST_US,
                     "public_network_access": "Enabled",
+                    "minimum_tls_version": "TLS1_2",
                 }
             ),
         )
@@ -197,6 +236,7 @@ class TestLogForwarderClient(AsyncTestCase):
                     "kind": "StorageV2",
                     "location": NEW_ZEALAND_NORTH,
                     "public_network_access": "Enabled",
+                    "minimum_tls_version": "TLS1_2",
                 }
             ),
         )
@@ -255,14 +295,18 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(self.log, Mock(), Mock(), Mock()) as client:
+        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1") as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
             client.submit_background_task(AsyncMock(side_effect=failing_task_error)())
 
         self.assertEqual(m.call_count, 3)
-        self.log.error.assert_called_once_with("Background task failed with an exception", exc_info=failing_task_error)
+        self.log.error.assert_called_once_with(
+            "Background task failed with an exception",
+            exc_info=failing_task_error,
+            extra={"subscription_id": "sub1", "resource_group": "rg1"},
+        )
 
     async def test_create_log_forwarder_no_keys(self):
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
@@ -477,7 +521,7 @@ class TestLogForwarderClient(AsyncTestCase):
         (await self.blob_client.download_blob()).readall.return_value = b"hi\nbye"
 
         async with self.client as client:
-            res = await client.get_blob_metrics_lines("test")
+            res = await client.get_blob_metrics_lines("test", EAST_US)
             self.assertEqual(res, ["hi", "bye", "hi", "bye"])
 
     async def test_get_blob_metrics_missing_blob(self):
@@ -485,7 +529,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client.download_blob.side_effect = [ResourceNotFoundError(), DEFAULT]
 
         async with self.client as client:
-            res = await client.get_blob_metrics_lines("test")
+            res = await client.get_blob_metrics_lines("test", EAST_US)
             self.assertEqual(res, ["hi", "bye"])
 
     async def test_get_blob_timeout_retries(self):
@@ -502,7 +546,7 @@ class TestLogForwarderClient(AsyncTestCase):
         ]
 
         async with self.client as client:
-            res = await client.get_blob_metrics_lines("test")
+            res = await client.get_blob_metrics_lines("test", EAST_US)
             self.assertEqual(res, ["hi", "bye", "hi", "bye"])
             self.assertEqual(self.blob_client.download_blob.call_count, 6)  # 1 call is from where res_str is set
 
@@ -510,217 +554,58 @@ class TestLogForwarderClient(AsyncTestCase):
         self.blob_client.download_blob.side_effect = ServiceResponseTimeoutError("oops")
 
         async with self.client as client:
-            await client.get_blob_metrics_lines("test")
+            await client.get_blob_metrics_lines("test", EAST_US)
         self.assertEqual(self.blob_client.download_blob.call_count, 2 * MAX_ATTEMPS)
         self.log.error.assert_called_with(
             "Unable to fetch metrics in %s for forwarder %s:\n%s",
             ANY,
             "test",
             "Max retries attempted, failed due to:\noops",
+            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
         )
 
     async def test_get_blob_unretryable_exception(self):
         self.blob_client.download_blob.side_effect = FakeHttpError(402)
 
         async with self.client as client:
-            await client.get_blob_metrics_lines("test")
+            await client.get_blob_metrics_lines("test", EAST_US)
         self.assertEqual(self.blob_client.download_blob.call_count, 2)
         self.log.error.assert_called_with(
             "Unable to fetch metrics in %s for forwarder %s:\n%s",
             ANY,
             "test",
             "HttpResponseError with Response Code: 402\nError: {'code': 'something related to 402'}",
+            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
         )
 
     async def test_submit_metrics_normal_execution(self):
         self.client.should_submit_metrics = True
-        sample_metric_entry_list: list[MetricBlobEntry] = [
-            {
-                "timestamp": 1723040910,
-                "runtime_seconds": 280,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-            {
-                "timestamp": 1723040911,
-                "runtime_seconds": 281,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-        ]
         self.client.metrics_client.submit_metrics.return_value = {}
-        sample_body = MetricPayload(
-            series=[
-                MetricSeries(
-                    metric="Runtime",
-                    type=MetricIntakeType.UNSPECIFIED,
-                    points=[
-                        MetricPoint(
-                            timestamp=1723040910,
-                            value=280,
-                        ),
-                        MetricPoint(
-                            timestamp=1723040911,
-                            value=281,
-                        ),
-                    ],
-                    resources=[
-                        MetricResource(
-                            name=get_container_app_name("test"),
-                            type="logforwarder",
-                        ),
-                    ],
-                )
-            ],
-        )
         async with self.client as client:
-            await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
+            await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS)
 
-        self.client.metrics_client.submit_metrics.assert_called_once_with(body=sample_body)
+        self.client.metrics_client.submit_metrics.assert_called_once_with(body=FAKE_METRIC_PAYLOAD)
 
     async def test_submit_metrics_retries(self):
         self.client.should_submit_metrics = True
-        sample_metric_entry_list: list[MetricBlobEntry] = [
-            {
-                "timestamp": 1723040910,
-                "runtime_seconds": 2.80,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-            {
-                "timestamp": 1723040911,
-                "runtime_seconds": 2.81,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-        ]
         self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
         self.client.metrics_client.submit_metrics.return_value = {}
-        sample_body = MetricPayload(
-            series=[
-                MetricSeries(
-                    metric="Runtime",
-                    type=MetricIntakeType.UNSPECIFIED,
-                    points=[
-                        MetricPoint(
-                            timestamp=1723040910,
-                            value=2.80,
-                        ),
-                        MetricPoint(
-                            timestamp=1723040911,
-                            value=2.81,
-                        ),
-                    ],
-                    resources=[
-                        MetricResource(
-                            name=get_container_app_name("test"),
-                            type="logforwarder",
-                        ),
-                    ],
-                )
-            ],
-        )
-        async with self.client as client:
-            await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-
-        self.client.metrics_client.submit_metrics.assert_called_with(body=sample_body)
-        self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 3)
-
-    async def test_submit_metrics_max_retries(self):
-        self.client.should_submit_metrics = True
-        sample_metric_entry_list: list[MetricBlobEntry] = [
-            {
-                "timestamp": 1723040910,
-                "runtime_seconds": 2.80,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-            {
-                "timestamp": 1723040911,
-                "runtime_seconds": 2.81,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-        ]
         self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
-        sample_body = MetricPayload(
-            series=[
-                MetricSeries(
-                    metric="Runtime",
-                    type=MetricIntakeType.UNSPECIFIED,
-                    points=[
-                        MetricPoint(
-                            timestamp=1723040910,
-                            value=2.80,
-                        ),
-                        MetricPoint(
-                            timestamp=1723040911,
-                            value=2.81,
-                        ),
-                    ],
-                    resources=[
-                        MetricResource(
-                            name=get_container_app_name("test"),
-                            type="logforwarder",
-                        ),
-                    ],
-                )
-            ],
-        )
         with self.assertRaises(RetryError) as ctx:
             async with self.client as client:
-                await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-        self.client.metrics_client.submit_metrics.assert_called_with(body=sample_body)
+                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS)
+        self.client.metrics_client.submit_metrics.assert_called_with(body=FAKE_METRIC_PAYLOAD)
         self.assertEqual(self.client.metrics_client.submit_metrics.call_count, MAX_ATTEMPS)
 
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
         self.client.should_submit_metrics = True
-        sample_metric_entry_list: list[MetricBlobEntry] = [
-            {
-                "timestamp": 1723040910,
-                "runtime_seconds": 2.80,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-            {
-                "timestamp": 1723040911,
-                "runtime_seconds": 2.81,
-                "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
-                "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-            },
-        ]
         self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
-        self.client.metrics_client.submit_metrics.return_value = {}
-        sample_body = MetricPayload(
-            series=[
-                MetricSeries(
-                    metric="Runtime",
-                    type=MetricIntakeType.UNSPECIFIED,
-                    points=[
-                        MetricPoint(
-                            timestamp=1723040910,
-                            value=2.80,
-                        ),
-                        MetricPoint(
-                            timestamp=1723040911,
-                            value=2.81,
-                        ),
-                    ],
-                    resources=[
-                        MetricResource(
-                            name=get_container_app_name("test"),
-                            type="logforwarder",
-                        ),
-                    ],
-                )
-            ],
-        )
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
-                await client.submit_log_forwarder_metrics("test", sample_metric_entry_list)
-        self.client.metrics_client.submit_metrics.assert_called_with(body=sample_body)
+                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS)
+        self.client.metrics_client.submit_metrics.assert_called_with(body=FAKE_METRIC_PAYLOAD)
         self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 1)
 
     async def test_old_log_forwarder_metrics_are_ignored(self):
@@ -728,9 +613,9 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.get_blob_metrics_lines = AsyncMock(return_value=list(map(dumps, metrics)))
 
         async with self.client as client:
-            res = await client.collect_forwarder_metrics(CONFIG_ID1, oldest_valid_timestamp=minutes_ago(15))
+            res = await client.collect_forwarder_metrics(CONFIG_ID1, EAST_US, oldest_valid_timestamp=minutes_ago(15))
 
-        self.client.get_blob_metrics_lines.assert_called_once_with(CONFIG_ID1)
+        self.client.get_blob_metrics_lines.assert_called_once_with(CONFIG_ID1, EAST_US)
         self.assertEqual(res, [])
 
     async def test_submit_metrics_errors_logged(self):
@@ -753,7 +638,10 @@ class TestLogForwarderClient(AsyncTestCase):
                 ],
             )
 
-        self.log.error.assert_called_once_with("oops something went wrong")
+        self.log.error.assert_called_once_with(
+            "oops something went wrong",
+            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
+        )
 
     async def test_log_forwarder_container_created(self):
         async with self.client as client:

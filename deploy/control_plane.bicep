@@ -5,6 +5,7 @@ param controlPlaneId string
 param controlPlaneLocation string
 param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
+param monitoredSubscriptions string
 
 param imageRegistry string
 param storageAccountUrl string
@@ -12,10 +13,6 @@ param storageAccountUrl string
 @description('Datadog API Key')
 @secure()
 param datadogApiKey string
-
-@description('Datadog App Key')
-@secure()
-param datadogApplicationKey string
 
 @description('Datadog Site')
 param datadogSite string
@@ -31,19 +28,18 @@ var forwarderImage = '${imageRegistry}/forwarder:latest'
 var STORAGE_CONNECTION_SETTING = 'AzureWebJobsStorage'
 var DD_SITE_SETTING = 'DD_SITE'
 var DD_API_KEY_SETTING = 'DD_API_KEY'
-var DD_APP_KEY_SETTING = 'DD_APP_KEY'
 var DD_TELEMETRY_SETTING = 'DD_TELEMETRY'
 var FORWARDER_IMAGE_SETTING = 'FORWARDER_IMAGE'
 var SUBSCRIPTION_ID_SETTING = 'SUBSCRIPTION_ID'
 var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
 var CONTROL_PLANE_REGION_SETTING = 'CONTROL_PLANE_REGION'
 var CONTROL_PLANE_ID_SETTING = 'CONTROL_PLANE_ID'
+var MONITORED_SUBSCRIPTIONS_SETTING = 'MONITORED_SUBSCRIPTIONS'
 var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
 var LOG_LEVEL_SETTING = 'LOG_LEVEL'
 
 // Secret Names
 var DD_API_KEY_SECRET = 'dd-api-key'
-var DD_APP_KEY_SECRET = 'dd-app-key'
 var CONNECTION_STRING_SECRET = 'connection-string'
 // CONTROL PLANE RESOURCES
 
@@ -64,7 +60,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: 'lfostorage${controlPlaneId}'
   kind: 'StorageV2'
   location: controlPlaneLocation
-  properties: { accessTier: 'Hot' }
+  properties: {
+    accessTier: 'Hot'
+    minimumTlsVersion: 'TLS1_2'
+  }
   sku: { name: 'Standard_LRS' }
 }
 
@@ -87,7 +86,7 @@ resource cacheContainer 'Microsoft.Storage/storageAccounts/blobServices/containe
 }
 
 var storageAccountKey = listKeys(storageAccount.id, '2019-06-01').keys[0].value
-var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccountKey}'
+var connectionString = 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${storageAccountKey}'
 
 var commonAppSettings = [
   { name: STORAGE_CONNECTION_SETTING, value: connectionString }
@@ -115,6 +114,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
     siteConfig: {
       appSettings: union(commonAppSettings, [
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
+        { name: MONITORED_SUBSCRIPTIONS_SETTING, value: monitoredSubscriptions }
       ])
       linuxFxVersion: 'Python|3.11'
     }
@@ -161,7 +161,6 @@ resource scalingTask 'Microsoft.Web/sites@2022-09-01' = {
         { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: FORWARDER_IMAGE_SETTING, value: forwarderImage }
-        { name: DD_APP_KEY_SETTING, value: datadogApplicationKey }
         { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
       ])
       linuxFxVersion: 'Python|3.11'
@@ -198,7 +197,6 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
       secrets: [
         { name: CONNECTION_STRING_SECRET, value: connectionString }
         { name: DD_API_KEY_SECRET, value: datadogApiKey }
-        { name: DD_APP_KEY_SECRET, value: datadogApplicationKey }
       ]
     }
     template: {
@@ -217,7 +215,6 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
             { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
             { name: DD_API_KEY_SETTING, secretRef: DD_API_KEY_SECRET }
-            { name: DD_APP_KEY_SETTING, secretRef: DD_APP_KEY_SECRET }
             { name: DD_SITE_SETTING, value: datadogSite }
             { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
             { name: STORAGE_ACCOUNT_URL_SETTING, value: storageAccountUrl }
@@ -245,14 +242,10 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-output resourceTaskPrincipalId string = resourceTask.identity.principalId
-output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
-output scalingTaskPrincipalId string = scalingTask.identity.principalId
-
 // DEPLOYER TASK INITIAL RUN
 
-resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'runInitialDeployIdentity'
+resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'initialRunIdentity${controlPlaneId}'
   location: controlPlaneLocation
 }
 
@@ -269,38 +262,19 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
   }
 }
 
-resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneResourceGroupName)
+resource initialRunContainerAppRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('initialRunContainerAppRoleAssignment', controlPlaneId)
   properties: {
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: containerAppStartRole.id
-    principalId: runInitialDeployIdentity.properties.principalId
+    principalId: initialRunIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'runInitialDeploy'
-  location: controlPlaneLocation
-  kind: 'AzurePowerShell'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: { '${runInitialDeployIdentity.id}': {} }
-  }
-  properties: {
-    storageAccountSettings: {
-      // reuse the storage account from before
-      storageAccountName: storageAccount.name
-      storageAccountKey: storageAccountKey
-    }
-    azPowerShellVersion: '12.3'
-    scriptContent: 'Start-AzContainerAppJob -Name ${deployerTaskName} -ResourceGroupName ${controlPlaneResourceGroupName}'
-    timeout: 'PT30M'
-    retentionInterval: 'PT1H'
-    cleanupPreference: 'OnSuccess'
-  }
-  dependsOn: [
-    runInitialDeployIdentityRoleAssignment
-    deployerTaskRole
-  ]
-}
+output resourceTaskPrincipalId string = resourceTask.identity.principalId
+output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
+output scalingTaskPrincipalId string = scalingTask.identity.principalId
+output initialRunIdentityPrincipalId string = initialRunIdentity.properties.principalId
+output initialRunIdentityId string = initialRunIdentity.id
+output storageAccountName string = storageAccount.name

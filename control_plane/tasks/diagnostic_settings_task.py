@@ -1,10 +1,13 @@
 # stdlib
 from asyncio import gather, run
+from copy import deepcopy
+from json import dumps
 from random import shuffle
 from typing import NamedTuple, cast
 
 # 3p
 from azure.core.exceptions import HttpResponseError
+from azure.mgmt.core.tools import parse_resource_id
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from azure.mgmt.monitor.v2021_05_01_preview.models import (
     CategoryType,
@@ -12,11 +15,19 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
     LogSettings,
 )
 
+# dd
+from datadog_api_client.v1.api.events_api import EventsApi
+from datadog_api_client.v1.models import EventCreateRequest, EventCreateResponse
+
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
-from cache.common import (
-    InvalidCacheError,
-    LogForwarderType,
+from cache.common import InvalidCacheError, LogForwarderType, write_cache
+from cache.diagnostic_settings_cache import (
+    DIAGNOSTIC_SETTINGS_COUNT,
+    EVENT_CACHE_BLOB,
+    SENT_EVENT,
+    EventDict,
+    deserialize_event_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
 from tasks.common import (
@@ -28,8 +39,9 @@ from tasks.common import (
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
 
+DD_REQUEST_TIMEOUT = 5  # seconds
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
-
+MAX_DIAGNOSTIC_SETTINGS = 5
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
 
@@ -70,7 +82,7 @@ def get_diagnostic_setting(
 class DiagnosticSettingsTask(Task):
     NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
-    def __init__(self, assignment_cache_state: str) -> None:
+    def __init__(self, assignment_cache_state: str, event_cache_state: str) -> None:
         super().__init__()
 
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
@@ -78,11 +90,19 @@ class DiagnosticSettingsTask(Task):
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
 
-        # read caches
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if assignment_cache is None:
             raise InvalidCacheError("Assignment Cache is in an invalid format, failing this task until it is valid")
         self.assignment_cache = assignment_cache
+
+        event_cache = deserialize_event_cache(event_cache_state)
+        self.initial_event_cache = event_cache
+        if event_cache is None:
+            self.log.warning("Detected invalid event cache, cache will be reset")
+            event_cache = {sub_id: {} for sub_id in self.assignment_cache}
+
+        self.event_cache = deepcopy(event_cache)
+        self.events_api = EventsApi(self._datadog_client)
 
     async def run(self) -> None:
         self.log.info("Processing %s subscriptions", len(self.assignment_cache))
@@ -118,6 +138,49 @@ class DiagnosticSettingsTask(Task):
         # i.e. client.subscription_diagnostic_settings.list()
         return
 
+    async def send_max_settings_reached_event(self, sub_id: str, resource_id: str) -> bool:
+        parsed_resource = parse_resource_id(resource_id)
+        parse_success = len(parsed_resource) > 1
+        event_tags = ["forwarder:lfo", "subscription_id:" + sub_id]
+        if parse_success:
+            event_tags.extend(
+                [
+                    "resource_type:" + cast(str, parsed_resource["type"]),
+                    "resource_provider:" + cast(str, parsed_resource["namespace"]),
+                    "resource_group:" + cast(str, parsed_resource["resource_group"]),
+                ]
+            )
+        else:
+            self.log.error("Failed to parse resource id %s", resource_id)
+
+        body = EventCreateRequest(
+            title=f"Log forwarding disabled for Azure resource {cast(str, parsed_resource['name']) if parse_success else None}",
+            text=f"Log forwarding cannot be enabled for resource '{resource_id}' because it already has the maximum number of diagnostic settings configured. The addition of a DataDog diagnostic setting is necessary for log forwarding.",
+            tags=event_tags,
+            alert_type="warning",
+        )
+
+        response: EventCreateResponse = await self.events_api.create_event(body)  # type: ignore
+        try:
+            response = await self.events_api.create_event(body)  # type: ignore
+        except Exception as e:
+            self.log.error(f"Error while sending event to Datadog: {e}")
+            return False
+
+        if errors := response.get("errors", []):
+            self.log.error(f"Error(s) while sending event to Datadog: {errors}")
+            return False
+        if response.status != "ok":
+            self.log.error(f"Http error while sending event to Datadog: {response}")
+            return False
+
+        self.log.info(
+            "Sent max diagnostic setting event for resource %s",
+            resource_id,
+            extra={"subscription_id": sub_id},
+        )
+        return True
+
     async def process_resource(
         self,
         client: MonitorManagementClient,
@@ -142,16 +205,33 @@ class DiagnosticSettingsTask(Task):
             None,
         )
 
+        num_diag_settings = len(current_diagnostic_settings)
+
         if (
             current_setting
             and current_setting.storage_account_id
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
-            return  # it is set up properly already
+            return  # current diagnostic setting is correctly configured
 
-        # otherwise fix it
-        await self.set_diagnostic_setting(
+        self.event_cache.setdefault(sub_id, {}).setdefault(
+            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
+        )
+
+        if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
+            if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
+                event_sent_success = await self.send_max_settings_reached_event(sub_id, resource_id)
+                self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
+
+            self.log.warning(
+                "Max number of diagnostic settings reached for resource %s, will not add another",
+                resource_id,
+                extra={"subscription_id": sub_id},
+            )
+            return
+
+        success = await self.create_or_update_diagnostic_setting(
             client,
             sub_id,
             resource_id,
@@ -160,14 +240,22 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
-    async def set_diagnostic_setting(
+        new_setting_to_add = current_setting is None
+        if new_setting_to_add and success:
+            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
+
+    async def create_or_update_diagnostic_setting(
         self,
         client: MonitorManagementClient,
         sub_id: str,
         resource_id: str,
         config: DiagnosticSettingConfiguration,
         categories: list[str] | None = None,
-    ) -> None:
+    ) -> bool:
+        """Creates or updates a diagnostic setting for an Azure resource
+
+        Returns True if the diagnostic setting was successfully created or updated, False otherwise
+        """
         try:
             categories = categories or [
                 cast(str, category.name)
@@ -176,7 +264,7 @@ class DiagnosticSettingsTask(Task):
             ]
             if not categories:
                 self.log.debug("No log categories found for resource %s", resource_id)
-                return
+                return False
 
             await client.diagnostic_settings.create_or_update(
                 resource_id,
@@ -184,31 +272,37 @@ class DiagnosticSettingsTask(Task):
                 get_diagnostic_setting(sub_id, self.resource_group, config, categories),
             )
             self.log.info("Added diagnostic setting for resource %s", resource_id)
+            return True
         except HttpResponseError as e:
             if e.error and e.error.code == "ResourceTypeNotSupported":
                 # This resource does not support diagnostic settings
-                return
+                return False
             if "Resources should be in the same region" in str(e):
                 # todo this should not happen in the real implementation, for now ignore
-                return
+                return False
             if "reused in different settings on the same category for the same resource" in str(e):
                 self.log.error(
                     "Resource %s already has a diagnostic setting with the same configuration: %s", resource_id, config
                 )
-                return
+                return False
 
             self.log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
+            return False
         except Exception:
             self.log.error(
                 "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
             )
+            return False
 
     async def write_caches(self) -> None:
-        pass  # nothing to do here
+        if self.event_cache == self.initial_event_cache:
+            self.log.info("No changes to event cache, skipping write")
+            return
+        await write_cache(EVENT_CACHE_BLOB, dumps(self.event_cache))
 
 
 async def main() -> None:
-    await task_main(DiagnosticSettingsTask, [ASSIGNMENT_CACHE_BLOB])
+    await task_main(DiagnosticSettingsTask, [ASSIGNMENT_CACHE_BLOB, EVENT_CACHE_BLOB])
 
 
 if __name__ == "__main__":  # pragma: no cover

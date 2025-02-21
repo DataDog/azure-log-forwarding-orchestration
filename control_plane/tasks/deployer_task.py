@@ -172,7 +172,6 @@ class DeployerTask(Task):
         )
 
     async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
-        self.log.info(f"Deploying {component}")
         if component == "forwarder":
             return await self.deploy_log_forwarder_image()
         task_prefix = f"{component.replace('_', '-')}-task-"

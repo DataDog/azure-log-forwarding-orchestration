@@ -7,8 +7,6 @@ param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
 
 @secure()
-param datadogApplicationKey string
-@secure()
 param datadogApiKey string
 param datadogSite string
 
@@ -19,6 +17,7 @@ param imageRegistry string = 'datadoghq.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 
+func subUuid(uuid string) string => toLower(substring(uuid, 24, 12))
 
 // sub-uuid for the control plane is based on the identifiers below.
 // This is to be consistent if there are multiple deploys, while still making a unique id.
@@ -26,10 +25,11 @@ param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 // - control plane subscription id
 // - control plane resource group name
 // - control plane region
-var controlPlaneId = toLower(substring(
-  guid(managementGroup().id, controlPlaneSubscriptionId, controlPlaneResourceGroupName, controlPlaneLocation),
-  24,
-  12
+var controlPlaneId = subUuid(guid(
+  managementGroup().id,
+  controlPlaneSubscriptionId,
+  controlPlaneResourceGroupName,
+  controlPlaneLocation
 ))
 
 module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
@@ -53,7 +53,6 @@ module validateAPIKey './validate_key.bicep' = {
   ]
 }
 
-
 module controlPlane './control_plane.bicep' = {
   name: 'controlPlane-${controlPlaneId}'
   scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
@@ -62,8 +61,8 @@ module controlPlane './control_plane.bicep' = {
     controlPlaneLocation: controlPlaneLocation
     controlPlaneResourceGroupName: controlPlaneResourceGroupName
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
+    monitoredSubscriptions: monitoredSubscriptions
     datadogApiKey: datadogApiKey
-    datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
     imageRegistry: imageRegistry
@@ -83,7 +82,7 @@ var scalingTaskPrincipalId = controlPlane.outputs.scalingTaskPrincipalId
 // create the subscription level permissions, as well as the resource group for forwarders and the permissions on that resource group
 module subscriptionPermissions './subscription_permissions.bicep' = [
   for subscriptionId in json(monitoredSubscriptions): {
-    name: 'subscriptionPermissions-${subscriptionId}'
+    name: 'subscriptionPermissions-${subUuid(subscriptionId)}-${controlPlaneId}'
     scope: subscription(subscriptionId)
     params: {
       resourceGroupName: controlPlaneResourceGroupName
@@ -92,6 +91,27 @@ module subscriptionPermissions './subscription_permissions.bicep' = [
       resourceTaskPrincipalId: resourceTaskPrincipalId
       diagnosticSettingsTaskPrincipalId: diagnosticSettingsTaskPrincipalId
       scalingTaskPrincipalId: scalingTaskPrincipalId
+      initialRunIdentityPrincipalId: controlPlane.outputs.initialRunIdentityPrincipalId
     }
   }
 ]
+
+
+module initialRun './initial_run.bicep' = {
+  name: 'initialRun-${controlPlaneId}'
+  scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
+  params: {
+    controlPlaneId: controlPlaneId
+    initialRunIdentity: controlPlane.outputs.initialRunIdentityId
+    storageAccountName: controlPlane.outputs.storageAccountName
+    datadogApiKey: datadogApiKey
+    datadogSite: datadogSite
+    datadogTelemetry: datadogTelemetry
+    logLevel: logLevel
+    monitoredSubscriptions: monitoredSubscriptions
+    forwarderImage: '${imageRegistry}/forwarder:latest'
+  }
+  dependsOn: [
+    subscriptionPermissions
+  ]
+}
