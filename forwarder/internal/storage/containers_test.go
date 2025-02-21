@@ -127,6 +127,24 @@ func TestGetContainersMatchingPrefix(t *testing.T) {
 		assert.Equal(t, testString, results[0].Name)
 		assert.Equal(t, testString, results[1].Name)
 	})
+
+	t.Run("filtered out excluded containers", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		pages := [][]*service.ContainerItem{
+			{newContainerItem("test")},
+			{newContainerItem(storage.IgnoredContainers[0])},
+			{newContainerItem("test2"), newContainerItem(storage.IgnoredContainers[1])},
+		}
+
+		// WHEN
+		results := getLogContainers(t, context.Background(), pages, nil)
+
+		// THEN
+		assert.Len(t, results, 2)
+		assert.Equal(t, "test", results[0].Name)
+		assert.Equal(t, "test2", results[1].Name)
+	})
 }
 
 func TestCategory(t *testing.T) {
