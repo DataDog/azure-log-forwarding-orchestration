@@ -122,6 +122,16 @@ arm-template-publish:
     - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-public.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
     - ./ci/scripts/arm-template/upload-public.sh ./azuredeploy.json templates azuredeploy.json
+standalone-forwarder-arm-template-publish-qa:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - az bicep build --file ./deploy/forwarder.bicep
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/forwarder.json templates forwarder.json
 standalone-forwarder-arm-template-publish:
   image: $CI_IMAGE
   stage: publish
