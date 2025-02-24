@@ -122,6 +122,28 @@ arm-template-publish:
     - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-public.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
     - ./ci/scripts/arm-template/upload-public.sh ./azuredeploy.json templates azuredeploy.json
+standalone-forwarder-arm-template-publish-qa:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - az bicep build --file ./deploy/forwarder.bicep
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/forwarder.json templates forwarder.json
+standalone-forwarder-arm-template-publish:
+  image: $CI_IMAGE
+  stage: publish
+  tags: ['arch:amd64']
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
+  script:
+    - az bicep build --file ./deploy/forwarder.bicep
+    - ./ci/scripts/arm-template/upload-public.sh ./deploy/forwarder.json templates forwarder.json
 uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish
