@@ -346,17 +346,17 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
     def get_pii_rules(self) -> str:
         pii_scrubber_rules_yaml = self.pii_scrubber_rules
+        parsed_yaml = None
         try:
             parsed_yaml = safe_load(pii_scrubber_rules_yaml)
         except YAMLError as e:
             self.log.warning("Failed to parse PII YAML rules", exc_info=e, extra=self.log_extra)
-            parsed_yaml = None
 
         pii_rules_json = "{}"
         if parsed_yaml:
             pii_rules_json = dumps(parsed_yaml)
         else:
-            self.log.warning("No PII scrubber rules found", extra=self.log_extra)
+            self.log.info("No PII scrubber rules found", extra=self.log_extra)
 
         pii_rules_b64_bytes = b64encode(pii_rules_json.encode("utf-8"))
         return pii_rules_b64_bytes.decode("utf-8")
