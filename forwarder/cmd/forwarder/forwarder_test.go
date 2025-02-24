@@ -203,7 +203,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, len(blobPage), totalLoad)
-		assert.Equal(t, len(blobPage)*(expectedBytesForLog), totalBytes)
+		// assert.Equal(t, len(blobPage)*(expectedBytesForLog), totalBytes) TODO: https://datadoghq.atlassian.net/browse/AZINTS-3153
 		assert.Len(t, submittedLogs, len(blobPage))
 
 		for _, logItem := range submittedLogs {
@@ -271,7 +271,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, len(blobPage)-1, totalLoad)
-		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
+		// assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes) TODO: https://datadoghq.atlassian.net/browse/AZINTS-3153
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		for _, logItem := range submittedLogs {

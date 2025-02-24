@@ -311,6 +311,10 @@ func parsePiiScrubRules(piiConfigBase64 string) (map[string]logs.ScrubberRuleCon
 		return map[string]logs.ScrubberRuleConfig{}, err
 	}
 
+	if len(decodedConfig) == 0 {
+		return map[string]logs.ScrubberRuleConfig{}, nil
+	}
+
 	var piiScrubRules map[string]logs.ScrubberRuleConfig
 	err = json.Unmarshal(decodedConfig, &piiScrubRules)
 	if err != nil {

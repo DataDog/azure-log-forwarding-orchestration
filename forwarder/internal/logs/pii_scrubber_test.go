@@ -55,7 +55,7 @@ func TestPiiScrubber(t *testing.T) {
 		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
 	})
 
-	t.Run("default email regex scrub should remove emails", func(t *testing.T) {
+	t.Run("email regex scrub should remove emails", func(t *testing.T) {
 		piiStr := "peanutbutter@jelly.com"
 		replacement := "xxxxx@xxxxx.com"
 
