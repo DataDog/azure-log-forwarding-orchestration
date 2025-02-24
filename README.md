@@ -1,4 +1,4 @@
-# Azure Log Forwarding Orchestration
+# Azure Log Forwarding Orchestration (LFO)
 
 To get started working on the project, check out the respective READMEs in the [`forwarder`](./forwarder/README.md) and [`control_plane`](./control_plane/README.md) directories.
 
