@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 
-	// "github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/generated"
 	log "github.com/sirupsen/logrus"
 
 	// datadog
@@ -32,7 +31,7 @@ func (c *Container) Category() string {
 	return parts[len(parts)-1]
 }
 
-// GetLogContainers returns an iterator over a sequence of containers to look for logs in.
+// GetLogContainers returns an iterator over a sequence of containers which contain logs.
 func (c *Client) GetLogContainers(ctx context.Context, logger *log.Entry) iter.Seq[Container] {
 	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetLogContainers")
 	defer span.Finish()
