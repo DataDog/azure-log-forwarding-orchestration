@@ -48,6 +48,13 @@ func (c *Cursors) Set(containerName string, blobName string, offset int64) {
 	c.data[blobKey(containerName, blobName)] = offset
 }
 
+// Delete unsets the cursor for the given key.
+func (c *Cursors) Delete(containerName string, blobName string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.data, blobKey(containerName, blobName))
+}
+
 // JSONBytes returns the a []byte representation of the cursors.
 func (c *Cursors) JSONBytes() ([]byte, error) {
 	c.mu.RLock()

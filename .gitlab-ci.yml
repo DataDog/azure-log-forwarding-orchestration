@@ -103,10 +103,11 @@ arm-template-publish-qa:
     refs:
       - main
   script:
+    - ./ci/scripts/arm-template/build_initial_run.py
     - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
-    - ./scripts/arm-template/gen-template.sh
+    - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/build/azuredeploy.json templates azuredeploy.json
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./azuredeploy.json templates azuredeploy.json
 arm-template-publish:
   image: $CI_IMAGE
   stage: publish
@@ -117,9 +118,10 @@ arm-template-publish:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ./scripts/arm-template/gen-template.sh
+    - ./ci/scripts/arm-template/build_initial_run.py
+    - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-public.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
-    - ./ci/scripts/arm-template/upload-public.sh ./deploy/build/azuredeploy.json templates azuredeploy.json
+    - ./ci/scripts/arm-template/upload-public.sh ./azuredeploy.json templates azuredeploy.json
 uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish
@@ -278,4 +280,5 @@ deploy-qa-env:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
   script:
+    - ci/scripts/arm-template/build_initial_run.py
     - ci/scripts/deploy/deploy_qa_env.sh

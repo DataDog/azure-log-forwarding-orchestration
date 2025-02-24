@@ -64,7 +64,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: 'lfostorage${controlPlaneId}'
   kind: 'StorageV2'
   location: controlPlaneLocation
-  properties: { accessTier: 'Hot' }
+  properties: {
+    accessTier: 'Hot'
+    minimumTlsVersion: 'TLS1_2'
+  }
   sku: { name: 'Standard_LRS' }
 }
 
@@ -244,14 +247,10 @@ resource deployerTaskRole 'Microsoft.Authorization/roleAssignments@2022-04-01' =
   }
 }
 
-output resourceTaskPrincipalId string = resourceTask.identity.principalId
-output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
-output scalingTaskPrincipalId string = scalingTask.identity.principalId
-
 // DEPLOYER TASK INITIAL RUN
 
-resource runInitialDeployIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'runInitialDeployIdentity'
+resource initialRunIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'initialRunIdentity${controlPlaneId}'
   location: controlPlaneLocation
 }
 
@@ -268,38 +267,19 @@ resource containerAppStartRole 'Microsoft.Authorization/roleDefinitions@2022-04-
   }
 }
 
-resource runInitialDeployIdentityRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid('runInitialDeployIdentityRoleAssignment', controlPlaneResourceGroupName)
+resource initialRunContainerAppRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid('initialRunContainerAppRoleAssignment', controlPlaneId)
   properties: {
     description: 'ddlfo${controlPlaneId}'
     roleDefinitionId: containerAppStartRole.id
-    principalId: runInitialDeployIdentity.properties.principalId
+    principalId: initialRunIdentity.properties.principalId
     principalType: 'ServicePrincipal'
   }
 }
 
-resource runInitialDeploy 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
-  name: 'runInitialDeploy'
-  location: controlPlaneLocation
-  kind: 'AzurePowerShell'
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: { '${runInitialDeployIdentity.id}': {} }
-  }
-  properties: {
-    storageAccountSettings: {
-      // reuse the storage account from before
-      storageAccountName: storageAccount.name
-      storageAccountKey: storageAccountKey
-    }
-    azPowerShellVersion: '12.3'
-    scriptContent: 'Start-AzContainerAppJob -Name ${deployerTaskName} -ResourceGroupName ${controlPlaneResourceGroupName}'
-    timeout: 'PT30M'
-    retentionInterval: 'PT1H'
-    cleanupPreference: 'OnSuccess'
-  }
-  dependsOn: [
-    runInitialDeployIdentityRoleAssignment
-    deployerTaskRole
-  ]
-}
+output resourceTaskPrincipalId string = resourceTask.identity.principalId
+output diagnosticSettingsTaskPrincipalId string = diagnosticSettingsTask.identity.principalId
+output scalingTaskPrincipalId string = scalingTask.identity.principalId
+output initialRunIdentityPrincipalId string = initialRunIdentity.properties.principalId
+output initialRunIdentityId string = initialRunIdentity.id
+output storageAccountName string = storageAccount.name

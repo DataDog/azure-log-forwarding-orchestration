@@ -119,12 +119,13 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
 class ScalingTask(Task):
     NAME = SCALING_TASK_NAME
 
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str, wait_on_envs: bool = False) -> None:
         super().__init__()
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.scaling_percentage = parse_config_option(SCALING_PERCENTAGE_SETTING, float, DEFAULT_SCALING_PERCENTAGE)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
 
+        self.wait_on_envs = wait_on_envs
         self.now = datetime.now()
 
         # Resource Cache
@@ -189,7 +190,7 @@ class ScalingTask(Task):
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> None:
         """Creates a log forwarder env for the given region. If the creation fails, the env is (attempted to be) deleted"""
         try:
-            await client.create_log_forwarder_managed_environment(region)
+            await client.create_log_forwarder_managed_environment(region, wait=self.wait_on_envs)
         except Exception:
             self.log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
             success = await client.delete_log_forwarder_env(region, raise_error=False)

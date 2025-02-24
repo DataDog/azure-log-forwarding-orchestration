@@ -78,14 +78,13 @@ func getBlobName(name string) string {
 	return "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/" + name + "/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
 }
 
-func newBlobItem(name string, contentLength int64) *container.BlobItem {
-	now := time.Now()
+func newBlobItem(name string, contentLength int64, blobTime time.Time) *container.BlobItem {
 	blobName := getBlobName(name)
 	return &container.BlobItem{
 		Name: to.StringPtr(blobName),
 		Properties: &container.BlobProperties{
 			ContentLength: to.Int64Ptr(contentLength),
-			CreationTime:  &now,
+			CreationTime:  &blobTime,
 		},
 	}
 }
@@ -159,12 +158,16 @@ func TestRun(t *testing.T) {
 		validLog := getLogWithContent(testString, 5*time.Minute)
 		expectedBytesForLog := len(validLog) + 1 // +1 for newline
 
+		containerName := "insights-logs-functionapplogs"
+
 		containerPage := []*service.ContainerItem{
-			newContainerItem("insights-logs-functionapplogs"),
+			newContainerItem(containerName),
 		}
+		expiredBlob := newBlobItem("expired", int64(expectedBytesForLog), time.Now().Add(storage.LookBackPeriod*2))
 		blobPage := []*container.BlobItem{
-			newBlobItem("testA", int64(expectedBytesForLog)),
-			newBlobItem("testB", int64(expectedBytesForLog)),
+			newBlobItem("testA", int64(expectedBytesForLog), time.Now()),
+			newBlobItem("testB", int64(expectedBytesForLog), time.Now()),
+			expiredBlob,
 		}
 
 		getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
@@ -173,13 +176,22 @@ func TestRun(t *testing.T) {
 			return resp
 		}
 
+		cursorsWithExpiredBlob := cursor.New(nil)
+		cursorsWithExpiredBlob.Set(containerName, *expiredBlob.Name, 300)
+		cursorBytes, err := cursorsWithExpiredBlob.JSONBytes()
+
 		cursorResp := azblob.DownloadStreamResponse{}
-		cursorResp.Body = io.NopCloser(strings.NewReader(""))
+		cursorResp.Body = io.NopCloser(strings.NewReader(string(cursorBytes)))
 
 		var uploadedMetrics []byte
+		var finalCursors *cursor.Cursors
 		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 			if strings.Contains(blobName, "metrics_") {
 				uploadedMetrics = append(uploadedMetrics, content...)
+			}
+			if strings.Contains(blobName, "cursors") {
+				finalCursors = cursor.FromBytes(content, nullLogger())
+				require.NoError(t, err)
 			}
 			return azblob.UploadBufferResponse{}, nil
 		}
@@ -202,10 +214,11 @@ func TestRun(t *testing.T) {
 				totalBytes += int(value)
 			}
 		}
-		assert.Equal(t, len(blobPage), totalLoad)
-		// assert.Equal(t, len(blobPage)*(expectedBytesForLog), totalBytes) TODO: https://datadoghq.atlassian.net/browse/AZINTS-3153
-		assert.Len(t, submittedLogs, len(blobPage))
+		assert.Equal(t, len(blobPage)-1, totalLoad)
+		// assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes) TODO: https://datadoghq.atlassian.net/browse/AZINTS-3153
+		assert.Len(t, submittedLogs, len(blobPage)-1)
 
+		assert.Equal(t, int64(0), finalCursors.Get(containerName, *expiredBlob.Name))
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, logs.AzureService, *logItem.Service)
 			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
@@ -224,8 +237,8 @@ func TestRun(t *testing.T) {
 			newContainerItem("insights-logs-functionapplogs"),
 		}
 		blobPage := []*container.BlobItem{
-			newBlobItem("testA", int64(expectedBytesForLog)),
-			newBlobItem("testB", int64(expectedBytesForLog)),
+			newBlobItem("testA", int64(expectedBytesForLog), time.Now()),
+			newBlobItem("testB", int64(expectedBytesForLog), time.Now()),
 		}
 
 		firstBlob := true
