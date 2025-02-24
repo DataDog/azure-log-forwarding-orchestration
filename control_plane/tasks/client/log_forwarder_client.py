@@ -1,11 +1,14 @@
 # stdlib
 from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
+from base64 import b64encode
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
+from json import dumps
 from logging import Logger
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
+from yaml import safe_load
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
@@ -341,6 +344,18 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             Secret(name=CONNECTION_STRING_SECRET, value=connection_string),
         ]
 
+    def get_pii_rules(self) -> str:
+        pii_scrubber_rules_yaml = self.pii_scrubber_rules
+        parsed_yaml = safe_load(pii_scrubber_rules_yaml)
+        if not parsed_yaml:
+            self.log.warning("No PII scrubber rules found", extra=self.log_extra)
+            pii_rules_json = "{}"
+        else:
+            pii_rules_json = dumps(parsed_yaml)
+
+        pii_rules_b64_bytes = b64encode(pii_rules_json.encode("utf-8"))
+        return pii_rules_b64_bytes.decode("utf-8")
+
     def generate_forwarder_settings(self, config_id: str) -> list[EnvironmentVar]:
         return [
             EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
@@ -348,7 +363,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
             EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
-            EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_scrubber_rules),
+            EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.get_pii_rules()),
         ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:

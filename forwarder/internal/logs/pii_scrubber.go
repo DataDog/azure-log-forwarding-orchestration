@@ -11,8 +11,8 @@ type PiiScrubber struct {
 }
 
 type ScrubberRuleConfig struct {
-	Pattern     string
-	Replacement string
+	Pattern     string `json:"pattern"`
+	Replacement string `json:"replacement"`
 }
 
 func NewPiiScrubber(scrubberRuleConfigs map[string]ScrubberRuleConfig) PiiScrubber {

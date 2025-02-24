@@ -3,6 +3,7 @@ package main
 import (
 	// stdlib
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -304,6 +305,21 @@ func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClie
 	return errors.Join(processErr, dlqErr)
 }
 
+func parsePiiScrubRules(piiConfigBase64 string) (map[string]logs.ScrubberRuleConfig, error) {
+	decodedConfig, err := base64.StdEncoding.DecodeString(piiConfigBase64)
+	if err != nil {
+		return map[string]logs.ScrubberRuleConfig{}, err
+	}
+
+	var piiScrubRules map[string]logs.ScrubberRuleConfig
+	err = json.Unmarshal(decodedConfig, &piiScrubRules)
+	if err != nil {
+		return map[string]logs.ScrubberRuleConfig{}, err
+	}
+
+	return piiScrubRules, nil
+}
+
 func main() {
 	apmEnabled := environment.APMEnabled()
 
@@ -387,12 +403,10 @@ func main() {
 		return
 	}
 
-	piiConfigString := environment.Get(environment.PII_SCRUBBER_RULES)
-	var piiScrubRules map[string]logs.ScrubberRuleConfig
-	err = json.Unmarshal([]byte(piiConfigString), &piiScrubRules)
+	piiConfigBase64 := environment.Get(environment.PII_SCRUBBER_RULES)
+	piiScrubRules, err := parsePiiScrubRules(piiConfigBase64)
 	if err != nil {
-		fmt.Println("Error unmarshaling JSON:", err)
-		return
+		logger.Fatalf(fmt.Errorf("error parsing PII scrubber rules: %w", err).Error())
 	}
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
