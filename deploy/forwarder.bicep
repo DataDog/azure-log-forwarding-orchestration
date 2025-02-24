@@ -4,7 +4,7 @@ targetScope = 'resourceGroup'
 
 
 @description('Name of the Container App Managed Environment for the Forwarder')
-@minLength(1)
+@minLength(2)
 @maxLength(60)
 param environmentName string = 'datadog-log-forwarder-env'
 
