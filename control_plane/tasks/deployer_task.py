@@ -186,6 +186,7 @@ class DeployerTask(Task):
             zip_data = await self.download_function_app_data(component)
             self.log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
+            await self.sync_function_app_triggers(self.subscription_id, self.resource_group, function_app)
         except Exception:
             self.log.exception(f"Failed to deploy {component}")
             return
@@ -205,6 +206,17 @@ class DeployerTask(Task):
         if not resp.ok:
             content = (await resp.content.read()).decode()
             raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def sync_function_app_triggers(
+        self, subscription_id: str, resource_group: str, function_app_name: str
+    ) -> None:
+        resp = await self.rest_client.post(
+            f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Web/sites/{function_app_name}/syncfunctiontriggers?api-version=2016-08-01",
+        )
+        if not resp.ok:
+            content = (await resp.content.read()).decode()
+            raise DeployError(f"Failed to sync function app triggers: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def download_function_app_data(self, component: str) -> bytes:
