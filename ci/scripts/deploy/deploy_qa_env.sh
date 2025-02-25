@@ -13,4 +13,10 @@ DD_API_KEY=$(vault kv get -field=ddApiKey kv/k8s/gitlab-runner/azure-log-forward
 az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --tenant "$AZURE_TENANT_ID"
 
 # deploy to resource group lfoqaenv
-az deployment mg create --management-group-id "Azure-Integrations-Mg" --location eastus --name lfoqaenv --template-file ./deploy/azuredeploy.bicep --parameters monitoredSubscriptions="[\"$AZURE_SUBSCRIPTION_ID\"]" --parameters controlPlaneLocation=eastus --parameters controlPlaneSubscriptionId="$AZURE_SUBSCRIPTION_ID" --parameters controlPlaneResourceGroupName=lfoqaenv --parameters datadogApiKey="$DD_API_KEY" --parameters datadogSite=datadoghq.com --parameters datadogTelemetry=true --parameters piiScrubberRules='""' --parameters imageRegistry=lfoqa.azurecr.io
+echo "Deploying lfoqaenv, view progress at https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2Flfoqaenv"
+az deployment mg create --management-group-id "Azure-Integrations-Mg" \
+    --location eastus --name lfoqaenv --template-file ./deploy/azuredeploy.bicep \
+    --parameters monitoredSubscriptions="[\"$AZURE_SUBSCRIPTION_ID\"]" --parameters controlPlaneLocation=eastus \
+    --parameters controlPlaneSubscriptionId="$AZURE_SUBSCRIPTION_ID" --parameters controlPlaneResourceGroupName=lfoqaenv \
+    --parameters datadogApiKey="$DD_API_KEY" --parameters datadogSite=datadoghq.com --parameters datadogTelemetry=true \
+    --parameters piiScrubberRules='""' --parameters imageRegistry=lfoqa.azurecr.io
