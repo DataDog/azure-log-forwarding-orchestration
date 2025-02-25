@@ -9,6 +9,7 @@ stages:
   - ci-image
   - test
   - build
+  - publish-qa
   - publish
 # ------------- CI IMAGE -------------
 ci-build-image:
@@ -81,33 +82,6 @@ publish-tasks:
     - ci/scripts/control_plane/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
-publish-tasks-qa:
-  image: $CI_IMAGE
-  stage: publish
-  tags: ['arch:amd64']
-  only:
-    refs:
-      - main
-  script:
-    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
-  dependencies:
-    - build-tasks
-arm-template-publish-qa:
-  image: $CI_IMAGE
-  stage: publish
-  tags: ['arch:amd64']
-  only:
-    refs:
-      - main
-  script:
-    - ./ci/scripts/arm-template/build_initial_run.py
-    - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
-    - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./azuredeploy.json templates azuredeploy.json
 arm-template-publish:
   image: $CI_IMAGE
   stage: publish
@@ -122,16 +96,6 @@ arm-template-publish:
     - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-public.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
     - ./ci/scripts/arm-template/upload-public.sh ./azuredeploy.json templates azuredeploy.json
-standalone-forwarder-arm-template-publish-qa:
-  image: $CI_IMAGE
-  stage: publish
-  tags: ['arch:amd64']
-  only:
-    refs:
-      - main
-  script:
-    - az bicep build --file ./deploy/forwarder.bicep
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/forwarder.json templates forwarder.json
 standalone-forwarder-arm-template-publish:
   image: $CI_IMAGE
   stage: publish
@@ -144,15 +108,6 @@ standalone-forwarder-arm-template-publish:
   script:
     - az bicep build --file ./deploy/forwarder.bicep
     - ./ci/scripts/arm-template/upload-public.sh ./deploy/forwarder.json templates forwarder.json
-uninstall-script-publish-qa:
-  image: $CI_IMAGE
-  stage: publish
-  tags: ['arch:amd64']
-  only:
-    refs:
-      - main
-  script:
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./scripts/uninstall.py uninstall uninstall.py
 uninstall-script-publish:
   image: $CI_IMAGE
   stage: publish
@@ -164,16 +119,6 @@ uninstall-script-publish:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
     - ./ci/scripts/arm-template/upload-public.sh ./scripts/uninstall.py uninstall uninstall.py
-deployer-build-qa:
-  image: $DOCKER_IMAGE
-  stage: build
-  only:
-    refs:
-      - main
-  tags: ['arch:amd64']
-  script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - docker buildx build --platform=linux/amd64 --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -231,16 +176,6 @@ forwarder-build-tagged:
       - main
   script:
     - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-forwarder-build-qa:
-  image: $DOCKER_IMAGE
-  stage: build
-  tags: ['arch:amd64']
-  only:
-    refs:
-      - main
-  script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
 forwarder-publish:
   stage: publish
   rules:
@@ -294,13 +229,82 @@ coverage-comment:
   script:
     - ci/scripts/coverage-comment.sh
 # ------------- QA ENV -------------
+forwarder-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
+publish-tasks-qa:
+  image: $CI_IMAGE
+  stage: publish-qa
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
+  dependencies:
+    - build-tasks
+arm-template-publish-qa:
+  image: $CI_IMAGE
+  stage: publish-qa
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - ./ci/scripts/arm-template/build_initial_run.py
+    - sed -i 's/datadoghq.azurecr.io/lfoqa.azurecr.io/g' ./deploy/azuredeploy.bicep
+    - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./azuredeploy.json templates azuredeploy.json
+standalone-forwarder-arm-template-publish-qa:
+  image: $CI_IMAGE
+  stage: publish-qa
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - az bicep build --file ./deploy/forwarder.bicep
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/forwarder.json templates forwarder.json
 deploy-qa-env:
   image: $CI_IMAGE
-  stage: publish
+  stage: publish-qa
   tags: ['arch:amd64']
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
+  dependencies:
+    - publish-tasks-qa
+    - arm-template-publish-qa
   script:
     - ci/scripts/arm-template/build_initial_run.py
     - ci/scripts/deploy/deploy_qa_env.sh
+deployer-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: ['arch:amd64']
+  script:
+    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - docker buildx build --platform=linux/amd64 --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+uninstall-script-publish-qa:
+  image: $CI_IMAGE
+  stage: publish-qa
+  tags: ['arch:amd64']
+  only:
+    refs:
+      - main
+  script:
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./scripts/uninstall.py uninstall uninstall.py
