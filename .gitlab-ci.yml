@@ -280,9 +280,9 @@ deploy-qa-env:
   image: $CI_IMAGE
   stage: publish-qa
   tags: ['arch:amd64']
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+  only:
+    refs:
+      - main
   dependencies:
     - publish-tasks-qa
     - arm-template-publish-qa
