@@ -217,7 +217,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	}
 
 	// Get all the containers
-	containers := storageClient.GetContainersMatchingPrefix(ctx, storage.LogContainerPrefix, logger)
+	containers := storageClient.GetLogContainers(ctx, logger)
 
 	// Get all the blobs
 	currNow := now()

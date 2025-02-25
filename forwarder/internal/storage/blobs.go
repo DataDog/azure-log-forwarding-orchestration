@@ -79,13 +79,13 @@ func NewBlob(container Container, item *container.BlobItem) Blob {
 
 // ListBlobs returns an iterator over a sequence of blobs in a container.
 func (c *Client) ListBlobs(ctx context.Context, container Container, logger *log.Entry) iter.Seq[Blob] {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetContainersMatchingPrefix")
+	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.ListBlobs")
 	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(container.Name, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
 
-	return collections.New[Blob, azblob.ListBlobsFlatResponse](ctx, blobPager, func(item azblob.ListBlobsFlatResponse) []Blob {
+	return collections.New(ctx, blobPager, func(item azblob.ListBlobsFlatResponse) []Blob {
 		if item.Segment == nil {
 			return nil
 		}
