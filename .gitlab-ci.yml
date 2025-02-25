@@ -283,6 +283,8 @@ deploy-qa-env:
   only:
     refs:
       - main
+  rules:
+    - allow_failure: true
   dependencies:
     - publish-tasks-qa
     - arm-template-publish-qa
