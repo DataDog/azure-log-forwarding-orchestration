@@ -92,15 +92,17 @@ class Task(AbstractAsyncContextManager["Task"]):
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
     ) -> None:
-        submit_telemetry = create_task(self.submit_telemetry())
-        if exc_type is None and exc_value is None and traceback is None:
-            await self.write_caches()
-        await self.credential.__aexit__(exc_type, exc_value, traceback)
         try:
-            await submit_telemetry
-        except Exception:
-            log.exception("Failed to submit telemetry")
-        await self._datadog_client.__aexit__(exc_type, exc_value, traceback)
+            submit_telemetry = create_task(self.submit_telemetry())
+            if exc_type is None and exc_value is None and traceback is None:
+                await self.write_caches()
+            try:
+                await submit_telemetry
+            except Exception:
+                log.exception("Failed to submit telemetry")
+        finally:
+            await self.credential.__aexit__(exc_type, exc_value, traceback)
+            await self._datadog_client.__aexit__(exc_type, exc_value, traceback)
 
     @abstractmethod
     async def write_caches(self) -> None: ...

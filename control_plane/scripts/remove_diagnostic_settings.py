@@ -80,9 +80,6 @@ async def main():
         async with ResourcesTask("") as resources_task:
             await resources_task.run()
             cache = resources_task.resource_cache
-            # we know exiting will fail, so we manually close resources
-            await resources_task.credential.__aexit__(None, None, None)
-            await resources_task._datadog_client.__aexit__(None, None, None)
     print(
         f"Resources Task completed, found {sum(len(resources) for regions in cache.values() for resources in regions.values())} resources"
     )
