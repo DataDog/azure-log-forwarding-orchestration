@@ -118,7 +118,7 @@ uninstall-script-publish:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ./ci/scripts/arm-template/upload-public.sh ./scripts/uninstall.py uninstall uninstall.py
+    - ./ci/scripts/arm-template/upload-public.sh ./control_plane/scripts/uninstall.py uninstall uninstall.py
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -294,4 +294,4 @@ uninstall-script-publish-qa:
     refs:
       - main
   script:
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./scripts/uninstall.py uninstall uninstall.py
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./control_plane/scripts/uninstall.py uninstall uninstall.py
