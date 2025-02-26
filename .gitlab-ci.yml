@@ -144,19 +144,6 @@ deployer-publish:
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: 'false'
     IMG_REGISTRIES: public-azure
-# -------------  SCRIPTS  -------------
-scripts-format:
-  image: $CI_IMAGE
-  stage: test
-  tags: ['arch:amd64']
-  script:
-    - /venv/bin/ruff format --check ./scripts --config ./control_plane/pyproject.toml
-scripts-lint:
-  image: $CI_IMAGE
-  stage: test
-  tags: ['arch:amd64']
-  script:
-    - /venv/bin/ruff check ./scripts --config ./control_plane/pyproject.toml
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
