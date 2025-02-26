@@ -63,7 +63,7 @@ build-tasks:
     refs:
       - main
   script:
-    - ci/scripts/control_plane/build_tasks.sh
+    - control_plane/scripts/build_tasks.sh
   artifacts:
     paths:
       - dist/diagnostic_settings_task.zip
@@ -79,7 +79,7 @@ publish-tasks:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ci/scripts/control_plane/publish.py https://ddazurelfo.blob.core.windows.net
+    - control_plane/scripts/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
 arm-template-publish:
@@ -250,7 +250,7 @@ publish-tasks-qa:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
+    - control_plane/scripts/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
 arm-template-publish-qa:
