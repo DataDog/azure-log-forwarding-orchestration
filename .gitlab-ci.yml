@@ -63,7 +63,7 @@ build-tasks:
     refs:
       - main
   script:
-    - control_plane/scripts/build_tasks.sh
+    - ci/scripts/control_plane/build_tasks.sh
   artifacts:
     paths:
       - dist/diagnostic_settings_task.zip
