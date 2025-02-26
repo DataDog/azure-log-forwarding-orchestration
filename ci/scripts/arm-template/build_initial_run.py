@@ -7,7 +7,7 @@ import tomllib
 from shutil import rmtree
 from subprocess import run
 
-INITIAL_RUN_FILE = "./control_plane/tasks/initial_run.py"
+INITIAL_RUN_FILE = "./control_plane/scripts/initial_run.py"
 INITIAL_RUN_BUILD = "./build/initial_run.py"
 INITIAL_RUN_SCRIPT = "./build/initial_run.sh"
 ARM_TEMPLATE_FILE = "./deploy/azuredeploy.bicep"

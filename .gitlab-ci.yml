@@ -79,7 +79,7 @@ publish-tasks:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ci/scripts/control_plane/publish.py https://ddazurelfo.blob.core.windows.net
+    - control_plane/scripts/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
 arm-template-publish:
@@ -118,7 +118,7 @@ uninstall-script-publish:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ./ci/scripts/arm-template/upload-public.sh ./scripts/uninstall.py uninstall uninstall.py
+    - ./ci/scripts/arm-template/upload-public.sh ./control_plane/scripts/uninstall.py uninstall uninstall.py
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
@@ -144,19 +144,6 @@ deployer-publish:
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: 'false'
     IMG_REGISTRIES: public-azure
-# -------------  SCRIPTS  -------------
-scripts-format:
-  image: $CI_IMAGE
-  stage: test
-  tags: ['arch:amd64']
-  script:
-    - /venv/bin/ruff format --check ./scripts --config ./control_plane/pyproject.toml
-scripts-lint:
-  image: $CI_IMAGE
-  stage: test
-  tags: ['arch:amd64']
-  script:
-    - /venv/bin/ruff check ./scripts --config ./control_plane/pyproject.toml
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
@@ -250,7 +237,7 @@ publish-tasks-qa:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/control_plane/publish.py https://lfoqa.blob.core.windows.net
+    - control_plane/scripts/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
 arm-template-publish-qa:
@@ -307,4 +294,4 @@ uninstall-script-publish-qa:
     refs:
       - main
   script:
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./scripts/uninstall.py uninstall uninstall.py
+    - ./ci/scripts/arm-template/upload-qa-env.sh ./control_plane/scripts/uninstall.py uninstall uninstall.py

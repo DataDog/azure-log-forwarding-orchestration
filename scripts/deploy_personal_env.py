@@ -177,7 +177,7 @@ run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
 
 # upload current version of tasks to storage account
 run(
-    f"{lfo_dir}/ci/scripts/control_plane/publish.py https://{storage_account_name}.blob.core.windows.net {connection_string}",
+    f"{lfo_dir}/control_plane/scripts/publish.py https://{storage_account_name}.blob.core.windows.net {connection_string}",
     cwd=lfo_dir,
 )
 
