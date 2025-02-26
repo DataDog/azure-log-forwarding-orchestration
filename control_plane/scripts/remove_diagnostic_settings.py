@@ -8,7 +8,7 @@ and then removes all diagnostic settings.
 # stdlib
 import json
 import os
-from asyncio import gather, run
+from asyncio import Semaphore, gather, run
 from collections.abc import AsyncIterable
 from contextlib import suppress
 from itertools import chain
@@ -33,37 +33,47 @@ DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 MONITORED_SUBSCRIPTIONS = [LOG_FORWARDING_TESTING, AZURE_INTS_TESTING]
 os.environ["MONITORED_SUBSCRIPTIONS_SETTING"] = json.dumps(MONITORED_SUBSCRIPTIONS)
 
+MAX_CONCURRENCY = 100
+
 
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential_jitter(),
     retry=retry_if_exception(lambda e: not isinstance(e, ResourceNotFoundError)),
 )
-async def delete_diagnostic_settings(client: MonitorManagementClient, resource_id: str, ds_names: list[str]) -> None:
-    await gather(*(client.diagnostic_settings.delete(resource_id, ds) for ds in ds_names))
+async def delete_diagnostic_settings(
+    client: MonitorManagementClient, resource_id: str, ds_names: list[str], s: Semaphore
+) -> None:
+    async with s:
+        await gather(*(client.diagnostic_settings.delete(resource_id, ds) for ds in ds_names))
 
 
 T = TypeVar("T")
 
 
-async def collect(it: AsyncIterable[T]) -> list[T]:
-    return [item async for item in it]
+async def collect(it: AsyncIterable[T], s: Semaphore) -> list[T]:
+    async with s:
+        return [item async for item in it]
 
 
 async def process_subscription(cred: DefaultAzureCredential, subscription_id: str, resources: set[str]) -> None:
     async with MonitorManagementClient(cred, subscription_id) as client:
+        s = Semaphore(MAX_CONCURRENCY)
         diagnostic_settings = await gather(
             *(
                 collect(
-                    str(s.name)
-                    async for s in client.diagnostic_settings.list(resource)
-                    if str(s.name).startswith(DIAGNOSTIC_SETTING_PREFIX)
+                    (
+                        str(s.name)
+                        async for s in client.diagnostic_settings.list(resource)
+                        if str(s.name).startswith(DIAGNOSTIC_SETTING_PREFIX)
+                    ),
+                    s,
                 )
                 for resource in resources
-            )
+            ),
         )
         errors = await gather(
-            *(delete_diagnostic_settings(client, rid, ds) for rid, ds in zip(resources, diagnostic_settings)),
+            *(delete_diagnostic_settings(client, rid, ds, s) for rid, ds in zip(resources, diagnostic_settings)),
             return_exceptions=True,
         )
         if any(errors):
