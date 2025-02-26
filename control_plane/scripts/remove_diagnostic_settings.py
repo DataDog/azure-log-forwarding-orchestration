@@ -21,6 +21,8 @@ from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
+from cache.resources_cache import ResourceCache
+
 # project
 from tasks.resources_task import ResourcesTask
 
@@ -73,10 +75,11 @@ async def process_subscription(cred: DefaultAzureCredential, subscription_id: st
 async def main():
     print("Running Resources Task to get all resources")
     basicConfig(level=ERROR)
+    cache: ResourceCache = {}
     with suppress(Exception):
         async with ResourcesTask("") as resources_task:
             await resources_task.run()
-            cache: dict[str, dict[str, set[str]]] = resources_task.resource_cache
+            cache = resources_task.resource_cache
     print(
         f"Resources Task completed, found {sum(len(resources) for regions in cache.values() for resources in regions.values())} resources"
     )
