@@ -59,7 +59,7 @@ requires = ["setuptools>=70.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["tasks", "cache"]
+packages = ["tasks", "cache", "scripts"]
 
 
 [tool.ruff]
