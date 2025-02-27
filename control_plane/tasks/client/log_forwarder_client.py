@@ -71,6 +71,7 @@ from cache.env import (
     DD_SITE_SETTING,
     DD_TELEMETRY_SETTING,
     FORWARDER_IMAGE_SETTING,
+    PII_SCRUBBER_RULES_SETTING,
     STORAGE_CONNECTION_SETTING,
     get_config_option,
     is_truthy,
@@ -139,7 +140,12 @@ def get_metric_value(
 
 class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     def __init__(
-        self, log: Logger, credential: DefaultAzureCredential, subscription_id: str, resource_group: str
+        self,
+        log: Logger,
+        credential: DefaultAzureCredential,
+        subscription_id: str,
+        resource_group: str,
+        pii_rules_json: str,
     ) -> None:
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
@@ -150,6 +156,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.log = log
         self.resource_group = resource_group
         self.subscription_id = subscription_id
+        self.pii_rules_json = pii_rules_json
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
         self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
@@ -347,6 +354,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
             EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
+            EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_rules_json),
         ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
