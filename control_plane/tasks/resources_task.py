@@ -9,7 +9,7 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import write_cache
-from cache.env import MONITORED_SUBSCRIPTIONS_SETTING
+from cache.env import MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTER_SETTING
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -40,6 +40,22 @@ class ResourcesTask(Task):
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
 
+        self.set_resource_tag_filters(getenv(RESOURCE_TAG_FILTER_SETTING, ""))
+
+    def set_resource_tag_filters(self, tag_filter_input: str):
+        self.inclusive_tags = []
+        self.exclusive_tags = []
+        if len(tag_filter_input) == 0:
+            return
+
+        parsed_tags = tag_filter_input.split(",")
+
+        for parsed_tag in parsed_tags:
+            if parsed_tag.startswith("!"):
+                self.exclusive_tags.append(parsed_tag[1:])
+            else:
+                self.inclusive_tags.append(parsed_tag)
+
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = [
@@ -61,7 +77,9 @@ class ResourcesTask(Task):
 
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
-        async with ResourceClient(self.log, self.credential, subscription_id) as client:
+        async with ResourceClient(
+            self.log, self.credential, subscription_id, self.inclusive_tags, self.exclusive_tags
+        ) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 
     async def write_caches(self) -> None:

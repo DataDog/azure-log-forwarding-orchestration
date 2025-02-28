@@ -74,9 +74,14 @@ def safe_get_id(r: Any) -> str | None:
     return None
 
 
-def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
+def should_ignore_resource(self, region: str, resource_type: str, resource_name: str, resource_tags: list[str]) -> bool:
     """Determines if we should ignore the resource"""
     name = resource_name.lower()
+
+    for tag in self.exclusive_tags:
+        if tag in resource_tags:
+            self.log.debug("Ignoring resource %s due to exclusive tag %s", name, tag)
+
     return (
         # we must be able to put a storage account in the same region
         # https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings#destination-limitations
@@ -85,15 +90,31 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
         or any(name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
         # only certain resource types have diagnostic settings, this is a confirmation that the filter worked
         or resource_type.lower() not in FETCHED_RESOURCE_TYPES
+        or any(tag in resource_tags for tag in self.exclusive_tags)
     )
 
 
+def tag_dict_to_list(tags: dict[str, str] | None) -> list[str]:
+    if not tags:
+        return []
+    return [f"{k}:{v}" for k, v in tags.items()]
+
+
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
-    def __init__(self, log: Logger, cred: DefaultAzureCredential, subscription_id: str) -> None:
+    def __init__(
+        self,
+        log: Logger,
+        cred: DefaultAzureCredential,
+        subscription_id: str,
+        inclusive_tags: list[str],
+        exclusive_tags: list[str],
+    ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
+        self.inclusive_tags = inclusive_tags
+        self.exclusive_tags = exclusive_tags
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
         cdn_client = CdnManagementClient(cred, subscription_id)
@@ -223,8 +244,11 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         valid_resources = [
             r
             for r in resources
-            if not should_ignore_resource(cast(str, r.location), cast(str, r.type), cast(str, r.name))
+            if not should_ignore_resource(
+                self, cast(str, r.location), cast(str, r.type), cast(str, r.name), tag_dict_to_list(r.tags)
+            )
         ]
+        self.log.debug("Ignoring resources with tags: %s", self.exclusive_tags)
         self.log.debug(
             "Collected %s valid resources for subscription %s, fetching sub-resources...",
             len(valid_resources),

@@ -18,6 +18,7 @@ param datadogApiKey string
 param datadogSite string
 
 param datadogTelemetry bool
+param resourceTagFilter string
 
 param logLevel string
 
@@ -37,6 +38,7 @@ var CONTROL_PLANE_ID_SETTING = 'CONTROL_PLANE_ID'
 var MONITORED_SUBSCRIPTIONS_SETTING = 'MONITORED_SUBSCRIPTIONS'
 var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
 var LOG_LEVEL_SETTING = 'LOG_LEVEL'
+var RESOURCE_TAG_FILTER_SETTING = 'RESOURCE_TAG_FILTER'
 
 // Secret Names
 var DD_API_KEY_SECRET = 'dd-api-key'
@@ -115,6 +117,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
       appSettings: union(commonAppSettings, [
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: MONITORED_SUBSCRIPTIONS_SETTING, value: monitoredSubscriptions }
+        { name: RESOURCE_TAG_FILTER_SETTING, value: resourceTagFilter }
       ])
       linuxFxVersion: 'Python|3.11'
     }

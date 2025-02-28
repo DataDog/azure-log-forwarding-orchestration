@@ -154,6 +154,38 @@
               }
             ],
             "visible": true
+          },
+          {
+            "name": "tagFiltering",
+            "type": "Microsoft.Common.Section",
+            "label": "Filter Resources by Tags",
+            "elements": [
+              {
+                "name": "textBlock1",
+                "type": "Microsoft.Common.TextBlock",
+                "visible": true,
+                "options": {
+                  "text": "Optional - To include or exclude certain resources for log forwarding, enter Azure tag keys or vaules below in CSV format. Inclusive tags can be written as-is while exclusive tags must be prefixed with !",
+                  "link": {
+                    "label": "Learn more",
+                    "uri": "https://docs.datadoghq.com/account_management/org_settings/"
+                  }
+                }
+              },
+              {
+                "name": "resourceTagFilters",
+                "type": "Microsoft.Common.TextBox",
+                "label": "Tag Filters",
+                "toolTip": "Tags for filtering resources to forward logs",
+                "placeholder": "inclusiveTag,!exclusiveTag",
+                "constraints": {
+                  "required": false,
+                  "regex": "[^,\n]+",
+                  "validationMessage": "Must valid CSV format. Inclusive tags should be written normally while exclusive tags should be prefixed with !"
+                },
+                "visible": true
+              }
+            ]
           }
         ]
       },
@@ -196,7 +228,8 @@
       "controlPlaneSubscriptionId": "[steps('basics').controlPlaneSubscription]",
       "controlPlaneResourceGroupName": "[steps('basics').resourceGroup]",
       "datadogApiKey": "[steps('datadogConfig').datadogIntegration.datadogApiKey]",
-      "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]"
+      "datadogSite": "[steps('datadogConfig').datadogIntegration.datadogSite]",
+      "resourceTagFilters": "[steps('datadogConfig').datadogIntegration.tagFiltering.resourceTagFilters]"
     }
   }
 }

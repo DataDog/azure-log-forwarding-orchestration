@@ -9,6 +9,7 @@ param controlPlaneResourceGroupName string
 @secure()
 param datadogApiKey string
 param datadogSite string
+param resourceTagFilter string
 
 param datadogTelemetry bool = false
 param logLevel string = 'INFO'
@@ -65,6 +66,7 @@ module controlPlane './control_plane.bicep' = {
     datadogApiKey: datadogApiKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
+    resourceTagFilter: resourceTagFilter
     imageRegistry: imageRegistry
     storageAccountUrl: storageAccountUrl
     logLevel: logLevel
@@ -95,7 +97,6 @@ module subscriptionPermissions './subscription_permissions.bicep' = [
     }
   }
 ]
-
 
 module initialRun './initial_run.bicep' = {
   name: 'initialRun-${controlPlaneId}'
