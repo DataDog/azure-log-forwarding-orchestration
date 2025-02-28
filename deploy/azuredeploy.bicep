@@ -9,6 +9,7 @@ param controlPlaneResourceGroupName string
 @secure()
 param datadogApiKey string
 param datadogSite string
+param piiScrubberRules string
 
 param datadogTelemetry bool = false
 param logLevel string = 'INFO'
@@ -41,12 +42,13 @@ module controlPlaneResourceGroup './control_plane_resource_group.bicep' = {
   }
 }
 
-module validateAPIKey './validate_key.bicep' = {
-  name: 'validateAPIKey-${controlPlaneId}'
+module validateConfig './validate_config.bicep' = {
+  name: 'validateConfig-${controlPlaneId}'
   scope: resourceGroup(controlPlaneSubscriptionId, controlPlaneResourceGroupName)
   params: {
     datadogApiKey: datadogApiKey
     datadogSite: datadogSite
+    piiScrubberRules: piiScrubberRules
   }
   dependsOn: [
     controlPlaneResourceGroup
@@ -66,12 +68,13 @@ module controlPlane './control_plane.bicep' = {
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
     imageRegistry: imageRegistry
+    piiScrubberRules: piiScrubberRules
     storageAccountUrl: storageAccountUrl
     logLevel: logLevel
   }
   dependsOn: [
     controlPlaneResourceGroup
-    validateAPIKey
+    validateConfig
   ]
 }
 
@@ -95,7 +98,6 @@ module subscriptionPermissions './subscription_permissions.bicep' = [
     }
   }
 ]
-
 
 module initialRun './initial_run.bicep' = {
   name: 'initialRun-${controlPlaneId}'

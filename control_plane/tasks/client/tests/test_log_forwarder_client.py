@@ -50,6 +50,9 @@ MANAGED_ENV_EAST_US_NAME = f"{FORWARDER_MANAGED_ENVIRONMENT_PREFIX}{CONTROL_PLAN
 CONTAINER_APP_NAME = f"{FORWARDER_CONTAINER_APP_PREFIX}{CONFIG_ID1}"
 STORAGE_ACCOUNT_NAME = f"{FORWARDER_STORAGE_ACCOUNT_PREFIX}{CONFIG_ID1}"
 RESOURCE_GROUP_NAME = "test_lfo"
+PII_RULES_JSON = (
+    r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}'
+)
 
 
 LOG_FORWARDER_CLIENT_SETTINGS: dict[str, str] = {
@@ -137,7 +140,11 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client: MockedLogForwarderClient = cast(
             MockedLogForwarderClient,
             LogForwarderClient(
-                log=self.log, credential=AsyncMock(), subscription_id=SUB_ID1, resource_group=RESOURCE_GROUP_NAME
+                log=self.log,
+                credential=AsyncMock(),
+                subscription_id=SUB_ID1,
+                resource_group=RESOURCE_GROUP_NAME,
+                pii_rules_json=PII_RULES_JSON,
             ),
         )
         await self.client.__aexit__(None, None, None)
@@ -214,6 +221,10 @@ class TestLogForwarderClient(AsyncTestCase):
                                     {"name": "DD_SITE", "value": "datadoghq.com"},
                                     {"name": "CONTROL_PLANE_ID", "value": "e90ecb54476d"},
                                     {"name": "CONFIG_ID", "value": "d6fc2c757f9c"},
+                                    {
+                                        "name": "PII_SCRUBBER_RULES",
+                                        "value": r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}',
+                                    },
                                 ],
                                 "resources": {"cpu": 2.0, "memory": "4Gi"},
                             }
@@ -283,6 +294,10 @@ class TestLogForwarderClient(AsyncTestCase):
                                     {"name": "DD_SITE", "value": "datadoghq.com"},
                                     {"name": "CONTROL_PLANE_ID", "value": "e90ecb54476d"},
                                     {"name": "CONFIG_ID", "value": "d6fc2c757f9c"},
+                                    {
+                                        "name": "PII_SCRUBBER_RULES",
+                                        "value": r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}',
+                                    },
                                 ],
                                 "resources": {"cpu": 2.0, "memory": "4Gi"},
                             }
@@ -300,7 +315,13 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1") as client:
+        async with LogForwarderClient(
+            self.log,
+            Mock(),
+            "sub1",
+            "rg1",
+            PII_RULES_JSON,
+        ) as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
