@@ -194,6 +194,7 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         "controlPlaneResourceGroupName": resource_group_name,
         "datadogApiKey": api_key,
         "datadogTelemetry": "true",
+        "piiScrubberRules": environ.get("PII_SCRUBBER_RULES", ""),
         "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",

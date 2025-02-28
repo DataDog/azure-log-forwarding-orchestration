@@ -5,6 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from itertools import chain
 from json import dumps
+from os import getenv
 from typing import cast
 
 # 3p
@@ -25,6 +26,7 @@ from cache.common import (
 )
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
+    PII_SCRUBBER_RULES_SETTING,
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
     get_config_option,
@@ -32,6 +34,7 @@ from cache.env import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from cache.user_config import convert_pii_rules_to_json
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
@@ -142,6 +145,10 @@ class ScalingTask(Task):
         self._assignment_cache_initial_state = assignment_cache
         self.assignment_cache = prune_assignment_cache(resource_cache, assignment_cache)
 
+        # User-defined PII rules
+        pii_yaml = getenv(PII_SCRUBBER_RULES_SETTING, "")
+        self.pii_rules_json = convert_pii_rules_to_json(pii_yaml, self.log)
+
     async def run(self) -> None:
         self.log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
         all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
@@ -160,7 +167,9 @@ class ScalingTask(Task):
         regions_to_add = regions_with_resources - regions_with_forwarders
         regions_to_remove = provisioned_regions - regions_with_resources
         regions_to_check_scaling = regions_with_resources & regions_with_forwarders
-        async with LogForwarderClient(self.log, self.credential, subscription_id, self.resource_group) as client:
+        async with LogForwarderClient(
+            self.log, self.credential, subscription_id, self.resource_group, self.pii_rules_json
+        ) as client:
             await gather(
                 *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),
                 *(self.delete_region(client, subscription_id, region) for region in regions_to_remove),

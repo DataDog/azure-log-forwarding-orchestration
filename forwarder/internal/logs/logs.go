@@ -46,15 +46,16 @@ const functionAppContainer = "insights-logs-functionapplogs"
 
 // Log represents a log to send to Datadog.
 type Log struct {
-	content    *[]byte
-	ByteSize   int64
-	Tags       []string
-	Category   string
-	ResourceId string
-	Service    string
-	Source     string
-	Time       time.Time
-	Level      string
+	content          *[]byte
+	RawByteSize      int64
+	ScrubbedByteSize int64
+	Tags             []string
+	Category         string
+	ResourceId       string
+	Service          string
+	Source           string
+	Time             time.Time
+	Level            string
 }
 
 // Content converts the log content to a string.
@@ -62,14 +63,19 @@ func (l *Log) Content() string {
 	return string(*l.content)
 }
 
-// Length returns the length of the log content.
-func (l *Log) Length() int64 {
-	return l.ByteSize
+// RawLength returns the length of the original Azure log content.
+func (l *Log) RawLength() int64 {
+	return l.RawByteSize
+}
+
+// ScrubbedLength returns the length of the log content after it has been scrubbed for PII.
+func (l *Log) ScrubbedLength() int64 {
+	return l.ScrubbedByteSize
 }
 
 // Validate checks if the log is valid to send to Datadog.
 func (l *Log) Validate(logger *log.Entry) bool {
-	return validateLog(l.ResourceId, l.ByteSize, l.Time, logger)
+	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, logger)
 }
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
@@ -150,7 +156,7 @@ func sourceTag(resourceType string) string {
 	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
 }
 
-func (l *azureLog) ToLog() *Log {
+func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var source string
 	var resourceId string
 	tags := []string{
@@ -174,16 +180,20 @@ func (l *azureLog) ToLog() *Log {
 		l.Level = "Informational"
 	}
 
+	scrubbedLog := scrubber.Scrub(l.Raw)
+	scrubbedByteSize := len(*scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
+
 	return &Log{
-		content:    l.Raw,
-		ByteSize:   l.ByteSize,
-		Category:   l.Category,
-		ResourceId: resourceId,
-		Service:    AzureService,
-		Source:     source,
-		Time:       l.Time,
-		Level:      l.Level,
-		Tags:       tags,
+		content:          scrubbedLog,
+		RawByteSize:      l.ByteSize,
+		ScrubbedByteSize: int64(scrubbedByteSize),
+		Category:         l.Category,
+		ResourceId:       resourceId,
+		Service:          AzureService,
+		Source:           source,
+		Time:             l.Time,
+		Level:            l.Level,
+		Tags:             tags,
 	}
 }
 
@@ -262,7 +272,7 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName, blobNameResourceId string) (*Log, error) {
+func NewLog(logBytes []byte, containerName, blobNameResourceId string, scrubber Scrubber) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
@@ -292,7 +302,7 @@ func NewLog(logBytes []byte, containerName, blobNameResourceId string) (*Log, er
 	currLog.Raw = &logBytes
 	currLog.BlobResourceId = blobNameResourceId
 
-	return currLog.ToLog(), nil
+	return currLog.ToLog(scrubber), nil
 }
 
 // bufferSize is the maximum number of logs per post to Logs API.
@@ -365,7 +375,7 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	}
 	newLog := newHTTPLogItem(log)
 	c.logsBuffer = append(c.logsBuffer, newLog)
-	c.currentSize += log.Length()
+	c.currentSize += log.ScrubbedLength()
 
 	if err != nil {
 		return err
@@ -414,7 +424,7 @@ func (c *Client) Flush(ctx context.Context) (err error) {
 
 // shouldFlush checks if adding the current log to the buffer would result in an invalid payload.
 func (c *Client) shouldFlush(log *Log) bool {
-	return c.shouldFlushBytes(log.Length())
+	return c.shouldFlushBytes(log.ScrubbedLength())
 }
 
 // shouldFlushBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
@@ -423,7 +433,7 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, containerName, blobNameResourceId string) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, containerName, blobNameResourceId string, piiScrubber Scrubber) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -433,7 +443,7 @@ func Parse(reader io.ReadCloser, containerName, blobNameResourceId string) iter.
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(currBytes, containerName, blobNameResourceId)
+			currLog, err := NewLog(currBytes, containerName, blobNameResourceId, piiScrubber)
 			if err != nil {
 				if !yield(nil, err) {
 					return
