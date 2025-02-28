@@ -33,7 +33,9 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client_mapping: dict[str, dict[str, set[str]]] = {}
         self.log = self.patch_path("tasks.task.log").getChild.return_value
 
-        def create_resource_client(_log: Any, _cred: Any, sub_id: str):
+        def create_resource_client(
+            _log: Any, _cred: Any, sub_id: str, inclusive_tags: list[str], excluding_tags: list[str]
+        ):
             c = AsyncMockClient()
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             c.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
@@ -146,9 +148,14 @@ class TestResourcesTask(TaskTestCase):
 
     async def test_unmonitored_subscriptions_ignored(self):
         sub_id3 = "6522f787-edd0-4005-a901-d61c0ee60cb8"
-        self.patch("getenv").side_effect = {
-            "MONITORED_SUBSCRIPTIONS": '["a062baee-fdd3-4784-beb4-d817f591422c", "77602a31-36b2-4417-a27c-9071107ca3e6"]'
-        }.__getitem__
+
+        def getenv_mock(name, default=None):
+            env_vars = {
+                "MONITORED_SUBSCRIPTIONS": '["a062baee-fdd3-4784-beb4-d817f591422c", "77602a31-36b2-4417-a27c-9071107ca3e6"]'
+            }
+            return env_vars.get(name, default)
+
+        self.patch("getenv").side_effect = getenv_mock
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, Mock(subscription_id=sub_id3)))
         self.resource_client_mapping = {
             sub_id1: {SUPPORTED_REGION_1: {"res1", "res2"}},

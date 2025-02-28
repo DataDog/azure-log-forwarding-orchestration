@@ -78,7 +78,7 @@ def should_ignore_resource(self, region: str, resource_type: str, resource_name:
     """Determines if we should ignore the resource"""
     name = resource_name.lower()
 
-    for tag in self.exclusive_tags:
+    for tag in self.excluding_tags:
         if tag in resource_tags:
             self.log.debug("Ignoring resource %s due to exclusive tag %s", name, tag)
 
@@ -90,7 +90,7 @@ def should_ignore_resource(self, region: str, resource_type: str, resource_name:
         or any(name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
         # only certain resource types have diagnostic settings, this is a confirmation that the filter worked
         or resource_type.lower() not in FETCHED_RESOURCE_TYPES
-        or any(tag in resource_tags for tag in self.exclusive_tags)
+        or any(tag in resource_tags for tag in self.excluding_tags)
     )
 
 
@@ -107,14 +107,14 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         cred: DefaultAzureCredential,
         subscription_id: str,
         inclusive_tags: list[str],
-        exclusive_tags: list[str],
+        excluding_tags: list[str],
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
         self.inclusive_tags = inclusive_tags
-        self.exclusive_tags = exclusive_tags
+        self.excluding_tags = excluding_tags
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
         cdn_client = CdnManagementClient(cred, subscription_id)
@@ -248,7 +248,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
                 self, cast(str, r.location), cast(str, r.type), cast(str, r.name), tag_dict_to_list(r.tags)
             )
         ]
-        self.log.debug("Ignoring resources with tags: %s", self.exclusive_tags)
+        self.log.debug("Ignoring resources with tags: %s", self.excluding_tags)
         self.log.debug(
             "Collected %s valid resources for subscription %s, fetching sub-resources...",
             len(valid_resources),
