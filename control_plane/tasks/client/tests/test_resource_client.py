@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 from azure.core.exceptions import ResourceNotFoundError
 
 # project
-from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource
+from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource, tag_dict_to_list
 from tasks.constants import FETCHED_RESOURCE_TYPES
 from tasks.tests.common import AsyncMockClient, async_generator, mock
 
@@ -20,22 +20,22 @@ SUPPORTED_REGION_2 = "southafricanorth"
 CONTAINER_APPS_UNSUPPORTED_REGION = "newzealandnorth"
 UNSUPPORTED_REGION = "uae"
 
-resource_tags_dict = {"include": "me"}
+resource_tags = {"include": "me"}
 inclusive_tags = list(["include:me"])
 excluding_tags = list(["thefomo:isreal"])
 
 resource1 = mock(
-    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/virtualMachines", tags=resource_tags_dict
+    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/virtualMachines", tags=resource_tags
 )
 resource2 = mock(
     id="res2",
     name="2",
     location=SUPPORTED_REGION_1,
     type="Microsoft.Network/applicationgateways",
-    tags=resource_tags_dict,
+    tags=resource_tags,
 )
 resource3 = mock(
-    id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags=resource_tags_dict
+    id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags=resource_tags
 )
 
 
@@ -97,10 +97,8 @@ class TestResourceClient(IsolatedAsyncioTestCase):
     async def test_global_resource_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                mock(id="res1", location="global", type="Microsoft.Compute/virtualMachines", tags=resource_tags_dict),
-                mock(
-                    id="res2", location="global", type="Microsoft.Network/applicationGateways", tags=resource_tags_dict
-                ),
+                mock(id="res1", location="global", type="Microsoft.Compute/virtualMachines", tags=resource_tags),
+                mock(id="res2", location="global", type="Microsoft.Network/applicationGateways", tags=resource_tags),
             )
         )
         async with ResourceClient(self.log, self.cred, sub_id1, inclusive_tags, excluding_tags) as client:
@@ -110,15 +108,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
     async def test_unsupported_resource_types_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                mock(
-                    id="res1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/Snapshots", tags=resource_tags_dict
-                ),
+                mock(id="res1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/Snapshots", tags=resource_tags),
                 resource2,
                 mock(
                     id="res3",
                     location=SUPPORTED_REGION_2,
                     type="Microsoft.AlertsManagement/PrometheusRuleGroups",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
             )
         )
@@ -134,7 +130,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     name="scaling-task-12983471",
                     location=SUPPORTED_REGION_1,
                     type="Microsoft.Web/sites",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
                 resource1,
             )
@@ -152,7 +148,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     name="some-storage-account",
                     location=SUPPORTED_REGION_1,
                     type="MICROSOFT.STORAGE/STORAGEACCOUNTS",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
                 resource1,
             )
@@ -183,7 +179,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     resource_group="my-rg",
                     location=SUPPORTED_REGION_1,
                     type="MICROSOFT.SQL/managedinstances",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
                 resource1,
             )
@@ -222,7 +218,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     resource_group="my-rg",
                     location=SUPPORTED_REGION_1,
                     type="Microsoft.Sql/servers",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
                 resource1,
             )
@@ -261,7 +257,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     resource_group="my-rg",
                     location=SUPPORTED_REGION_1,
                     type="Microsoft.Web/sites",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
             )
         )
@@ -295,7 +291,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     resource_group="my-rg",
                     location=SUPPORTED_REGION_1,
                     type="Microsoft.Sql/servers",
-                    tags=resource_tags_dict,
+                    tags=resource_tags,
                 ),
                 ResourceNotFoundError(),
             )
@@ -334,47 +330,47 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         vm_type = "Microsoft.Compute/virtualMachines"
         vm_name = "vm1"
         # valid regions
-        self.assertFalse(should_ignore_resource(self, SUPPORTED_REGION_1, vm_type, vm_name, inclusive_tags))
-        self.assertFalse(should_ignore_resource(self, SUPPORTED_REGION_2, vm_type, vm_name, inclusive_tags))
+        self.assertFalse(should_ignore_resource(self, SUPPORTED_REGION_1, vm_type, vm_name, resource_tags))
+        self.assertFalse(should_ignore_resource(self, SUPPORTED_REGION_2, vm_type, vm_name, resource_tags))
         self.assertFalse(
-            should_ignore_resource(self, CONTAINER_APPS_UNSUPPORTED_REGION, vm_type, vm_name, inclusive_tags)
+            should_ignore_resource(self, CONTAINER_APPS_UNSUPPORTED_REGION, vm_type, vm_name, resource_tags)
         )
 
         # invalid regions
-        self.assertTrue(should_ignore_resource(self, UNSUPPORTED_REGION, vm_type, vm_name, inclusive_tags))
+        self.assertTrue(should_ignore_resource(self, UNSUPPORTED_REGION, vm_type, vm_name, resource_tags))
         self.assertTrue(
-            should_ignore_resource(self, "nonsense region that doenst exist", vm_type, vm_name, inclusive_tags)
+            should_ignore_resource(self, "nonsense region that doenst exist", vm_type, vm_name, resource_tags)
         )
-        self.assertTrue(should_ignore_resource(self, "global", vm_type, vm_name, inclusive_tags))
+        self.assertTrue(should_ignore_resource(self, "global", vm_type, vm_name, resource_tags))
 
     def test_should_ignore_resource_by_type(self):
         # valid types
         self.assertFalse(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", resource_tags)
         )
         self.assertFalse(
             should_ignore_resource(
-                self, SUPPORTED_REGION_1, "Microsoft.Network/applicationGateways", "ag1", inclusive_tags
+                self, SUPPORTED_REGION_1, "Microsoft.Network/applicationGateways", "ag1", resource_tags
             )
         )
 
         # invalid types
         self.assertTrue(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/Snapshots", "snap1", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/Snapshots", "snap1", resource_tags)
         )
         self.assertTrue(
             should_ignore_resource(
-                self, SUPPORTED_REGION_1, "Microsoft.AlertsManagement/PrometheusRuleGroups", "prg1", inclusive_tags
+                self, SUPPORTED_REGION_1, "Microsoft.AlertsManagement/PrometheusRuleGroups", "prg1", resource_tags
             )
         )
 
     def test_should_ignore_resource_by_name(self):
         # normal resources
         self.assertFalse(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", resource_tags)
         )
         self.assertFalse(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", resource_tags)
         )
 
         # TODO (AZINTS-2763): ensure storage accounts are ignored
@@ -382,33 +378,65 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertTrue(
             should_ignore_resource(
-                self, SUPPORTED_REGION_1, "Microsoft.App/managedEnvironments", "dd-log-forwarder-env-", inclusive_tags
+                self,
+                SUPPORTED_REGION_1,
+                "Microsoft.App/managedEnvironments",
+                "dd-log-forwarder-env-",
+                resource_tags,
             )
         )
         self.assertTrue(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-", resource_tags)
         )
         self.assertTrue(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-", resource_tags)
         )
         self.assertTrue(
             should_ignore_resource(
-                self, SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-", inclusive_tags
+                self, SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-", resource_tags
             )
         )
 
-    def test_should_ignore_resource_by_tags(self):
-        # valid tags
+    def test_should_ignore_resource_by_excluding_tags(self):
+        resource_tags_dict = {"thefomo": "isreal"}
+        self.assertEqual(tag_dict_to_list(resource_tags_dict), excluding_tags)
+
         self.assertTrue(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", excluding_tags)
+            should_ignore_resource(
+                self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", resource_tags_dict
+            )
         )
         self.assertTrue(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", excluding_tags)
+            should_ignore_resource(
+                self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", resource_tags_dict
+            )
         )
 
+        should_exclude_cap_insensitive = {"theFOMO": "isREAL"}
+        self.assertTrue(
+            should_ignore_resource(
+                self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", should_exclude_cap_insensitive
+            )
+        )
+
+    def test_should_ignore_resource_by_inclusive_tags(self):
+        self.assertEqual(tag_dict_to_list(resource_tags), inclusive_tags)
+
         self.assertFalse(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1", resource_tags)
         )
         self.assertFalse(
-            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", inclusive_tags)
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", resource_tags)
+        )
+
+        should_include_cap_insensitive = {"INclude": "ME"}
+        self.assertFalse(
+            should_ignore_resource(
+                self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", should_include_cap_insensitive
+            )
+        )
+
+        should_ignore = {"not": "me"}
+        self.assertTrue(
+            should_ignore_resource(self, SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2", should_ignore)
         )

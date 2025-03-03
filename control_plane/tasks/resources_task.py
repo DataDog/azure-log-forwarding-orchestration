@@ -44,7 +44,7 @@ class ResourcesTask(Task):
 
     def set_resource_tag_filters(self, tag_filter_input: str):
         self.inclusive_tags = []
-        self.exclusive_tags = []
+        self.excluding_tags = []
         if len(tag_filter_input) == 0:
             return
 
@@ -53,7 +53,7 @@ class ResourcesTask(Task):
         for parsed_tag in parsed_tags:
             tag = parsed_tag.strip().casefold()
             if tag.startswith("!"):
-                self.exclusive_tags.append(tag[1:])
+                self.excluding_tags.append(tag[1:])
             else:
                 self.inclusive_tags.append(tag)
 
@@ -79,7 +79,7 @@ class ResourcesTask(Task):
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
         async with ResourceClient(
-            self.log, self.credential, subscription_id, self.inclusive_tags, self.exclusive_tags
+            self.log, self.credential, subscription_id, self.inclusive_tags, self.excluding_tags
         ) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 

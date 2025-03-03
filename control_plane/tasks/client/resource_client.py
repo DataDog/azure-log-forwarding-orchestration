@@ -74,9 +74,12 @@ def safe_get_id(r: Any) -> str | None:
     return None
 
 
-def should_ignore_resource(self, region: str, resource_type: str, resource_name: str, resource_tags: list[str]) -> bool:
+def should_ignore_resource(
+    self, region: str, resource_type: str, resource_name: str, resource_tags: dict[str, str] | None
+) -> bool:
     """Determines if we should ignore the resource"""
     name = resource_name.lower()
+    resource_tag_list = tag_dict_to_list(resource_tags)
 
     return (
         # we must be able to put a storage account in the same region
@@ -86,7 +89,8 @@ def should_ignore_resource(self, region: str, resource_type: str, resource_name:
         or any(name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
         # only certain resource types have diagnostic settings, this is a confirmation that the filter worked
         or resource_type.lower() not in FETCHED_RESOURCE_TYPES
-        or any(tag in resource_tags for tag in self.excluding_tags)
+        or any(inclusive_tag not in resource_tag_list for inclusive_tag in self.inclusive_tags)
+        or any(excluded_tag in resource_tag_list for excluded_tag in self.excluding_tags)
     )
 
 
@@ -240,9 +244,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         valid_resources = [
             r
             for r in resources
-            if not should_ignore_resource(
-                self, cast(str, r.location), cast(str, r.type), cast(str, r.name), tag_dict_to_list(r.tags)
-            )
+            if not should_ignore_resource(self, cast(str, r.location), cast(str, r.type), cast(str, r.name), r.tags)
         ]
 
         self.log.debug(
