@@ -83,6 +83,12 @@ def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
     return EVENT_HUB_NAMESPACE_PREFIX + config_id  # type: ignore
 
 
+def tag_dict_to_list(tags: dict[str, str] | None) -> list[str]:
+    if not tags:
+        return []
+    return [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in tags.items()]
+
+
 def now() -> str:
     """Return the current time in ISO format"""
     return datetime.now().isoformat()

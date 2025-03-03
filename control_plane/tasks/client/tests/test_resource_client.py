@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, patch
 from azure.core.exceptions import ResourceNotFoundError
 
 # project
-from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource, tag_dict_to_list
+from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource
+from tasks.common import tag_dict_to_list
 from tasks.constants import FETCHED_RESOURCE_TYPES
 from tasks.tests.common import AsyncMockClient, async_generator, mock
 

@@ -32,6 +32,7 @@ from tasks.common import (
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
+    tag_dict_to_list,
 )
 from tasks.concurrency import safe_collect
 from tasks.constants import (
@@ -92,12 +93,6 @@ def should_ignore_resource(
         or any(inclusive_tag not in resource_tag_list for inclusive_tag in self.inclusive_tags)
         or any(excluded_tag in resource_tag_list for excluded_tag in self.excluding_tags)
     )
-
-
-def tag_dict_to_list(tags: dict[str, str] | None) -> list[str]:
-    if not tags:
-        return []
-    return [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in tags.items()]
 
 
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
