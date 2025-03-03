@@ -78,10 +78,6 @@ def should_ignore_resource(self, region: str, resource_type: str, resource_name:
     """Determines if we should ignore the resource"""
     name = resource_name.lower()
 
-    for tag in self.excluding_tags:
-        if tag in resource_tags:
-            self.log.debug("Ignoring resource %s due to exclusive tag %s", name, tag)
-
     return (
         # we must be able to put a storage account in the same region
         # https://learn.microsoft.com/en-us/azure/azure-monitor/essentials/diagnostic-settings#destination-limitations
@@ -97,7 +93,7 @@ def should_ignore_resource(self, region: str, resource_type: str, resource_name:
 def tag_dict_to_list(tags: dict[str, str] | None) -> list[str]:
     if not tags:
         return []
-    return [f"{k}:{v}" for k, v in tags.items()]
+    return [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in tags.items()]
 
 
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
@@ -248,7 +244,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
                 self, cast(str, r.location), cast(str, r.type), cast(str, r.name), tag_dict_to_list(r.tags)
             )
         ]
-        self.log.debug("Ignoring resources with tags: %s", self.excluding_tags)
+
         self.log.debug(
             "Collected %s valid resources for subscription %s, fetching sub-resources...",
             len(valid_resources),

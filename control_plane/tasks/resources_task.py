@@ -51,10 +51,11 @@ class ResourcesTask(Task):
         parsed_tags = tag_filter_input.split(",")
 
         for parsed_tag in parsed_tags:
-            if parsed_tag.startswith("!"):
-                self.exclusive_tags.append(parsed_tag[1:])
+            tag = parsed_tag.strip().casefold()
+            if tag.startswith("!"):
+                self.exclusive_tags.append(tag[1:])
             else:
-                self.inclusive_tags.append(parsed_tag)
+                self.inclusive_tags.append(tag)
 
     async def run(self) -> None:
         async with SubscriptionClient(self.credential) as subscription_client:

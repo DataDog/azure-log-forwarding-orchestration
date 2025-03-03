@@ -165,23 +165,19 @@
                 "type": "Microsoft.Common.TextBlock",
                 "visible": true,
                 "options": {
-                  "text": "Optional - To include or exclude certain resources for log forwarding, enter Azure tag keys or values below in CSV format. Inclusive tags can be written as-is while exclusive tags must be prefixed with !",
-                  "link": {
-                    "label": "Learn more",
-                    "uri": "https://docs.datadoghq.com/account_management/org_settings/"
-                  }
+                  "text": "Optional - To include or exclude certain resources for log forwarding, enter Azure resource tags below in CSV format. Inclusive tags can be written as-is while excluding tags must be prefixed with '!'"
                 }
               },
               {
                 "name": "resourceTagFilters",
                 "type": "Microsoft.Common.TextBox",
                 "label": "Tag Filters",
-                "toolTip": "Tags for filtering resources to forward logs",
-                "placeholder": "inclusiveTag,!exclusiveTag",
+                "toolTip": "Filter in or out resources for log forwarding based on Azure resource tags",
+                "placeholder": "Business:Marketing,!Classification:Confidential",
                 "constraints": {
                   "required": false,
-                  "regex": "[^,\n]+",
-                  "validationMessage": "Must valid CSV format. Inclusive tags should be written normally while exclusive tags should be prefixed with !"
+                  "regex": "^(?:[^,\n]*)(?:,[^,\n]*)*$",
+                  "validationMessage": "Must valid CSV format. Inclusive tags should be written normally while exclusive tags should be prefixed with '!'"
                 },
                 "visible": true
               }
