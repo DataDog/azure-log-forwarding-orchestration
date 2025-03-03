@@ -58,8 +58,14 @@ dev = [
 requires = ["setuptools>=70.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["tasks", "cache", "scripts"]
+[tool.setuptools.packages.find]
+exclude = ["**/__pycache__", "*.egg-info", ".*/", "config", "build"]
+
+[tool.pyright]
+exclude = ["**/__pycache__", "*.egg-info", ".*/", "config", "build"]
+
+reportMissingImports = "error"
+reportMissingTypeStubs = false
 
 
 [tool.ruff]
@@ -83,10 +89,3 @@ docstring-code-format = true
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
-
-[tool.pyright]
-include = ["tasks", "cache"]
-exclude = ["**/__pycache__", "build/"]
-
-reportMissingImports = "error"
-reportMissingTypeStubs = false

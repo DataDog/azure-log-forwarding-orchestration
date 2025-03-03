@@ -55,6 +55,12 @@ control-plane-type-check:
   tags: ['arch:amd64']
   script:
     - ci/scripts/control_plane/type-check.sh
+deployer-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: ['arch:amd64']
+  script:
+    - docker buildx build --platform=linux/amd64 -f "ci/deployer-task/Dockerfile" ./control_plane
 build-tasks:
   image: $CI_IMAGE
   stage: build
@@ -154,6 +160,12 @@ forwarder-tests:
   artifacts:
     paths:
       - ci/forwarder_coverage.md
+forwarder-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: ['arch:amd64']
+  script:
+    - docker buildx build --platform=linux/amd64 ./forwarder
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
