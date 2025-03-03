@@ -18,9 +18,6 @@ import (
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
@@ -99,8 +96,6 @@ func parseLogs(reader io.ReadCloser, containerName, blobNameResourceId string, p
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "datadog.ProcessLogs")
-	defer span.Finish(tracer.WithError(err))
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.AddLog(ctx, logger, logItem)
@@ -160,11 +155,6 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 
 func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now) (err error) {
 	start := now()
-
-	span, ctx := tracer.StartSpanFromContext(ctx, "forwarder.Run")
-	defer func(span ddtrace.Span, err error) {
-		span.Finish(tracer.WithError(err))
-	}(span, err)
 
 	defer func() {
 		for _, logsClient := range logsClients {
@@ -317,19 +307,11 @@ func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfi
 }
 
 func main() {
-	apmEnabled := environment.APMEnabled()
-
-	if apmEnabled {
-		tracer.Start()
-		defer tracer.Stop()
-	}
 	var err error
-	span, ctx := tracer.StartSpanFromContext(context.Background(), "forwarder.main")
-	defer span.Finish(tracer.WithError(err))
 
 	// Set Datadog API Key
-	ctx = context.WithValue(
-		ctx,
+	ctx := context.WithValue(
+		context.Background(),
 		datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {
@@ -351,25 +333,6 @@ func main() {
 
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.WithFields(log.Fields{"service": serviceName})
-
-	if apmEnabled {
-		err = profiler.Start(
-			profiler.WithProfileTypes(
-				profiler.CPUProfile,
-				profiler.HeapProfile,
-				profiler.BlockProfile,
-				profiler.MutexProfile,
-				profiler.GoroutineProfile,
-			),
-			profiler.WithAPIKey(environment.Get(environment.DD_API_KEY)),
-			profiler.WithService(serviceName),
-			profiler.WithAgentlessUpload(),
-		)
-		if err != nil {
-			logger.Warning(err)
-		}
-		defer profiler.Stop()
-	}
 
 	forceProfile := environment.Get(environment.DD_FORCE_PROFILE)
 	if forceProfile != "" {

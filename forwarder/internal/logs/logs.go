@@ -23,8 +23,6 @@ import (
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
@@ -405,9 +403,6 @@ func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log dat
 
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "logs.Client.Flush")
-	defer span.Finish(tracer.WithError(err))
-
 	if len(c.logsBuffer) > 0 {
 		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer)
 
