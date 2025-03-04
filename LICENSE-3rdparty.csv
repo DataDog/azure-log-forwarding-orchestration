@@ -1,0 +1,126 @@
+Component,Origin,License,Copyright
+aiohttp,https://pypi.org/project/aiohttp/,Apache-2.0,Copyright (c) 2022 Individual Contributors
+aiosonic,https://pypi.org/project/aiosonic/,MIT,Copyright (c) 2019 Johanderson Mogollon
+appengine,https://github.com/golang/appengine,Apache-2.0,Copyright (c) The Go authors
+arc-swap,https://crates.io/crates/arc-swap,MIT OR Apache-2.0,Copyright (c) 2017 arc-swap developers
+archery,https://crates.io/crates/archery,MPL-2.0,Copyright (c) Diogo Sousa
+armmanagementgroups,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/resourcemanager/managementgroups/armmanagementgroups,MIT,Copyright (c) Microsoft Corporation
+armresources,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/resourcemanager/resources/armresources,MIT,Copyright (c) Microsoft Corporation
+armstorage,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/resourcemanager/storage/armstorage,MIT,Copyright (c) Microsoft Corporation
+attrs,https://pypi.org/project/attrs/,MIT,Copyright (c) 2015 Hynek Schlawack and the attrs contributors
+azblob,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/storage/azblob,MIT,Copyright (c) Microsoft Corporation
+azcore,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/azcore,MIT,Copyright (c) Microsoft Corporation
+azidentity,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/azidentity,MIT,Copyright (c) Microsoft Corporation
+azure-common,https://pypi.org/project/azure-common/,MIT,Copyright (c) Microsoft Corporation
+azure-core,https://pypi.org/project/azure-core/,MIT,Copyright (c) Microsoft Corporation
+azure-identity,https://pypi.org/project/azure-identity/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-appcontainers,https://pypi.org/project/azure-mgmt-containerservice/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-cdn,https://pypi.org/project/azure-mgmt-cdn/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-core,https://pypi.org/project/azure-mgmt-core/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-healthcareapis,https://pypi.org/project/azure-mgmt-apimanagement/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-media,https://pypi.org/project/azure-mgmt-media/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-netapp,https://pypi.org/project/azure-mgmt-netapp/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-network,https://pypi.org/project/azure-mgmt-network/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-notificationhubs,https://pypi.org/project/azure-mgmt-notificationhubs/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-powerbiembedded,https://pypi.org/project/azure-mgmt-powerbiembedded/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-redisenterprise,https://pypi.org/project/azure-mgmt-redisenterprise/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-resource,https://pypi.org/project/azure-mgmt-resource/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-sql,https://pypi.org/project/azure-mgmt-sql/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-storage,https://pypi.org/project/azure-mgmt-storage/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-synapse,https://pypi.org/project/azure-mgmt-synapse/,MIT,Copyright (c) Microsoft Corporation
+azure-mgmt-web,https://pypi.org/project/azure-mgmt-web/,MIT,Copyright (c) Microsoft Corporation
+azure-storage-blob,https://pypi.org/project/azure-storage-blob/,MIT,Copyright (c) Microsoft Corporation
+base64dec,https://github.com/dop251/base64dec,BSD-3-Clause,Copyright (c) 2023 Dmitry Panov. All rights reserved. Copyright (c) 2009 The Go Authors. All rights reserved.
+browser,https://github.com/pkg/browser,BSD-2-Clause,"Copyright (c) 2014, Dave Cheney <dave@cheney.net>"
+certifi,https://pypi.org/project/certifi/,MPL-2.0,Copyright (c) Kenneth Reitz
+cache,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/azidentity/cache,MIT,Copyright (c) Microsoft Corporation
+cache,https://github.com/AzureAD/microsoft-authentication-extensions-for-go/tree/main/cache,MIT,Copyright (c) Microsoft Corporation
+charset-normalizer,https://pypi.org/project/charset-normalizer/,MIT,Copyright (c) 2025 TAHRI Ahmed R.
+check,https://github.com/go-check/check/tree/v1,BSD 2-Clause,Copyright (c) 2010-2013 Gustavo Niemeyer <gustavo@niemeyer.net>
+cffi,https://pypi.org/project/cffi/,MIT,Copyright (c) Individual contributors
+crypto,https://go.googlesource.com/crypto,BSD-3-Clause,Copyright 2009 The Go Authors.
+cryptography,https://pypi.org/project/cryptography/,Apache-2.0 OR BSD-3-Clause,Copyright (c) Individual contributors
+datadog-api-client,https://pypi.org/project/datadog-api-client/,Apache-2.0,Copyright (c) 2020 Datadog
+datadog-api-client-go,https://github.com/DataDog/datadog-api-client-go/tree/master/api/datadogV2,Apache-2.0,Copyright (c) 2020 Datadog
+dbus,https://github.com/keybase/dbus,BSD-2-Clause,"Copyright (c) 2013, Georg Reinke (<guelfey at gmail dot com>), Google"
+dd-trace-go,https://github.com/DataDog/dd-trace-go/tree/v1.72.1,Apache-2.0 or BSD-3-Clause,"Copyright (c) 2016-Present, Datadog <info@datadoghq.com>"
+demangle,github.com/ianlancetaylor/demangle,BSD-3-Clause,Copyright (c) 2015 The Go Authors. All rights reserved.
+errors,https://cs.opensource.google/go/x/xerrors,BSD-3-Clause,Copyright 2019 The Go Authors.
+ginkgo,https://github.com/bsm/ginkgo,MIT,Copyright (c) 2013-2014 Onsi Fakhouri
+go-cmp,https://github.com/google/go-cmp,BSD-3-Clause,Copyright 2017 The Go Authors.
+go-difflib,https://github.com/pmezard/go-difflib,BSD-3-Clause,"Copyright (c) 2013, Patrick Mezard"
+go-internal,https://github.com/rogpeppe/go-internal,BSD-3-Clause,Copyright (c) 2018 The Go Authors. All rights reserved.
+go-json,https://github.com/goccy/go-json,MIT,Copyright (c) 2020 Masaaki Goshima
+go-keychain,github.com/keybase/go-keychain,MIT,Copyright (c) 2015 Keybase
+go-redis,https://github.com/redis/go-redis/tree/master,BSD-2-Clause,Copyright (c) 2013 The github.com/redis/go-redis Authors
+go-rendezvous,https://github.com/dgryski/go-rendezvous,MIT,Copyright (c) 2017-2020 Damian Gryski <damian@gryski.com>
+go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Collins <dave@davec.name>
+godebug,https://github.com/kylelemons/godebug,Apache-2,Copyright (c) Kyle Lemons
+goja,https://github.com/dop251/goja,MIT,Copyright (c) 2016 Dmitry Panov
+goja_nodejs,https://github.com/dop251/goja_nodejs,MIT,Copyright (c) 2016 Dmitry Panov
+goldmark,https://github.com/yuin/goldmark,MIT,Copyright (c) 2019 Yusuke Inuzuka
+goleak,https://github.com/uber-go/goleak,MIT,"Copyright (c) 2018 Uber Technologies, Inc."
+gomega,https://github.com/bsm/gomega,MIT,Copyright (c) 2013-2014 Onsi Fakhouri
+idna,https://pypi.org/project/idna/,BSD-3-Clause,"Copyright (c) 2013-2024, Kim Davies and contributors"
+internal,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/resourcemanager/internal,MIT,Copyright (c) Microsoft Corporation
+internal,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/internal,MIT,Copyright (c) Microsoft Corporation
+isodate,https://pypi.org/project/isodate/,BSD-3-Clause,"Copyright (c) 2021, Hugo van Kemenade and contributors Copyright (c) 2009-2018, Gerhard Weis and contributors Copyright (c) 2009, Gerhard Weis"
+jsonschema,https://pypi.org/project/jsonschema/,MIT,Copyright (c) 2013 Julian Berman
+jsonschema-specifications,https://pypi.org/project/jsonschema-specifications/,MIT,Copyright (c) 2022 Julian Berman
+jwt,https://github.com/golang-jwt/jwt/,MIT,Copyright (c) 2021 golang-jwt maintainers
+logex,github.com/chzyer/logex,MIT,Copyright (c) 2015 Chzyer
+logrus,https://github.com/sirupsen/logrus,MIT,Copyright (c) 2014 Simon Eskildsen
+metadata,https://github.com/googleapis/google-cloud-go/tree/main/compute/metadata,Apache-2.0,Copyright (c) Google
+microsoft-authentication-library-for-go,https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/main,MIT,Copyright (c) Microsoft Corporation
+mock,https://go.uber.org/mock,Apache-2.0,Copyright (c) 2011 Uber
+mod,https://cs.opensource.google/go/x/mod,BSD-3-Clause,Copyright 2009 The Go Authors.
+msal,https://pypi.org/project/msal/,MIT,Copyright (c) Microsoft Corporation
+msal-extensions,https://pypi.org/project/msal-extensions/,MIT,Copyright (c) Microsoft Corporation
+msrest,https://pypi.org/project/msrest/,MIT,Copyright (c) 2016 Microsoft Azure
+net,https://go.googlesource.com/net,BSD-3-Clause,Copyright 2009 The Go Authors.
+oauth2,https://cs.opensource.google/go/x/oauth2,BSD-3-Clause,Copyright 2009 The Go Authors.
+oauthlib,https://pypi.org/project/oauthlib/,BSD-3-Clause,Copyright (c) 2019 The OAuthlib Community
+objx,https://github.com/stretchr/objx,MIT,"Copyright (c) 2014 Stretchr, Inc. Copyright (c) 2017-2018 objx contributors."
+pprof,github.com/google/pprof,Apache-2.0,Copyright (c) Google Inc.
+pretty,github.com/kr/pretty,MIT,Copyright 2012 Keith Rarick
+proc-macro2,https://crates.io/crates/proc-macro2,MIT OR Apache-2.0,Copyright (c) David Tolnay
+protobuf,https://github.com/golang/protobuf,BSD-3-Clause,Copyright 2010 The Go Authors
+protobuf-go,https://github.com/protocolbuffers/protobuf-go,BSD-3-Clause,Copyright (c) 2018 The Go Authors
+pty,https://github.com/creack/pty,MIT,Copyright (c) 2011 Keith Rarick
+PyJWT,https://pypi.org/project/PyJWT/,MIT,Copyright (c) 2015-2022 José Padilla
+python-dateutil,https://pypi.org/project/python-dateutil/,Apache-2.0,Copyright 2017- dateutil contributors
+quote,https://crates.io/crates/quote,MIT OR Apache-2.0,Copyright (c) David Tolnay
+readline,https://github.com/chzyer/readline,MIT,Copyright (c) 2015 Chzyer
+referencing,https://pypi.org/project/referencing/,MIT,Copyright (c) 2022 Julian Berman
+regexp2,https://github.com/dlclark/regexp2,MIT,Copyright (c) Doug Clark
+requests,https://pypi.org/project/requests/,Apache-2.0,Copyright (c) 2024 Kenneth Reitz
+requests-oauthlib,https://pypi.org/project/requests-oauthlib/,ISC,Copyright (c) 2014 Kenneth Reitz.
+rpds,https://crates.io/crates/rpds,MPL-2.0,Copyright (c) Diogo Sousa
+rpds-py,https://pypi.org/project/rpds-py/,MIT,Copyright (c) 2023 Julian Berman
+semver,https://github.com/Masterminds/semver/,MIT,"Copyright (C) 2014-2019, Matt Butcher and Matt Farina"
+serde,https://github.com/serde-rs/serde,MIT OR Apache-2.0,Copyright 2017 Serde Developers
+six,https://pypi.org/project/six/,MIT,Copyright (c) 2010-2024 Benjamin Peterson
+sourcemap,https://github.com/go-sourcemap/sourcemap,BSD-2-Clause,Copyright (c) 2016 The github.com/go-sourcemap/sourcemap Contributors
+stable_deref_trait,https://crates.io/crates/stable_deref_trait,MIT OR Apache-2.0,Copyright (c) 2017 Robert Grosse
+stats,https://github.com/montanaflynn/stats,MIT,Copyright (c) 2014-2023 Montana Flynn (https://montanaflynn.com)
+syn,https://crates.io/crates/syn,MIT OR Apache-2.0,Copyright (c) David Tolnay
+sync,https://cs.opensource.google/go/x/sync,BSD-3-Clause,Copyright 2009 The Go Authors.
+sys,https://go.googlesource.com/sys,BSD-3-Clause,Copyright 2009 The Go Authors.
+telemetry,https://go.googlesource.com/telemetry,BSD-3-Clause,Copyright 2009 The Go Authors.
+tenacity,https://pypi.org/project/tenacity/,Apache-2.0,Copyright (c) 2013 Julien Danjou
+term,https://go.googlesource.com/term,BSD-3-Clause,Copyright 2009 The Go Authors.
+test,https://github.com/chzyer/test,MIT,Copyright (c) 2016 chzyer
+testify,https://github.com/stretchr/testify,MIT,"Copyright (c) 2012-2020 Mat Ryer, Tyler Bunnell and contributors."
+text,https://cs.opensource.google/go/x/text,BSD-3-Clause,Copyright 2009 The Go Authors.
+text,https://github.com/kr/text,MIT,Copyright 2012 Keith Rarick
+to,https://github.com/Azure/go-autorest/tree/main/autorest/to,Apache-2.0,Copyright (c) Microsoft Corporation
+tools,https://cs.opensource.google/go/x/tools,BSD-3-Clause,Copyright 2009 The Go Authors.
+triomphe,https://crates.io/crates/triomphe,MIT OR Apache-2.0,Copyright (c) 2019 Manish Goregaokar
+typing-extensions,https://pypi.org/project/typing-extensions/,Python-2.0 OR 0BSD,Copyright (c) Individual contributors
+unicode-ident,https://crates.io/crates/unicode-ident,MIT OR Apache-2.0,Copyright (c) Diogo Sousa
+unsize,https://crates.io/crates/unsize,MIT OR Apache-2.0 OR Zlib,Copyright 2019 Andreas Molzer
+urllib3,https://pypi.org/project/urllib3/,MIT,Copyright (c) 2008-2020 Andrey Petrov and contributors
+uuid,https://github.com/google/uuid,BSD-3-Clause,"Copyright (c) 2009,2014 Google Inc. All rights reserved."
+xxhash,https://github.com/cespare/xxhash,MIT,Copyright (c) 2016 Caleb Spare
+yaml,https://github.com/go-yaml/yaml/tree/v3.0.1,MIT,Copyright (c) 2006-2011 Kirill Simonov
+zstd,https://github.com/DataDog/zstd/tree/1.x,BSD-3-Clause,"Copyright (c) 2016, Datadog <info@datadoghq.com>"
