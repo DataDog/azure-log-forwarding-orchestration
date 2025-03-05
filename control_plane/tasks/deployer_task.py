@@ -11,7 +11,7 @@ from typing import NamedTuple, Self, cast
 from aiohttp import ClientSession
 from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
-from azure.mgmt.web.v2023_12_01.aio import WebSiteManagementClient
+from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 from azure.storage.blob.aio import ContainerClient
 from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
