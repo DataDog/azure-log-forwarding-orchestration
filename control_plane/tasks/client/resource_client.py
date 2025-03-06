@@ -25,6 +25,7 @@ from azure.mgmt.synapse.aio import SynapseManagementClient
 from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
+from cache.resources_cache import ResourceMetadata
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
@@ -32,7 +33,6 @@ from tasks.common import (
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
-    tag_dict_to_list,
 )
 from tasks.concurrency import safe_collect
 from tasks.constants import (
@@ -75,12 +75,9 @@ def safe_get_id(r: Any) -> str | None:
     return None
 
 
-def should_ignore_resource(
-    self, region: str, resource_type: str, resource_name: str, resource_tags: dict[str, str] | None
-) -> bool:
+def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
     """Determines if we should ignore the resource"""
     name = resource_name.lower()
-    resource_tag_list = tag_dict_to_list(resource_tags)
 
     return (
         # we must be able to put a storage account in the same region
@@ -90,8 +87,6 @@ def should_ignore_resource(
         or any(name.startswith(prefix) for prefix in IGNORED_LFO_PREFIXES)
         # only certain resource types have diagnostic settings, this is a confirmation that the filter worked
         or resource_type.lower() not in FETCHED_RESOURCE_TYPES
-        or any(inclusive_tag not in resource_tag_list for inclusive_tag in self.inclusive_tags)
-        or any(excluded_tag in resource_tag_list for excluded_tag in self.excluding_tags)
     )
 
 
@@ -101,15 +96,11 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         log: Logger,
         cred: DefaultAzureCredential,
         subscription_id: str,
-        inclusive_tags: list[str],
-        excluding_tags: list[str],
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
-        self.inclusive_tags = inclusive_tags
-        self.excluding_tags = excluding_tags
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
         cdn_client = CdnManagementClient(cred, subscription_id)
@@ -232,15 +223,17 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             ),
         )
 
-    async def get_resources_per_region(self) -> dict[str, set[str]]:
-        resources_per_region: dict[str, set[str]] = {}
+    async def get_resources_per_region(self) -> dict[str, list[str | ResourceMetadata]]:
+        resources_per_region: dict[str, list[str | ResourceMetadata]] = {}
 
         resources = await safe_collect(self.resources_client.resources.list(RESOURCE_QUERY_FILTER), self.log)
         valid_resources = [
             r
             for r in resources
-            if not should_ignore_resource(self, cast(str, r.location), cast(str, r.type), cast(str, r.name), r.tags)
+            if not should_ignore_resource(cast(str, r.location), cast(str, r.type), cast(str, r.name))
         ]
+
+        # tag filtering
 
         self.log.debug(
             "Collected %s valid resources for subscription %s, fetching sub-resources...",
@@ -250,9 +243,9 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         batched_resource_ids = await gather(
             *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
         )
-        for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
+        for resource, resource_metadatas in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            resources_per_region.setdefault(region, set()).update(resource_ids)
+            resources_per_region.setdefault(region, list()).extend(resource_metadatas)
 
         self.log.info(
             "Subscription %s: Collected %s resources",
@@ -261,12 +254,25 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         )
         return resources_per_region
 
-    async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
+    def process_tags(self, tags: dict[str, str] | None) -> list[str]:
+        processed_tags = list()
+        if tags is None:
+            return processed_tags
+
+        for k, v in tags.items():
+            processed_tags.append(f"{k.casefold()}:{v.casefold()}")
+        return processed_tags
+
+    async def all_resource_ids_for_resource(
+        self, resource: GenericResourceExpanded
+    ) -> AsyncGenerator[ResourceMetadata]:
         resource_id = cast(str, resource.id).lower()
         resource_type = cast(str, resource.type).lower()
+        resource_tags = self.process_tags(cast(dict[str, str], resource.tags))
+
         if resource_type in UNNESTED_VALID_RESOURCE_TYPES:
-            yield resource_id
+            yield {"id": resource_id, "tags": resource_tags, "filtered_out": False}
         if resource_type in self._get_sub_resources_map:
             _, get_sub_resources = self._get_sub_resources_map[resource_type]
             async for sub_resource in get_sub_resources(resource):
-                yield sub_resource
+                yield {"id": sub_resource, "tags": resource_tags, "filtered_out": False}

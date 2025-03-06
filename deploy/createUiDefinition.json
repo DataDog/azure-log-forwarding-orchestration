@@ -172,12 +172,12 @@
                 "name": "resourceTagFilters",
                 "type": "Microsoft.Common.TextBox",
                 "label": "Tag Filters",
-                "toolTip": "Filter in or out resources for log forwarding based on Azure resource tags",
-                "placeholder": "Business:Marketing,!Classification:Confidential",
+                "toolTip": "Providing multiple inclusive tags will AND them together, so resources with all inclusive tags will forward logs. Providing multiple excluding tags will OR them together, so resources with one excluding tag will not forward logs.",
+                "placeholder": "Datadog:true,Business:Finance,!Classification:Confidential",
                 "constraints": {
                   "required": false,
                   "regex": "^(?:[^,\n]*)(?:,[^,\n]*)*$",
-                  "validationMessage": "Must valid CSV format. Inclusive tags should be written normally while exclusive tags should be prefixed with '!'"
+                  "validationMessage": "Must valid CSV format. Inclusive tags should be written normally while excluding tags should be prefixed with '!'"
                 },
                 "visible": true
               }

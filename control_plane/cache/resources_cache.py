@@ -1,5 +1,5 @@
 # stdlib
-from typing import Any, TypeAlias
+from typing import Any, TypeAlias, TypedDict
 
 # 3p
 from cache.common import deserialize_cache
@@ -13,31 +13,54 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 }
 
 
+class ResourceMetadata(TypedDict):
+    id: str
+    tags: list[str]
+    filtered_out: bool
+
+
 def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
     return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs])
 
 
-ResourceCache: TypeAlias = dict[str, dict[str, set[str]]]
-"mapping of subscription_id to region to resource_ids"
+ResourceCache: TypeAlias = dict[str, dict[str, list[str | ResourceMetadata]]]
+"mapping of subscription_id to region to resources"
 
 
 RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
-    "additionalProperties": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
+    },
 }
 
 
 def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
     """Deserialize the resource cache. Returns None if the cache is invalid."""
 
-    def convert_resources_to_set(cache: ResourceCache) -> ResourceCache:
-        for resources_per_region in cache.values():
+    def convert_resource_ids_to_metadata(cache: ResourceCache) -> ResourceCache:
+        for sub_id, resources_per_region in cache.items():
             for region in resources_per_region:
-                resources_per_region[region] = set(resources_per_region[region])
+                resources = resources_per_region[region]
+                resource_metadatas = list()
+                for _, resource in enumerate(resources):
+                    if isinstance(resource, str):
+                        metadata: ResourceMetadata = {"id": resource, "tags": [], "filtered_out": False}
+                        resource_metadatas.append(metadata)
+                    if (
+                        isinstance(resource, dict)
+                        and "id" in resource
+                        and "tags" in resource
+                        and "filtered_out" in resource
+                    ):
+                        resource_metadatas.append(resource)
+                resources_per_region[region] = resource_metadatas
+            cache[sub_id] = resources_per_region
         return cache
 
-    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA, convert_resources_to_set)
+    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA, convert_resource_ids_to_metadata)
 
 
 def prune_resource_cache(cache: ResourceCache) -> None:

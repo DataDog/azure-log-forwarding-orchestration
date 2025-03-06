@@ -78,9 +78,7 @@ class ResourcesTask(Task):
 
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
-        async with ResourceClient(
-            self.log, self.credential, subscription_id, self.inclusive_tags, self.excluding_tags
-        ) as client:
+        async with ResourceClient(self.log, self.credential, subscription_id) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 
     async def write_caches(self) -> None:
