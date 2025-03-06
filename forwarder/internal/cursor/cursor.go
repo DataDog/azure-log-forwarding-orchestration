@@ -11,9 +11,6 @@ import (
 	// 3p
 	log "github.com/sirupsen/logrus"
 
-	// datadog
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
@@ -64,8 +61,6 @@ func (c *Cursors) JSONBytes() ([]byte, error) {
 
 // Save saves the cursors to storage
 func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "cursor.Cursors.Save")
-	defer span.Finish()
 	data, err := c.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("error marshalling cursors: %w", err)
@@ -89,8 +84,6 @@ func New(data map[string]int64) *Cursors {
 
 // Load loads the cursors from the storage client.
 func Load(ctx context.Context, client *storage.Client, logger *log.Entry) (*Cursors, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.GetCursors")
-	defer span.Finish()
 	data, err := client.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
 	if err != nil {
 		var notFoundError *storage.NotFoundError

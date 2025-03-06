@@ -18,7 +18,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
-	"github.com/Azure/go-autorest/autorest/to"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +66,7 @@ func mockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
 
 func newContainerItem(name string) *service.ContainerItem {
 	return &service.ContainerItem{
-		Name: to.StringPtr(name),
+		Name: &name,
 	}
 }
 
@@ -86,9 +85,9 @@ func getBlobName(name string) string {
 func newBlobItem(name string, contentLength int64, blobTime time.Time) *container.BlobItem {
 	blobName := getBlobName(name)
 	return &container.BlobItem{
-		Name: to.StringPtr(blobName),
+		Name: &blobName,
 		Properties: &container.BlobProperties{
-			ContentLength: to.Int64Ptr(contentLength),
+			ContentLength: &contentLength,
 			CreationTime:  &blobTime,
 		},
 	}
@@ -506,11 +505,12 @@ func TestCursors(t *testing.T) {
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
 			currentLogData = append(currentLogData, originalLogData...)
+			currentLength := int64(len(currentLogData))
 
 			blobItem := &container.BlobItem{
-				Name: to.StringPtr(blobName),
+				Name: &blobName,
 				Properties: &container.BlobProperties{
-					ContentLength: to.Int64Ptr(int64(len(currentLogData))),
+					ContentLength: &currentLength,
 					CreationTime:  &now,
 				},
 			}
@@ -574,11 +574,12 @@ func TestCursors(t *testing.T) {
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
 			currentLogData = append(currentLogData, originalLogData...)
+			currentLength := int64(len(currentLogData))
 
 			blobItem := &container.BlobItem{
-				Name: to.StringPtr(blobName),
+				Name: &blobName,
 				Properties: &container.BlobProperties{
-					ContentLength: to.Int64Ptr(int64(len(currentLogData))),
+					ContentLength: &currentLength,
 					CreationTime:  &now,
 				},
 			}

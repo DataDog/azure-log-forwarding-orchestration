@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
-	"github.com/Azure/go-autorest/autorest/to"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
@@ -24,7 +23,7 @@ import (
 
 func newContainerItem(name string) *service.ContainerItem {
 	return &service.ContainerItem{
-		Name: to.StringPtr(name),
+		Name: &name,
 	}
 }
 

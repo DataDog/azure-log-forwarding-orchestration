@@ -11,8 +11,6 @@ import (
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
@@ -30,8 +28,6 @@ type DeadLetterQueue struct {
 
 // Load loads the DeadLetterQueue from the storage client.
 func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client) (*DeadLetterQueue, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Load")
-	defer span.Finish()
 	data, err := storageClient.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
 	if err != nil {
 		var notFoundError *storage.NotFoundError
@@ -78,9 +74,6 @@ func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 
 // Save saves the DeadLetterQueue to storage
 func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, logger *log.Entry) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "deadletterqueue.Client.Save")
-	defer span.Finish()
-
 	// prune invalid logs
 	d.queue = collections.Filter(d.client.FailedLogs, func(log datadogV2.HTTPLogItem) bool {
 		_, valid := logs.ValidateDatadogLog(log, logger)

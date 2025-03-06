@@ -17,9 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 
-	// datadog
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 )
@@ -79,8 +76,6 @@ func NewBlob(container Container, item *container.BlobItem) Blob {
 
 // ListBlobs returns an iterator over a sequence of blobs in a container.
 func (c *Client) ListBlobs(ctx context.Context, storageContainer Container, logger *log.Entry) iter.Seq[Blob] {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.ListBlobs")
-	defer span.Finish()
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(storageContainer.Name, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
@@ -97,9 +92,6 @@ func (c *Client) ListBlobs(ctx context.Context, storageContainer Container, logg
 
 // DownloadBlob downloads a blob from a container.
 func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobName string) ([]byte, error) {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
-	defer span.Finish()
-
 	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == 404 {
@@ -130,9 +122,6 @@ func getUploadBufferOptions() *azblob.UploadBufferOptions {
 
 // UploadBlob uploads a blob to a container.
 func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
-	defer span.Finish()
-
 	// create container if needed
 	err := c.CreateContainer(ctx, containerName)
 	if err != nil {
@@ -148,9 +137,6 @@ func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName 
 
 // AppendBlob appends content to an existing blob in a container or creates a new one if it doesn't exist.
 func (c *Client) AppendBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
-	span, ctx := tracer.StartSpanFromContext(ctx, "storage.Client.AppendBlob")
-	defer span.Finish()
-
 	//see if there is an existing blob
 	//if yes get it read append
 	//if not just write
