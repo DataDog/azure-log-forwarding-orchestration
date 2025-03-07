@@ -8,6 +8,7 @@ from subprocess import PIPE, Popen
 from sys import argv
 from time import sleep
 from typing import Any
+from urllib.parse import quote
 
 # azure
 from azure.identity import AzureCliCredential
@@ -185,7 +186,11 @@ run(
 if initial_deploy or FORCE_ARM_DEPLOY:
     print("Building ARM template...")
     run("./ci/scripts/arm-template/build_initial_run.py", cwd=lfo_dir)
-    print(f"Deploying LFO to {resource_group_name}...")
+    print(
+        f"Deploying LFO to {resource_group_name}...\n"
+        + "\tCheck progress in the portal: "
+        + f"https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
+    )
     api_key = environ["DD_API_KEY"]
     params = {
         "monitoredSubscriptions": dumps([subscription_id]),
