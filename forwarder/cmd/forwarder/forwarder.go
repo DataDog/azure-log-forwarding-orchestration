@@ -268,12 +268,11 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 	return dlq.Save(ctx, storageClient, logger)
 }
 
-func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client, piiScrubber logs.Scrubber) error {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, logsApiClient logs.DatadogLogsSubmitter, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now) error {
 	start := time.Now()
 
 	var hookClient *logs.Client
 	if environment.Enabled(environment.DD_TELEMETRY) {
-		logsApiClient := datadogV2.NewLogsApi(datadogClient)
 		hookClient = logs.NewClient(logsApiClient)
 		hookLogger := log.New()
 
@@ -285,15 +284,12 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadog
 
 	storageClient := storage.NewClient(azBlobClient)
 
-	// Initialize log submission client
-	logsApiClient := datadogV2.NewLogsApi(datadogClient)
-
 	var logsClients []*logs.Client
 	for range goroutineCount {
 		logsClients = append(logsClients, logs.NewClient(logsApiClient))
 	}
 
-	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, time.Now)
+	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now)
 
 	dlqErr := processDeadLetterQueue(ctx, logger, storageClient, logs.NewClient(logsApiClient), logsClients)
 
@@ -351,6 +347,7 @@ func main() {
 	datadogConfig := datadog.NewConfiguration()
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	datadogClient := datadog.NewAPIClient(datadogConfig)
+	datadogLogsClient := datadogV2.NewLogsApi(datadogClient)
 
 	goroutineString := environment.Get(environment.NUM_GOROUTINES)
 	if goroutineString == "" {
@@ -377,7 +374,7 @@ func main() {
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
 
-	err = run(ctx, logger, int(goroutineCount), datadogClient, azBlobClient, piiScrubber)
+	err = run(ctx, logger, int(goroutineCount), datadogLogsClient, azBlobClient, piiScrubber, time.Now)
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
