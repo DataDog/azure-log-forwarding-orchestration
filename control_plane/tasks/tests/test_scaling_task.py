@@ -35,7 +35,7 @@ from cache.env import (
     STORAGE_CONNECTION_SETTING,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from cache.resources_cache import ResourceCache
+from cache.resources_cache import ResourceCache, ResourceMetadata
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_METRIC_PERIOD_MINUTES,
@@ -57,6 +57,11 @@ CONTROL_PLANE_ID = "5a095f74c60a"
 
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
+
+res1 = ResourceMetadata(id="resource1", tags=[], filtered_out=False)
+res2 = ResourceMetadata(id="resource2", tags=[], filtered_out=False)
+res3 = ResourceMetadata(id="resource3", tags=[], filtered_out=False)
+res4 = ResourceMetadata(id="resource4", tags=[], filtered_out=False)
 
 
 def minutes_ago(minutes: float) -> float:
@@ -168,7 +173,7 @@ class TestScalingTask(TaskTestCase):
 
         # WHEN
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
             assignment_cache_state={},
         )
 
@@ -199,7 +204,7 @@ class TestScalingTask(TaskTestCase):
 
         # WHEN
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
             assignment_cache_state=initial_cache,
         )
 
@@ -215,7 +220,7 @@ class TestScalingTask(TaskTestCase):
 
         # WHEN
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
             assignment_cache_state=initial_cache,
         )
 
@@ -239,7 +244,7 @@ class TestScalingTask(TaskTestCase):
         # WHEN
         with self.assertRaises(RetryError):
             await self.run_scaling_task(
-                resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+                resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
                 assignment_cache_state=expected_cache,
             )
 
@@ -448,7 +453,7 @@ class TestScalingTask(TaskTestCase):
         await self.run_scaling_task(
             resource_cache_state={
                 SUB_ID1: {
-                    EAST_US: {"resource1"},
+                    EAST_US: ["resource1"],
                 },
             },
             assignment_cache_state={
@@ -736,7 +741,7 @@ class TestScalingTask(TaskTestCase):
             }
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2, res3, res4]}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -776,7 +781,7 @@ class TestScalingTask(TaskTestCase):
             4000, {"resource1": 10, "resource2": 10, "resource3": 3000, "resource4": 5000}
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -934,7 +939,7 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    async def test_forwarder_without_resources_or_metrics_is_cleaned_up(self):
+    async def test_forwarder_without_resources_or_metrics_is_cleaned_up(self):  # altan
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
@@ -943,7 +948,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2, res3]}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -979,7 +984,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_forwarder_without_resources_but_with_metrics_is_not_cleaned_up(self):
+    async def test_forwarder_without_resources_but_with_metrics_is_not_cleaned_up(self):  # altan
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
@@ -988,7 +993,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -1006,7 +1011,7 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_awaited()
 
-    async def test_two_phase_forwarder_cleanup(self):
+    async def test_two_phase_forwarder_cleanup(self):  # altan
         # Phase 1: Move resources to new forwarder
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
@@ -1014,7 +1019,7 @@ class TestScalingTask(TaskTestCase):
                 NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource2": 2000}),
             }
         )
-        resource_cache = {SUB_ID1: {EAST_US: {"resource1", "resource2"}}}
+        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: [res1, res2]}}
         await self.run_scaling_task(
             resource_cache_state=resource_cache,
             assignment_cache_state={
@@ -1074,7 +1079,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_forwarders_are_not_deleted_with_old_metrics(self):
+    async def test_forwarders_are_not_deleted_with_old_metrics(self):  # altan
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
@@ -1084,7 +1089,7 @@ class TestScalingTask(TaskTestCase):
             }
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2, res3]}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -1114,7 +1119,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: ["resource1", "resource2", "resource3", "resource4"]}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -1155,12 +1160,12 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_cooldown_period_for_scaling(self):
+    async def test_cooldown_period_for_scaling(self):  # altan
         # overwhelmed forwarder with 2 resources
         self.client.collect_forwarder_metrics.return_value = generate_metrics(
             100, {"resource1": 1000, "resource2": 2000}
         )
-        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: {"resource1", "resource2"}}}
+        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: [res1, res2]}}
         await self.run_scaling_task(
             resource_cache_state=resource_cache,
             assignment_cache_state={
@@ -1213,7 +1218,7 @@ class TestScalingTask(TaskTestCase):
         self.client.list_log_forwarder_ids.side_effect = ValueError("meow")
         with self.assertRaises(ValueError):
             await self.run_scaling_task(
-                resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+                resource_cache_state={SUB_ID1: {EAST_US: ["resource1", "resource2", "resource3", "resource4"]}},
                 assignment_cache_state={},
             )
         self.write_cache.assert_awaited()

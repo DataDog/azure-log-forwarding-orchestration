@@ -97,9 +97,16 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
             region,
             {"configurations": {}, "resources": {}},  # default empty region config
         )
+
+        resource_ids = {
+            r if isinstance(r, str) else r["id"]
+            for r in resources
+            if isinstance(r, str) or (isinstance(r, dict) and "id" in r)
+        }
+
         current_region_config["resources"] = {
             resource_id: config_id
-            for resource_id in resources
+            for resource_id in resource_ids
             if (config_id := current_region_config["resources"].get(resource_id))
         }
         return current_region_config
@@ -208,6 +215,16 @@ class ScalingTask(Task):
                     "Failed to clean up log forwarder env for region %s, manual intervention required", region
                 )
 
+    def resource_id_set_in_region(self, subscription_id: str, region: str) -> set[str]:
+        resources = self.resource_cache[subscription_id][region]
+        result = set()
+        for resource in resources:
+            if isinstance(resource, str):
+                result.add(resource)
+            if isinstance(resource, dict) and "id" in resource:
+                result.add(resource["id"])
+        return result
+
     async def set_up_region(
         self,
         client: LogForwarderClient,
@@ -232,7 +249,9 @@ class ScalingTask(Task):
         config_id, config_type = log_forwarder
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
             "configurations": {config_id: config_type},
-            "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
+            "resources": {
+                resource_id: config_id for resource_id in self.resource_id_set_in_region(subscription_id, region)
+            },
         }
         await self.write_caches()
 
@@ -455,7 +474,7 @@ class ScalingTask(Task):
         self, subscription_id: str, region: str, forwarder_metrics: dict[str, list[MetricBlobEntry]]
     ) -> None:
         """Assigns new resources to the least busy forwarder in the region, and updates the cache state accordingly"""
-        new_resources = set(self.resource_cache[subscription_id][region]) - set(
+        new_resources = self.resource_id_set_in_region(subscription_id, region) - set(
             self.assignment_cache[subscription_id][region]["resources"]
         )
         if not new_resources:

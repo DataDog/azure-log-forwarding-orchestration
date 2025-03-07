@@ -25,7 +25,7 @@ from azure.mgmt.synapse.aio import SynapseManagementClient
 from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
-from cache.resources_cache import ResourceMetadata
+from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
@@ -223,8 +223,8 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             ),
         )
 
-    async def get_resources_per_region(self) -> dict[str, list[str | ResourceMetadata]]:
-        resources_per_region: dict[str, list[str | ResourceMetadata]] = {}
+    async def get_resources_per_region(self) -> RegionToResourcesDict:
+        resources_per_region: RegionToResourcesDict = {}
 
         resources = await safe_collect(self.resources_client.resources.list(RESOURCE_QUERY_FILTER), self.log)
         valid_resources = [

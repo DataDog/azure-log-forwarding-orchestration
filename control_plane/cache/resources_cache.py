@@ -13,19 +13,15 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 }
 
 
-class ResourceMetadata(TypedDict):
+class ResourceMetadata(TypedDict, total=True):
     id: str
     tags: list[str]
     filtered_out: bool
 
 
-def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
-    return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs])
-
-
-ResourceCache: TypeAlias = dict[str, dict[str, list[str | ResourceMetadata]]]
+RegionToResourcesDict: TypeAlias = dict[str, list[str | ResourceMetadata]]
+ResourceCache: TypeAlias = dict[str, RegionToResourcesDict]
 "mapping of subscription_id to region to resources"
-
 
 RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -35,6 +31,10 @@ RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
         "additionalProperties": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
     },
 }
+
+
+def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
+    return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs])
 
 
 def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
@@ -49,12 +49,7 @@ def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
                     if isinstance(resource, str):
                         metadata: ResourceMetadata = {"id": resource, "tags": [], "filtered_out": False}
                         resource_metadatas.append(metadata)
-                    if (
-                        isinstance(resource, dict)
-                        and "id" in resource
-                        and "tags" in resource
-                        and "filtered_out" in resource
-                    ):
+                    else:
                         resource_metadatas.append(resource)
                 resources_per_region[region] = resource_metadatas
             cache[sub_id] = resources_per_region

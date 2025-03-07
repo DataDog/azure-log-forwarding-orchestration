@@ -66,7 +66,7 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertCountEqual(
+        self.assertEqual(
             self.cache,
             {
                 sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
@@ -89,7 +89,7 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
-        self.assertCountEqual(
+        self.assertEqual(
             self.cache,
             {
                 sub_id1: {
@@ -189,7 +189,7 @@ class TestResourcesTask(TaskTestCase):
             sub_id2: {SUPPORTED_REGION_2: [self.res3]},
         }
         await self.run_resources_task({})
-        self.assertCountEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]}})
+        self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]}})
 
     async def test_cache_upgrade(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
@@ -202,7 +202,7 @@ class TestResourcesTask(TaskTestCase):
         async with ResourcesTask(dumps(existing_cache)) as task:
             await task.run()
 
-        self.assertCountEqual(
+        self.assertEqual(
             self.cache,
             {
                 sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
