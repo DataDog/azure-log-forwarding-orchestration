@@ -268,8 +268,19 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 	return dlq.Save(ctx, storageClient, logger)
 }
 
-func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client, piiScrubber logs.Scrubber) error {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogClient *datadog.APIClient, azBlobClient *azblob.Client, piiScrubber logs.Scrubber) error {
 	start := time.Now()
+
+	var hookClient *logs.Client
+	if environment.Enabled(environment.DD_TELEMETRY) {
+		logsApiClient := datadogV2.NewLogsApi(datadogClient)
+		hookClient = logs.NewClient(logsApiClient)
+		hookLogger := log.New()
+
+		logParent.AddHook(logs.NewHook(hookClient, log.NewEntry(hookLogger)))
+	}
+
+	logger := logParent.WithField("run_id", start.Unix())
 	logger.Info(fmt.Sprintf("Start time: %v", start.String()))
 
 	storageClient := storage.NewClient(azBlobClient)
@@ -289,7 +300,12 @@ func run(ctx context.Context, logger *log.Entry, goroutineCount int, datadogClie
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
 
-	return errors.Join(processErr, dlqErr)
+	var flushErr error
+	if hookClient != nil {
+		flushErr = hookClient.Flush(ctx)
+	}
+
+	return errors.Join(processErr, dlqErr, flushErr)
 }
 
 func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfig, error) {
@@ -336,15 +352,6 @@ func main() {
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	datadogClient := datadog.NewAPIClient(datadogConfig)
 
-	var logsClient *logs.Client
-	if environment.Enabled(environment.DD_TELEMETRY) {
-		logsApiClient := datadogV2.NewLogsApi(datadogClient)
-		logsClient = logs.NewClient(logsApiClient)
-		hookLogger := log.New()
-
-		logger.AddHook(logs.NewHook(logsClient, log.NewEntry(hookLogger)))
-	}
-
 	goroutineString := environment.Get(environment.NUM_GOROUTINES)
 	if goroutineString == "" {
 		goroutineString = "10"
@@ -370,15 +377,7 @@ func main() {
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
 
-	err = run(ctx, log.NewEntry(logger), int(goroutineCount), datadogClient, azBlobClient, piiScrubber)
-
-	if logsClient != nil {
-		flushErr := logsClient.Flush(ctx)
-		if flushErr != nil {
-			logger.Error(fmt.Errorf("error flushing logs: %w", flushErr))
-			err = errors.Join(err, flushErr)
-		}
-	}
+	err = run(ctx, logger, int(goroutineCount), datadogClient, azBlobClient, piiScrubber)
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
