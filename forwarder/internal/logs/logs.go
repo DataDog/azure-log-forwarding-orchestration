@@ -84,17 +84,18 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		return 0, false
 	}
 
-	var currLog *azureLog
+	var azLog *azureLog
 	decoder := json.NewDecoder(bytes.NewReader([]byte(log.Message)))
-	err = decoder.Decode(&currLog)
+	err = decoder.Decode(&azLog)
 	if err != nil {
-		logger.WithError(err).Warning("Failed to decode log to an azure log")
-		return 0, false
+		logger.WithError(err).Warning("Failed to decode log as an azure log")
 	}
 
 	resourceId := "unknown"
-	if r := currLog.ResourceId(); r != nil {
-		resourceId = r.String()
+	if azLog != nil {
+		if r := azLog.ResourceId(); r != nil {
+			resourceId = r.String()
+		}
 	}
 
 	timeString, ok := log.AdditionalProperties["time"]
@@ -103,7 +104,6 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		logger.Warningf("Skipping log without a time field for resource %s", resourceId)
 		return 0, false
 	}
-
 	parsedTime, err := time.Parse(time.RFC3339, timeString)
 	if err != nil {
 		// log has an invalid time field and cannot be validated

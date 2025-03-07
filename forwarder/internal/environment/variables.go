@@ -13,6 +13,7 @@ const (
 	DD_API_KEY             = "DD_API_KEY"
 	DD_FORCE_PROFILE       = "DD_FORCE_PROFILE"
 	DD_SITE                = "DD_SITE"
+	DD_TELEMETRY           = "DD_TELEMETRY"
 	NUM_GOROUTINES         = "NUM_GOROUTINES"
 	PII_SCRUBBER_RULES     = "PII_SCRUBBER_RULES"
 )

@@ -29,9 +29,6 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
-// serviceName is the service tag used for APM and logs about this forwarder.
-const serviceName = "dd-azure-forwarder"
-
 // resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
 type resourceBytes struct {
 	resourceId string
@@ -332,12 +329,21 @@ func main() {
 		})
 
 	log.SetFormatter(&log.JSONFormatter{})
-	logger := log.WithFields(log.Fields{"service": serviceName})
+	logger := log.New()
 
 	// Initialize Datadog API client
 	datadogConfig := datadog.NewConfiguration()
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	datadogClient := datadog.NewAPIClient(datadogConfig)
+
+	var logsClient *logs.Client
+	if environment.Enabled(environment.DD_TELEMETRY) {
+		logsApiClient := datadogV2.NewLogsApi(datadogClient)
+		logsClient = logs.NewClient(logsApiClient)
+		hookLogger := log.New()
+
+		logger.AddHook(logs.NewHook(logsClient, log.NewEntry(hookLogger)))
+	}
 
 	goroutineString := environment.Get(environment.NUM_GOROUTINES)
 	if goroutineString == "" {
@@ -364,7 +370,15 @@ func main() {
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
 
-	err = run(ctx, logger, int(goroutineCount), datadogClient, azBlobClient, piiScrubber)
+	err = run(ctx, log.NewEntry(logger), int(goroutineCount), datadogClient, azBlobClient, piiScrubber)
+
+	if logsClient != nil {
+		flushErr := logsClient.Flush(ctx)
+		if flushErr != nil {
+			logger.Error(fmt.Errorf("error flushing logs: %w", flushErr))
+			err = errors.Join(err, flushErr)
+		}
+	}
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
