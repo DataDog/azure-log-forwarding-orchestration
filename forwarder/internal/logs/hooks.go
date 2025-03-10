@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
@@ -39,6 +40,7 @@ func (h Hook) Fire(entry *logrus.Entry) error {
 	log := datadogV2.HTTPLogItem{
 		Message:              entry.Message,
 		Ddsource:             &source,
+		Ddtags:               ptr(strings.Join(defaultTags(), ",")),
 		Service:              &ServiceName,
 		AdditionalProperties: additionalProperties,
 	}

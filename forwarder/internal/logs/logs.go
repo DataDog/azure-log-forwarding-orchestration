@@ -150,18 +150,22 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 }
 
 func sourceTag(resourceType string) string {
-	sourceTag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
-	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
+	tag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
+	return strings.Replace(tag, "microsoft.", "azure.", -1)
+}
+
+func defaultTags() []string {
+	return []string{
+		"forwarder:lfo",
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
+	}
 }
 
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var source string
 	var resourceId string
-	tags := []string{
-		"forwarder:lfo",
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
-	}
+	tags := defaultTags()
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
