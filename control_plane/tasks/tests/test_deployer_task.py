@@ -1,6 +1,6 @@
 # stdlib
 from json import dumps
-from unittest.mock import DEFAULT, MagicMock, Mock, call
+from unittest.mock import DEFAULT, MagicMock, call
 
 # 3p
 from azure.core.exceptions import HttpResponseError
@@ -9,7 +9,7 @@ from azure.core.exceptions import HttpResponseError
 from cache.common import InvalidCacheError
 from cache.manifest_cache import ManifestCache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
-from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator
+from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
 
 ALL_FUNCTIONS = [
     "resources-task-0863329b4b49",
@@ -23,11 +23,12 @@ class TestDeployerTask(TaskTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.patch("get_config_option").side_effect = {
+        self.env = {
             "RESOURCE_GROUP": "test_rg",
-            "REGION": "region1",
+            "CONTROL_PLANE_REGION": "region1",
             "SUBSCRIPTION_ID": "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
-        }.get
+        }
+        self.patch("get_config_option").side_effect = lambda k: self.env[k]
 
         self.public_client = AsyncMockClient()
         self.patch("ContainerClient").return_value = self.public_client
@@ -50,7 +51,7 @@ class TestDeployerTask(TaskTestCase):
 
     def set_current_function_apps(self, function_apps: list[str]):
         self.web_client.web_apps.list_by_resource_group.return_value = async_generator(
-            *(Mock(name=app) for app in function_apps)
+            *(mock(name=app) for app in function_apps)
         )
 
     async def run_deployer_task(self):
@@ -101,6 +102,10 @@ class TestDeployerTask(TaskTestCase):
         public_cache_str = dumps(public_cache)
 
         self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
+        )
 
     async def test_deploy_task_diff_container_app(self):
         public_cache: ManifestCache = {
@@ -149,6 +154,10 @@ class TestDeployerTask(TaskTestCase):
         public_cache_str = dumps(public_cache)
 
         self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
+        )
 
     async def test_partial_success_func_app(self):
         self.set_caches(
@@ -184,7 +193,10 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             }
         )
-
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
+        )
         self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
         self.assertEqual(
             self.public_client.download_blob.mock_calls,
@@ -289,3 +301,41 @@ class TestDeployerTask(TaskTestCase):
 
         self.write_cache.assert_not_awaited()
         self.assertEqual(self.rest_client.post.await_count, 5)
+
+    async def test_deploy_task_govcloud(self):
+        self.env["CONTROL_PLANE_REGION"] = "usgovarizona"
+        self.set_caches(
+            public_cache={
+                "resources": "2",
+                "forwarder": "1",
+                "scaling": "1",
+                "diagnostic_settings": "1",
+            },
+            private_cache={
+                "resources": "1",
+                "forwarder": "1",
+                "scaling": "1",
+                "diagnostic_settings": "1",
+            },
+        )
+        self.set_current_function_apps(ALL_FUNCTIONS)
+
+        await self.run_deployer_task()
+
+        self.credential.get_token.assert_awaited_once_with("https://management.usgovcloudapi.net/.default")
+
+        self.write_cache.assert_awaited_once_with(
+            "manifest.json",
+            dumps(
+                {
+                    "resources": "2",
+                    "forwarder": "1",
+                    "scaling": "1",
+                    "diagnostic_settings": "1",
+                }
+            ),
+        )
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.us/api/zipdeploy",
+        )
