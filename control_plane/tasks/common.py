@@ -21,8 +21,6 @@ FORWARDER_CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
 FORWARDER_MANAGED_ENVIRONMENT_PREFIX: Final = "dd-log-forwarder-env-"
 FORWARDER_STORAGE_ACCOUNT_PREFIX: Final = "ddlogstorage"
 
-AZURE_PUBLIC_STORAGE_ENDPOINT_SUFFIX: Final = "core.windows.net"
-AZURE_GOV_STORAGE_ENDPOINT_SUFFIX: Final = "core.usgovcloudapi.net"
 
 # TODO We will need to add prefixes for these when we implement event hub support
 EVENT_HUB_NAME_PREFIX: Final = NotImplemented
@@ -69,10 +67,9 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
     ).lower()
 
 
-def get_storage_endpoint_suffix(region: str) -> str:
-    if region.startswith("usgov"):
-        return AZURE_GOV_STORAGE_ENDPOINT_SUFFIX
-    return AZURE_PUBLIC_STORAGE_ENDPOINT_SUFFIX
+# https://learn.microsoft.com/en-us/azure/azure-government/compare-azure-government-global-azure
+def is_azure_gov(region: str) -> bool:
+    return region.startswith("usgov")
 
 
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover

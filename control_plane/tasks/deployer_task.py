@@ -40,6 +40,7 @@ from tasks.common import (
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
     Resource,
+    is_azure_gov,
 )
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
@@ -59,6 +60,10 @@ class ControlPlaneResources(NamedTuple):
 
 class DeployError(Exception):
     pass
+
+
+def get_azure_mgmt_url(region: str) -> str:
+    return "https://management." + ("usgovcloudapi.net" if is_azure_gov(region) else "azure.com")
 
 
 class DeployerTask(Task):
@@ -83,7 +88,9 @@ class DeployerTask(Task):
             self.web_client.__aenter__(),
             self.storage_client.__aenter__(),
         )
-        token = await self.credential.get_token("https://management.azure.com/.default")
+        token_scope = get_azure_mgmt_url(self.region) + "/.default"
+        token = await self.credential.get_token(token_scope)
+
         self.rest_client.headers["Authorization"] = f"Bearer {token.token}"
         return self
 
@@ -186,7 +193,7 @@ class DeployerTask(Task):
             zip_data = await self.download_function_app_data(component)
             self.log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
-            await self.sync_function_app_triggers(self.subscription_id, self.resource_group, function_app)
+            await self.sync_function_app_triggers(function_app)
         except Exception:
             self.log.exception(f"Failed to deploy {component}")
             return
@@ -199,20 +206,18 @@ class DeployerTask(Task):
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
-        resp = await self.rest_client.post(
-            f"https://{function_app_name}.scm.azurewebsites.net/api/zipdeploy",
-            data=function_app_data,
+        function_app_url = "https://{}.scm.azurewebsites.{}/api/zipdeploy".format(
+            function_app_name, "us" if is_azure_gov(self.region) else "net"
         )
+        resp = await self.rest_client.post(function_app_url, data=function_app_data)
         if not resp.ok:
             content = (await resp.content.read()).decode()
             raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def sync_function_app_triggers(
-        self, subscription_id: str, resource_group: str, function_app_name: str
-    ) -> None:
+    async def sync_function_app_triggers(self, function_app_name: str) -> None:
         resp = await self.rest_client.post(
-            f"https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Web/sites/{function_app_name}/syncfunctiontriggers?api-version=2016-08-01",
+            f"{get_azure_mgmt_url(self.region)}/subscriptions/{self.subscription_id}/resourceGroups/{self.resource_group}/providers/Microsoft.Web/sites/{function_app_name}/syncfunctiontriggers?api-version=2016-08-01"
         )
         if not resp.ok:
             content = (await resp.content.read()).decode()
