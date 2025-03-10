@@ -142,9 +142,9 @@ def validate_paths(lfo_dir: str) -> None:
         (path.join(lfo_dir, "deploy/azuredeploy.bicep"), "ARM template"),
     ]
 
-    missing_paths = [(path, desc) for path, desc in required_paths if not path.exists(path)]
+    missing_paths = [(p, desc) for p, desc in required_paths if not path.exists(p)]
     if missing_paths:
-        raise ValueError(f"Missing required paths: {', '.join(f'{desc} ({path})' for path, desc in missing_paths)}")
+        raise ValueError(f"Missing required paths: {', '.join(f'{desc} ({p})' for p, desc in missing_paths)}")
 
 
 def get_name(name: str, max_length: int) -> str:
