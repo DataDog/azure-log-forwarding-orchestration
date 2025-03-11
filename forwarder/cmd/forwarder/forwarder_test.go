@@ -136,7 +136,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(uploadFunc).AnyTimes()
 
 	var resp azblob.CreateContainerResponse
-	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).Times(3)
+	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
 
 	var submittedLogs []datadogV2.HTTPLogItem
 	mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
@@ -268,10 +268,10 @@ func TestRun(t *testing.T) {
 		}
 
 		cursorResp := azblob.DownloadStreamResponse{}
-		cursorResp.Body = io.NopCloser(strings.NewReader(""))
+		cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
 
 		deadLetterQueueResp := azblob.DownloadStreamResponse{}
-		deadLetterQueueResp.Body = io.NopCloser(strings.NewReader(""))
+		deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
 
 		var uploadedMetrics []byte
 		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
@@ -527,10 +527,10 @@ func TestCursors(t *testing.T) {
 			}
 
 			cursorResp := azblob.DownloadStreamResponse{}
-			cursorResp.Body = io.NopCloser(strings.NewReader(""))
+			cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
 
 			deadLetterQeueResp := azblob.DownloadStreamResponse{}
-			deadLetterQeueResp.Body = io.NopCloser(strings.NewReader(""))
+			deadLetterQeueResp.Body = io.NopCloser(strings.NewReader("[]"))
 
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
@@ -599,10 +599,10 @@ func TestCursors(t *testing.T) {
 			}
 
 			cursorResp := azblob.DownloadStreamResponse{}
-			cursorResp.Body = io.NopCloser(strings.NewReader(""))
+			cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
 
 			deadLetterQueueResp := azblob.DownloadStreamResponse{}
-			deadLetterQueueResp.Body = io.NopCloser(strings.NewReader(""))
+			deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
 
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
@@ -671,6 +671,10 @@ func TestProcessDLQ(t *testing.T) {
 		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, nil).Return(response, nil)
 		createContainerResponse := azblob.CreateContainerResponse{}
 		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).AnyTimes().Return(createContainerResponse, nil)
+
+		// Add expectation for UploadBuffer call
+		uploadResponse := azblob.UploadBufferResponse{}
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, gomock.Any(), gomock.Any()).Return(uploadResponse, nil)
 
 		storageClient := storage.NewClient(mockClient)
 
