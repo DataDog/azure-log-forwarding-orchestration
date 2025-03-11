@@ -16,11 +16,13 @@ var source = "azure-log-forwarding-orchestration"
 // ServiceName is the service tag used for APM and logs about this forwarder.
 var ServiceName = "dd-azure-forwarder"
 
+// Hook is a logrus hook that sends logs to Datadog.
 type Hook struct {
 	client *Client
 	logger *logrus.Entry
 }
 
+// NewHook creates a new Hook.
 func NewHook(client *Client, logger *logrus.Entry) Hook {
 	return Hook{
 		client: client,
@@ -28,10 +30,12 @@ func NewHook(client *Client, logger *logrus.Entry) Hook {
 	}
 }
 
+// Levels returns the enabled log levels for the Hook.
 func (h Hook) Levels() []logrus.Level {
 	return supportedLevels
 }
 
+// Fire sends the log entry to Datadog.
 func (h Hook) Fire(entry *logrus.Entry) error {
 	additionalProperties := map[string]string{
 		"time":  entry.Time.Format(time.RFC3339),
