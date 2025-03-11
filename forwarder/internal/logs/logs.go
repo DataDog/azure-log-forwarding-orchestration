@@ -42,6 +42,8 @@ const newlineBytes = 1
 
 const functionAppContainer = "insights-logs-functionapplogs"
 
+var defaultTags []string
+
 // Log represents a log to send to Datadog.
 type Log struct {
 	content          *[]byte
@@ -154,18 +156,22 @@ func sourceTag(resourceType string) string {
 	return strings.Replace(tag, "microsoft.", "azure.", -1)
 }
 
-func defaultTags() []string {
-	return []string{
-		"forwarder:lfo",
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
+// DefaultTags returns the default tags to add to logs.
+func DefaultTags() []string {
+	if len(defaultTags) == 0 {
+		defaultTags = []string{
+			"forwarder:lfo",
+			fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
+			fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
+		}
 	}
+	return defaultTags
 }
 
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var source string
 	var resourceId string
-	tags := defaultTags()
+	tags := DefaultTags()
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
