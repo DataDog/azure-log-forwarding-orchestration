@@ -292,8 +292,7 @@ func NewLog(logBytes []byte, containerName, blobNameResourceId string, scrubber 
 		if errors.Is(err, io.ErrUnexpectedEOF) {
 			return nil, ErrIncompleteLogFile
 		}
-		// log is not in JSON format, treat it as plaintext
-		currLog = &azureLog{Time: time.Now()}
+		return nil, err
 	}
 
 	currLog.ByteSize = int64(logSize)
