@@ -32,7 +32,7 @@ func NewHook(client *Client, logger *logrus.Entry) Hook {
 
 // Levels returns the enabled log levels for the Hook.
 func (h Hook) Levels() []logrus.Level {
-	return supportedLevels
+	return logrus.AllLevels
 }
 
 // Fire sends the log entry to Datadog.
