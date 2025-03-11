@@ -882,3 +882,44 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         self.assertEqual(res, (job, None))
         self.assertEqual(res[0].configuration.secrets, [{"some_secret": "value"}])  # type: ignore
+
+    async def test_get_connection_string_success(self):
+        storage_account_name = "teststorageaccount"
+
+        async with self.client as client:
+            connection_string = await client.get_connection_string(storage_account_name, EAST_US)
+
+        self.assertEqual(
+            connection_string,
+            "DefaultEndpointsProtocol=https;AccountName=teststorageaccount;AccountKey=key;EndpointSuffix=core.windows.net",
+        )
+        self.client.storage_client.storage_accounts.list_keys.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, storage_account_name
+        )
+
+    async def test_get_connection_string_no_keys(self):
+        self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[]))
+        storage_account_name = "teststorageaccount"
+
+        with self.assertRaises(ValueError) as ctx:
+            async with self.client as client:
+                await client.get_connection_string(storage_account_name, EAST_US)
+
+        self.assertIn("No keys found for storage account", str(ctx.exception))
+        self.client.storage_client.storage_accounts.list_keys.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, storage_account_name
+        )
+
+    async def test_get_connection_string_azure_gov(self):
+        storage_account_name = "teststorageaccount"
+
+        async with self.client as client:
+            connection_string = await client.get_connection_string(storage_account_name, "usgovvirginia")
+
+        self.assertEqual(
+            connection_string,
+            "DefaultEndpointsProtocol=https;AccountName=teststorageaccount;AccountKey=key;EndpointSuffix=core.usgovcloudapi.net",
+        )
+        self.client.storage_client.storage_accounts.list_keys.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, storage_account_name
+        )
