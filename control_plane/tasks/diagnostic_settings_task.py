@@ -160,11 +160,14 @@ class DiagnosticSettingsTask(Task):
             alert_type="warning",
         )
 
-        response: EventCreateResponse = await self.events_api.create_event(body)  # type: ignore
+        response: EventCreateResponse | None = None
         try:
             response = await self.events_api.create_event(body)  # type: ignore
         except Exception as e:
             self.log.error(f"Error while sending event to Datadog: {e}")
+            return False
+        if response is None:
+            self.log.error("Failed to send event to Datadog")
             return False
 
         if errors := response.get("errors", []):
