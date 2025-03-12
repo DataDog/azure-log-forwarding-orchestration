@@ -513,7 +513,7 @@ class TestScalingTask(TaskTestCase):
             mock(),
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
