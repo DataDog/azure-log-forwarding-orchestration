@@ -19,7 +19,15 @@ class TestDeserializeResourceCache(TestCase):
 
         self.assertEqual(
             cache,
-            {sub_id1: {"region2": {"resource1", "resource2"}}, sub_id2: {"region3": {"resource3"}}},
+            {
+                sub_id1: {
+                    "region2": [
+                        {"id": "resource1", "tags": [], "filtered_out": False},
+                        {"id": "resource2", "tags": [], "filtered_out": False},
+                    ]
+                },
+                sub_id2: {"region3": [{"id": "resource3", "tags": [], "filtered_out": False}]},
+            },
         )
 
     def assert_deserialize_failure(self, cache_str: str):

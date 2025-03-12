@@ -155,8 +155,8 @@ class TestResourcesTask(TaskTestCase):
         # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
         await self.run_resources_task(
             {
-                sub_id1: {SUPPORTED_REGION_1: ["res1", "res2"]},
-                sub_id2: {SUPPORTED_REGION_2: ["res3"]},
+                sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
+                sub_id2: {SUPPORTED_REGION_2: [self.res3]},
             }
         )
         self.assertEqual(self.cache, {})
@@ -167,8 +167,8 @@ class TestResourcesTask(TaskTestCase):
         with self.assertRaises(UnexpectedException):
             await self.run_resources_task(
                 {
-                    sub_id1: {SUPPORTED_REGION_1: ["res1", "res2"]},
-                    sub_id2: {SUPPORTED_REGION_2: ["res3"]},
+                    sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
+                    sub_id2: {SUPPORTED_REGION_2: [self.res3]},
                 }
             )
         write_caches.assert_not_awaited()

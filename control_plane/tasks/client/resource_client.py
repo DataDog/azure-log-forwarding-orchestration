@@ -95,11 +95,15 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self,
         log: Logger,
         cred: DefaultAzureCredential,
+        inclusive_tags: list[str],
+        excluding_tags: list[str],
         subscription_id: str,
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
+        self.inclusive_tags = inclusive_tags
+        self.excluding_tags = excluding_tags
         self.subscription_id = subscription_id
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
@@ -233,15 +237,13 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             if not should_ignore_resource(cast(str, r.location), cast(str, r.type), cast(str, r.name))
         ]
 
-        # tag filtering
-
         self.log.debug(
             "Collected %s valid resources for subscription %s, fetching sub-resources...",
             len(valid_resources),
             self.subscription_id,
         )
         batched_resource_ids = await gather(
-            *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
+            *(safe_collect(self.all_subresources_for_resource(r), self.log) for r in valid_resources)
         )
         for resource, resource_metadatas in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
@@ -254,25 +256,40 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         )
         return resources_per_region
 
-    def process_tags(self, tags: dict[str, str] | None) -> list[str]:
-        processed_tags = list()
-        if tags is None:
-            return processed_tags
-
-        for k, v in tags.items():
-            processed_tags.append(f"{k.casefold()}:{v.casefold()}")
-        return processed_tags
-
-    async def all_resource_ids_for_resource(
+    async def all_subresources_for_resource(
         self, resource: GenericResourceExpanded
     ) -> AsyncGenerator[ResourceMetadata]:
         resource_id = cast(str, resource.id).lower()
         resource_type = cast(str, resource.type).lower()
-        resource_tags = self.process_tags(cast(dict[str, str], resource.tags))
+        tags = cast(dict[str, str], resource.tags)
+        resource_tags = [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in tags.items()] if tags else []
 
         if resource_type in UNNESTED_VALID_RESOURCE_TYPES:
-            yield {"id": resource_id, "tags": resource_tags, "filtered_out": False}
+            yield {
+                "id": resource_id,
+                "tags": resource_tags,
+                "filtered_out": self.is_resource_filtered_out_by_tags(resource_tags),
+            }
         if resource_type in self._get_sub_resources_map:
             _, get_sub_resources = self._get_sub_resources_map[resource_type]
             async for sub_resource in get_sub_resources(resource):
-                yield {"id": sub_resource, "tags": resource_tags, "filtered_out": False}
+                yield {
+                    "id": sub_resource,
+                    "tags": resource_tags,
+                    "filtered_out": self.is_resource_filtered_out_by_tags(resource_tags),
+                }
+
+    def is_resource_filtered_out_by_tags(self, resource_tags: list[str]) -> bool:
+        inclusive_count = len(self.inclusive_tags)
+        excluding_count = len(self.excluding_tags)
+
+        if inclusive_count == 0 and excluding_count == 0:  # no filtering specified -> filter out nothing
+            return False
+        if inclusive_count == 0 and excluding_count > 0:  # filter out resources that have _any_ excluding tag
+            return any(tag in self.excluding_tags for tag in resource_tags)
+        if inclusive_count > 0 and excluding_count == 0:  # filter out resources that do not have _every_ inclusive tags
+            return not all(tag in resource_tags for tag in self.inclusive_tags)
+
+        return not all(
+            tag in resource_tags for tag in self.inclusive_tags
+        )  # filter out resources that do not have _every_ inclusive tags

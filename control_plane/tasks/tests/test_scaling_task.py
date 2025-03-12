@@ -939,7 +939,7 @@ class TestScalingTask(TaskTestCase):
         }
         self.assertEqual(self.cache, expected_cache)
 
-    async def test_forwarder_without_resources_or_metrics_is_cleaned_up(self):  # altan
+    async def test_forwarder_without_resources_or_metrics_is_cleaned_up(self):
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200, "resource3": 50}),
@@ -984,7 +984,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_forwarder_without_resources_but_with_metrics_is_not_cleaned_up(self):  # altan
+    async def test_forwarder_without_resources_but_with_metrics_is_not_cleaned_up(self):
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
@@ -1011,7 +1011,7 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder.assert_not_awaited()
         self.write_cache.assert_not_awaited()
 
-    async def test_two_phase_forwarder_cleanup(self):  # altan
+    async def test_two_phase_forwarder_cleanup(self):
         # Phase 1: Move resources to new forwarder
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
@@ -1079,7 +1079,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_forwarders_are_not_deleted_with_old_metrics(self):  # altan
+    async def test_forwarders_are_not_deleted_with_old_metrics(self):
         self.client.collect_forwarder_metrics.side_effect = collect_metrics_side_effect(
             {
                 OLD_LOG_FORWARDER_ID: generate_metrics(1.2, {"resource1": 1000, "resource2": 200}),
@@ -1160,7 +1160,7 @@ class TestScalingTask(TaskTestCase):
             },
         )
 
-    async def test_cooldown_period_for_scaling(self):  # altan
+    async def test_cooldown_period_for_scaling(self):
         # overwhelmed forwarder with 2 resources
         self.client.collect_forwarder_metrics.return_value = generate_metrics(
             100, {"resource1": 1000, "resource2": 2000}

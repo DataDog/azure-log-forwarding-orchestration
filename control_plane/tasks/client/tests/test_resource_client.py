@@ -1,4 +1,5 @@
 # stdlib
+from typing import cast
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
 
@@ -76,7 +77,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             self.mock_clients[client] = c
 
     async def test_clients_mocked_properly(self):
-        resource_client = ResourceClient(self.log, self.cred, sub_id1)
+        resource_client = ResourceClient(self.log, self.cred, sub_id1, [], [])
         for client, _ in resource_client._get_sub_resources_map.values():
             if client is None:
                 continue
@@ -96,7 +97,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 mock(id="res2", location="global", type="Microsoft.Network/applicationGateways"),
             )
         )
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
         self.assertEqual(resources, {})
 
@@ -113,7 +114,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 ),
             )
         )
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
 
         self.assertEqual(resources, {SUPPORTED_REGION_1: [mock_to_metadata(resource2)]})
@@ -131,7 +132,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
         self.assertEqual(resources, {SUPPORTED_REGION_1: [mock_to_metadata(resource1)]})
 
@@ -149,7 +150,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
 
         self.assertCountEqual(
@@ -174,6 +175,52 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     ResourceMetadata(
                         id="/subscriptions/whatever/whatever/some-storage-account/tableservices/default",
                         tags=[],
+                        filtered_out=False,
+                    ),
+                    mock_to_metadata(resource1),
+                ]
+            },
+        )
+
+    async def test_sub_resources_tagged_like_parent(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(
+                mock(
+                    id="/subscriptions/WHATEVER/whatever/some-storage-account",
+                    name="some-storage-account",
+                    location=SUPPORTED_REGION_1,
+                    type="MICROSOFT.STORAGE/STORAGEACCOUNTS",
+                    tags={"hey": "there"},
+                ),
+                resource1,
+            )
+        )
+
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertCountEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: [
+                    ResourceMetadata(
+                        id="/subscriptions/whatever/whatever/some-storage-account/fileservices/default",
+                        tags=["hey:there"],
+                        filtered_out=False,
+                    ),
+                    ResourceMetadata(
+                        id="/subscriptions/whatever/whatever/some-storage-account/queueservices/default",
+                        tags=["hey:there"],
+                        filtered_out=False,
+                    ),
+                    ResourceMetadata(
+                        id="/subscriptions/whatever/whatever/some-storage-account/blobservices/default",
+                        tags=["hey:there"],
+                        filtered_out=False,
+                    ),
+                    ResourceMetadata(
+                        id="/subscriptions/whatever/whatever/some-storage-account/tableservices/default",
+                        tags=["hey:there"],
                         filtered_out=False,
                     ),
                     mock_to_metadata(resource1),
@@ -207,7 +254,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
         self.assertCountEqual(
             resources,
@@ -245,7 +292,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
 
         self.assertCountEqual(
@@ -270,7 +317,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resource_group="my-rg",
             location=SUPPORTED_REGION_1,
             type="Microsoft.Web/sites",
-            tags={"funky": "yes"},
+            tags={"datadog": "true"},
         )
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(mock_function_app)
@@ -282,7 +329,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
 
         self.assertCountEqual(
@@ -290,8 +337,12 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {
                 SUPPORTED_REGION_1: [
                     mock_to_metadata(mock_function_app),
-                    ResourceMetadata(id="/subscriptions/.../function-app/slots/prod", tags=[], filtered_out=False),
-                    ResourceMetadata(id="/subscriptions/.../function-app/slots/staging", tags=[], filtered_out=False),
+                    ResourceMetadata(
+                        id="/subscriptions/.../function-app/slots/prod", tags=["datadog:true"], filtered_out=False
+                    ),
+                    ResourceMetadata(
+                        id="/subscriptions/.../function-app/slots/staging", tags=["datadog:true"], filtered_out=False
+                    ),
                 ]
             },
         )
@@ -326,7 +377,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, sub_id1) as client:
+        async with ResourceClient(self.log, self.cred, sub_id1, [], []) as client:
             resources = await client.get_resources_per_region()
 
         self.assertCountEqual(
@@ -381,3 +432,101 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-"))
+
+    def test_resource_tag_filtering_empty_filters(self):
+        inclusive_tags = []
+        excluding_tags = []
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags([]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true"]))
+
+    def test_resource_tag_filtering_single_inclusive_given(self):
+        inclusive_tags = ["datadog:true"]
+        excluding_tags = []
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true"]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["other:tag", "datadog:true"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags([]))
+
+    def test_resource_tag_filtering_single_excluding_given(self):
+        inclusive_tags = []
+        excluding_tags = ["major:fomo"]
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags([]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["hello:world"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo", "hello:world"]))
+
+    def test_resource_tag_filtering_single_both_given(self):
+        inclusive_tags = ["datadog:true"]
+        excluding_tags = ["major:fomo"]
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true"]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true", "major:fomo"]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true", "other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo", "other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags([]))
+
+    def test_resource_tag_filtering_inclusive_list_given(self):
+        inclusive_tags = ["datadog:true", "env:test"]
+        excluding_tags = []
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true", "env:test"]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true", "env:test", "other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["datadog:true"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["datadog:true", "other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags([]))
+
+    def test_resource_tag_filtering_excluding_list_given(self):
+        inclusive_tags = []
+        excluding_tags = ["major:fomo", "good:bye"]
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags([]))
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo", "hello:world"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo", "good:bye", "hello:world"]))
+
+    def test_resource_tag_filtering_both_list_given(self):
+        inclusive_tags = ["datadog:true", "env:test", "happy:days"]
+        excluding_tags = ["major:fomo", "good:bye", "bad:times"]
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["datadog:true", "env:test", "happy:days"]))
+        self.assertFalse(
+            client.is_resource_filtered_out_by_tags(
+                ["datadog:true", "env:test", "happy:days", "major:fomo", "good:bye", "bad:times"]
+            )
+        )
+        self.assertFalse(
+            client.is_resource_filtered_out_by_tags(["datadog:true", "env:test", "happy:days", "other:tag"])
+        )
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["datadog:true"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["datadog:true", "env:test"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["datadog:true", "other:tag"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["bad:times", "datadog:true"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags(["major:fomo"]))
+        self.assertTrue(client.is_resource_filtered_out_by_tags([]))
+
+    def test_resource_tag_filtering_same_value_given(self):
+        inclusive_tags = ["hi:there"]
+        excluding_tags = ["hi:there"]
+        client = ResourceClient(
+            self.log, self.cred, sub_id1, inclusive_tags=inclusive_tags, excluding_tags=excluding_tags
+        )
+        self.assertFalse(client.is_resource_filtered_out_by_tags(["hi:there"]))
