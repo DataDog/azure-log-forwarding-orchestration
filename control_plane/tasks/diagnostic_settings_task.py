@@ -30,6 +30,7 @@ from cache.diagnostic_settings_cache import (
     deserialize_event_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -82,13 +83,20 @@ def get_diagnostic_setting(
 class DiagnosticSettingsTask(Task):
     NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
-    def __init__(self, assignment_cache_state: str, event_cache_state: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str, event_cache_state: str) -> None:
         super().__init__()
 
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.diagnostic_settings_name = (
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
+
+        resource_cache = deserialize_resource_cache(resource_cache_state)
+        if resource_cache is None:
+            self.log.warning(
+                "Detected invalid resource cache, removal of diagnostic settings for filtered out resources will be skipped"
+            )
+        self.resource_cache = resource_cache
 
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if assignment_cache is None:
@@ -115,8 +123,12 @@ class DiagnosticSettingsTask(Task):
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
             resources = [
-                (resource, DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]))
-                for region_config in self.assignment_cache[sub_id].values()
+                (
+                    resource,
+                    region,
+                    DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
+                )
+                for region, region_config in self.assignment_cache[sub_id].items()
                 for resource, config_id in region_config["resources"].items()
             ]
             shuffle(resources)
@@ -127,9 +139,10 @@ class DiagnosticSettingsTask(Task):
                         client,
                         sub_id,
                         resource,
+                        region,
                         ds,
                     )
-                    for resource, ds in resources
+                    for resource, region, ds in resources
                 ),
             )
 
@@ -186,6 +199,7 @@ class DiagnosticSettingsTask(Task):
         client: MonitorManagementClient,
         sub_id: str,
         resource_id: str,
+        region: str,
         assigned_config: DiagnosticSettingConfiguration,
     ) -> None:
         try:
@@ -206,14 +220,17 @@ class DiagnosticSettingsTask(Task):
         )
 
         num_diag_settings = len(current_diagnostic_settings)
-
         if (
             current_setting
             and current_setting.storage_account_id
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
-            return  # current diagnostic setting is correctly configured
+            # resource has correct diagnostic setting, check if resource has been filtered out of log forwarding
+            deleted_setting = await self.process_resource_filtering(client, sub_id, region, resource_id)
+            if not deleted_setting:
+                return
+            num_diag_settings -= 1
 
         self.event_cache.setdefault(sub_id, {}).setdefault(
             resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
@@ -243,6 +260,33 @@ class DiagnosticSettingsTask(Task):
         new_setting_to_add = current_setting is None
         if new_setting_to_add and success:
             self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
+
+    async def process_resource_filtering(
+        self, client: MonitorManagementClient, sub_id: str, region: str, resource_id: str
+    ) -> bool:
+        """Evaluate if the resource has been filtered out of log forwarding, if so, delete the diagnostic setting
+        Returns True if the diagnostic setting was deleted, False otherwise
+        """
+        if not self.resource_cache:
+            return False
+
+        resource_set = self.resource_cache[sub_id][region]
+        filtered_out = False
+        if isinstance(resource_set, dict):  # filter info only available for new schema
+            filtered_out = resource_set[resource_id]["filtered_out"]
+        else:
+            self.log.warning("Resource cache does not have filter info available for %s", resource_id)
+            return False
+
+        if filtered_out:
+            self.log.info(
+                "Resource %s has been filtered out, removing diagnostic setting",
+                resource_id,
+            )
+
+            return await self.delete_diagnostic_setting(client, resource_id)
+
+        return False
 
     async def create_or_update_diagnostic_setting(
         self,
@@ -294,6 +338,21 @@ class DiagnosticSettingsTask(Task):
             )
             return False
 
+    async def delete_diagnostic_setting(self, client: MonitorManagementClient, resource_id: str) -> bool:
+        try:
+            await client.diagnostic_settings.delete(resource_id, self.diagnostic_settings_name)
+        except HttpResponseError as e:
+            self.log.error("Failed to delete diagnostic setting for resource %s", resource_id)
+            self.log.error(e)
+            return False
+        except Exception:
+            self.log.error(
+                "Unexpected error when trying to delete diagnostic setting for resource %s", resource_id, exc_info=True
+            )
+            return False
+
+        return True
+
     async def write_caches(self) -> None:
         if self.event_cache == self.initial_event_cache:
             self.log.info("No changes to event cache, skipping write")
@@ -302,7 +361,7 @@ class DiagnosticSettingsTask(Task):
 
 
 async def main() -> None:
-    await task_main(DiagnosticSettingsTask, [ASSIGNMENT_CACHE_BLOB, EVENT_CACHE_BLOB])
+    await task_main(DiagnosticSettingsTask, [RESOURCE_CACHE_BLOB, ASSIGNMENT_CACHE_BLOB, EVENT_CACHE_BLOB])
 
 
 if __name__ == "__main__":  # pragma: no cover
