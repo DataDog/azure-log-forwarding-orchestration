@@ -1,5 +1,5 @@
 # stdlib
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, TypeAlias, TypedDict, cast
 
 # 3p
 from cache.common import deserialize_cache
@@ -14,12 +14,11 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 
 
 class ResourceMetadata(TypedDict, total=True):
-    id: str
     tags: list[str]
     filtered_out: bool
 
 
-RegionToResourcesDict: TypeAlias = dict[str, list[str | ResourceMetadata]]
+RegionToResourcesDict: TypeAlias = dict[str, set[str] | dict[str, ResourceMetadata]]
 ResourceCache: TypeAlias = dict[str, RegionToResourcesDict]
 "mapping of subscription_id to region to resources"
 
@@ -28,7 +27,18 @@ RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
     "propertyNames": {"format": "uuid"},
     "additionalProperties": {
         "type": "object",
-        "additionalProperties": {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
+        "additionalProperties": {
+            "oneOf": [
+                {"type": "array", "items": {"type": "string"}},
+                {
+                    "type": "object",
+                    "properties": {
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "filtered_out": {"type": "boolean"},
+                    },
+                },
+            ]
+        },
     },
 }
 
@@ -44,13 +54,19 @@ def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
         for sub_id, resources_per_region in cache.items():
             for region in resources_per_region:
                 resources = resources_per_region[region]
-                resource_metadatas = list()
-                for _, resource in enumerate(resources):
-                    if isinstance(resource, str):
-                        metadata: ResourceMetadata = {"id": resource, "tags": [], "filtered_out": False}
-                        resource_metadatas.append(metadata)
-                    else:
-                        resource_metadatas.append(resource)
+                resource_metadatas: dict[str, ResourceMetadata] = {}
+                if isinstance(resources, dict):
+                    for resource_id, resource_metadata in resources.items():
+                        if isinstance(resource_metadata, dict):
+                            resource_metadata = cast(ResourceMetadata, resource_metadata)
+                            resource_metadatas[resource_id] = resource_metadata
+                        else:
+                            metadata: ResourceMetadata = {"tags": [], "filtered_out": False}
+                            resource_metadatas[resource_id] = metadata
+                else:
+                    for r in resources:
+                        metadata: ResourceMetadata = {"tags": [], "filtered_out": False}
+                        resource_metadatas[r] = metadata
                 resources_per_region[region] = resource_metadatas
             cache[sub_id] = resources_per_region
         return cache

@@ -243,11 +243,17 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             self.subscription_id,
         )
         batched_resource_ids = await gather(
-            *(safe_collect(self.all_subresources_for_resource(r), self.log) for r in valid_resources)
+            *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
         )
-        for resource, resource_metadatas in zip(valid_resources, batched_resource_ids, strict=False):
+
+        resource_id_metadata_dict: dict[str, ResourceMetadata] = {}
+        for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            resources_per_region.setdefault(region, list()).extend(resource_metadatas)
+            tag_list = self.tag_dict_to_list(resource.tags)
+            metadata = ResourceMetadata(tags=tag_list, filtered_out=self.is_resource_filtered_out_by_tags(tag_list))
+            for id in resource_ids:
+                resource_id_metadata_dict[id] = metadata
+            resources_per_region.setdefault(region, {}).update(resource_id_metadata_dict)
 
         self.log.info(
             "Subscription %s: Collected %s resources",
@@ -256,28 +262,23 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         )
         return resources_per_region
 
-    async def all_subresources_for_resource(
-        self, resource: GenericResourceExpanded
-    ) -> AsyncGenerator[ResourceMetadata]:
+    async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
         resource_id = cast(str, resource.id).lower()
         resource_type = cast(str, resource.type).lower()
-        tags = cast(dict[str, str], resource.tags)
-        resource_tags = [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in tags.items()] if tags else []
-
         if resource_type in UNNESTED_VALID_RESOURCE_TYPES:
-            yield {
-                "id": resource_id,
-                "tags": resource_tags,
-                "filtered_out": self.is_resource_filtered_out_by_tags(resource_tags),
-            }
+            yield resource_id
         if resource_type in self._get_sub_resources_map:
             _, get_sub_resources = self._get_sub_resources_map[resource_type]
             async for sub_resource in get_sub_resources(resource):
-                yield {
-                    "id": sub_resource,
-                    "tags": resource_tags,
-                    "filtered_out": self.is_resource_filtered_out_by_tags(resource_tags),
-                }
+                yield sub_resource
+
+    def tag_dict_to_list(self, resource_tags: dict | None) -> list[str]:  # altan
+        tags = list()
+        if resource_tags:
+            for k, v in resource_tags.items():
+                tags.append(f"{k.strip().casefold()}:{v.strip().casefold()}")
+
+        return tags
 
     def is_resource_filtered_out_by_tags(self, resource_tags: list[str]) -> bool:
         inclusive_count = len(self.inclusive_tags)

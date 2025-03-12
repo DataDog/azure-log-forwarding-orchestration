@@ -13,20 +13,51 @@ from cache.tests import sub_id1, sub_id2
 
 
 class TestDeserializeResourceCache(TestCase):
-    def test_valid_cache(self):
-        cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}, sub_id2: {"region3": ["resource3"]}})
+    def test_valid_cache_new_schema(self):
+        cache_str = dumps(
+            {
+                sub_id1: {
+                    "region2": {
+                        "resource1": {"tags": [], "filtered_out": False},
+                        "resource2": {"tags": [], "filtered_out": False},
+                    }
+                },
+                sub_id2: {"region3": {"resource3": {"tags": [], "filtered_out": False}}},
+            }
+        )
         cache = deserialize_resource_cache(cache_str)
+
+        self.maxDiff = None
 
         self.assertEqual(
             cache,
             {
                 sub_id1: {
-                    "region2": [
-                        {"id": "resource1", "tags": [], "filtered_out": False},
-                        {"id": "resource2", "tags": [], "filtered_out": False},
-                    ]
+                    "region2": {
+                        "resource1": {"tags": [], "filtered_out": False},
+                        "resource2": {"tags": [], "filtered_out": False},
+                    }
                 },
-                sub_id2: {"region3": [{"id": "resource3", "tags": [], "filtered_out": False}]},
+                sub_id2: {"region3": {"resource3": {"tags": [], "filtered_out": False}}},
+            },
+        )
+
+    def test_valid_cache_upgrade_schema(self):
+        cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}, sub_id2: {"region3": ["resource3"]}})
+        cache = deserialize_resource_cache(cache_str)
+
+        self.maxDiff = None
+
+        self.assertEqual(
+            cache,
+            {
+                sub_id1: {
+                    "region2": {
+                        "resource1": {"tags": [], "filtered_out": False},
+                        "resource2": {"tags": [], "filtered_out": False},
+                    }
+                },
+                sub_id2: {"region3": {"resource3": {"tags": [], "filtered_out": False}}},
             },
         )
 
@@ -47,7 +78,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assert_deserialize_failure(dumps({sub_id1: {"region": "not_a_list_of_resources"}}))
 
     def test_dict_with_some_non_list_values(self):
-        self.assert_deserialize_failure(dumps({sub_id1: {"region1": ["r1"]}, sub_id2: {"region2": {"hi": "value"}}}))
+        self.assert_deserialize_failure(dumps({sub_id1: {"region1": ["r1"]}, sub_id2: {"region2": 123}}))
 
     def test_prune_resources_cache_empty(self):
         cache: ResourceCache = {}

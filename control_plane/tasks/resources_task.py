@@ -81,9 +81,9 @@ class ResourcesTask(Task):
         async with ResourceClient(
             self.log,
             self.credential,
-            subscription_id,
             self.inclusive_tags,
             self.excluding_tags,
+            subscription_id,
         ) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 
