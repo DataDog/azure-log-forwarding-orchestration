@@ -22,13 +22,11 @@ resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags={}
 )
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
+resMetadata = ResourceMetadata(tags=[], filtered_out=False)
 
 
 class TestResourcesTask(TaskTestCase):
     TASK_NAME = RESOURCES_TASK_NAME
-    res1 = ResourceMetadata(id="res1", tags=[], filtered_out=False)
-    res2 = ResourceMetadata(id="res2", tags=[], filtered_out=False)
-    res3 = ResourceMetadata(id="res3", tags=[], filtered_out=False)
 
     def setUp(self) -> None:
         super().setUp()
@@ -38,7 +36,7 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client_mapping: ResourceCache = {}
         self.log = self.patch_path("tasks.task.log").getChild.return_value
 
-        def create_resource_client(_log: Any, _cred: Any, sub_id: str):
+        def create_resource_client(_log: Any, _cred: Any, _inclusive_tags: Any, _excluding_tags: Any, sub_id: str):
             c = AsyncMockClient()
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             c.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
@@ -58,8 +56,13 @@ class TestResourcesTask(TaskTestCase):
     async def test_invalid_cache(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-            sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+            sub_id1: {
+                SUPPORTED_REGION_1: {
+                    "res1": resMetadata,
+                    "res2": resMetadata,
+                }
+            },
+            sub_id2: {SUPPORTED_REGION_2: {"res3": resMetadata}},
         }
 
         async with ResourcesTask("[[[[{{{{{asjdklahjs]]]}}}") as task:
@@ -69,19 +72,29 @@ class TestResourcesTask(TaskTestCase):
         self.assertEqual(
             self.cache,
             {
-                sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-                sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+                sub_id1: {
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                },
+                sub_id2: {SUPPORTED_REGION_2: {"res3": resMetadata}},
             },
         )
 
     async def test_empty_cache_adds_resources(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            sub_id1: {SUPPORTED_REGION_1: ["res1", "res2"]},
+            sub_id1: {
+                SUPPORTED_REGION_1: {
+                    "res1": resMetadata,
+                    "res2": resMetadata,
+                }
+            },
             sub_id2: {
-                SUPPORTED_REGION_2: [
-                    "res3",
-                ]
+                SUPPORTED_REGION_2: {
+                    "res3": resMetadata,
+                }
             },
         }
 
@@ -93,15 +106,15 @@ class TestResourcesTask(TaskTestCase):
             self.cache,
             {
                 sub_id1: {
-                    SUPPORTED_REGION_1: [
-                        self.res1,
-                        self.res2,
-                    ]
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
                 },
                 sub_id2: {
-                    SUPPORTED_REGION_2: [
-                        self.res3,
-                    ]
+                    SUPPORTED_REGION_2: {
+                        "res3": resMetadata,
+                    }
                 },
             },
         )
@@ -109,13 +122,31 @@ class TestResourcesTask(TaskTestCase):
     async def test_no_new_resources_doesnt_cache_obj(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-            sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+            sub_id1: {
+                SUPPORTED_REGION_1: {
+                    "res1": resMetadata,
+                    "res2": resMetadata,
+                }
+            },
+            sub_id2: {
+                SUPPORTED_REGION_2: {
+                    "res3": resMetadata,
+                }
+            },
         }
         await self.run_resources_task(
             {
-                sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-                sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+                sub_id1: {
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                },
+                sub_id2: {
+                    SUPPORTED_REGION_2: {
+                        "res3": resMetadata,
+                    }
+                },
             }
         )
 
@@ -124,13 +155,31 @@ class TestResourcesTask(TaskTestCase):
     async def test_no_new_resources_doesnt_cache_str(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
-            sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-            sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+            sub_id1: {
+                SUPPORTED_REGION_1: {
+                    "res1": resMetadata,
+                    "res2": resMetadata,
+                }
+            },
+            sub_id2: {
+                SUPPORTED_REGION_2: {
+                    "res3": resMetadata,
+                }
+            },
         }
         await self.run_resources_task(
             {
-                sub_id1: {SUPPORTED_REGION_1: ["res1", "res2"]},
-                sub_id2: {SUPPORTED_REGION_2: ["res3"]},
+                sub_id1: {
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                },
+                sub_id2: {
+                    SUPPORTED_REGION_2: {
+                        "res3": resMetadata,
+                    }
+                },
             }
         )
 
@@ -144,8 +193,17 @@ class TestResourcesTask(TaskTestCase):
         }
         await self.run_resources_task(
             {
-                sub_id1: {SUPPORTED_REGION_2: [self.res1, self.res2]},
-                sub_id2: {SUPPORTED_REGION_1: [self.res3]},
+                sub_id1: {
+                    SUPPORTED_REGION_2: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                },
+                sub_id2: {
+                    SUPPORTED_REGION_1: {
+                        "res3": resMetadata,
+                    }
+                },
             }
         )
         self.assertEqual(self.cache, {})
@@ -155,8 +213,17 @@ class TestResourcesTask(TaskTestCase):
         # we dont return any subscriptions, so we should never call the resource client, if we do, it will error
         await self.run_resources_task(
             {
-                sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-                sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+                sub_id1: {
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                },
+                sub_id2: {
+                    SUPPORTED_REGION_2: {
+                        "res3": resMetadata,
+                    }
+                },
             }
         )
         self.assertEqual(self.cache, {})
@@ -167,8 +234,17 @@ class TestResourcesTask(TaskTestCase):
         with self.assertRaises(UnexpectedException):
             await self.run_resources_task(
                 {
-                    sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-                    sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+                    sub_id1: {
+                        SUPPORTED_REGION_1: {
+                            "res1": resMetadata,
+                            "res2": resMetadata,
+                        }
+                    },
+                    sub_id2: {
+                        SUPPORTED_REGION_2: {
+                            "res3": resMetadata,
+                        }
+                    },
                 }
             )
         write_caches.assert_not_awaited()
@@ -185,27 +261,55 @@ class TestResourcesTask(TaskTestCase):
         self.patch("getenv").side_effect = getenv_mock
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, Mock(subscription_id=sub_id3)))
         self.resource_client_mapping = {
-            sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-            sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+            sub_id1: {
+                SUPPORTED_REGION_1: {
+                    "res1": resMetadata,
+                    "res2": resMetadata,
+                }
+            },
+            sub_id2: {
+                SUPPORTED_REGION_2: {
+                    "res3": resMetadata,
+                }
+            },
         }
         await self.run_resources_task({})
-        self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]}})
+        self.assertEqual(
+            self.cache,
+            {
+                sub_id1: {
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                }
+            },
+        )
 
     async def test_cache_upgrade(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         existing_cache: ResourceCache = {
-            sub_id1: {SUPPORTED_REGION_1: ["res1", "res2"]},
-            sub_id2: {SUPPORTED_REGION_2: ["res3"]},
+            sub_id1: {SUPPORTED_REGION_1: {"res1", "res2"}},
+            sub_id2: {SUPPORTED_REGION_2: {"res3"}},
         }
         self.resource_client_mapping = existing_cache
 
-        async with ResourcesTask(dumps(existing_cache)) as task:
+        async with ResourcesTask(dumps(existing_cache, default=list)) as task:
             await task.run()
 
         self.assertEqual(
             self.cache,
             {
-                sub_id1: {SUPPORTED_REGION_1: [self.res1, self.res2]},
-                sub_id2: {SUPPORTED_REGION_2: [self.res3]},
+                sub_id1: {
+                    SUPPORTED_REGION_1: {
+                        "res1": resMetadata,
+                        "res2": resMetadata,
+                    }
+                },
+                sub_id2: {
+                    SUPPORTED_REGION_2: {
+                        "res3": resMetadata,
+                    }
+                },
             },
         )

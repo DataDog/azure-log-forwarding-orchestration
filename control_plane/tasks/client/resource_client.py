@@ -272,7 +272,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             async for sub_resource in get_sub_resources(resource):
                 yield sub_resource
 
-    def tag_dict_to_list(self, resource_tags: dict | None) -> list[str]:  # altan
+    def tag_dict_to_list(self, resource_tags: dict[str, str] | None) -> list[str]:
         tags = list()
         if resource_tags:
             for k, v in resource_tags.items():

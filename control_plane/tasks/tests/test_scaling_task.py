@@ -58,10 +58,7 @@ CONTROL_PLANE_ID = "5a095f74c60a"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
 
-res1 = ResourceMetadata(id="resource1", tags=[], filtered_out=False)
-res2 = ResourceMetadata(id="resource2", tags=[], filtered_out=False)
-res3 = ResourceMetadata(id="resource3", tags=[], filtered_out=False)
-res4 = ResourceMetadata(id="resource4", tags=[], filtered_out=False)
+resMetadata = ResourceMetadata(tags=[], filtered_out=False)
 
 
 def minutes_ago(minutes: float) -> float:
@@ -173,7 +170,7 @@ class TestScalingTask(TaskTestCase):
 
         # WHEN
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={},
         )
 
@@ -204,7 +201,7 @@ class TestScalingTask(TaskTestCase):
 
         # WHEN
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state=initial_cache,
         )
 
@@ -220,7 +217,7 @@ class TestScalingTask(TaskTestCase):
 
         # WHEN
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state=initial_cache,
         )
 
@@ -244,7 +241,7 @@ class TestScalingTask(TaskTestCase):
         # WHEN
         with self.assertRaises(RetryError):
             await self.run_scaling_task(
-                resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
                 assignment_cache_state=expected_cache,
             )
 
@@ -323,7 +320,7 @@ class TestScalingTask(TaskTestCase):
     async def test_regions_added_and_deleted(self):
         self.client.collect_forwarder_metrics.return_value = generate_metrics(runtime=2, resource_log_volume={})
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {WEST_US: {"resource3", "resource4"}}},
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource3": resMetadata, "resource4": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -356,7 +353,7 @@ class TestScalingTask(TaskTestCase):
             runtime=2, resource_log_volume={"resource1": 100}
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {WEST_US: {"resource3", "resource4"}}},
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource3": resMetadata, "resource4": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     WEST_US: {
@@ -392,7 +389,7 @@ class TestScalingTask(TaskTestCase):
         non_control_plane_subscription_id = "some-other-subscription-id"
         await self.run_scaling_task(
             resource_cache_state={
-                SUB_ID1: {WEST_US: {"resource1", "resource2"}},
+                SUB_ID1: {WEST_US: {"resource1": resMetadata, "resource2": resMetadata}},
                 non_control_plane_subscription_id: {},
             },
             assignment_cache_state={
@@ -424,7 +421,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_container_app_env_in_unsupported_region_is_not_deleted_on_cleanup(self):
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {WEST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {WEST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     WEST_US: {
@@ -453,7 +450,7 @@ class TestScalingTask(TaskTestCase):
         await self.run_scaling_task(
             resource_cache_state={
                 SUB_ID1: {
-                    EAST_US: ["resource1"],
+                    EAST_US: {"resource1": resMetadata},
                 },
             },
             assignment_cache_state={
@@ -485,7 +482,7 @@ class TestScalingTask(TaskTestCase):
         self.forwarder_resources_mapping.clear()
         self.forwarder_resources_mapping[OLD_LOG_FORWARDER_ID] = (None, None)
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -562,14 +559,14 @@ class TestScalingTask(TaskTestCase):
             mock(),
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
                         "resources": {"resource1": OLD_LOG_FORWARDER_ID},
                         "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
                     }
-                },
+                }
             },
         )
         self.client.get_forwarder_resources.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
@@ -579,7 +576,7 @@ class TestScalingTask(TaskTestCase):
         self.client.collect_forwarder_metrics.return_value = generate_metrics(100, {"resource1": 4, "resource2": 6})
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -601,7 +598,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -634,7 +631,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -655,7 +652,7 @@ class TestScalingTask(TaskTestCase):
             22.2, {"resource1": 4000, "resource2": 6000}
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -705,7 +702,16 @@ class TestScalingTask(TaskTestCase):
             23, {"resource1": 4000, "resource2": 6000}
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4"}}},
+            resource_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resource1": resMetadata,
+                        "resource2": resMetadata,
+                        "resource3": resMetadata,
+                        "resource4": resMetadata,
+                    }
+                }
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -741,7 +747,16 @@ class TestScalingTask(TaskTestCase):
             }
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2, res3, res4]}},
+            resource_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resource1": resMetadata,
+                        "resource2": resMetadata,
+                        "resource3": resMetadata,
+                        "resource4": resMetadata,
+                    }
+                }
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -781,7 +796,7 @@ class TestScalingTask(TaskTestCase):
             4000, {"resource1": 10, "resource2": 10, "resource3": 3000, "resource4": 5000}
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -821,7 +836,16 @@ class TestScalingTask(TaskTestCase):
         )
         await self.run_scaling_task(
             resource_cache_state={
-                SUB_ID1: {EAST_US: {"resource1", "resource2", "resource3", "resource4", "resource5", "resource6"}}
+                SUB_ID1: {
+                    EAST_US: {
+                        "resource1": resMetadata,
+                        "resource2": resMetadata,
+                        "resource3": resMetadata,
+                        "resource4": resMetadata,
+                        "resource5": resMetadata,
+                        "resource6": resMetadata,
+                    }
+                }
             },
             assignment_cache_state={
                 SUB_ID1: {
@@ -874,7 +898,7 @@ class TestScalingTask(TaskTestCase):
         }
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1"}}}, assignment_cache_state=initial_cache
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata}}}, assignment_cache_state=initial_cache
         )
         self.log.warning.assert_called_once_with(
             "Forwarder %s only has one resource but is overwhelmed", OLD_LOG_FORWARDER_ID
@@ -888,7 +912,7 @@ class TestScalingTask(TaskTestCase):
     async def test_orphaned_forwarders_are_cleaned_up(self):
         self.client.list_log_forwarder_ids.return_value = {OLD_LOG_FORWARDER_ID, NEW_LOG_FORWARDER_ID}
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -908,7 +932,7 @@ class TestScalingTask(TaskTestCase):
     async def test_no_resource_metrics_split_in_half(self):
         self.client.collect_forwarder_metrics.return_value = generate_metrics(57, {})
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {"resource1", "resource2"}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -948,7 +972,9 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2, res3]}},
+            resource_cache_state={
+                SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata, "resource3": resMetadata}}
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -993,7 +1019,7 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2]}},
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}},
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -1019,7 +1045,7 @@ class TestScalingTask(TaskTestCase):
                 NEW_LOG_FORWARDER_ID: generate_metrics(2.5, {"resource2": 2000}),
             }
         )
-        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: [res1, res2]}}
+        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}}
         await self.run_scaling_task(
             resource_cache_state=resource_cache,
             assignment_cache_state={
@@ -1089,7 +1115,9 @@ class TestScalingTask(TaskTestCase):
             }
         )
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: [res1, res2, res3]}},
+            resource_cache_state={
+                SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata, "resource3": resMetadata}}
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -1119,7 +1147,16 @@ class TestScalingTask(TaskTestCase):
         )
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: ["resource1", "resource2", "resource3", "resource4"]}},
+            resource_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resource1": resMetadata,
+                        "resource2": resMetadata,
+                        "resource3": resMetadata,
+                        "resource4": resMetadata,
+                    }
+                }
+            },
             assignment_cache_state={
                 SUB_ID1: {
                     EAST_US: {
@@ -1165,7 +1202,7 @@ class TestScalingTask(TaskTestCase):
         self.client.collect_forwarder_metrics.return_value = generate_metrics(
             100, {"resource1": 1000, "resource2": 2000}
         )
-        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: [res1, res2]}}
+        resource_cache: ResourceCache = {SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}}
         await self.run_scaling_task(
             resource_cache_state=resource_cache,
             assignment_cache_state={
@@ -1218,7 +1255,16 @@ class TestScalingTask(TaskTestCase):
         self.client.list_log_forwarder_ids.side_effect = ValueError("meow")
         with self.assertRaises(ValueError):
             await self.run_scaling_task(
-                resource_cache_state={SUB_ID1: {EAST_US: ["resource1", "resource2", "resource3", "resource4"]}},
+                resource_cache_state={
+                    SUB_ID1: {
+                        EAST_US: {
+                            "resource1": resMetadata,
+                            "resource2": resMetadata,
+                            "resource3": resMetadata,
+                            "resource4": resMetadata,
+                        }
+                    }
+                },
                 assignment_cache_state={},
             )
         self.write_cache.assert_awaited()
