@@ -1,15 +1,17 @@
 package logs
 
 import (
+	// stdlib
 	"context"
 	"strings"
 	"time"
 
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	// 3p
 	"github.com/sirupsen/logrus"
-)
 
-var supportedLevels = []logrus.Level{logrus.PanicLevel, logrus.FatalLevel, logrus.ErrorLevel, logrus.WarnLevel, logrus.InfoLevel, logrus.DebugLevel, logrus.TraceLevel}
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+)
 
 var source = "azure-log-forwarding-orchestration"
 
@@ -44,7 +46,7 @@ func (h Hook) Fire(entry *logrus.Entry) error {
 	log := datadogV2.HTTPLogItem{
 		Message:              entry.Message,
 		Ddsource:             &source,
-		Ddtags:               ptr(strings.Join(defaultTags(), ",")),
+		Ddtags:               ptr(strings.Join(DefaultTags(), ",")),
 		Service:              &ServiceName,
 		AdditionalProperties: additionalProperties,
 	}

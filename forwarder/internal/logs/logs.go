@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	// 3p
@@ -43,6 +44,7 @@ const newlineBytes = 1
 const functionAppContainer = "insights-logs-functionapplogs"
 
 var defaultTags []string
+var defaultTagsMutex sync.RWMutex
 
 // Log represents a log to send to Datadog.
 type Log struct {
@@ -158,6 +160,17 @@ func sourceTag(resourceType string) string {
 
 // DefaultTags returns the default tags to add to logs.
 func DefaultTags() []string {
+	defaultTagsMutex.RLock()
+	if len(defaultTags) > 0 {
+		defer defaultTagsMutex.RUnlock()
+		return defaultTags
+	}
+	defaultTagsMutex.RUnlock()
+
+	defaultTagsMutex.Lock()
+	defer defaultTagsMutex.Unlock()
+
+	// Check again in case another goroutine initialized it while we were waiting for the lock
 	if len(defaultTags) == 0 {
 		defaultTags = []string{
 			"forwarder:lfo",
