@@ -13,10 +13,10 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 )
 
-var source = "azure-log-forwarding-orchestration"
+const source = "azure-log-forwarding-orchestration"
 
 // ServiceName is the service tag used for APM and logs about this forwarder.
-var ServiceName = "dd-azure-forwarder"
+const ServiceName = "dd-azure-forwarder"
 
 // Hook is a logrus hook that sends logs to Datadog.
 type Hook struct {
@@ -46,7 +46,7 @@ func (h Hook) Fire(entry *logrus.Entry) error {
 	log := datadogV2.HTTPLogItem{
 		Message:              entry.Message,
 		Ddsource:             &source,
-		Ddtags:               ptr(strings.Join(DefaultTags(), ",")),
+		Ddtags:               ptr(strings.Join(defaultTags, ",")),
 		Service:              &ServiceName,
 		AdditionalProperties: additionalProperties,
 	}
