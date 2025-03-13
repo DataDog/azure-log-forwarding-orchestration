@@ -1,5 +1,4 @@
 # stdlib
-from typing import cast
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
 

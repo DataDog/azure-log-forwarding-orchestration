@@ -1,9 +1,9 @@
 # stdlib
 from asyncio import gather, run
+from copy import deepcopy
 from json import dumps
 from os import getenv
 from typing import cast
-from copy import deepcopy
 
 # 3p
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
@@ -14,11 +14,11 @@ from cache.env import MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTER_SETTI
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
-    upgrade_cache_to_latest,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
     latest_cache_schema,
     prune_resource_cache,
+    upgrade_cache_to_latest,
 )
 from tasks.client.resource_client import ResourceClient
 from tasks.task import Task, task_main

@@ -98,15 +98,9 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
             {"configurations": {}, "resources": {}},  # default empty region config
         )
 
-        resource_ids = {
-            r if isinstance(r, str) else r["id"]
-            for r in resources
-            if isinstance(r, str) or (isinstance(r, dict) and "id" in r)
-        }
-
         current_region_config["resources"] = {
             resource_id: config_id
-            for resource_id in resource_ids
+            for resource_id in resources
             if (config_id := current_region_config["resources"].get(resource_id))
         }
         return current_region_config
