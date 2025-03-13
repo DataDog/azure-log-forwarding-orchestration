@@ -161,7 +161,7 @@ class DiagnosticSettingsTask(Task):
         )
 
         try:
-            response: EventCreateResponse = await self.events_api.create_event(body)
+            response: EventCreateResponse = await self.events_api.create_event(body)  # type: ignore
         except Exception as e:
             self.log.error(f"Error while sending event to Datadog: {e}")
             return False
