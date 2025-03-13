@@ -30,7 +30,7 @@ from cache.diagnostic_settings_cache import (
     deserialize_event_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache, is_resource_filtered_out
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -220,21 +220,32 @@ class DiagnosticSettingsTask(Task):
         )
 
         num_diag_settings = len(current_diagnostic_settings)
+        self.event_cache.setdefault(sub_id, {}).setdefault(
+            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
+        )
+
         if (
             current_setting
             and current_setting.storage_account_id
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
-            # resource has correct diagnostic setting, check if resource has been filtered out of log forwarding
-            deleted_setting = await self.process_resource_filtering(client, sub_id, region, resource_id)
-            if not deleted_setting:
-                return
-            num_diag_settings -= 1
+            # diagnostic setting exists on resource and is configured correctly
+            # check if we should delete the setting because the resource has recently been filtered out
+            if self.resource_cache and is_resource_filtered_out(self.resource_cache, sub_id, region, resource_id):
+                self.log.info(
+                    "Resource %s has been filtered out and has diagnostic setting %s, deleting setting",
+                    resource_id,
+                    self.diagnostic_settings_name,
+                )
+                if await self.delete_diagnostic_setting(client, resource_id):
+                    self.update_event_cache(sub_id, resource_id, num_diag_settings - 1)
+            return
 
-        self.event_cache.setdefault(sub_id, {}).setdefault(
-            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
-        )
+        if self.resource_cache and is_resource_filtered_out(self.resource_cache, sub_id, region, resource_id):
+            # prevent adding a new setting if the resource has been filtered out
+            self.update_event_cache(sub_id, resource_id, num_diag_settings)
+            return
 
         if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
@@ -248,7 +259,7 @@ class DiagnosticSettingsTask(Task):
             )
             return
 
-        success = await self.create_or_update_diagnostic_setting(
+        add_setting_success = await self.create_or_update_diagnostic_setting(
             client,
             sub_id,
             resource_id,
@@ -257,36 +268,11 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
-        new_setting_to_add = current_setting is None
-        if new_setting_to_add and success:
-            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
+        if current_setting is None and add_setting_success:
+            self.update_event_cache(sub_id, resource_id, num_diag_settings + 1)
 
-    async def process_resource_filtering(
-        self, client: MonitorManagementClient, sub_id: str, region: str, resource_id: str
-    ) -> bool:
-        """Evaluate if the resource has been filtered out of log forwarding, if so, delete the diagnostic setting
-        Returns True if the diagnostic setting was deleted, False otherwise
-        """
-        if not self.resource_cache:
-            return False
-
-        resource_set = self.resource_cache[sub_id][region]
-        filtered_out = False
-        if isinstance(resource_set, dict):  # filter info only available for new schema
-            filtered_out = resource_set[resource_id]["filtered_out"]
-        else:
-            self.log.warning("Resource cache does not have filter info available for %s", resource_id)
-            return False
-
-        if filtered_out:
-            self.log.info(
-                "Resource %s has been filtered out, removing diagnostic setting",
-                resource_id,
-            )
-
-            return await self.delete_diagnostic_setting(client, resource_id)
-
-        return False
+    def update_event_cache(self, sub_id: str, resource_id: str, num_diag_settings: int) -> None:
+        self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
 
     async def create_or_update_diagnostic_setting(
         self,

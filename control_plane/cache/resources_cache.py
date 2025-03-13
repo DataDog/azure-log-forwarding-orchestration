@@ -22,6 +22,8 @@ RegionToResourcesDict: TypeAlias = dict[str, set[str] | dict[str, ResourceMetada
 ResourceCache: TypeAlias = dict[str, RegionToResourcesDict]
 "mapping of subscription_id to region to resources"
 
+TAGS_KEY = "tags"
+FILTERED_OUT_KEY = "filtered_out"
 RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
@@ -33,8 +35,8 @@ RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
                 {
                     "type": "object",
                     "properties": {
-                        "tags": {"type": "array", "items": {"type": "string"}},
-                        "filtered_out": {"type": "boolean"},
+                        TAGS_KEY: {"type": "array", "items": {"type": "string"}},
+                        FILTERED_OUT_KEY: {"type": "boolean"},
                     },
                 },
             ]
@@ -61,17 +63,28 @@ def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
                             resource_metadata = cast(ResourceMetadata, resource_metadata)
                             resource_metadatas[resource_id] = resource_metadata
                         else:
-                            metadata: ResourceMetadata = {"tags": [], "filtered_out": False}
+                            metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
                             resource_metadatas[resource_id] = metadata
                 else:
                     for r in resources:
-                        metadata: ResourceMetadata = {"tags": [], "filtered_out": False}
+                        metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
                         resource_metadatas[r] = metadata
                 resources_per_region[region] = resource_metadatas
             cache[sub_id] = resources_per_region
         return cache
 
     return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA, convert_resource_ids_to_metadata)
+
+
+def is_resource_filtered_out(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:
+    if not cache:
+        return False
+
+    resource_metadata_dict = cache[sub_id][region]
+    if isinstance(resource_metadata_dict, dict):  # filter info only available for newer resource dict schema
+        return resource_metadata_dict[resource_id][FILTERED_OUT_KEY]
+    else:
+        return False
 
 
 def prune_resource_cache(cache: ResourceCache) -> None:
