@@ -200,10 +200,10 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         "datadogApiKey": api_key,
         "datadogTelemetry": "true",
         "piiScrubberRules": environ.get("PII_SCRUBBER_RULES", ""),
+        "resourceTagFilter": environ.get("RESOURCE_TAG_FILTER", ""),
         "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
-        "resourceTagFilter": environ.get("RESOURCE_TAG_FILTER", ""),
         "logLevel": "DEBUG",
     }
     run(

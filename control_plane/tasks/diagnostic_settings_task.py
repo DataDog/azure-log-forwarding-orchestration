@@ -325,6 +325,10 @@ class DiagnosticSettingsTask(Task):
             return False
 
     async def delete_diagnostic_setting(self, client: MonitorManagementClient, resource_id: str) -> bool:
+        """Deletes a diagnostic setting for an Azure resource
+
+        Returns True if the diagnostic setting was successfully deleted, False otherwise
+        """
         try:
             await client.diagnostic_settings.delete(resource_id, self.diagnostic_settings_name)
         except HttpResponseError as e:
