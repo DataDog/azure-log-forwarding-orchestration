@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointers"
+
 	// 3p
 	"github.com/sirupsen/logrus"
 
@@ -45,9 +47,9 @@ func (h Hook) Fire(entry *logrus.Entry) error {
 	}
 	log := datadogV2.HTTPLogItem{
 		Message:              entry.Message,
-		Ddsource:             &source,
-		Ddtags:               ptr(strings.Join(defaultTags, ",")),
-		Service:              &ServiceName,
+		Ddsource:             pointers.Get(source),
+		Ddtags:               ptr(strings.Join(DefaultTags, ",")),
+		Service:              pointers.Get(ServiceName),
 		AdditionalProperties: additionalProperties,
 	}
 	return h.client.AddFormattedLog(context.Background(), h.logger, log)

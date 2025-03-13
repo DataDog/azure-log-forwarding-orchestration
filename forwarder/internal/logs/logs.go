@@ -42,10 +42,11 @@ const newlineBytes = 1
 
 const functionAppContainer = "insights-logs-functionapplogs"
 
-var defaultTags []string
+// DefaultTags are the tags to include with every log.
+var DefaultTags []string
 
 func init() {
-	defaultTags = []string{
+	DefaultTags = []string{
 		"forwarder:lfo",
 		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
 		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
@@ -168,7 +169,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var source string
 	var resourceId string
 	var tags []string
-	copy(defaultTags, tags)
+	tags = append(tags, DefaultTags...)
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
