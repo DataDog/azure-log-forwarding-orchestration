@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from json import dumps
 from os import environ
 from string import ascii_lowercase
-from typing import Any
+from typing import Any, cast
 from unittest import TestCase
 from unittest.mock import ANY, Mock, call, patch
 
@@ -146,6 +146,62 @@ class TestScalingTask(TaskTestCase):
     async def test_scaling_task_fails_without_valid_resource_cache(self):
         with self.assertRaises(InvalidCacheError):
             ScalingTask("invalid json", "{}")
+
+    async def test_scaling_task_runs_with_old_resource_cache_schema(self):
+        resource_cache_state = {SUB_ID1: {EAST_US: {"resource1", "resource2"}}}
+        initial_assignment_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        await self.run_scaling_task(
+            resource_cache_state=cast(ResourceCache, resource_cache_state),
+            assignment_cache_state=initial_assignment_cache,
+        )
+
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                }
+            },
+        )
+
+    async def test_scaling_task_runs_with_latest_resource_cache_schema(self):
+        resource_cache_state = {SUB_ID1: {EAST_US: {"resource1": resMetadata, "resource2": resMetadata}}}
+        assignment_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        await self.run_scaling_task(
+            resource_cache_state=cast(ResourceCache, resource_cache_state),
+            assignment_cache_state=assignment_cache,
+        )
+
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                }
+            },
+        )
 
     async def test_reset_invalid_scaling_cache(self):
         invalid_cache: Any = "not valid"
