@@ -52,28 +52,37 @@ def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
 def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
     """Deserialize the resource cache. Returns None if the cache is invalid."""
 
-    def convert_resource_ids_to_metadata(cache: ResourceCache) -> ResourceCache:
-        for sub_id, resources_per_region in cache.items():
-            for region in resources_per_region:
-                resources = resources_per_region[region]
-                resource_metadatas: dict[str, ResourceMetadata] = {}
-                if isinstance(resources, dict):
-                    for resource_id, resource_metadata in resources.items():
-                        if isinstance(resource_metadata, dict):
-                            resource_metadata = cast(ResourceMetadata, resource_metadata)
-                            resource_metadatas[resource_id] = resource_metadata
-                        else:
-                            metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
-                            resource_metadatas[resource_id] = metadata
-                else:
-                    for r in resources:
-                        metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
-                        resource_metadatas[r] = metadata
-                resources_per_region[region] = resource_metadatas
-            cache[sub_id] = resources_per_region
-        return cache
+    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA)
 
-    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA, convert_resource_ids_to_metadata)
+
+def latest_cache_schema(cache: ResourceCache) -> bool:
+    for _, resources_per_region in cache.items():
+        for region in resources_per_region:
+            resources = resources_per_region[region]
+            return isinstance(resources, dict)
+    return False
+
+
+def upgrade_cache_to_latest(cache: ResourceCache) -> ResourceCache:
+    for sub_id, resources_per_region in cache.items():
+        for region in resources_per_region:
+            resources = resources_per_region[region]
+            resource_metadatas: dict[str, ResourceMetadata] = {}
+            if isinstance(resources, dict):
+                for resource_id, resource_metadata in resources.items():
+                    if isinstance(resource_metadata, dict):
+                        resource_metadata = cast(ResourceMetadata, resource_metadata)
+                        resource_metadatas[resource_id] = resource_metadata
+                    else:
+                        metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
+                        resource_metadatas[resource_id] = metadata
+            else:
+                for r in resources:
+                    metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
+                    resource_metadatas[r] = metadata
+            resources_per_region[region] = resource_metadatas
+        cache[sub_id] = resources_per_region
+    return cache
 
 
 def is_resource_filtered_out(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:

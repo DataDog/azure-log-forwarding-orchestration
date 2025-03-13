@@ -42,25 +42,6 @@ class TestDeserializeResourceCache(TestCase):
             },
         )
 
-    def test_valid_cache_upgrade_schema(self):
-        cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}, sub_id2: {"region3": ["resource3"]}})
-        cache = deserialize_resource_cache(cache_str)
-
-        self.maxDiff = None
-
-        self.assertEqual(
-            cache,
-            {
-                sub_id1: {
-                    "region2": {
-                        "resource1": {"tags": [], "filtered_out": False},
-                        "resource2": {"tags": [], "filtered_out": False},
-                    }
-                },
-                sub_id2: {"region3": {"resource3": {"tags": [], "filtered_out": False}}},
-            },
-        )
-
     def assert_deserialize_failure(self, cache_str: str):
         cache = deserialize_resource_cache(cache_str)
         self.assertIsNone(cache)
