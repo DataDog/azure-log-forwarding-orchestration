@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointers"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/dop251/goja/ast"
@@ -327,10 +329,6 @@ const MaxLogSize = 1000000
 // https://docs.datadoghq.com/api/latest/logs/
 const MaxLogAge = 18 * time.Hour
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	additionalProperties := map[string]string{
 		"time":  log.Time.Format(time.RFC3339),
@@ -338,9 +336,9 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	}
 
 	logItem := datadogV2.HTTPLogItem{
-		Service:              ptr(log.Service),
-		Ddsource:             ptr(log.Source),
-		Ddtags:               ptr(strings.Join(log.Tags, ",")),
+		Service:              pointers.Get(log.Service),
+		Ddsource:             pointers.Get(log.Source),
+		Ddtags:               pointers.Get(strings.Join(log.Tags, ",")),
 		Message:              log.Content(),
 		AdditionalProperties: additionalProperties,
 	}
