@@ -22,7 +22,9 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
@@ -354,6 +356,7 @@ type Client struct {
 	logsBuffer    []datadogV2.HTTPLogItem
 	currentSize   int64
 	FailedLogs    []datadogV2.HTTPLogItem
+	apiContext    context.Context
 }
 
 // NewClient creates a new Client.
@@ -361,6 +364,62 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 	return &Client{
 		logsSubmitter: logsApi,
 	}
+}
+
+// NewClientWithCustomHeaders creates a new Client with support for custom headers.
+// This function configures the Datadog API client to use our custom HTTP client.
+func NewClientWithCustomHeaders(apiKey, appKey string) (*Client, error) {
+	// Create a new Datadog API client configuration
+	configuration := datadog.NewConfiguration()
+
+	// Create a custom HTTP client that supports adding headers from the context
+	configuration.HTTPClient = NewCustomHeadersClient(http.DefaultClient)
+
+	// Create a new Datadog API client
+	apiClient := datadog.NewAPIClient(configuration)
+
+	// Create a context with API keys
+	ctx := context.WithValue(
+		context.Background(),
+		datadog.ContextAPIKeys,
+		map[string]datadog.APIKey{
+			"apiKeyAuth": {
+				Key: apiKey,
+			},
+			"appKeyAuth": {
+				Key: appKey,
+			},
+		},
+	)
+
+	// Create a new logs API client with the context
+	logsApi := datadogV2.NewLogsApi(apiClient)
+
+	// Create a new client
+	client := &Client{
+		logsSubmitter: logsApi,
+	}
+
+	// Store the context for later use
+	client.apiContext = ctx
+
+	return client, nil
+}
+
+// SetCustomHeader sets a custom header on the underlying Datadog API client.
+// This method requires the logsSubmitter to be of type *datadogV2.LogsApi.
+func (c *Client) SetCustomHeader(key, value string) error {
+	if logsApi, ok := c.logsSubmitter.(*datadogV2.LogsApi); ok {
+		if logsApi.Client != nil && logsApi.Client.Cfg != nil {
+			if logsApi.Client.Cfg.DefaultHeader == nil {
+				logsApi.Client.Cfg.DefaultHeader = make(map[string]string)
+			}
+			logsApi.Client.Cfg.DefaultHeader[key] = value
+			return nil
+		}
+		return fmt.Errorf("Datadog API client configuration is nil")
+	}
+	return fmt.Errorf("logsSubmitter is not of type *datadogV2.LogsApi")
 }
 
 // AddLog adds a log to the buffer for future submission.
@@ -404,7 +463,88 @@ func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log dat
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
 	if len(c.logsBuffer) > 0 {
-		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer)
+		// Use the API context if available, otherwise use the provided context
+		requestCtx := ctx
+		if c.apiContext != nil {
+			requestCtx = c.apiContext
+		}
+
+		// Create optional parameters with Content-Encoding header for gzip compression
+		optionalParams := datadogV2.SubmitLogOptionalParameters{
+			ContentEncoding: datadogV2.CONTENTENCODING_GZIP.Ptr(),
+		}
+
+		// Submit the logs with gzip compression enabled
+		_, _, err = c.logsSubmitter.SubmitLog(requestCtx, c.logsBuffer, optionalParams)
+
+		if err != nil {
+			c.FailedLogs = append(c.FailedLogs, c.logsBuffer...)
+		}
+
+		c.logsBuffer = c.logsBuffer[:0]
+		c.currentSize = 0
+	}
+
+	return err
+}
+
+// customHeadersKey is the context key for custom headers
+type customHeadersKey struct{}
+
+// CustomHeadersTransport is an http.RoundTripper that adds custom headers from the context
+type CustomHeadersTransport struct {
+	Base http.RoundTripper
+}
+
+// RoundTrip implements the http.RoundTripper interface
+func (t *CustomHeadersTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Get custom headers from the context
+	if headers, ok := req.Context().Value(customHeadersKey{}).(map[string]string); ok {
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+	}
+	return t.Base.RoundTrip(req)
+}
+
+// NewCustomHeadersClient creates a new http.Client with a CustomHeadersTransport
+func NewCustomHeadersClient(base *http.Client) *http.Client {
+	if base == nil {
+		base = http.DefaultClient
+	}
+	return &http.Client{
+		Transport: &CustomHeadersTransport{
+			Base: base.Transport,
+		},
+		Timeout:       base.Timeout,
+		Jar:           base.Jar,
+		CheckRedirect: base.CheckRedirect,
+	}
+}
+
+// WithCustomHeaders adds custom headers to a context
+func WithCustomHeaders(ctx context.Context, headers map[string]string) context.Context {
+	return context.WithValue(ctx, customHeadersKey{}, headers)
+}
+
+// FlushWithHeaders sends all buffered logs to the Datadog API with custom headers.
+// This method creates a new context with the custom headers and passes it to the Datadog API client.
+func (c *Client) FlushWithHeaders(ctx context.Context, headers map[string]string) (err error) {
+	if len(c.logsBuffer) > 0 {
+		// Create optional parameters with Content-Encoding header for gzip compression
+		optionalParams := datadogV2.SubmitLogOptionalParameters{
+			ContentEncoding: datadogV2.CONTENTENCODING_GZIP.Ptr(),
+		}
+
+		// Create a new context with the custom headers and API keys
+		requestCtx := ctx
+		if c.apiContext != nil {
+			requestCtx = c.apiContext
+		}
+		ctxWithHeaders := WithCustomHeaders(requestCtx, headers)
+
+		// Submit the logs with gzip compression enabled and custom headers
+		_, _, err = c.logsSubmitter.SubmitLog(ctxWithHeaders, c.logsBuffer, optionalParams)
 
 		if err != nil {
 			c.FailedLogs = append(c.FailedLogs, c.logsBuffer...)
@@ -450,4 +590,16 @@ func Parse(reader io.ReadCloser, containerName, blobNameResourceId string, piiSc
 		}
 	}
 
+}
+
+// AddCustomHeader adds a custom header to the next request.
+// This is a convenience method that creates a new context with a single custom header.
+func (c *Client) AddCustomHeader(ctx context.Context, key, value string) context.Context {
+	return WithCustomHeaders(ctx, map[string]string{key: value})
+}
+
+// FlushWithHeader sends all buffered logs to the Datadog API with a single custom header.
+// This is a convenience method that calls FlushWithHeaders with a single header.
+func (c *Client) FlushWithHeader(ctx context.Context, key, value string) error {
+	return c.FlushWithHeaders(ctx, map[string]string{key: value})
 }
