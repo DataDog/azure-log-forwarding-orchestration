@@ -48,8 +48,8 @@ var DefaultTags []string
 func init() {
 	DefaultTags = []string{
 		"forwarder:lfo",
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.ControlPlaneId)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.ConfigId)),
 	}
 }
 
