@@ -30,7 +30,7 @@ resource2 = mock(
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
 
 
-def mock_to_metadata(mock: Mock, expected_filtered_out: bool) -> ResourceMetadata:
+def to_resource_metadata(mock: Mock, expected_filtered_out: bool) -> ResourceMetadata:
     tags = list()
     for k, v in mock.tags.items() if mock.tags else []:
         tags.append(f"{k.strip().casefold()}:{v.strip().casefold()}")
@@ -46,6 +46,45 @@ class TestResourceClientHelpers(TestCase):
             RESOURCE_QUERY_FILTER.count("or resourceType"),
             len(FETCHED_RESOURCE_TYPES) - 1,
         )
+
+    def test_should_ignore_resource_by_region(self):
+        vm_type = "Microsoft.Compute/virtualMachines"
+        vm_name = "vm1"
+        # valid regions
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, vm_type, vm_name))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_2, vm_type, vm_name))
+        self.assertFalse(should_ignore_resource(CONTAINER_APPS_UNSUPPORTED_REGION, vm_type, vm_name))
+
+        # invalid regions
+        self.assertTrue(should_ignore_resource(UNSUPPORTED_REGION, vm_type, vm_name))
+        self.assertTrue(should_ignore_resource("nonsense region that doenst exist", vm_type, vm_name))
+        self.assertTrue(should_ignore_resource("global", vm_type, vm_name))
+
+    def test_should_ignore_resource_by_type(self):
+        # valid types
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/applicationGateways", "ag1"))
+
+        # invalid types
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/Snapshots", "snap1"))
+        self.assertTrue(
+            should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.AlertsManagement/PrometheusRuleGroups", "prg1")
+        )
+
+    def test_should_ignore_resource_by_name(self):
+        # normal resources
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2"))
+
+        # TODO (AZINTS-2763): ensure storage accounts are ignored
+        # control plane resources
+
+        self.assertTrue(
+            should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/managedEnvironments", "dd-log-forwarder-env-")
+        )
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-"))
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-"))
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-"))
 
 
 class TestResourceClient(IsolatedAsyncioTestCase):
@@ -117,7 +156,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         async with ResourceClient(self.log, self.cred, [], [], sub_id1) as client:
             resources = await client.get_resources_per_region()
 
-        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource2.id: mock_to_metadata(resource2, False)}})
+        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource2.id: to_resource_metadata(resource2, False)}})
 
     async def test_lfo_resource_is_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
@@ -134,7 +173,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         async with ResourceClient(self.log, self.cred, [], [], sub_id1) as client:
             resources = await client.get_resources_per_region()
-        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource1.id: mock_to_metadata(resource1, False)}})
+        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, False)}})
 
     async def test_storage_account_sub_resources_collected(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
@@ -173,7 +212,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                         tags=[],
                         filtered_out=False,
                     ),
-                    "res1": mock_to_metadata(resource1, False),
+                    "res1": to_resource_metadata(resource1, False),
                 }
             },
         )
@@ -193,7 +232,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: mock_to_metadata(resource1, False)}},
+            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, False)}},
         )
 
     async def test_resource_filtered_out_by_excluding_tags(self):
@@ -210,7 +249,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: mock_to_metadata(resource1, True)}},
+            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, True)}},
         )
 
     async def test_resource_filtered_out_by_inclusive_tags(self):
@@ -227,7 +266,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: mock_to_metadata(resource1, True)}},
+            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, True)}},
         )
 
     async def test_resource_included_by_inclusive_tags(self):
@@ -244,7 +283,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: mock_to_metadata(resource1, False)}},
+            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, False)}},
         )
 
     async def test_sub_resources_tagged_like_parent(self):
@@ -286,7 +325,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                         tags=expected_child_tags,
                         filtered_out=False,
                     ),
-                    "res1": mock_to_metadata(resource1, False),
+                    "res1": to_resource_metadata(resource1, False),
                 }
             },
         )
@@ -324,10 +363,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    mockSqlManagedInstance.id.lower(): mock_to_metadata(mockSqlManagedInstance, False),
+                    mockSqlManagedInstance.id.lower(): to_resource_metadata(mockSqlManagedInstance, False),
                     "/subscriptions/.../db2": ResourceMetadata(tags=[], filtered_out=False),
                     "/subscriptions/.../db1": ResourceMetadata(tags=[], filtered_out=False),
-                    resource1.id.lower(): mock_to_metadata(resource1, False),
+                    resource1.id.lower(): to_resource_metadata(resource1, False),
                 }
             },
         )
@@ -370,7 +409,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(
                         tags=["datadog:true"], filtered_out=False
                     ),
-                    resource1.id.lower(): mock_to_metadata(resource1, False),
+                    resource1.id.lower(): to_resource_metadata(resource1, False),
                 }
             },
         )
@@ -401,7 +440,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    mock_function_app.id.lower(): mock_to_metadata(mock_function_app, False),
+                    mock_function_app.id.lower(): to_resource_metadata(mock_function_app, False),
                     "/subscriptions/.../function-app/slots/prod": ResourceMetadata(
                         tags=["datadog:true"], filtered_out=False
                     ),
@@ -455,45 +494,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 }
             },
         )
-
-    def test_should_ignore_resource_by_region(self):
-        vm_type = "Microsoft.Compute/virtualMachines"
-        vm_name = "vm1"
-        # valid regions
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, vm_type, vm_name))
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_2, vm_type, vm_name))
-        self.assertFalse(should_ignore_resource(CONTAINER_APPS_UNSUPPORTED_REGION, vm_type, vm_name))
-
-        # invalid regions
-        self.assertTrue(should_ignore_resource(UNSUPPORTED_REGION, vm_type, vm_name))
-        self.assertTrue(should_ignore_resource("nonsense region that doenst exist", vm_type, vm_name))
-        self.assertTrue(should_ignore_resource("global", vm_type, vm_name))
-
-    def test_should_ignore_resource_by_type(self):
-        # valid types
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/applicationGateways", "ag1"))
-
-        # invalid types
-        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/Snapshots", "snap1"))
-        self.assertTrue(
-            should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.AlertsManagement/PrometheusRuleGroups", "prg1")
-        )
-
-    def test_should_ignore_resource_by_name(self):
-        # normal resources
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2"))
-
-        # TODO (AZINTS-2763): ensure storage accounts are ignored
-        # control plane resources
-
-        self.assertTrue(
-            should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/managedEnvironments", "dd-log-forwarder-env-")
-        )
-        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-"))
-        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-"))
-        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-"))
 
     def test_resource_tag_filtering_empty_filters(self):
         inclusive_tags = []

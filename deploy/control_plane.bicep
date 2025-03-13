@@ -20,8 +20,10 @@ param datadogSite string
 @description('PII Scrubber Rules')
 param piiScrubberRules string
 
-param datadogTelemetry bool
+@description('Tags to filter resources')
 param resourceTagFilter string
+
+param datadogTelemetry bool
 
 param logLevel string
 

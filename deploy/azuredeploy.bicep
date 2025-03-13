@@ -113,6 +113,8 @@ module initialRun './initial_run.bicep' = {
     datadogTelemetry: datadogTelemetry
     logLevel: logLevel
     monitoredSubscriptions: monitoredSubscriptions
+    piiScrubberRules: piiScrubberRules
+    resourceTagFilter: resourceTagFilter
     forwarderImage: '${imageRegistry}/forwarder:latest'
   }
   dependsOn: [
