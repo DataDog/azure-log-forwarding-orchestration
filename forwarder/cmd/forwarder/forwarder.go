@@ -336,6 +336,8 @@ func main() {
 
 	// Initialize Datadog API client
 	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.AddDefaultHeader("Content-Encoding", "zstd1")
+	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	datadogClient := datadog.NewAPIClient(datadogConfig)
 
