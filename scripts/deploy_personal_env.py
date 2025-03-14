@@ -184,8 +184,6 @@ run(
 
 # deployment has not happened, deploy LFO
 if initial_deploy or FORCE_ARM_DEPLOY:
-    print("Building ARM template...")
-    run("./ci/scripts/arm-template/build_initial_run.py", cwd=lfo_dir)
     print(
         f"Deploying LFO to {resource_group_name}...\n"
         + "\tCheck progress in the portal: "

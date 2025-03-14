@@ -43,4 +43,7 @@ for task in $tasks; do
     echo "Built $task"
 done
 
+echo Building the initial run script...
+python ci/scripts/control_plane/build_initial_run.py
+
 : ======================= Done Building =======================
