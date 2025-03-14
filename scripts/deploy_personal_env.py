@@ -1,21 +1,47 @@
 #!/usr/bin/env python
+"""
+Azure Log Forwarding Orchestration (LFO) Personal Environment Deployment Script
+
+This script automates the deployment of a personal LFO environment in Azure.
+It creates or updates the necessary resources including resource groups,
+storage accounts, container registries, and deploys the LFO components.
+
+Usage:
+    ./deploy_personal_env.py [--skip-docker] [--force-arm-deploy]
+
+Options:
+    --skip-docker       Skip Docker image building and pushing
+    --force-arm-deploy  Force ARM template deployment even if resources exist
+"""
+
 # stdlib
-from hashlib import md5
-from json import dumps, loads
-from os import environ
-from re import sub
-from subprocess import PIPE, Popen
-from sys import argv
-from time import sleep
-from typing import Any
+import os
+import sys
+import time
+import json
+import hashlib
+import logging
+import re
+import subprocess
+from typing import Any, List, Tuple, Union
 from urllib.parse import quote
 
-# azure
-from azure.identity import AzureCliCredential
-from azure.mgmt.resource import ResourceManagementClient
-from azure.mgmt.storage import StorageManagementClient
-from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
-from azure.storage.blob import BlobServiceClient
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+logger = logging.getLogger("lfo-deploy")
+
+# Try to import Azure dependencies
+try:
+    # azure
+    from azure.identity import AzureCliCredential
+    from azure.mgmt.resource import ResourceManagementClient
+    from azure.mgmt.storage import StorageManagementClient
+    from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
+    from azure.storage.blob import BlobServiceClient
+except ImportError:
+    logger.error("Required Azure dependencies not found. Please install them with:")
+    logger.error("pip install azure-identity azure-mgmt-resource azure-mgmt-storage azure-storage-blob")
+    sys.exit(1)
 
 # constants
 CONTAINER_NAME = "lfo"
@@ -26,18 +52,115 @@ LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
 
+# Required environment variables
+REQUIRED_ENV_VARS = ["DD_API_KEY"]
+
+# Required files and directories
+REQUIRED_PATHS = [
+    "ci/deployer-task/Dockerfile",
+    "ci/scripts/forwarder/build_and_push.sh",
+    "ci/scripts/control_plane/build_tasks.sh",
+    "control_plane/scripts/publish.py",
+    "deploy/azuredeploy.bicep",
+]
+
 # options
-SKIP_DOCKER = "--skip-docker" in argv
-FORCE_ARM_DEPLOY = "--force-arm-deploy" in argv
+SKIP_DOCKER = "--skip-docker" in sys.argv
+FORCE_ARM_DEPLOY = "--force-arm-deploy" in sys.argv
 
 
-# functions
+class ProgressIndicator:
+    """Simple progress indicator for long-running operations."""
+
+    def __init__(self, message: str):
+        self.message = message
+        self.running = False
+        self.start_time = 0.0
+
+    def start(self) -> None:
+        """Start the progress indicator."""
+        self.running = True
+        self.start_time = time.time()
+        logger.info(f"{self.message}...")
+
+    def stop(self, success: bool = True) -> None:
+        """Stop the progress indicator and show completion message."""
+        self.running = False
+        elapsed = time.time() - self.start_time
+        status = "completed" if success else "failed"
+        logger.info(f"{self.message} {status} in {elapsed:.2f} seconds")
+
+
+def validate_environment() -> None:
+    """
+    Validate that all required environment variables are set and dependencies are installed.
+
+    Raises:
+        SystemExit: If any required environment variable is missing or dependency is not installed.
+    """
+    # Check required environment variables
+    missing_vars = [var for var in REQUIRED_ENV_VARS if not os.environ.get(var)]
+    if missing_vars:
+        logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+        sys.exit(1)
+
+    # Check if az CLI is installed
+    try:
+        run("az --version", capture_output=False)
+    except Exception:
+        logger.error("Azure CLI (az) is not installed or not in PATH. Please install it.")
+        sys.exit(1)
+
+    # Check if Docker is installed if we're not skipping Docker
+    if not SKIP_DOCKER:
+        try:
+            run("docker --version", capture_output=False)
+        except Exception:
+            logger.error("Docker is not installed or not in PATH. Please install it or use --skip-docker.")
+            sys.exit(1)
+
+    logger.info("Environment validation successful")
+
+
+def validate_paths(base_dir: str) -> None:
+    """
+    Validate that all required files and directories exist.
+
+    Args:
+        base_dir: The base directory of the LFO project.
+
+    Raises:
+        SystemExit: If any required file or directory is missing.
+    """
+    missing_paths = []
+    for path in REQUIRED_PATHS:
+        full_path = os.path.join(base_dir, path)
+        if not os.path.exists(full_path):
+            missing_paths.append(path)
+
+    if missing_paths:
+        logger.error(f"Missing required files or directories: {', '.join(missing_paths)}")
+        logger.error("Please ensure you're running this script from the correct directory.")
+        sys.exit(1)
+
+    logger.info("Path validation successful")
+
+
 def get_name(name: str, max_length: int) -> str:
+    """
+    Generate a name that fits within the specified maximum length.
+    If the name is too long, it will be truncated and an MD5 hash will be appended.
+
+    Args:
+        name: The original name.
+        max_length: The maximum allowed length for the name.
+
+    Returns:
+        A name that fits within the specified maximum length.
+    """
     if len(name) > max_length:
-        name_bytes = name
-        if not isinstance(name, (bytes | bytearray)):
-            name_bytes = name.encode("utf-8")
-        name_md5 = md5(name_bytes).hexdigest()
+        name_bytes = name.encode("utf-8") if isinstance(name, str) else name
+        name_md5 = hashlib.md5(name_bytes).hexdigest()
         if max_length > MD5_LENGTH:
             name = f"{name[: max_length - len(name_md5)]}{name_md5}"
         else:
@@ -45,188 +168,493 @@ def get_name(name: str, max_length: int) -> str:
     return name.lower()
 
 
-def run(cmd: str | list[str], **kwargs: Any) -> str:
-    """Runs the command and returns the stdout, stripping any newlines"""
+def run(cmd: Union[str, List[str]], capture_output: bool = True, **kwargs: Any) -> str:
+    """
+    Run a command and return its output.
+
+    Args:
+        cmd: The command to run, either as a string or list of strings.
+        capture_output: Whether to capture and return the command output.
+        **kwargs: Additional keyword arguments to pass to subprocess.Popen.
+
+    Returns:
+        The command output as a string, with trailing newlines stripped.
+
+    Raises:
+        Exception: If the command returns a non-zero exit code.
+    """
     if isinstance(cmd, str):
-        cmd = cmd.split()
-    output = Popen(cmd, stdout=PIPE, text=True, **kwargs)
-    output.wait()
-    if not output.stdout:
+        cmd_list = cmd.split()
+        cmd_str = cmd
+    else:
+        cmd_list = cmd
+        cmd_str = " ".join(cmd)
+
+    logger.debug(f"Running command: {cmd_str}")
+
+    if capture_output:
+        process = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **kwargs)
+        stdout, stderr = process.communicate()
+
+        if process.returncode != 0:
+            error_msg = f"Error running command {cmd_str}: {stderr}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
+
+        return stdout.strip()
+    else:
+        process = subprocess.run(cmd_list, check=True, **kwargs)
         return ""
-    if output.returncode != 0:
-        err = "" if not output.stderr else output.stderr.read()
-        raise Exception(f"Error running command {cmd}: {err}")
-    return output.stdout.read().strip()
 
 
-# shared variables
-home = environ.get("HOME")
-user = environ.get("USER")
-lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}"))
-lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
-subscription_id = environ.get("AZURE_SUBSCRIPTION_ID") or run("az account show --query id -o tsv")
-credential = AzureCliCredential()
-resource_client = ResourceManagementClient(credential, subscription_id)
-storage_client = StorageManagementClient(credential, subscription_id)
-initial_deploy = False
+def create_or_update_resource_group(
+    resource_client: ResourceManagementClient, resource_group_name: str, location: str
+) -> Tuple[Any, bool]:
+    """
+    Create or update an Azure resource group.
 
+    Args:
+        resource_client: The Azure Resource Management client.
+        resource_group_name: The name of the resource group.
+        location: The Azure region where the resource group should be created.
 
-# set az cli to look at the correct subscription
-run(f"az account set --subscription {subscription_id}")
+    Returns:
+        A tuple containing the resource group object and a boolean indicating if it was newly created.
+    """
+    progress = ProgressIndicator(f"Checking resource group {resource_group_name}")
+    progress.start()
 
-
-# generate name
-resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
-
-
-# if resource group does not exist, create it
-if not resource_client.resource_groups.check_existence(resource_group_name):
-    print(f"Resource group {resource_group_name} does not exist, will be created")
-    resource_group = resource_client.resource_groups.create_or_update(resource_group_name, {"location": LOCATION})
-    initial_deploy = True
-    print(f"Created resource group {resource_group.name}")
-
-
-# check if staging storage account exists
-storage_account_name = get_name(lfo_base_name, STORAGE_ACCOUNT_MAX_LENGTH)
-availability_result = storage_client.storage_accounts.check_name_availability({"name": storage_account_name})
-
-
-# if storage account does not exist, create it
-if availability_result.name_available:
-    print(f"Attempting to create storage account {storage_account_name}...")
-    poller = storage_client.storage_accounts.begin_create(
-        resource_group_name,
-        storage_account_name,
-        {"location": LOCATION, "kind": "StorageV2", "sku": {"name": "Standard_LRS"}},
-    )
-
-    account_result = poller.result()
-    print(f"Created storage account {account_result.name}")
-
-    # set the allow_blob_public_access settings
-    public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
-    storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
-    print(f"Enabled public access for storage account {storage_account_name}. Waiting for settings to take effect...")
-    sleep(20)  # wait for storage account setting to propagate
-
-
-# get connection string
-keys = storage_client.storage_accounts.list_keys(resource_group_name, storage_account_name)
-connection_string = f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;AccountName={storage_account_name};AccountKey={keys.keys[0].value}"
-blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-
-
-container_client = blob_service_client.get_container_client(CONTAINER_NAME)
-
-# if container does not exist, create it
-if not container_client.exists():
     try:
-        container_client = blob_service_client.create_container(CONTAINER_NAME, public_access="container")
+        # Check if resource group exists
+        exists = resource_client.resource_groups.check_existence(resource_group_name)
+
+        if not exists:
+            logger.info(f"Resource group {resource_group_name} does not exist, creating it")
+            resource_group = resource_client.resource_groups.create_or_update(
+                resource_group_name, {"location": location}
+            )
+            progress.stop(True)
+            logger.info(f"Created resource group {resource_group.name}")
+            return resource_group, True
+        else:
+            # Resource group exists, get its details
+            resource_group = resource_client.resource_groups.get(resource_group_name)
+            progress.stop(True)
+            logger.info(f"Using existing resource group {resource_group.name}")
+            return resource_group, False
     except Exception as e:
-        print(
-            f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
+        progress.stop(False)
+        logger.error(f"Error creating/updating resource group: {str(e)}")
+        raise
+
+
+def create_or_update_storage_account(
+    storage_client: StorageManagementClient, resource_group_name: str, storage_account_name: str, location: str
+) -> Tuple[Any, str]:
+    """
+    Create or update an Azure storage account.
+
+    Args:
+        storage_client: The Azure Storage Management client.
+        resource_group_name: The name of the resource group.
+        storage_account_name: The name of the storage account.
+        location: The Azure region where the storage account should be created.
+
+    Returns:
+        A tuple containing the storage account object and its connection string.
+    """
+    progress = ProgressIndicator(f"Checking storage account {storage_account_name}")
+    progress.start()
+
+    try:
+        # Check if storage account exists
+        availability_result = storage_client.storage_accounts.check_name_availability({"name": storage_account_name})
+
+        if availability_result.name_available:
+            logger.info(f"Storage account {storage_account_name} does not exist, creating it")
+
+            # Create storage account
+            poller = storage_client.storage_accounts.begin_create(
+                resource_group_name,
+                storage_account_name,
+                {"location": location, "kind": "StorageV2", "sku": {"name": "Standard_LRS"}},
+            )
+
+            account_result = poller.result()
+            logger.info(f"Created storage account {account_result.name}")
+
+            # Enable blob public access
+            public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
+            storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
+
+            logger.info(f"Enabled public access for storage account {storage_account_name}")
+            logger.info("Waiting for settings to take effect...")
+            time.sleep(20)  # wait for storage account setting to propagate
+        else:
+            logger.info(f"Using existing storage account {storage_account_name}")
+            account_result = storage_client.storage_accounts.get(resource_group_name, storage_account_name)
+
+        # Get connection string
+        keys = storage_client.storage_accounts.list_keys(resource_group_name, storage_account_name)
+        connection_string = (
+            f"DefaultEndpointsProtocol=https;EndpointSuffix=core.windows.net;"
+            f"AccountName={storage_account_name};AccountKey={keys.keys[0].value}"
         )
-        raise SystemExit(1) from e
-    print(f"Created storage container {CONTAINER_NAME}")
+
+        progress.stop(True)
+        return account_result, connection_string
+    except Exception as e:
+        progress.stop(False)
+        logger.error(f"Error creating/updating storage account: {str(e)}")
+        raise
 
 
-# check if ACR exists
-container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
-acr_list = run(f"az acr list --resource-group {resource_group_name} --output json", cwd=lfo_dir)
+def create_or_update_storage_container(blob_service_client: BlobServiceClient, container_name: str) -> None:
+    """
+    Create or update a storage container.
 
-# if ACR does not exist, create it
-if not acr_list or container_registry_name not in acr_list:
-    print(f"Attempting to create container registry {container_registry_name}...")
-    run(
-        f"az acr create --resource-group {resource_group_name} --name {container_registry_name} --sku Standard",
-        cwd=lfo_dir,
-    )
-    print("Created container registry, updating to allow public access...")
-    run(
-        f"az acr update --name {container_registry_name} --anonymous-pull-enabled",
-        cwd=lfo_dir,
-    )
-    print("Waiting for settings to take effect...")
-    sleep(20)
+    Args:
+        blob_service_client: The Azure Blob Service client.
+        container_name: The name of the container.
+    """
+    progress = ProgressIndicator(f"Checking storage container {container_name}")
+    progress.start()
 
+    try:
+        container_client = blob_service_client.get_container_client(container_name)
 
-if not SKIP_DOCKER:
-    # login to ACR
-    login_output = run(
-        f"az acr login --name {container_registry_name}",
-        cwd=lfo_dir,
-    )
-    print(login_output)
+        if not container_client.exists():
+            try:
+                container_client = blob_service_client.create_container(container_name, public_access="container")
+                logger.info(f"Created storage container {container_name}")
+            except Exception as e:
+                progress.stop(False)
+                logger.error(
+                    f"Error creating storage container {container_name}. "
+                    "Sometimes this happens due to storage account public permissions "
+                    "not getting applied properly. Please re-try this script."
+                )
+                raise SystemExit(1) from e
+        else:
+            logger.info(f"Using existing storage container {container_name}")
 
-    # build and push deployer
-    run(
-        f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
-        + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
-        cwd=lfo_dir,
-    )
-
-    # build and push forwarder
-    run(
-        f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
-        cwd=lfo_dir,
-    )
+        progress.stop(True)
+    except Exception as e:
+        progress.stop(False)
+        logger.error(f"Error creating/updating storage container: {str(e)}")
+        raise
 
 
-# build current version of tasks
-run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
+def create_or_update_container_registry(
+    resource_group_name: str, container_registry_name: str, location: str, lfo_dir: str
+) -> None:
+    """
+    Create or update an Azure Container Registry.
 
-# upload current version of tasks to storage account
-run(
-    f"{lfo_dir}/control_plane/scripts/publish.py https://{storage_account_name}.blob.core.windows.net {connection_string}",
-    cwd=lfo_dir,
-)
+    Args:
+        resource_group_name: The name of the resource group.
+        container_registry_name: The name of the container registry.
+        location: The Azure region where the container registry should be created.
+        lfo_dir: The base directory of the LFO project.
+    """
+    progress = ProgressIndicator(f"Checking container registry {container_registry_name}")
+    progress.start()
 
-# deployment has not happened, deploy LFO
-if initial_deploy or FORCE_ARM_DEPLOY:
-    print(
+    try:
+        # Check if ACR exists
+        acr_list_json = run(f"az acr list --resource-group {resource_group_name} --output json", cwd=lfo_dir)
+        acr_list = json.loads(acr_list_json) if acr_list_json else []
+        acr_exists = any(acr["name"] == container_registry_name for acr in acr_list)
+
+        if not acr_exists:
+            logger.info(f"Container registry {container_registry_name} does not exist, creating it")
+
+            # Create ACR
+            run(
+                f"az acr create --resource-group {resource_group_name} "
+                f"--name {container_registry_name} --sku Standard",
+                cwd=lfo_dir,
+            )
+
+            logger.info("Created container registry, updating to allow public access...")
+
+            # Enable anonymous pull
+            run(f"az acr update --name {container_registry_name} --anonymous-pull-enabled", cwd=lfo_dir)
+
+            logger.info("Waiting for settings to take effect...")
+            time.sleep(20)
+        else:
+            logger.info(f"Using existing container registry {container_registry_name}")
+
+        progress.stop(True)
+    except Exception as e:
+        progress.stop(False)
+        logger.error(f"Error creating/updating container registry: {str(e)}")
+        raise
+
+
+def build_and_push_docker_images(container_registry_name: str, lfo_dir: str) -> None:
+    """
+    Build and push Docker images to the container registry.
+
+    Args:
+        container_registry_name: The name of the container registry.
+        lfo_dir: The base directory of the LFO project.
+    """
+    if SKIP_DOCKER:
+        logger.info("Skipping Docker image building and pushing")
+        return
+
+    try:
+        # Login to ACR
+        progress = ProgressIndicator(f"Logging in to container registry {container_registry_name}")
+        progress.start()
+        login_output = run(f"az acr login --name {container_registry_name}", cwd=lfo_dir)
+        progress.stop(True)
+        logger.info(login_output)
+
+        # Build and push deployer
+        progress = ProgressIndicator("Building and pushing deployer image")
+        progress.start()
+        run(
+            f"docker buildx build --platform=linux/amd64 "
+            f"--tag {container_registry_name}.azurecr.io/deployer:latest "
+            f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
+            cwd=lfo_dir,
+        )
+        progress.stop(True)
+
+        # Build and push forwarder
+        progress = ProgressIndicator("Building and pushing forwarder image")
+        progress.start()
+        run(f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest", cwd=lfo_dir)
+        progress.stop(True)
+    except Exception as e:
+        logger.error(f"Error building and pushing Docker images: {str(e)}")
+        raise
+
+
+def build_and_upload_tasks(lfo_dir: str, storage_account_name: str, connection_string: str) -> None:
+    """
+    Build and upload tasks to the storage account.
+
+    Args:
+        lfo_dir: The base directory of the LFO project.
+        storage_account_name: The name of the storage account.
+        connection_string: The storage account connection string.
+    """
+    try:
+        # Build tasks
+        progress = ProgressIndicator("Building tasks")
+        progress.start()
+        run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
+        progress.stop(True)
+
+        # Upload tasks
+        progress = ProgressIndicator("Uploading tasks to storage account")
+        progress.start()
+        run(
+            f"{lfo_dir}/control_plane/scripts/publish.py "
+            f"https://{storage_account_name}.blob.core.windows.net {connection_string}",
+            cwd=lfo_dir,
+        )
+        progress.stop(True)
+    except Exception as e:
+        logger.error(f"Error building and uploading tasks: {str(e)}")
+        raise
+
+
+def deploy_lfo(
+    resource_group_name: str,
+    subscription_id: str,
+    location: str,
+    container_registry_name: str,
+    storage_account_name: str,
+    lfo_dir: str,
+) -> None:
+    """
+    Deploy the LFO using ARM templates.
+
+    Args:
+        resource_group_name: The name of the resource group.
+        subscription_id: The Azure subscription ID.
+        location: The Azure region where the resources should be deployed.
+        container_registry_name: The name of the container registry.
+        storage_account_name: The name of the storage account.
+        lfo_dir: The base directory of the LFO project.
+    """
+    logger.info(
         f"Deploying LFO to {resource_group_name}...\n"
-        + "\tCheck progress in the portal: "
-        + f"https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
+        f"\tCheck progress in the portal: "
+        f"https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/"
+        f"%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2F"
+        f"providers%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
     )
-    api_key = environ["DD_API_KEY"]
+
+    # Get required parameters
+    api_key = os.environ["DD_API_KEY"]
+    pii_scrubber_rules = os.environ.get("PII_SCRUBBER_RULES", "")
+    datadog_site = os.environ.get("DD_SITE", "datadoghq.com")
+
+    # Prepare deployment parameters
     params = {
-        "monitoredSubscriptions": dumps([subscription_id]),
-        "controlPlaneLocation": LOCATION,
+        "monitoredSubscriptions": json.dumps([subscription_id]),
+        "controlPlaneLocation": location,
         "controlPlaneSubscriptionId": subscription_id,
         "controlPlaneResourceGroupName": resource_group_name,
         "datadogApiKey": api_key,
         "datadogTelemetry": "true",
-        "piiScrubberRules": environ.get("PII_SCRUBBER_RULES", ""),
-        "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
+        "piiScrubberRules": pii_scrubber_rules,
+        "datadogSite": datadog_site,
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
         "logLevel": "DEBUG",
     }
-    run(
-        [
-            *("az", "deployment", "mg", "create"),
-            *("--management-group-id", "Azure-Integrations-Mg"),
-            *("--location", LOCATION),
-            *("--name", resource_group_name),
-            *("--template-file", "./deploy/azuredeploy.bicep"),
-            *(paramPart for k, v in params.items() for paramPart in ("--parameters", f"{k}={v}")),
-        ],
-        cwd=lfo_dir,
-    )
-else:
-    # execute deployer
-    jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
-    if not jobs or not (
-        deployer_job := next(
-            (job.get("name") for job in jobs if "deployer-task" in job.get("name")),
-            None,
-        )
-    ):
-        print(
-            "Deployer not found, try re-running the script with `--force-arm-deploy` to ensure all resources are created"
-        )
-        raise SystemExit(1)
 
-    run(f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}")
-    print(f"Deployer job {deployer_job} executed! In a minute or two, all tasks will be redeployed.")
+    # Build command for ARM deployment
+    cmd = [
+        "az",
+        "deployment",
+        "mg",
+        "create",
+        "--management-group-id",
+        "Azure-Integrations-Mg",
+        "--location",
+        location,
+        "--name",
+        resource_group_name,
+        "--template-file",
+        "./deploy/azuredeploy.bicep",
+    ]
+
+    # Add parameters to command
+    for k, v in params.items():
+        cmd.extend(["--parameters", f"{k}={v}"])
+
+    # Execute deployment
+    progress = ProgressIndicator("Deploying LFO resources")
+    progress.start()
+    try:
+        run(cmd, cwd=lfo_dir)
+        progress.stop(True)
+        logger.info("LFO deployment completed successfully")
+    except Exception as e:
+        progress.stop(False)
+        logger.error(f"Error deploying LFO: {str(e)}")
+        raise
+
+
+def execute_deployer_job(resource_group_name: str, lfo_dir: str) -> None:
+    """
+    Execute the deployer job to redeploy all tasks.
+
+    Args:
+        resource_group_name: The name of the resource group.
+        lfo_dir: The base directory of the LFO project.
+    """
+    progress = ProgressIndicator("Finding deployer job")
+    progress.start()
+
+    try:
+        # Get list of container app jobs
+        jobs_json = run(f"az containerapp job list --resource-group {resource_group_name} --output json", cwd=lfo_dir)
+        jobs = json.loads(jobs_json) if jobs_json else []
+
+        # Find deployer job
+        deployer_job = next((job.get("name") for job in jobs if "deployer-task" in job.get("name", "")), None)
+
+        if not deployer_job:
+            progress.stop(False)
+            logger.error(
+                "Deployer not found, try re-running the script with `--force-arm-deploy` "
+                "to ensure all resources are created"
+            )
+            raise SystemExit(1)
+
+        progress.stop(True)
+
+        # Execute deployer job
+        progress = ProgressIndicator(f"Executing deployer job {deployer_job}")
+        progress.start()
+        run(f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}", cwd=lfo_dir)
+        progress.stop(True)
+
+        logger.info(f"Deployer job {deployer_job} executed! " "In a minute or two, all tasks will be redeployed.")
+    except Exception as e:
+        progress.stop(False)
+        logger.error(f"Error executing deployer job: {str(e)}")
+        raise
+
+
+def main() -> None:
+    """Main function to deploy the LFO environment."""
+    try:
+        # Get shared variables
+        home = os.environ.get("HOME", "")
+        user = os.environ.get("USER", "")
+        lfo_base_name = re.sub(r"\W+", "", os.environ.get("LFO_BASE_NAME", f"lfo{user}"))
+        lfo_dir = os.environ.get("LFO_DIR", f"{home}/dd/azure-log-forwarding-orchestration")
+
+        # Validate environment and paths
+        validate_environment()
+        validate_paths(lfo_dir)
+
+        # Get Azure subscription ID
+        subscription_id = os.environ.get("AZURE_SUBSCRIPTION_ID") or run("az account show --query id -o tsv")
+        if not subscription_id:
+            logger.error("Could not determine Azure subscription ID")
+            sys.exit(1)
+
+        # Initialize Azure clients
+        credential = AzureCliCredential()
+        resource_client = ResourceManagementClient(credential, subscription_id)
+        storage_client = StorageManagementClient(credential, subscription_id)
+
+        # Set az cli to look at the correct subscription
+        run(f"az account set --subscription {subscription_id}")
+
+        # Generate resource names
+        resource_group_name = get_name(lfo_base_name, RESOURCE_GROUP_MAX_LENGTH)
+        storage_account_name = get_name(lfo_base_name, STORAGE_ACCOUNT_MAX_LENGTH)
+        container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
+
+        # Create or update resource group
+        resource_group, initial_deploy = create_or_update_resource_group(resource_client, resource_group_name, LOCATION)
+
+        # Create or update storage account
+        storage_account, connection_string = create_or_update_storage_account(
+            storage_client, resource_group_name, storage_account_name, LOCATION
+        )
+
+        # Create blob service client
+        blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+
+        # Create or update storage container
+        create_or_update_storage_container(blob_service_client, CONTAINER_NAME)
+
+        # Create or update container registry
+        create_or_update_container_registry(resource_group_name, container_registry_name, LOCATION, lfo_dir)
+
+        # Build and push Docker images
+        build_and_push_docker_images(container_registry_name, lfo_dir)
+
+        # Build and upload tasks
+        build_and_upload_tasks(lfo_dir, storage_account_name, connection_string)
+
+        # Deploy LFO or execute deployer job
+        if initial_deploy or FORCE_ARM_DEPLOY:
+            deploy_lfo(
+                resource_group_name, subscription_id, LOCATION, container_registry_name, storage_account_name, lfo_dir
+            )
+        else:
+            execute_deployer_job(resource_group_name, lfo_dir)
+
+        logger.info("Deployment completed successfully!")
+
+    except Exception as e:
+        logger.error(f"Deployment failed: {str(e)}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
