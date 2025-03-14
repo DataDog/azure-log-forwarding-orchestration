@@ -9,9 +9,7 @@ from subprocess import run
 
 INITIAL_RUN_FILE = "./control_plane/scripts/initial_run.py"
 INITIAL_RUN_BUILD = "./build/initial_run.py"
-INITIAL_RUN_SCRIPT = "./build/initial_run.sh"
-ARM_TEMPLATE_FILE = "./deploy/azuredeploy.bicep"
-ARM_TEMPLATE_BUILD = "./build/azuredeploy.json"
+INITIAL_RUN_SCRIPT = "./dist/initial_run.sh"
 
 if os.path.isdir("./build"):
     rmtree("./build")
