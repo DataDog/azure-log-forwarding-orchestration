@@ -6,15 +6,16 @@ import (
 
 // Environment variable names
 const (
-	APM_ENABLED            = "DD_APM_ENABLED"
-	AZURE_WEB_JOBS_STORAGE = "AzureWebJobsStorage"
-	CONTROL_PLANE_ID       = "CONTROL_PLANE_ID"
-	CONFIG_ID              = "CONFIG_ID"
-	DD_API_KEY             = "DD_API_KEY"
-	DD_FORCE_PROFILE       = "DD_FORCE_PROFILE"
-	DD_SITE                = "DD_SITE"
-	NUM_GOROUTINES         = "NUM_GOROUTINES"
-	PII_SCRUBBER_RULES     = "PII_SCRUBBER_RULES"
+	ApmEnabled          = "DD_APM_ENABLED"
+	AzureWebJobsStorage = "AzureWebJobsStorage"
+	ControlPlaneId      = "CONTROL_PLANE_ID"
+	ConfigId            = "CONFIG_ID"
+	DdApiKey            = "DD_API_KEY"
+	ForceProfile        = "DD_FORCE_PROFILE"
+	DdSite              = "DD_SITE"
+	TelemetryEnabled    = "DD_TELEMETRY"
+	NumGoroutines       = "NUM_GOROUTINES"
+	PiiScrubberRules    = "PII_SCRUBBER_RULES"
 )
 
 func Get(envVar string) string {
@@ -26,5 +27,5 @@ func Enabled(environmentVariable string) bool {
 }
 
 func APMEnabled() bool {
-	return Enabled(APM_ENABLED)
+	return Enabled(ApmEnabled)
 }
