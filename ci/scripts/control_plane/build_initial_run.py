@@ -4,18 +4,15 @@
 
 import os
 import tomllib
-from shutil import rmtree
 from subprocess import run
 
 INITIAL_RUN_FILE = "./control_plane/scripts/initial_run.py"
 INITIAL_RUN_BUILD = "./build/initial_run.py"
 INITIAL_RUN_SCRIPT = "./dist/initial_run.sh"
 
-working_dirs = ["./build", "./dist"]
-for folder in working_dirs:
-    if os.path.isdir(folder):
-        rmtree(folder)
-    os.makedirs(folder, exist_ok=True)
+
+os.makedirs("./build", exist_ok=True)
+os.makedirs("./dist", exist_ok=True)
 
 # ========================= INITIAL RUN BUILD =========================
 print("Building initial run python script")
