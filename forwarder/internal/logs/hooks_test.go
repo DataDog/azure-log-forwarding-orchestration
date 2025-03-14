@@ -1,18 +1,24 @@
 package logs_test
 
 import (
+	// stdlib
 	"context"
 	"io"
 	"net/http"
 	"testing"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
-	logmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	// 3p
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
+	logmocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 )
 
 func TestHook(t *testing.T) {

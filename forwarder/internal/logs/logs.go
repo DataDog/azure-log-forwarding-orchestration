@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
 )
 
 const AzureService = "azure"
@@ -41,6 +42,17 @@ const initialBufferSize = 1024 * 1024 * 5
 const newlineBytes = 1
 
 const functionAppContainer = "insights-logs-functionapplogs"
+
+// DefaultTags are the tags to include with every log.
+var DefaultTags []string
+
+func init() {
+	DefaultTags = []string{
+		"forwarder:lfo",
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.ControlPlaneId)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.ConfigId)),
+	}
+}
 
 // Log represents a log to send to Datadog.
 type Log struct {
@@ -150,18 +162,15 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 }
 
 func sourceTag(resourceType string) string {
-	sourceTag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
-	return strings.Replace(sourceTag, "microsoft.", "azure.", -1)
+	tag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
+	return strings.Replace(tag, "microsoft.", "azure.", -1)
 }
 
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var source string
 	var resourceId string
-	tags := []string{
-		"forwarder:lfo",
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.CONTROL_PLANE_ID)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.CONFIG_ID)),
-	}
+	var tags []string
+	tags = append(tags, DefaultTags...)
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
@@ -319,10 +328,6 @@ const MaxLogSize = 1000000
 // https://docs.datadoghq.com/api/latest/logs/
 const MaxLogAge = 18 * time.Hour
 
-func ptr[T any](v T) *T {
-	return &v
-}
-
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	additionalProperties := map[string]string{
 		"time":  log.Time.Format(time.RFC3339),
@@ -330,9 +335,9 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	}
 
 	logItem := datadogV2.HTTPLogItem{
-		Service:              ptr(log.Service),
-		Ddsource:             ptr(log.Source),
-		Ddtags:               ptr(strings.Join(log.Tags, ",")),
+		Service:              pointer.Get(log.Service),
+		Ddsource:             pointer.Get(log.Source),
+		Ddtags:               pointer.Get(strings.Join(log.Tags, ",")),
 		Message:              log.Content(),
 		AdditionalProperties: additionalProperties,
 	}

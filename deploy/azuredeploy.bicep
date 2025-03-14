@@ -112,6 +112,7 @@ module initialRun './initial_run.bicep' = {
     logLevel: logLevel
     monitoredSubscriptions: monitoredSubscriptions
     forwarderImage: '${imageRegistry}/forwarder:latest'
+    storageAccountUrl: storageAccountUrl
   }
   dependsOn: [
     subscriptionPermissions

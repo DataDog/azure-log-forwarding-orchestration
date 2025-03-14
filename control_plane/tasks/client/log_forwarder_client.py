@@ -86,7 +86,7 @@ from tasks.common import (
     get_managed_env_id,
     get_managed_env_name,
     get_storage_account_name,
-    get_storage_endpoint_suffix,
+    is_azure_gov,
     log_errors,
 )
 from tasks.concurrency import collect, create_task_from_awaitable
@@ -406,7 +406,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         if len(keys) == 0:
             raise ValueError("No keys found for storage account")
         key: str = keys[0].value  # type: ignore
-        endpoint_suffix = get_storage_endpoint_suffix(storage_account_region)
+        endpoint_suffix = "core.{}.net".format("usgovcloudapi" if is_azure_gov(storage_account_region) else "windows")
         return f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key};EndpointSuffix={endpoint_suffix}"
 
     async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:

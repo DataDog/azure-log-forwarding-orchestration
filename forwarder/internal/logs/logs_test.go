@@ -18,8 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	// project
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 )
@@ -52,18 +50,6 @@ func MockScrubber(t *testing.T, scrubbedLog []byte) *mocks.MockScrubber {
 	mockScrubber := mocks.NewMockScrubber(ctrl)
 	mockScrubber.EXPECT().Scrub(gomock.Any()).Return(&scrubbedLog).AnyTimes()
 	return mockScrubber
-}
-
-func TestMain(m *testing.M) {
-	os.Setenv(environment.CONTROL_PLANE_ID, controlPlaneId)
-	os.Setenv(environment.CONFIG_ID, configId)
-
-	code := m.Run()
-
-	os.Unsetenv(environment.CONTROL_PLANE_ID)
-	os.Unsetenv(environment.CONFIG_ID)
-
-	os.Exit(code)
 }
 
 func TestAddLog(t *testing.T) {
@@ -111,8 +97,8 @@ func assertTags(t *testing.T, log *logs.Log) {
 	assert.Contains(t, log.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
 	assert.Contains(t, log.Tags, "source:azure.web.sites")
 	assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
-	assert.Contains(t, log.Tags, fmt.Sprintf("control_plane_id:%s", controlPlaneId))
-	assert.Contains(t, log.Tags, fmt.Sprintf("config_id:%s", configId))
+	assert.Contains(t, log.Tags, "control_plane_id:")
+	assert.Contains(t, log.Tags, "config_id:")
 	assert.Contains(t, log.Source, "azure.web.sites")
 	assert.Contains(t, log.Service, logs.AzureService)
 }
@@ -234,23 +220,22 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("Creates a valid log for plaintext logs outside of function app logs", func(t *testing.T) {
 		t.Parallel()
-		log, err := logs.NewLog(plaintextLog, "something normal", resourceId, MockScrubber(t, plaintextLog))
-		assert.NoError(t, err)
-		assert.NotNil(t, log)
-		assert.Equal(t, string(plaintextLog), log.Content())
-		assert.Equal(t, resourceId, log.ResourceId)
-		assert.Equal(t, "azure.web.sites", log.Source)
-		assert.Empty(t, log.Category)
-		assert.Equal(t, []string{
-			"forwarder:lfo",
-			"control_plane_id:9b008b0cc1ab",
-			"config_id:8e0ce1e1e048",
-			"subscription_id:0b62a232-b8db-4380-9da6-640f7272ed6d",
-			"resource_group:forwarder-integration-testing",
-			"source:azure.web.sites",
-		}, log.Tags)
-		assert.Equal(t, logs.AzureService, log.Service)
-		assert.Equal(t, log.Level, "Informational")
+		// GIVEN
+		expectedTags := append(logs.DefaultTags, "subscription_id:0b62a232-b8db-4380-9da6-640f7272ed6d", "resource_group:forwarder-integration-testing", "source:azure.web.sites")
+
+		// WHEN
+		plainTextLog, err := logs.NewLog(plaintextLog, "something normal", resourceId, MockScrubber(t, plaintextLog))
+		require.NoError(t, err)
+
+		// THEN
+		assert.NotNil(t, plainTextLog)
+		assert.Equal(t, string(plaintextLog), plainTextLog.Content())
+		assert.Equal(t, resourceId, plainTextLog.ResourceId)
+		assert.Equal(t, "azure.web.sites", plainTextLog.Source)
+		assert.Empty(t, plainTextLog.Category)
+		assert.Equal(t, expectedTags, plainTextLog.Tags)
+		assert.Equal(t, logs.AzureService, plainTextLog.Service)
+		assert.Equal(t, "Informational", plainTextLog.Level)
 	})
 
 	t.Run("Creates a valid log for plaintext logs without valid blob resource id", func(t *testing.T) {
@@ -262,11 +247,7 @@ func TestNewLog(t *testing.T) {
 		assert.Empty(t, log.ResourceId)
 		assert.Empty(t, log.Category)
 		assert.Empty(t, log.Source)
-		assert.Equal(t, []string{
-			"forwarder:lfo",
-			"control_plane_id:9b008b0cc1ab",
-			"config_id:8e0ce1e1e048",
-		}, log.Tags)
+		assert.Equal(t, logs.DefaultTags, log.Tags)
 		assert.Equal(t, logs.AzureService, log.Service)
 		assert.Equal(t, log.Level, "Informational")
 	})

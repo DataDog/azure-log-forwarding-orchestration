@@ -272,7 +272,7 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, logsApi
 	start := time.Now()
 
 	var hookClient *logs.Client
-	if environment.Enabled(environment.DD_TELEMETRY) {
+	if environment.Enabled(environment.TelemetryEnabled) {
 		hookClient = logs.NewClient(logsApiClient)
 		hookLogger := log.New()
 
@@ -324,13 +324,13 @@ func main() {
 		datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {
-				Key: environment.Get(environment.DD_API_KEY),
+				Key: environment.Get(environment.DdApiKey),
 			},
 		},
 	)
 
 	// Set Datadog site
-	ddSite := environment.Get(environment.DD_SITE)
+	ddSite := environment.Get(environment.DdSite)
 	if ddSite == "" {
 		ddSite = "datadoghq.com"
 	}
@@ -349,24 +349,24 @@ func main() {
 	datadogClient := datadog.NewAPIClient(datadogConfig)
 	datadogLogsClient := datadogV2.NewLogsApi(datadogClient)
 
-	goroutineString := environment.Get(environment.NUM_GOROUTINES)
+	goroutineString := environment.Get(environment.NumGoroutines)
 	if goroutineString == "" {
 		goroutineString = "10"
 	}
 	goroutineCount, err := strconv.ParseInt(goroutineString, 10, 64)
 	if err != nil {
-		logger.Fatalf(fmt.Errorf("error parsing %s: %w", environment.NUM_GOROUTINES, err).Error())
+		logger.Fatalf(fmt.Errorf("error parsing %s: %w", environment.NumGoroutines, err).Error())
 	}
 
 	// Initialize storage client
-	storageAccountConnectionString := environment.Get(environment.AZURE_WEB_JOBS_STORAGE)
+	storageAccountConnectionString := environment.Get(environment.AzureWebJobsStorage)
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
 		return
 	}
 
-	piiConfigJSON := environment.Get(environment.PII_SCRUBBER_RULES)
+	piiConfigJSON := environment.Get(environment.PiiScrubberRules)
 	piiScrubRules, err := parsePiiScrubRules(piiConfigJSON)
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error parsing PII scrubber rules: %w", err).Error())

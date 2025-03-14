@@ -31,7 +31,8 @@ class TaskTestCase(AsyncTestCase):
         return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}", **kwargs)
 
     def setUp(self) -> None:
-        self.credential = self.patch_path("tasks.task.DefaultAzureCredential")
+        cred_mock = self.patch_path("tasks.task.DefaultAzureCredential", return_value=AsyncMockClient())
+        self.credential = cred_mock.return_value
         self.credential.side_effect = AsyncMock
         self.datadog_api_client = self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
         self.datadog_logs_api = self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
