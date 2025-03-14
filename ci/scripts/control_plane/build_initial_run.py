@@ -11,10 +11,11 @@ INITIAL_RUN_FILE = "./control_plane/scripts/initial_run.py"
 INITIAL_RUN_BUILD = "./build/initial_run.py"
 INITIAL_RUN_SCRIPT = "./dist/initial_run.sh"
 
-if os.path.isdir("./build"):
-    rmtree("./build")
-
-os.makedirs("./build", exist_ok=True)
+working_dirs = ["./build", "./dist"]
+for folder in working_dirs:
+    if os.path.isdir(folder):
+        rmtree(folder)
+    os.makedirs(folder, exist_ok=True)
 
 # ========================= INITIAL RUN BUILD =========================
 print("Building initial run python script")
