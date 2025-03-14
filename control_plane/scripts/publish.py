@@ -70,8 +70,8 @@ with ThreadPoolExecutor() as executor:
     futures.append(executor.submit(client.upload_blob, MANIFEST_FILE_NAME, dumps(hashes), overwrite=True))
     exceptions = [e for f in futures if (e := f.exception())]
     for e in exceptions:
-        log.error("An error occurred while uploading a zip file", exc_info=e)
+        log.error("An error occurred while uploading a file", exc_info=e)
     if exceptions:
         raise SystemExit(1)
 
-log.info("Done uploading zip files to %s/%s", storage_account_url, TASKS_CONTAINER)
+log.info("Done uploading files to %s/%s", storage_account_url, TASKS_CONTAINER)
