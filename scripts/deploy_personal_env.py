@@ -7,11 +7,13 @@ It creates or updates the necessary resources including resource groups,
 storage accounts, container registries, and deploys the LFO components.
 
 Usage:
-    ./deploy_personal_env.py [--skip-docker] [--force-arm-deploy]
+    ./deploy_personal_env.py [--skip-docker] [--force-arm-deploy] [--config CONFIG_FILE] [--generate-config OUTPUT_FILE]
 
 Options:
     --skip-docker       Skip Docker image building and pushing
     --force-arm-deploy  Force ARM template deployment even if resources exist
+    --config CONFIG_FILE Path to the configuration file (optional, default: ./scripts/config.yaml)
+    --generate-config OUTPUT_FILE Generate a sample configuration file at the specified path and exit
 """
 
 # stdlib
@@ -23,27 +25,71 @@ import hashlib
 import logging
 import re
 import subprocess
-from typing import Any, List, Tuple, Union
+import argparse
+from typing import Any, Dict, List, Tuple, Union
 from urllib.parse import quote
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
-logger = logging.getLogger("lfo-deploy")
-
-# Try to import Azure dependencies
+# Try to import YAML
 try:
-    # azure
-    from azure.identity import AzureCliCredential
-    from azure.mgmt.resource import ResourceManagementClient
-    from azure.mgmt.storage import StorageManagementClient
-    from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
-    from azure.storage.blob import BlobServiceClient
+    import yaml
 except ImportError:
-    logger.error("Required Azure dependencies not found. Please install them with:")
-    logger.error("pip install azure-identity azure-mgmt-resource azure-mgmt-storage azure-storage-blob")
+    print("Required dependency 'pyyaml' not found. Please install it with:")
+    print("pip install pyyaml")
     sys.exit(1)
 
-# constants
+# Example configuration file template
+# This serves as documentation for users to understand available configuration options
+# Copy this to a file and modify as needed
+CONFIG_TEMPLATE = """# Azure Log Forwarding Orchestration (LFO) Deployment Configuration
+# Copy this template to a file (e.g., config.yaml) and modify as needed
+# Then run the script with: ./deploy_personal_env.py --config config.yaml
+
+# Azure configuration
+azure:
+  # Azure region for resource deployment
+  location: "eastus2"
+  # Azure subscription ID (optional, will use default if not specified)
+  subscription_id: ""
+  # Base name for resources (will use "lfo{username}" if not specified)
+  base_name: ""
+
+# Datadog configuration
+datadog:
+  # Datadog site (default: datadoghq.com)
+  site: "datadoghq.com"
+  # API key (can also be set via DD_API_KEY environment variable)
+  api_key: ""
+  # Enable Datadog telemetry (true/false)
+  telemetry_enabled: true
+  # PII scrubber rules (can also be set via PII_SCRUBBER_RULES environment variable)
+  pii_scrubber_rules: ""
+
+# Deployment options
+deployment:
+  # Log level for deployed services (DEBUG, INFO, WARN, ERROR)
+  log_level: "DEBUG"
+  # List of subscription IDs to monitor (empty array means current subscription only)
+  monitored_subscriptions: []
+  # Path to LFO directory (default: ~/dd/azure-log-forwarding-orchestration)
+  lfo_dir: ""
+
+# Docker options
+docker:
+  # Skip Docker image building and pushing (true/false)
+  skip_docker: false
+  # Tags for Docker images
+  deployer_tag: "latest"
+  forwarder_tag: "latest"
+
+# Logging configuration for the deployment script
+logging:
+  # Log level (DEBUG, INFO, WARN, ERROR)
+  level: "INFO"
+  # Include timestamps in logs (true/false)
+  include_timestamps: true
+"""
+
+# Constants
 CONTAINER_NAME = "lfo"
 CONTAINER_REGISTRY_MAX_LENGTH = 50
 FUNCTION_APP_MAX_LENGTH = 60
@@ -52,10 +98,7 @@ LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
 
-# Required environment variables
-REQUIRED_ENV_VARS = ["DD_API_KEY"]
-
-# Required files and directories
+# Required paths for validation
 REQUIRED_PATHS = [
     "ci/deployer-task/Dockerfile",
     "ci/scripts/forwarder/build_and_push.sh",
@@ -64,9 +107,100 @@ REQUIRED_PATHS = [
     "deploy/azuredeploy.bicep",
 ]
 
-# options
-SKIP_DOCKER = "--skip-docker" in sys.argv
-FORCE_ARM_DEPLOY = "--force-arm-deploy" in sys.argv
+# Required environment variables
+REQUIRED_ENV_VARS = ["DD_API_KEY"]
+
+
+# Parse command line arguments
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Deploy Azure Log Forwarding Orchestration")
+    parser.add_argument("--skip-docker", action="store_true", help="Skip Docker image building and pushing")
+    parser.add_argument(
+        "--force-arm-deploy", action="store_true", help="Force ARM template deployment even if resources exist"
+    )
+    parser.add_argument("--config", default="./scripts/config.yaml", help="Path to the configuration file (optional)")
+    parser.add_argument(
+        "--generate-config", metavar="OUTPUT_FILE", help="Generate a sample configuration file and exit"
+    )
+    return parser.parse_args()
+
+
+# Load configuration
+def load_config(config_path: str) -> Dict[str, Any]:
+    """
+    Load configuration from a YAML file.
+
+    Args:
+        config_path: Path to the configuration file.
+
+    Returns:
+        A dictionary containing the configuration.
+    """
+    if not config_path:
+        print("No configuration file specified, using default values.")
+        print("You can create a configuration file using the template at the top of this script.")
+        return {}
+
+    try:
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        return config if config else {}
+    except FileNotFoundError:
+        print(f"Configuration file '{config_path}' not found, using default values.")
+        print("You can create a configuration file using the following template:")
+        print("\nTo generate a sample configuration file, run:")
+        print(f"  python {sys.argv[0]} --generate-config [output_file]")
+        return {}
+    except yaml.YAMLError as e:
+        print(f"Error parsing configuration file: {e}")
+        print("Using default values instead.")
+        return {}
+    except Exception as e:
+        print(f"Unexpected error reading configuration file: {e}")
+        print("Using default values instead.")
+        return {}
+
+
+# Set up logging
+def setup_logging(config: Dict[str, Any]) -> logging.Logger:
+    """
+    Set up logging based on configuration.
+
+    Args:
+        config: The configuration dictionary.
+
+    Returns:
+        A configured logger.
+    """
+    # Ensure config is not None
+    if config is None:
+        config = {}
+
+    log_config = config.get("logging", {})
+
+    # Get log level with fallback to INFO
+    log_level_name = log_config.get("level", "INFO")
+    try:
+        log_level = getattr(logging, log_level_name)
+    except AttributeError:
+        print(f"Invalid log level '{log_level_name}', using INFO")
+        log_level = logging.INFO
+
+    if log_config.get("include_timestamps", True):
+        logging.basicConfig(
+            level=log_level, format="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
+    else:
+        logging.basicConfig(level=log_level, format="%(levelname)s - %(message)s")
+
+    logger = logging.getLogger("lfo-deploy")
+
+    # Log configuration status
+    if not config:
+        logger.info("No configuration file loaded, using default values")
+
+    return logger
 
 
 class ProgressIndicator:
@@ -91,15 +225,29 @@ class ProgressIndicator:
         logger.info(f"{self.message} {status} in {elapsed:.2f} seconds")
 
 
-def validate_environment() -> None:
+def validate_environment(config: Dict[str, Any]) -> None:
     """
     Validate that all required environment variables are set and dependencies are installed.
+
+    Args:
+        config: The configuration dictionary.
 
     Raises:
         SystemExit: If any required environment variable is missing or dependency is not installed.
     """
+    # Ensure config is not None
+    if config is None:
+        config = {}
+
     # Check required environment variables
-    missing_vars = [var for var in REQUIRED_ENV_VARS if not os.environ.get(var)]
+    required_vars = REQUIRED_ENV_VARS.copy()
+
+    # If Datadog API key is in config, we don't need it in environment
+    if config.get("datadog", {}).get("api_key"):
+        if "DD_API_KEY" in required_vars:
+            required_vars.remove("DD_API_KEY")
+
+    missing_vars = [var for var in required_vars if not os.environ.get(var)]
     if missing_vars:
         logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
         sys.exit(1)
@@ -112,7 +260,8 @@ def validate_environment() -> None:
         sys.exit(1)
 
     # Check if Docker is installed if we're not skipping Docker
-    if not SKIP_DOCKER:
+    skip_docker = config.get("docker", {}).get("skip_docker", False) or args.skip_docker
+    if not skip_docker:
         try:
             run("docker --version", capture_output=False)
         except Exception:
@@ -207,9 +356,7 @@ def run(cmd: Union[str, List[str]], capture_output: bool = True, **kwargs: Any) 
         return ""
 
 
-def create_or_update_resource_group(
-    resource_client: ResourceManagementClient, resource_group_name: str, location: str
-) -> Tuple[Any, bool]:
+def create_or_update_resource_group(resource_client: Any, resource_group_name: str, location: str) -> Tuple[Any, bool]:
     """
     Create or update an Azure resource group.
 
@@ -249,7 +396,7 @@ def create_or_update_resource_group(
 
 
 def create_or_update_storage_account(
-    storage_client: StorageManagementClient, resource_group_name: str, storage_account_name: str, location: str
+    storage_client: Any, resource_group_name: str, storage_account_name: str, location: str
 ) -> Tuple[Any, str]:
     """
     Create or update an Azure storage account.
@@ -284,6 +431,8 @@ def create_or_update_storage_account(
             logger.info(f"Created storage account {account_result.name}")
 
             # Enable blob public access
+            from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
+
             public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
             storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
 
@@ -309,7 +458,7 @@ def create_or_update_storage_account(
         raise
 
 
-def create_or_update_storage_container(blob_service_client: BlobServiceClient, container_name: str) -> None:
+def create_or_update_storage_container(blob_service_client: Any, container_name: str) -> None:
     """
     Create or update a storage container.
 
@@ -346,7 +495,7 @@ def create_or_update_storage_container(blob_service_client: BlobServiceClient, c
 
 
 def create_or_update_container_registry(
-    resource_group_name: str, container_registry_name: str, location: str, lfo_dir: str
+    resource_group_name: str, container_registry_name: str, location: str, lfo_dir: str, config: Dict[str, Any]
 ) -> None:
     """
     Create or update an Azure Container Registry.
@@ -356,7 +505,12 @@ def create_or_update_container_registry(
         container_registry_name: The name of the container registry.
         location: The Azure region where the container registry should be created.
         lfo_dir: The base directory of the LFO project.
+        config: The configuration dictionary.
     """
+    # Ensure config is not None
+    if config is None:
+        config = {}
+
     progress = ProgressIndicator(f"Checking container registry {container_registry_name}")
     progress.start()
 
@@ -393,15 +547,21 @@ def create_or_update_container_registry(
         raise
 
 
-def build_and_push_docker_images(container_registry_name: str, lfo_dir: str) -> None:
+def build_and_push_docker_images(container_registry_name: str, lfo_dir: str, config: Dict[str, Any]) -> None:
     """
     Build and push Docker images to the container registry.
 
     Args:
         container_registry_name: The name of the container registry.
         lfo_dir: The base directory of the LFO project.
+        config: The configuration dictionary.
     """
-    if SKIP_DOCKER:
+    # Ensure config is not None
+    if config is None:
+        config = {}
+
+    skip_docker = config.get("docker", {}).get("skip_docker", False) or args.skip_docker
+    if skip_docker:
         logger.info("Skipping Docker image building and pushing")
         return
 
@@ -413,12 +573,16 @@ def build_and_push_docker_images(container_registry_name: str, lfo_dir: str) -> 
         progress.stop(True)
         logger.info(login_output)
 
+        # Get Docker tags from config
+        deployer_tag = config.get("docker", {}).get("deployer_tag", "latest")
+        forwarder_tag = config.get("docker", {}).get("forwarder_tag", "latest")
+
         # Build and push deployer
         progress = ProgressIndicator("Building and pushing deployer image")
         progress.start()
         run(
             f"docker buildx build --platform=linux/amd64 "
-            f"--tag {container_registry_name}.azurecr.io/deployer:latest "
+            f"--tag {container_registry_name}.azurecr.io/deployer:{deployer_tag} "
             f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
             cwd=lfo_dir,
         )
@@ -427,7 +591,7 @@ def build_and_push_docker_images(container_registry_name: str, lfo_dir: str) -> 
         # Build and push forwarder
         progress = ProgressIndicator("Building and pushing forwarder image")
         progress.start()
-        run(f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest", cwd=lfo_dir)
+        run(f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io {forwarder_tag}", cwd=lfo_dir)
         progress.stop(True)
     except Exception as e:
         logger.error(f"Error building and pushing Docker images: {str(e)}")
@@ -471,6 +635,7 @@ def deploy_lfo(
     container_registry_name: str,
     storage_account_name: str,
     lfo_dir: str,
+    config: Dict[str, Any],
 ) -> None:
     """
     Deploy the LFO using ARM templates.
@@ -482,7 +647,12 @@ def deploy_lfo(
         container_registry_name: The name of the container registry.
         storage_account_name: The name of the storage account.
         lfo_dir: The base directory of the LFO project.
+        config: The configuration dictionary.
     """
+    # Ensure config is not None
+    if config is None:
+        config = {}
+
     logger.info(
         f"Deploying LFO to {resource_group_name}...\n"
         f"\tCheck progress in the portal: "
@@ -491,24 +661,34 @@ def deploy_lfo(
         f"providers%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
     )
 
-    # Get required parameters
-    api_key = os.environ["DD_API_KEY"]
-    pii_scrubber_rules = os.environ.get("PII_SCRUBBER_RULES", "")
-    datadog_site = os.environ.get("DD_SITE", "datadoghq.com")
+    # Get parameters from config or environment variables
+    datadog_config = config.get("datadog", {})
+    deployment_config = config.get("deployment", {})
+
+    api_key = datadog_config.get("api_key") or os.environ.get("DD_API_KEY", "")
+    pii_scrubber_rules = datadog_config.get("pii_scrubber_rules") or os.environ.get("PII_SCRUBBER_RULES", "")
+    datadog_site = datadog_config.get("site", "datadoghq.com")
+    telemetry_enabled = str(datadog_config.get("telemetry_enabled", True)).lower()
+    log_level = deployment_config.get("log_level", "DEBUG")
+
+    # Get monitored subscriptions
+    monitored_subscriptions = deployment_config.get("monitored_subscriptions", [])
+    if not monitored_subscriptions:
+        monitored_subscriptions = [subscription_id]
 
     # Prepare deployment parameters
     params = {
-        "monitoredSubscriptions": json.dumps([subscription_id]),
+        "monitoredSubscriptions": json.dumps(monitored_subscriptions),
         "controlPlaneLocation": location,
         "controlPlaneSubscriptionId": subscription_id,
         "controlPlaneResourceGroupName": resource_group_name,
         "datadogApiKey": api_key,
-        "datadogTelemetry": "true",
+        "datadogTelemetry": telemetry_enabled,
         "piiScrubberRules": pii_scrubber_rules,
         "datadogSite": datadog_site,
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
-        "logLevel": "DEBUG",
+        "logLevel": log_level,
     }
 
     # Build command for ARM deployment
@@ -586,26 +766,84 @@ def execute_deployer_job(resource_group_name: str, lfo_dir: str) -> None:
         raise
 
 
+def generate_config_file(output_path: str) -> None:
+    """
+    Generate a sample configuration file.
+
+    Args:
+        output_path: Path where the configuration file should be written.
+    """
+    try:
+        with open(output_path, "w") as f:
+            f.write(CONFIG_TEMPLATE)
+        print(f"Sample configuration file generated at: {output_path}")
+        print("Edit this file with your desired settings and run the script with:")
+        print(f"  python {sys.argv[0]} --config {output_path}")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error generating configuration file: {e}")
+        sys.exit(1)
+
+
 def main() -> None:
     """Main function to deploy the LFO environment."""
     try:
+        # Load configuration
+        config = load_config(args.config)
+
+        # If no config was loaded, inform the user about the --generate-config option
+        if not config:
+            logger.info("Tip: You can generate a sample configuration file with:")
+            logger.info(f"  python {sys.argv[0]} --generate-config your_config.yaml")
+
         # Get shared variables
         home = os.environ.get("HOME", "")
         user = os.environ.get("USER", "")
-        lfo_base_name = re.sub(r"\W+", "", os.environ.get("LFO_BASE_NAME", f"lfo{user}"))
-        lfo_dir = os.environ.get("LFO_DIR", f"{home}/dd/azure-log-forwarding-orchestration")
+
+        # Get values from config or defaults
+        azure_config = config.get("azure", {})
+        deployment_config = config.get("deployment", {})
+
+        lfo_base_name = azure_config.get("base_name") or os.environ.get("LFO_BASE_NAME", f"lfo{user}")
+        lfo_base_name = re.sub(r"\W+", "", lfo_base_name)
+
+        lfo_dir = deployment_config.get("lfo_dir") or os.environ.get(
+            "LFO_DIR", f"{home}/dd/azure-log-forwarding-orchestration"
+        )
+        location = azure_config.get("location", LOCATION)
+
+        # Log key configuration values
+        logger.info(f"Using base name: {lfo_base_name}")
+        logger.info(f"Using LFO directory: {lfo_dir}")
+        logger.info(f"Using Azure location: {location}")
 
         # Validate environment and paths
-        validate_environment()
+        validate_environment(config)
         validate_paths(lfo_dir)
 
         # Get Azure subscription ID
-        subscription_id = os.environ.get("AZURE_SUBSCRIPTION_ID") or run("az account show --query id -o tsv")
+        subscription_id = (
+            azure_config.get("subscription_id")
+            or os.environ.get("AZURE_SUBSCRIPTION_ID")
+            or run("az account show --query id -o tsv")
+        )
         if not subscription_id:
             logger.error("Could not determine Azure subscription ID")
             sys.exit(1)
 
+        logger.info(f"Using Azure subscription ID: {subscription_id}")
+
         # Initialize Azure clients
+        try:
+            from azure.identity import AzureCliCredential
+            from azure.mgmt.resource import ResourceManagementClient
+            from azure.mgmt.storage import StorageManagementClient
+            from azure.storage.blob import BlobServiceClient
+        except ImportError:
+            logger.error("Required Azure dependencies not found. Please install them with:")
+            logger.error("pip install azure-identity azure-mgmt-resource azure-mgmt-storage azure-storage-blob")
+            sys.exit(1)
+
         credential = AzureCliCredential()
         resource_client = ResourceManagementClient(credential, subscription_id)
         storage_client = StorageManagementClient(credential, subscription_id)
@@ -618,12 +856,16 @@ def main() -> None:
         storage_account_name = get_name(lfo_base_name, STORAGE_ACCOUNT_MAX_LENGTH)
         container_registry_name = get_name(lfo_base_name, CONTAINER_REGISTRY_MAX_LENGTH)
 
+        logger.info(f"Using resource group name: {resource_group_name}")
+        logger.info(f"Using storage account name: {storage_account_name}")
+        logger.info(f"Using container registry name: {container_registry_name}")
+
         # Create or update resource group
-        resource_group, initial_deploy = create_or_update_resource_group(resource_client, resource_group_name, LOCATION)
+        resource_group, initial_deploy = create_or_update_resource_group(resource_client, resource_group_name, location)
 
         # Create or update storage account
         storage_account, connection_string = create_or_update_storage_account(
-            storage_client, resource_group_name, storage_account_name, LOCATION
+            storage_client, resource_group_name, storage_account_name, location
         )
 
         # Create blob service client
@@ -633,18 +875,24 @@ def main() -> None:
         create_or_update_storage_container(blob_service_client, CONTAINER_NAME)
 
         # Create or update container registry
-        create_or_update_container_registry(resource_group_name, container_registry_name, LOCATION, lfo_dir)
+        create_or_update_container_registry(resource_group_name, container_registry_name, location, lfo_dir, config)
 
         # Build and push Docker images
-        build_and_push_docker_images(container_registry_name, lfo_dir)
+        build_and_push_docker_images(container_registry_name, lfo_dir, config)
 
         # Build and upload tasks
         build_and_upload_tasks(lfo_dir, storage_account_name, connection_string)
 
         # Deploy LFO or execute deployer job
-        if initial_deploy or FORCE_ARM_DEPLOY:
+        if initial_deploy or args.force_arm_deploy:
             deploy_lfo(
-                resource_group_name, subscription_id, LOCATION, container_registry_name, storage_account_name, lfo_dir
+                resource_group_name,
+                subscription_id,
+                location,
+                container_registry_name,
+                storage_account_name,
+                lfo_dir,
+                config,
             )
         else:
             execute_deployer_job(resource_group_name, lfo_dir)
@@ -657,4 +905,25 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        # Parse command line arguments
+        args = parse_args()
+
+        # Check if we should generate a sample configuration file
+        if args.generate_config:
+            generate_config_file(args.generate_config)
+            # generate_config_file will exit the script
+
+        # Load configuration
+        config = load_config(args.config)
+
+        # Set up logging
+        logger = setup_logging(config)
+
+        main()
+    except KeyboardInterrupt:
+        print("\nOperation cancelled by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Unexpected error: {e}")
+        sys.exit(1)
