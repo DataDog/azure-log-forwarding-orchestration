@@ -25,7 +25,7 @@ import (
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointers"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
 )
 
 const AzureService = "azure"
@@ -335,9 +335,9 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	}
 
 	logItem := datadogV2.HTTPLogItem{
-		Service:              pointers.Get(log.Service),
-		Ddsource:             pointers.Get(log.Source),
-		Ddtags:               pointers.Get(strings.Join(log.Tags, ",")),
+		Service:              pointer.Get(log.Service),
+		Ddsource:             pointer.Get(log.Source),
+		Ddtags:               pointer.Get(strings.Join(log.Tags, ",")),
 		Message:              log.Content(),
 		AdditionalProperties: additionalProperties,
 	}
