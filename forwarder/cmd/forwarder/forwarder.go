@@ -2,11 +2,13 @@ package main
 
 import (
 	// stdlib
+
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -36,6 +38,162 @@ const serviceName = "dd-azure-forwarder"
 type resourceBytes struct {
 	resourceId string
 	bytes      int64
+}
+
+// CustomRoundTripper is a custom implementation of http.RoundTripper
+// that adds logging, metrics, and other functionality to HTTP requests.
+type CustomRoundTripper struct {
+	base                 http.RoundTripper
+	logger               *log.Entry
+	userAgent            string
+	maxRetries           int
+	retryWaitTime        time.Duration
+	retryableStatusCodes map[int]bool
+}
+
+// RoundTrip implements the http.RoundTripper interface.
+func (rt *CustomRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	start := time.Now()
+	requestID := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	// Add custom headers
+	if rt.userAgent != "" {
+		req.Header.Set("User-Agent", rt.userAgent)
+	}
+	req.Header.Set("X-Request-ID", requestID)
+
+	// Log the request
+	rt.logger.WithFields(log.Fields{
+		"method":     req.Method,
+		"url":        req.URL.String(),
+		"request_id": requestID,
+		"headers":    req.Header,
+	}).Debug("Sending request to Datadog API")
+
+	var resp *http.Response
+	var err error
+	var attempts int
+
+	// Implement retry logic
+	for attempts = 0; attempts <= rt.maxRetries; attempts++ {
+		// Clone the request body if needed for retries
+		if attempts > 0 {
+			rt.logger.WithFields(log.Fields{
+				"request_id": requestID,
+				"attempt":    attempts,
+			}).Debug("Retrying request")
+
+			// Add a small delay before retrying
+			time.Sleep(rt.retryWaitTime * time.Duration(attempts))
+		}
+
+		// Execute the request using the base RoundTripper
+		resp, err = rt.base.RoundTrip(req)
+
+		// If successful or not a retryable error, break
+		if err == nil && (!rt.isRetryableStatusCode(resp.StatusCode) || attempts == rt.maxRetries) {
+			break
+		}
+
+		// If this was the last attempt, don't close the response
+		if attempts < rt.maxRetries {
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
+		}
+	}
+
+	// Calculate request duration
+	duration := time.Since(start)
+
+	// Log the response
+	if err != nil {
+		rt.logger.WithFields(log.Fields{
+			"method":     req.Method,
+			"url":        req.URL.String(),
+			"duration":   duration.String(),
+			"error":      err.Error(),
+			"request_id": requestID,
+			"attempts":   attempts,
+		}).Error("Request to Datadog API failed")
+	} else {
+		rt.logger.WithFields(log.Fields{
+			"method":      req.Method,
+			"url":         req.URL.String(),
+			"status_code": resp.StatusCode,
+			"duration":    duration.String(),
+			"request_id":  requestID,
+			"attempts":    attempts,
+		}).Debug("Received response from Datadog API")
+	}
+
+	return resp, err
+}
+
+// isRetryableStatusCode determines if a status code should trigger a retry
+func (rt *CustomRoundTripper) isRetryableStatusCode(statusCode int) bool {
+	return rt.retryableStatusCodes[statusCode]
+}
+
+// CustomRoundTripperOption is a function that configures a CustomRoundTripper.
+type CustomRoundTripperOption func(*CustomRoundTripper)
+
+// WithMaxRetries sets the maximum number of retries for the CustomRoundTripper.
+func WithMaxRetries(maxRetries int) CustomRoundTripperOption {
+	return func(rt *CustomRoundTripper) {
+		rt.maxRetries = maxRetries
+	}
+}
+
+// WithRetryWaitTime sets the wait time between retries for the CustomRoundTripper.
+func WithRetryWaitTime(waitTime time.Duration) CustomRoundTripperOption {
+	return func(rt *CustomRoundTripper) {
+		rt.retryWaitTime = waitTime
+	}
+}
+
+// WithRetryableStatusCodes sets the status codes that should trigger a retry.
+func WithRetryableStatusCodes(statusCodes map[int]bool) CustomRoundTripperOption {
+	return func(rt *CustomRoundTripper) {
+		rt.retryableStatusCodes = statusCodes
+	}
+}
+
+// NewCustomRoundTripper creates a new CustomRoundTripper with the given options.
+func NewCustomRoundTripper(base http.RoundTripper, logger *log.Entry, userAgent string, opts ...CustomRoundTripperOption) *CustomRoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+
+	if logger == nil {
+		logger = log.NewEntry(log.StandardLogger())
+	}
+
+	// Default retryable status codes
+	retryableStatusCodes := map[int]bool{
+		408: true, // Request Timeout
+		429: true, // Too Many Requests
+		500: true, // Internal Server Error
+		502: true, // Bad Gateway
+		503: true, // Service Unavailable
+		504: true, // Gateway Timeout
+	}
+
+	rt := &CustomRoundTripper{
+		base:                 base,
+		logger:               logger,
+		userAgent:            userAgent,
+		maxRetries:           3,
+		retryWaitTime:        500 * time.Millisecond,
+		retryableStatusCodes: retryableStatusCodes,
+	}
+
+	// Apply options
+	for _, opt := range opts {
+		opt(rt)
+	}
+
+	return rt
 }
 
 func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (err error) {
@@ -80,11 +238,12 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 func parseLogs(reader io.ReadCloser, containerName, blobNameResourceId string, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
 	var processedRawBytes int64
 	var processedLogs int64
+	var lastErr error
 
-	var currLog *logs.Log
-	var err error
-	for currLog, err = range logs.Parse(reader, containerName, blobNameResourceId, piiScrubber) {
+	// Use the iter.Seq2 with range syntax
+	for currLog, err := range logs.Parse(reader, containerName, blobNameResourceId, piiScrubber) {
 		if err != nil {
+			lastErr = err
 			break
 		}
 
@@ -92,7 +251,8 @@ func parseLogs(reader io.ReadCloser, containerName, blobNameResourceId string, p
 		processedLogs += 1
 		logsChannel <- currLog
 	}
-	return processedRawBytes, processedLogs, err
+
+	return processedRawBytes, processedLogs, lastErr
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
@@ -337,6 +497,31 @@ func main() {
 	// Initialize Datadog API client
 	datadogConfig := datadog.NewConfiguration()
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+
+	// Create custom HTTP client with our RoundTripper
+	customRoundTripper := NewCustomRoundTripper(
+		nil, // Use default transport as base
+		logger,
+		fmt.Sprintf("%s/%s", serviceName, "1.0.0"), // Add version if available
+		WithMaxRetries(5),
+		WithRetryWaitTime(1*time.Second),
+		WithRetryableStatusCodes(map[int]bool{
+			408: true, // Request Timeout
+			429: true, // Too Many Requests
+			500: true, // Internal Server Error
+			502: true, // Bad Gateway
+			503: true, // Service Unavailable
+			504: true, // Gateway Timeout
+			// Add any other status codes that should trigger a retry
+		}),
+	)
+
+	// Set the custom HTTP client in the Datadog configuration
+	datadogConfig.HTTPClient = &http.Client{
+		Transport: customRoundTripper,
+		Timeout:   2 * time.Minute, // Set an appropriate timeout
+	}
+
 	datadogClient := datadog.NewAPIClient(datadogConfig)
 
 	goroutineString := environment.Get(environment.NUM_GOROUTINES)
