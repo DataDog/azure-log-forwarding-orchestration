@@ -8,7 +8,7 @@ test_task() {
     local task_name=$1
     echo "Testing $task_name. If there is an import error," \
         "the task is missing a dependency or is importing something incorrectly."
-    /venv/bin/uv --quiet --no-python-downloads venv ./test_venv
+    /venv/bin/uv --quiet --no-python-downloads venv --python 3.11 ./test_venv
     source ./test_venv/bin/activate
 
     /venv/bin/uv --quiet pip install ".[$task_name]"
