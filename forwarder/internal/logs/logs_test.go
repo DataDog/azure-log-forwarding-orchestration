@@ -95,11 +95,11 @@ func TestAddLog(t *testing.T) {
 func assertTags(t *testing.T, log *logs.Log) {
 	assert.Contains(t, log.Tags, "forwarder:lfo")
 	assert.Contains(t, log.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
-	assert.Contains(t, log.Tags, "source:azure.web.sites")
+	assert.Contains(t, log.Tags, "source:azure.web")
 	assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
 	assert.Contains(t, log.Tags, "control_plane_id:")
 	assert.Contains(t, log.Tags, "config_id:")
-	assert.Contains(t, log.Source, "azure.web.sites")
+	assert.Contains(t, log.Source, "azure.web")
 	assert.Contains(t, log.Service, logs.AzureService)
 }
 
@@ -221,7 +221,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("Creates a valid log for plaintext logs outside of function app logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		expectedTags := append(logs.DefaultTags, "subscription_id:0b62a232-b8db-4380-9da6-640f7272ed6d", "resource_group:forwarder-integration-testing", "source:azure.web.sites")
+		expectedTags := append(logs.DefaultTags, "subscription_id:0b62a232-b8db-4380-9da6-640f7272ed6d", "resource_group:forwarder-integration-testing", "source:azure.web")
 
 		// WHEN
 		plainTextLog, err := logs.NewLog(plaintextLog, "something normal", resourceId, MockScrubber(t, plaintextLog))
@@ -231,7 +231,7 @@ func TestNewLog(t *testing.T) {
 		assert.NotNil(t, plainTextLog)
 		assert.Equal(t, string(plaintextLog), plainTextLog.Content())
 		assert.Equal(t, resourceId, plainTextLog.ResourceId)
-		assert.Equal(t, "azure.web.sites", plainTextLog.Source)
+		assert.Equal(t, "azure.web", plainTextLog.Source)
 		assert.Empty(t, plainTextLog.Category)
 		assert.Equal(t, expectedTags, plainTextLog.Tags)
 		assert.Equal(t, logs.AzureService, plainTextLog.Service)
