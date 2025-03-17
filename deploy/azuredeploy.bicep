@@ -116,6 +116,7 @@ module initialRun './initial_run.bicep' = {
     piiScrubberRules: piiScrubberRules
     resourceTagFilter: resourceTagFilter
     forwarderImage: '${imageRegistry}/forwarder:latest'
+    storageAccountUrl: storageAccountUrl
   }
   dependsOn: [
     subscriptionPermissions

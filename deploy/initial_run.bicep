@@ -8,8 +8,10 @@ param datadogTelemetry bool
 param logLevel string
 param monitoredSubscriptions string
 param forwarderImage string
-param piiScrubberRules string
-param resourceTagFilter string
+param piiScrubberRules string = ''
+param resourceTagFilter string = ''
+param storageAccountUrl string
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
   name: storageAccountName
 }
@@ -46,7 +48,7 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'RESOURCE_TAG_FILTER', value: resourceTagFilter }
     ]
     azCliVersion: '2.67.0'
-    scriptContent: loadTextContent('../build/initial_run.sh')
+    primaryScriptUri: '${storageAccountUrl}/lfo/initial_run.sh'
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
