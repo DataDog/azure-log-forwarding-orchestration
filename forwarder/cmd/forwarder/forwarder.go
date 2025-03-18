@@ -271,6 +271,7 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now) error {
 	start := time.Now()
 
+	addConfigs(datadogConfig)
 	datadogClient := datadog.NewAPIClient(datadogConfig)
 	datadogLogsClient := datadogV2.NewLogsApi(datadogClient)
 
@@ -318,6 +319,12 @@ func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfi
 	return piiScrubRules, err
 }
 
+func addConfigs(datadogConfig *datadog.Configuration) {
+	datadogConfig.AddDefaultHeader("Content-Encoding", "gzip")
+	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
+	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+}
+
 func main() {
 	var err error
 
@@ -346,12 +353,6 @@ func main() {
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.New()
 
-	// Initialize Datadog API client
-	datadogConfig := datadog.NewConfiguration()
-	datadogConfig.AddDefaultHeader("Content-Encoding", "gzip")
-	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
-	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
-
 	goroutineString := environment.Get(environment.NumGoroutines)
 	if goroutineString == "" {
 		goroutineString = "10"
@@ -377,7 +378,7 @@ func main() {
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
 
-	err = run(ctx, logger, int(goroutineCount), datadogConfig, azBlobClient, piiScrubber, time.Now)
+	err = run(ctx, logger, int(goroutineCount), datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now)
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())

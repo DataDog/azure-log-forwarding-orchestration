@@ -4,6 +4,8 @@ import (
 	// stdlib
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -57,6 +59,17 @@ func nullLogger() *log.Logger {
 	return l
 }
 
+// CustomRoundTripper implements the http.RoundTripper interface
+type CustomRoundTripper struct {
+	transport   http.RoundTripper
+	getResponse func(req *http.Request) (*http.Response, error)
+}
+
+// RoundTrip implements the RoundTrip method required by the http.RoundTripper interface
+func (c *CustomRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return c.getResponse(req)
+}
+
 func newMockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
 	mockScrubber := logmocks.NewMockScrubber(ctrl)
 	mockScrubber.EXPECT().Scrub(gomock.Any()).AnyTimes().DoAndReturn(func(logBytes *[]byte) *[]byte {
@@ -108,7 +121,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)) ([]datadogV2.HTTPLogItem, error) {
+func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error), getDatadogLogResp func(req *http.Request) (*http.Response, error)) ([]datadogV2.HTTPLogItem, error) {
 	ctrl := gomock.NewController(t)
 	mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
@@ -151,9 +164,30 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	ctx := context.Background()
 
+	// Use the CustomRoundTripper with a standard http.Transport
+	customRoundTripper := &CustomRoundTripper{
+		transport: &http.Transport{},
+		getResponse: func(req *http.Request) (*http.Response, error) {
+			if req == nil {
+				return nil, errors.New("request is nil")
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			var currLogs []datadogV2.HTTPLogItem
+			err = json.Unmarshal(body, &currLogs)
+			if err != nil {
+				return nil, err
+			}
+			submittedLogs = append(submittedLogs, currLogs...)
+			return getDatadogLogResp(req)
+		},
+	}
+
 	datadogConfig := datadog.NewConfiguration()
 	datadogConfig.HTTPClient = &http.Client{
-		Transport: &http.Transport{},
+		Transport: customRoundTripper,
 	}
 
 	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now)
@@ -215,9 +249,20 @@ func TestRun(t *testing.T) {
 			}
 			return azblob.UploadBufferResponse{}, nil
 		}
+		var latestHeaders http.Header
+		logResp := func(req *http.Request) (*http.Response, error) {
+			if req == nil {
+				return nil, errors.New("request is nil")
+			}
+			latestHeaders = req.Header
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
 
 		// THEN
 		assert.NoError(t, err)
@@ -244,6 +289,9 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
+
+		assert.Equal(t, latestHeaders.Get("Content-Encoding"), "gzip")
+		assert.Equal(t, latestHeaders.Get("dd_evp_origin"), "lfo")
 	})
 
 	t.Run("continues processing on errors", func(t *testing.T) {
@@ -287,9 +335,15 @@ func TestRun(t *testing.T) {
 			}
 			return azblob.UploadBufferResponse{}, nil
 		}
+		logResp := func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
 
 		// THEN
 		assert.NoError(t, err)
@@ -553,8 +607,15 @@ func TestCursors(t *testing.T) {
 				return resp
 			}
 
+			logResp := func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
+
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc, logResp)
 
 			// THEN
 			assert.NoError(t, err)
@@ -624,9 +685,15 @@ func TestCursors(t *testing.T) {
 				resp.Body = io.NopCloser(strings.NewReader(string(currentLogData[o.Range.Offset:])))
 				return resp
 			}
+			logResp := func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
 
 			// THEN
 			assert.NoError(t, err)
