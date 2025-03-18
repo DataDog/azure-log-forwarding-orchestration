@@ -49,13 +49,13 @@ func getLogWithContent(content string, delay time.Duration) []byte {
 	return []byte("{ \"time\": \"" + azureTimestamp(timestamp) + "\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 }
 
-func nullLogger() *log.Entry {
+func nullLogger() *log.Logger {
 	l := log.New()
 	l.SetOutput(io.Discard)
-	return log.NewEntry(l)
+	return l
 }
 
-func mockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
+func newMockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
 	mockScrubber := logmocks.NewMockScrubber(ctrl)
 	mockScrubber.EXPECT().Scrub(gomock.Any()).AnyTimes().DoAndReturn(func(logBytes *[]byte) *[]byte {
 		return logBytes
@@ -106,7 +106,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)) ([]datadogV2.HTTPLogItem, error) {
+func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)) ([]datadogV2.HTTPLogItem, error) {
 	ctrl := gomock.NewController(t)
 	mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
@@ -122,6 +122,9 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 		if blobName == cursor.BlobName {
 			return cursorResp, nil
 		}
+		if blobName == deadletterqueue.BlobName {
+			return deadletterqueueResp, nil
+		}
 		if strings.Contains(blobName, "metrics_") {
 			resp := azblob.DownloadStreamResponse{}
 			resp.Body = io.NopCloser(strings.NewReader(""))
@@ -133,9 +136,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(uploadFunc).AnyTimes()
 
 	var resp azblob.CreateContainerResponse
-	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).Times(2)
-
-	client := storage.NewClient(mockClient)
+	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
 
 	var submittedLogs []datadogV2.HTTPLogItem
 	mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
@@ -144,12 +145,11 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 		return nil, nil, nil
 	})
 
-	logClient := logs.NewClient(mockDDClient)
-	mockPiiScrubber := mockPiiScrubber(ctrl)
+	mockPiiScrubber := newMockPiiScrubber(ctrl)
 
 	ctx := context.Background()
 
-	err := fetchAndProcessLogs(ctx, client, []*logs.Client{logClient}, nullLogger(), mockPiiScrubber, time.Now)
+	err := run(ctx, nullLogger(), 1, mockDDClient, mockClient, mockPiiScrubber, time.Now)
 	return submittedLogs, err
 }
 
@@ -184,9 +184,17 @@ func TestRun(t *testing.T) {
 		cursorsWithExpiredBlob := cursor.New(nil)
 		cursorsWithExpiredBlob.Set(containerName, *expiredBlob.Name, 300)
 		cursorBytes, err := cursorsWithExpiredBlob.JSONBytes()
+		require.NoError(t, err)
 
 		cursorResp := azblob.DownloadStreamResponse{}
 		cursorResp.Body = io.NopCloser(strings.NewReader(string(cursorBytes)))
+
+		deadLetterQueue := deadletterqueue.DeadLetterQueue{}
+		deadLetterQueueBytes, err := deadLetterQueue.JSONBytes()
+		require.NoError(t, err)
+
+		deadLetterQueueResp := azblob.DownloadStreamResponse{}
+		deadLetterQueueResp.Body = io.NopCloser(strings.NewReader(string(deadLetterQueueBytes)))
 
 		var uploadedMetrics []byte
 		var finalCursors *cursor.Cursors
@@ -195,14 +203,14 @@ func TestRun(t *testing.T) {
 				uploadedMetrics = append(uploadedMetrics, content...)
 			}
 			if strings.Contains(blobName, "cursors") {
-				finalCursors = cursor.FromBytes(content, nullLogger())
+				finalCursors = cursor.FromBytes(content, log.NewEntry(nullLogger()))
 				require.NoError(t, err)
 			}
 			return azblob.UploadBufferResponse{}, nil
 		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, uploadFunc)
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
 
 		// THEN
 		assert.NoError(t, err)
@@ -226,7 +234,7 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, int64(0), finalCursors.Get(containerName, *expiredBlob.Name))
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, logs.AzureService, *logItem.Service)
-			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
+			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -260,7 +268,10 @@ func TestRun(t *testing.T) {
 		}
 
 		cursorResp := azblob.DownloadStreamResponse{}
-		cursorResp.Body = io.NopCloser(strings.NewReader(""))
+		cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+		deadLetterQueueResp := azblob.DownloadStreamResponse{}
+		deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
 
 		var uploadedMetrics []byte
 		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
@@ -271,7 +282,7 @@ func TestRun(t *testing.T) {
 		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, uploadFunc)
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
 
 		// THEN
 		assert.NoError(t, err)
@@ -294,7 +305,7 @@ func TestRun(t *testing.T) {
 
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, logs.AzureService, *logItem.Service)
-			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
+			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -334,11 +345,11 @@ func TestProcessLogs(t *testing.T) {
 		eg.Go(func() error {
 			defer close(volumeCh)
 			defer close(bytesCh)
-			return processLogs(egCtx, datadogClient, nullLogger(), logsCh, volumeCh, bytesCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, mockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -348,7 +359,7 @@ func TestProcessLogs(t *testing.T) {
 		assert.Len(t, submittedLogs, 3)
 		for _, logItem := range submittedLogs {
 			assert.Equal(t, logs.AzureService, *logItem.Service)
-			assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
+			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 	})
@@ -382,11 +393,11 @@ func TestProcessLogs(t *testing.T) {
 		eg.Go(func() error {
 			defer close(volumeCh)
 			defer close(bytesCh)
-			return processLogs(egCtx, datadogClient, nullLogger(), logsCh, volumeCh, bytesCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, resourceId, mockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, containerName, resourceId, newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -421,11 +432,11 @@ func TestProcessLogs(t *testing.T) {
 		eg.Go(func() error {
 			defer close(volumeCh)
 			defer close(bytesCh)
-			return processLogs(egCtx, datadogClient, nullLogger(), logsCh, volumeCh, bytesCh)
+			return processLogs(egCtx, datadogClient, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, resourceId, mockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, containerName, resourceId, newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -465,7 +476,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, mockPiiScrubber(ctrl), logsChannel)
+			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, newMockPiiScrubber(ctrl), logsChannel)
 			return err
 		})
 		err := eg.Wait()
@@ -516,11 +527,14 @@ func TestCursors(t *testing.T) {
 			}
 
 			cursorResp := azblob.DownloadStreamResponse{}
-			cursorResp.Body = io.NopCloser(strings.NewReader(""))
+			cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+			deadLetterQeueResp := azblob.DownloadStreamResponse{}
+			deadLetterQeueResp.Body = io.NopCloser(strings.NewReader("[]"))
 
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
-					lastCursor = cursor.FromBytes(content, nullLogger())
+					lastCursor = cursor.FromBytes(content, log.NewEntry(nullLogger()))
 					require.NoError(t, err)
 				}
 				return azblob.UploadBufferResponse{}, nil
@@ -533,7 +547,7 @@ func TestCursors(t *testing.T) {
 			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, uploadFunc)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc)
 
 			// THEN
 			assert.NoError(t, err)
@@ -585,11 +599,14 @@ func TestCursors(t *testing.T) {
 			}
 
 			cursorResp := azblob.DownloadStreamResponse{}
-			cursorResp.Body = io.NopCloser(strings.NewReader(""))
+			cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+			deadLetterQueueResp := azblob.DownloadStreamResponse{}
+			deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
 
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
-					lastCursor = cursor.FromBytes(content, nullLogger())
+					lastCursor = cursor.FromBytes(content, log.NewEntry(nullLogger()))
 					require.NoError(t, err)
 				}
 				return azblob.UploadBufferResponse{}, nil
@@ -602,7 +619,7 @@ func TestCursors(t *testing.T) {
 			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, uploadFunc)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
 
 			// THEN
 			assert.NoError(t, err)
@@ -653,7 +670,9 @@ func TestProcessDLQ(t *testing.T) {
 		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 		mockClient.EXPECT().DownloadStream(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, nil).Return(response, nil)
 		createContainerResponse := azblob.CreateContainerResponse{}
-		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, nil)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).AnyTimes().Return(createContainerResponse, nil)
+
+		// Add expectation for UploadBuffer call
 		uploadResponse := azblob.UploadBufferResponse{}
 		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, gomock.Any(), gomock.Any()).Return(uploadResponse, nil)
 
@@ -670,7 +689,7 @@ func TestProcessDLQ(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err = processDeadLetterQueue(ctx, nullLogger(), storageClient, logsClient, processedClients)
+		err = processDeadLetterQueue(ctx, log.NewEntry(nullLogger()), storageClient, logsClient, processedClients)
 
 		// THEN
 		assert.NoError(t, err)
