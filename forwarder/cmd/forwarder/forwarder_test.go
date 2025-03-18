@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -149,7 +151,12 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	ctx := context.Background()
 
-	err := run(ctx, nullLogger(), 1, mockDDClient, mockClient, mockPiiScrubber, time.Now)
+	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.HTTPClient = &http.Client{
+		Transport: &http.Transport{},
+	}
+
+	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now)
 	return submittedLogs, err
 }
 
