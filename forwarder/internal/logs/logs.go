@@ -162,8 +162,8 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 }
 
 func sourceTag(resourceType string) string {
-	tag := strings.ToLower(strings.Replace(resourceType, "/", ".", -1))
-	return strings.Replace(tag, "microsoft.", "azure.", -1)
+	parts := strings.Split(strings.ToLower(resourceType), "/")
+	return strings.Replace(parts[0], "microsoft.", "azure.", -1)
 }
 
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
