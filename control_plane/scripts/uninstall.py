@@ -310,9 +310,9 @@ class RefreshTokenError(Exception):
 
 def try_regex_access_error(cmd: str, stderr: str):
     # Sample:
-    # (AuthorizationFailed) The client 'ava.silver@devdatadoghq.onmicrosoft.com' with object id '5d1aa0c9-69bb-4617-b025-915ad02ac8b8'
+    # (AuthorizationFailed) The client 'user@example.com' with object id '00000000-0000-0000-0000-000000000000'
     # does not have authorization to perform action 'Microsoft.Storage/storageAccounts/read'
-    # over scope '/subscriptions/7d8db849-485b-421f-97db-72b617b8e748' or the scope is invalid.
+    # over scope '/subscriptions/00000000-0000-0000-0000-000000000000' or the scope is invalid.
     # If access was recently granted, please refresh your credentials.
 
     client_match = search(r"client '([^']*)'", stderr)
@@ -802,7 +802,7 @@ def mark_diagnostic_setting_deletions(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Uninstall Datadog Log Forwarding Orchestration from an Azure environment"
+        description="Uninstall Datadog Azure Log Forwarding Orchestration from an Azure environment"
     )
     parser.add_argument(
         "-d",
