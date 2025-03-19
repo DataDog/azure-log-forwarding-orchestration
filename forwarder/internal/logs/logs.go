@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/dop251/goja/ast"
@@ -70,6 +72,9 @@ type Log struct {
 
 // Content converts the log content to a string.
 func (l *Log) Content() string {
+	if l.content == nil {
+		return ""
+	}
 	return string(*l.content)
 }
 
@@ -167,19 +172,19 @@ func sourceTag(resourceType string) string {
 }
 
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
-	var source string
+	var logSource string
 	var resourceId string
 	var tags []string
 	tags = append(tags, DefaultTags...)
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
-		source = sourceTag(parsedId.ResourceType.String())
+		logSource = sourceTag(parsedId.ResourceType.String())
 		resourceId = parsedId.String()
 		tags = append(tags,
 			fmt.Sprintf("subscription_id:%s", parsedId.SubscriptionID),
 			fmt.Sprintf("resource_group:%s", parsedId.ResourceGroupName),
-			fmt.Sprintf("source:%s", source),
+			fmt.Sprintf("source:%s", logSource),
 		)
 	}
 
@@ -197,7 +202,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		Category:         l.Category,
 		ResourceId:       resourceId,
 		Service:          AzureService,
-		Source:           source,
+		Source:           logSource,
 		Time:             l.Time,
 		Level:            l.Level,
 		Tags:             tags,
@@ -279,35 +284,40 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName, blobNameResourceId string, scrubber Scrubber) (*Log, error) {
+func NewLog(logBytes []byte, containerName string, blob storage.Blob, scrubber Scrubber) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
 	logSize := len(logBytes) + newlineBytes
-
-	if containerName == functionAppContainer {
-		logBytes, err = BytesFromJSON(logBytes)
-		if err != nil {
-			if strings.Contains(err.Error(), "Unexpected token ;") {
-				return nil, ErrUnexpectedToken
+	if blob.IsJson() {
+		if containerName == functionAppContainer {
+			logBytes, err = BytesFromJSON(logBytes)
+			if err != nil {
+				if strings.Contains(err.Error(), "Unexpected token ;") {
+					return nil, ErrUnexpectedToken
+				}
+				return nil, err
 			}
+		}
+		decoder := json.NewDecoder(bytes.NewReader(logBytes))
+		err = decoder.Decode(&currLog)
+
+		if err != nil {
+			if errors.Is(err, io.ErrUnexpectedEOF) {
+				return nil, ErrIncompleteLogFile
+			}
+
+			// log is not in JSON format, treat it as plaintext
 			return nil, err
 		}
-	}
-	decoder := json.NewDecoder(bytes.NewReader(logBytes))
-	err = decoder.Decode(&currLog)
-
-	if err != nil {
-		if errors.Is(err, io.ErrUnexpectedEOF) {
-			return nil, ErrIncompleteLogFile
-		}
-		// log is not in JSON format, treat it as plaintext
+	} else {
 		currLog = &azureLog{Time: time.Now()}
 	}
 
+	blobNameResourceId, _ := blob.ResourceId()
+	currLog.BlobResourceId = blobNameResourceId
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
-	currLog.BlobResourceId = blobNameResourceId
 
 	return currLog.ToLog(scrubber), nil
 }
@@ -433,7 +443,7 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, containerName, blobNameResourceId string, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, containerName string, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -443,7 +453,7 @@ func Parse(reader io.ReadCloser, containerName, blobNameResourceId string, piiSc
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(currBytes, containerName, blobNameResourceId, piiScrubber)
+			currLog, err := NewLog(currBytes, containerName, blob, piiScrubber)
 			if err != nil {
 				if !yield(nil, err) {
 					return

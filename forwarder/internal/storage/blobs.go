@@ -47,6 +47,11 @@ func (b *Blob) IsCurrent(now time.Time) bool {
 	return b.CreationTime.After(now.Add(LookBackPeriod))
 }
 
+func (b *Blob) IsJson() bool {
+	// check if last characters are .json
+	return len(b.Name) > 5 && b.Name[len(b.Name)-5:] == ".json"
+}
+
 func (b *Blob) ResourceId() (string, error) {
 	if len(b.Name) < idBeginIndex+idEndOffset {
 		return "", fmt.Errorf("invalid resource id for blob %s: %w", b.Name, ErrInvalidResourceId)
