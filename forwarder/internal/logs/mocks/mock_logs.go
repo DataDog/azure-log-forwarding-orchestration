@@ -12,8 +12,10 @@ package mocks
 import (
 	context "context"
 	http "net/http"
+	url "net/url"
 	reflect "reflect"
 
+	datadog "github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	datadogV2 "github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -60,4 +62,85 @@ func (mr *MockDatadogLogsSubmitterMockRecorder) SubmitLog(ctx, body any, o ...an
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{ctx, body}, o...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubmitLog", reflect.TypeOf((*MockDatadogLogsSubmitter)(nil).SubmitLog), varargs...)
+}
+
+// MockDatadogApiClient is a mock of DatadogApiClient interface.
+type MockDatadogApiClient struct {
+	ctrl     *gomock.Controller
+	recorder *MockDatadogApiClientMockRecorder
+}
+
+// MockDatadogApiClientMockRecorder is the mock recorder for MockDatadogApiClient.
+type MockDatadogApiClientMockRecorder struct {
+	mock *MockDatadogApiClient
+}
+
+// NewMockDatadogApiClient creates a new mock instance.
+func NewMockDatadogApiClient(ctrl *gomock.Controller) *MockDatadogApiClient {
+	mock := &MockDatadogApiClient{ctrl: ctrl}
+	mock.recorder = &MockDatadogApiClientMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockDatadogApiClient) EXPECT() *MockDatadogApiClientMockRecorder {
+	return m.recorder
+}
+
+// CallAPI mocks base method.
+func (m *MockDatadogApiClient) CallAPI(request *http.Request) (*http.Response, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CallAPI", request)
+	ret0, _ := ret[0].(*http.Response)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CallAPI indicates an expected call of CallAPI.
+func (mr *MockDatadogApiClientMockRecorder) CallAPI(request any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CallAPI", reflect.TypeOf((*MockDatadogApiClient)(nil).CallAPI), request)
+}
+
+// Decode mocks base method.
+func (m *MockDatadogApiClient) Decode(v any, b []byte, contentType string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Decode", v, b, contentType)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Decode indicates an expected call of Decode.
+func (mr *MockDatadogApiClientMockRecorder) Decode(v, b, contentType any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Decode", reflect.TypeOf((*MockDatadogApiClient)(nil).Decode), v, b, contentType)
+}
+
+// GetConfig mocks base method.
+func (m *MockDatadogApiClient) GetConfig() *datadog.Configuration {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetConfig")
+	ret0, _ := ret[0].(*datadog.Configuration)
+	return ret0
+}
+
+// GetConfig indicates an expected call of GetConfig.
+func (mr *MockDatadogApiClientMockRecorder) GetConfig() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConfig", reflect.TypeOf((*MockDatadogApiClient)(nil).GetConfig))
+}
+
+// PrepareRequest mocks base method.
+func (m *MockDatadogApiClient) PrepareRequest(ctx context.Context, path, method string, postBody any, headerParams map[string]string, queryParams, formParams url.Values, formFile *datadog.FormFile) (*http.Request, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PrepareRequest", ctx, path, method, postBody, headerParams, queryParams, formParams, formFile)
+	ret0, _ := ret[0].(*http.Request)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// PrepareRequest indicates an expected call of PrepareRequest.
+func (mr *MockDatadogApiClientMockRecorder) PrepareRequest(ctx, path, method, postBody, headerParams, queryParams, formParams, formFile any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PrepareRequest", reflect.TypeOf((*MockDatadogApiClient)(nil).PrepareRequest), ctx, path, method, postBody, headerParams, queryParams, formParams, formFile)
 }

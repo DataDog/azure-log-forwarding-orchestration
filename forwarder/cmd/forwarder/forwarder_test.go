@@ -4,6 +4,7 @@ import (
 	// stdlib
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -53,6 +56,18 @@ func nullLogger() *log.Logger {
 	l := log.New()
 	l.SetOutput(io.Discard)
 	return l
+}
+
+func prepareRequest(ctx, path, method, postBody, headerParams, queryParams, formParams, formFile any) (*http.Request, error) {
+	var currLogs *[]datadogV2.HTTPLogItem
+	currLogs = postBody.(*[]datadogV2.HTTPLogItem)
+	req := &http.Request{}
+	bodyBytes, err := json.Marshal(currLogs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal logs: %w", err)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	return req, nil
 }
 
 func newMockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
@@ -139,10 +154,20 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
 
 	var submittedLogs []datadogV2.HTTPLogItem
-	mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-	mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
-		submittedLogs = append(submittedLogs, body...)
-		return nil, nil, nil
+	mockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
+	mockDDClient.EXPECT().GetConfig().Return(datadog.NewConfiguration()).AnyTimes()
+	mockDDClient.EXPECT().PrepareRequest(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(prepareRequest)
+	mockDDClient.EXPECT().Decode(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	mockDDClient.EXPECT().CallAPI(gomock.Any()).AnyTimes().DoAndReturn(func(req *http.Request) (*http.Response, error) {
+		var currLogs []datadogV2.HTTPLogItem
+		err := json.NewDecoder(req.Body).Decode(&currLogs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode logs: %w", err)
+		}
+		submittedLogs = append(submittedLogs, currLogs...)
+		currResp := &http.Response{}
+		currResp.Body = io.NopCloser(strings.NewReader(""))
+		return currResp, nil
 	})
 
 	mockPiiScrubber := newMockPiiScrubber(ctrl)
@@ -326,11 +351,21 @@ func TestProcessLogs(t *testing.T) {
 
 		ctrl := gomock.NewController(t)
 		var submittedLogs []datadogV2.HTTPLogItem
-		mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
-			submittedLogs = append(submittedLogs, body...)
-			return nil, nil, nil
+		mockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
+		mockDDClient.EXPECT().GetConfig().Return(datadog.NewConfiguration()).AnyTimes()
+		mockDDClient.EXPECT().PrepareRequest(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(prepareRequest)
+		mockDDClient.EXPECT().CallAPI(gomock.Any()).AnyTimes().DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			var currLogs []datadogV2.HTTPLogItem
+			err := json.NewDecoder(req.Body).Decode(&currLogs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode logs: %w", err)
+			}
+			submittedLogs = append(submittedLogs, currLogs...)
+			resp := &http.Response{}
+			resp.Body = io.NopCloser(strings.NewReader(""))
+			return resp, nil
 		})
+		mockDDClient.EXPECT().Decode(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
 		datadogClient := logs.NewClient(mockDDClient)
 		defer datadogClient.Flush(context.Background())
@@ -376,7 +411,17 @@ func TestProcessLogs(t *testing.T) {
 		reader := io.NopCloser(strings.NewReader(string(invalidLog)))
 
 		ctrl := gomock.NewController(t)
-		mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
+		var submittedLogs []datadogV2.HTTPLogItem
+		mockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
+		mockDDClient.EXPECT().CallAPI(gomock.Any()).AnyTimes().DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			var currLogs []datadogV2.HTTPLogItem
+			err := json.NewDecoder(req.Body).Decode(&currLogs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode logs: %w", err)
+			}
+			submittedLogs = append(submittedLogs, currLogs...)
+			return &http.Response{}, nil
+		})
 
 		datadogClient := logs.NewClient(mockDDClient)
 		defer datadogClient.Flush(context.Background())
@@ -405,7 +450,8 @@ func TestProcessLogs(t *testing.T) {
 
 		// THEN
 		assert.Nil(t, err)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		mockDDClient.EXPECT().CallAPI(gomock.Any()).Times(0)
+		assert.Equal(t, 0, len(submittedLogs))
 	})
 
 	t.Run("too old logs are not submitted", func(t *testing.T) {
@@ -415,7 +461,7 @@ func TestProcessLogs(t *testing.T) {
 		reader := io.NopCloser(strings.NewReader(string(invalidLog)))
 
 		ctrl := gomock.NewController(t)
-		mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
+		mockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
 
 		datadogClient := logs.NewClient(mockDDClient)
 		defer datadogClient.Flush(context.Background())
@@ -444,7 +490,7 @@ func TestProcessLogs(t *testing.T) {
 
 		// THEN
 		assert.Nil(t, err)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+		mockDDClient.EXPECT().CallAPI(gomock.Any()).Times(0)
 	})
 }
 
@@ -678,12 +724,25 @@ func TestProcessDLQ(t *testing.T) {
 
 		storageClient := storage.NewClient(mockClient)
 
-		datadogClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-		datadogClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil, nil)
-		logsClient := logs.NewClient(datadogClient)
+		var submittedLogs []datadogV2.HTTPLogItem
+		mockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
+		mockDDClient.EXPECT().GetConfig().Return(&datadog.Configuration{})
+		mockDDClient.EXPECT().CallAPI(gomock.Any()).AnyTimes().DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			var currLogs []datadogV2.HTTPLogItem
+			err := json.NewDecoder(req.Body).Decode(&currLogs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode logs: %w", err)
+			}
+			submittedLogs = append(submittedLogs, currLogs...)
+			return &http.Response{}, nil
+		})
 
-		processedDatadogClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-		processedLogsClient := logs.NewClient(processedDatadogClient)
+		logsClient := logs.NewClient(mockDDClient)
+
+		processMockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
+		processMockDDClient.EXPECT().CallAPI(gomock.Any()).AnyTimes()
+
+		processedLogsClient := logs.NewClient(processMockDDClient)
 		processedClients := []*logs.Client{processedLogsClient}
 
 		ctx := context.Background()

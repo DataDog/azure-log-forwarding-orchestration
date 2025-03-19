@@ -12,8 +12,11 @@ import (
 	"iter"
 	"math"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -351,21 +354,139 @@ type DatadogLogsSubmitter interface {
 	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
 }
 
+// DatadogApiClient wraps around the datadog.ApiClient struct.
+//
+//go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
+type DatadogApiClient interface {
+	CallAPI(request *http.Request) (*http.Response, error)
+	Decode(v interface{}, b []byte, contentType string) (err error)
+	GetConfig() *datadog.Configuration
+	PrepareRequest(
+		ctx context.Context,
+		path string, method string,
+		postBody interface{},
+		headerParams map[string]string,
+		queryParams url.Values,
+		formParams url.Values,
+		formFile *datadog.FormFile) (localVarRequest *http.Request, err error)
+}
+
 // Client is a client for submitting logs to Datadog.
 // It buffers logs and sends them in batches to the Datadog API.
 // Client is not thread safe.
 type Client struct {
-	logsSubmitter DatadogLogsSubmitter
-	logsBuffer    []datadogV2.HTTPLogItem
-	currentSize   int64
-	FailedLogs    []datadogV2.HTTPLogItem
+	apiClient   DatadogApiClient
+	logsBuffer  []datadogV2.HTTPLogItem
+	currentSize int64
+	FailedLogs  []datadogV2.HTTPLogItem
 }
 
 // NewClient creates a new Client.
-func NewClient(logsApi DatadogLogsSubmitter) *Client {
+func NewClient(apiClient DatadogApiClient) *Client {
 	return &Client{
-		logsSubmitter: logsApi,
+		apiClient: apiClient,
 	}
+}
+
+// SubmitLog Send logs.
+// Logic is borrowed from the Datadog API client.
+// Original can be found at https://github.com/DataDog/datadog-api-client-go/blob/40852cccd68c201aeac840e2156b0aeed5fb53b9/api/datadogV2/api_logs.go#L551
+// Send your logs to your Datadog platform over HTTP. Limits per HTTP request are:
+//
+// - Maximum content size per payload (uncompressed): 5MB
+// - Maximum size for a single log: 1MB
+// - Maximum array size if sending multiple logs in an array: 1000 entries
+//
+// Any log exceeding 1MB is accepted and truncated by Datadog:
+// - For a single log request, the API truncates the log at 1MB and returns a 2xx.
+// - For a multi-logs request, the API processes all logs, truncates only logs larger than 1MB, and returns a 2xx.
+//
+// Datadog recommends sending your logs compressed.
+// Add the `Content-Encoding: gzip` header to the request when sending compressed logs.
+// Log events can be submitted with a timestamp that is up to 18 hours in the past.
+//
+// The status codes answered by the HTTP API are:
+// - 202: Accepted: the request has been accepted for processing
+// - 400: Bad request (likely an issue in the payload formatting)
+// - 401: Unauthorized (likely a missing API Key)
+// - 403: Permission issue (likely using an invalid API Key)
+// - 408: Request Timeout, request should be retried after some time
+// - 413: Payload too large (batch is above 5MB uncompressed)
+// - 429: Too Many Requests, request should be retried after some time
+// - 500: Internal Server Error, the server encountered an unexpected condition that prevented it from fulfilling the request, request should be retried after some time
+// - 503: Service Unavailable, the server is not ready to handle the request probably because it is overloaded, request should be retried after some time
+func (c *Client) SubmitLogs(ctx context.Context) error {
+	var (
+		localVarHTTPMethod  = http.MethodPost
+		localVarReturnValue interface{}
+	)
+
+	localBasePath, err := c.apiClient.GetConfig().ServerURLWithContext(ctx, "v2.LogsApi.SubmitLog")
+	if err != nil {
+		return datadog.GenericOpenAPIError{ErrorMessage: err.Error()}
+	}
+
+	localVarPath := localBasePath + "/api/v2/logs"
+
+	localVarQueryParams := url.Values{}
+	localVarFormParams := url.Values{}
+
+	// replace default tags on all logs?
+	//if optionalParams.Ddtags != nil {
+	//	localVarQueryParams.Add("ddtags", datadog.ParameterToString(*optionalParams.Ddtags, ""))
+	//}
+	localVarHeaderParams := map[string]string{
+		"Content-Type":     "application/json",
+		"Accept":           "application/json",
+		"Content-Encoding": "gzip",
+	}
+
+	datadog.SetAuthKeys(
+		ctx,
+		&localVarHeaderParams,
+		[2]string{"apiKeyAuth", "DD-API-KEY"},
+	)
+	req, err := c.apiClient.PrepareRequest(ctx, localVarPath, localVarHTTPMethod, &c.logsBuffer, localVarHeaderParams, localVarQueryParams, localVarFormParams, nil)
+	if err != nil {
+		return err
+	}
+
+	localVarHTTPResponse, err := c.apiClient.CallAPI(req)
+	if err != nil || localVarHTTPResponse == nil {
+		return err
+	}
+
+	localVarBody, err := datadog.ReadBody(localVarHTTPResponse)
+	if err != nil {
+		return err
+	}
+
+	if localVarHTTPResponse.StatusCode >= 300 {
+		newErr := datadog.GenericOpenAPIError{
+			ErrorBody:    localVarBody,
+			ErrorMessage: localVarHTTPResponse.Status,
+		}
+		if localVarHTTPResponse.StatusCode == 400 || localVarHTTPResponse.StatusCode == 401 || localVarHTTPResponse.StatusCode == 403 || localVarHTTPResponse.StatusCode == 408 || localVarHTTPResponse.StatusCode == 413 || localVarHTTPResponse.StatusCode == 429 || localVarHTTPResponse.StatusCode == 500 || localVarHTTPResponse.StatusCode == 503 {
+			var v datadogV2.HTTPLogErrors
+			err = c.apiClient.Decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			if err != nil {
+				return newErr
+			}
+			newErr.ErrorModel = v
+		}
+		return newErr
+	}
+
+	err = c.apiClient.Decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	if err != nil {
+		newErr := datadog.GenericOpenAPIError{
+			ErrorBody:    localVarBody,
+			ErrorMessage: err.Error(),
+		}
+		return newErr
+	}
+
+	return nil
 }
 
 // AddLog adds a log to the buffer for future submission.
@@ -409,7 +530,7 @@ func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log dat
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
 	if len(c.logsBuffer) > 0 {
-		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer)
+		err = c.SubmitLogs(ctx)
 
 		if err != nil {
 			c.FailedLogs = append(c.FailedLogs, c.logsBuffer...)

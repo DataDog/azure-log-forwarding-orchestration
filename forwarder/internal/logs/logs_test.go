@@ -72,8 +72,7 @@ func TestAddLog(t *testing.T) {
 		}
 
 		ctrl := gomock.NewController(t)
-		mockClient := mocks.NewMockDatadogLogsSubmitter(ctrl)
-		mockClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Times(2)
+		mockClient := mocks.NewMockDatadogApiClient(ctrl)
 
 		client := logs.NewClient(mockClient)
 		ctx := context.Background()
