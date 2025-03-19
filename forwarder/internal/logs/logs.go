@@ -183,8 +183,8 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		resourceId = parsedId.String()
 		tags = append(tags,
 			fmt.Sprintf("subscription_id:%s", parsedId.SubscriptionID),
-			fmt.Sprintf("resource_group:%s", parsedId.ResourceGroupName),
 			fmt.Sprintf("source:%s", logSource),
+			fmt.Sprintf("test_tag:true"),
 		)
 	}
 
@@ -306,8 +306,6 @@ func NewLog(logBytes []byte, containerName string, blob storage.Blob, scrubber S
 			if errors.Is(err, io.ErrUnexpectedEOF) {
 				return nil, ErrIncompleteLogFile
 			}
-
-			// log is not in JSON format, treat it as plaintext
 			return nil, err
 		}
 	} else {
@@ -342,6 +340,10 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	additionalProperties := map[string]string{
 		"time":  log.Time.Format(time.RFC3339),
 		"level": log.Level,
+	}
+
+	if log.ResourceId != "" {
+		additionalProperties["resourceId"] = log.ResourceId
 	}
 
 	logItem := datadogV2.HTTPLogItem{
