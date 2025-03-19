@@ -46,6 +46,7 @@ func getLogWithContent(content string, delay time.Duration) []byte {
 }
 
 const functionAppContainer = "insights-logs-functionapplogs"
+const worflowRuntimeContainer = "insights-logs-workflowruntime"
 const controlPlaneId = "9b008b0cc1ab"
 const configId = "8e0ce1e1e048"
 
@@ -376,6 +377,33 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, got, 20)
+	})
+
+	t.Run("can parse workflow runtime logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		workingDir, err := os.Getwd()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/workflowruntime_logs.json", workingDir))
+		require.NoError(t, err)
+
+		reader := bytes.NewReader(data)
+		closer := io.NopCloser(reader)
+
+		var got int
+
+		// WHEN
+		for currLog, currErr := range logs.Parse(closer, worflowRuntimeContainer, newBlob(resourceId), MockScrubber(t, data)) {
+			require.NoError(t, currErr)
+			require.Equal(t, "WorkflowRuntime", currLog.Category)
+			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, got, 7)
 	})
 
 }

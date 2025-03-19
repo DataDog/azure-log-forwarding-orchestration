@@ -63,6 +63,8 @@ type Log struct {
 	ScrubbedByteSize int64
 	Tags             []string
 	Category         string
+	Container        string
+	Blob             string
 	ResourceId       string
 	Service          string
 	Source           string
@@ -149,6 +151,8 @@ type azureLog struct {
 	Raw             *[]byte
 	ByteSize        int64
 	Category        string `json:"category"`
+	Container       string `json:"container"`
+	Blob            string `json:"blob"`
 	ResourceIdLower string `json:"resourceId,omitempty"`
 	ResourceIdUpper string `json:"ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
@@ -184,7 +188,8 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		tags = append(tags,
 			fmt.Sprintf("subscription_id:%s", parsedId.SubscriptionID),
 			fmt.Sprintf("source:%s", logSource),
-			fmt.Sprintf("test_tag:true"),
+			fmt.Sprintf("resource_group:%s", parsedId.ResourceGroupName),
+			fmt.Sprintf("resource_type:%s", parsedId.ResourceType.String()),
 		)
 	}
 
@@ -206,6 +211,8 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		Time:             l.Time,
 		Level:            l.Level,
 		Tags:             tags,
+		Container:        l.Container,
+		Blob:             l.Blob,
 	}
 }
 
@@ -316,6 +323,8 @@ func NewLog(logBytes []byte, containerName string, blob storage.Blob, scrubber S
 	currLog.BlobResourceId = blobNameResourceId
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
+	currLog.Container = containerName
+	currLog.Blob = blob.Name
 
 	return currLog.ToLog(scrubber), nil
 }
@@ -338,8 +347,10 @@ const MaxLogAge = 18 * time.Hour
 
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	additionalProperties := map[string]string{
-		"time":  log.Time.Format(time.RFC3339),
-		"level": log.Level,
+		"time":            log.Time.Format(time.RFC3339),
+		"level":           log.Level,
+		"originContainer": log.Container,
+		"originBlob":      log.Blob,
 	}
 
 	if log.ResourceId != "" {
