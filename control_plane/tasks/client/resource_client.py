@@ -26,6 +26,7 @@ from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
 from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
+from control_plane.tasks.client.filtering import parse_filtering_rule
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
@@ -95,15 +96,13 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self,
         log: Logger,
         cred: DefaultAzureCredential,
-        inclusive_tags: list[str],
-        excluding_tags: list[str],
+        tag_filters: list[str],
         subscription_id: str,
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
-        self.inclusive_tags = inclusive_tags
-        self.excluding_tags = excluding_tags
+        self.tag_filters = tag_filters
         self.subscription_id = subscription_id
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
@@ -248,8 +247,10 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         resource_id_metadata_dict: dict[str, ResourceMetadata] = {}
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            tag_list = resource_tag_dict_to_list(resource.tags)
-            metadata = ResourceMetadata(tags=tag_list, filtered_out=self.is_resource_filtered_out_by_tags(tag_list))
+            resource_tags = resource_tag_dict_to_list(resource.tags)
+            metadata = ResourceMetadata(
+                tags=resource_tags, filtered_in=self.is_resource_filtered_in_by_tags(resource_tags)
+            )
             for id in resource_ids:
                 resource_id_metadata_dict[id] = metadata
             resources_per_region.setdefault(region, {}).update(resource_id_metadata_dict)
@@ -271,17 +272,5 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             async for sub_resource in get_sub_resources(resource):
                 yield sub_resource
 
-    def is_resource_filtered_out_by_tags(self, resource_tags: list[str]) -> bool:
-        inclusive_count = len(self.inclusive_tags)
-        excluding_count = len(self.excluding_tags)
-
-        if inclusive_count == 0 and excluding_count == 0:  # no filtering specified -> filter out nothing
-            return False
-        if inclusive_count == 0 and excluding_count > 0:  # filter out resources that have _any_ excluding tag
-            return any(tag in self.excluding_tags for tag in resource_tags)
-        if inclusive_count > 0 and excluding_count == 0:  # filter out resources that do not have _every_ inclusive tags
-            return not all(tag in resource_tags for tag in self.inclusive_tags)
-
-        return not all(
-            tag in resource_tags for tag in self.inclusive_tags
-        )  # filter out resources that do not have _every_ inclusive tags
+    def is_resource_filtered_in_by_tags(self, resource_tags: list[str]) -> bool:
+        return parse_filtering_rule(self.tag_filters)(resource_tags)

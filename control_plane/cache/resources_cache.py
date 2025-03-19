@@ -1,8 +1,8 @@
 # stdlib
-from typing import Any, TypeAlias, TypedDict, cast
+from typing import Any, TypeAlias, TypedDict
 
 # 3p
-from cache.common import deserialize_cache
+from cache.common import InvalidCacheError, deserialize_cache
 
 RESOURCE_CACHE_BLOB = "resources.json"
 
@@ -15,85 +15,126 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 
 class ResourceMetadata(TypedDict, total=True):
     tags: list[str]
-    filtered_out: bool
+    filtered_in: bool
 
 
-RegionToResourcesDict: TypeAlias = dict[str, set[str] | dict[str, ResourceMetadata]]
+ResourceCacheV1: TypeAlias = dict[str, dict[str, set[str]]]
+"""mapping of subscription_id to region to resource IDs"""
+
+RegionToResourcesDict: TypeAlias = dict[str, dict[str, ResourceMetadata]]
 ResourceCache: TypeAlias = dict[str, RegionToResourcesDict]
-"mapping of subscription_id to region to resources"
+"""mapping of subscription_id to region to resource metadata dicts"""
 
 TAGS_KEY = "tags"
-FILTERED_OUT_KEY = "filtered_out"
-RESOURCE_CACHE_SCHEMA: dict[str, Any] = {
+FILTERED_IN_KEY = "filtered_in"
+RESOURCE_CACHE_SCHEMA_V2: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
     "additionalProperties": {
         "type": "object",
         "additionalProperties": {
-            "oneOf": [
-                {"type": "array", "items": {"type": "string"}},
-                {
-                    "type": "object",
-                    "properties": {
-                        TAGS_KEY: {"type": "array", "items": {"type": "string"}},
-                        FILTERED_OUT_KEY: {"type": "boolean"},
-                    },
-                },
-            ]
+            "type": "object",
+            "properties": {
+                TAGS_KEY: {"type": "array", "items": {"type": "string"}},
+                FILTERED_IN_KEY: {"type": "boolean"},
+            },
         },
     },
 }
+
+RESOURCE_CACHE_SCHEMA_V1: dict[str, Any] = {
+    "type": "object",
+    "propertyNames": {"format": "uuid"},
+    "additionalProperties": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+}
+
+
+def read_resource_cache(cache_str: str) -> tuple[ResourceCache | None, bool]:
+    """Read the resource cache and returns it in the v2 schema.
+    If the existing cache is in the v1 schema, it will be upgraded to the v2 schema.
+    Returns a tuple of the cache and a boolean indicating whether the caller should
+    flush the cache because a schema upgrade occurred."""
+
+    cache = deserialize_v2_resource_cache(cache_str)
+    if is_v2_schema(cache):
+        return cache, False
+
+    if cache is None:
+        # altan - None gets returned if cache is V1 here. Include error?
+        v1_cache = deserialize_v1_resource_cache(cache_str)
+        return upgrade_cache_to_v2(v1_cache), True
+
+    raise InvalidCacheError("Invalid cache")
 
 
 def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
     return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs])
 
 
-def deserialize_resource_cache(cache_str: str) -> ResourceCache | None:
-    """Deserialize the resource cache. Returns None if the cache is invalid."""
+def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
+    if len(tag_filter_str) == 0:
+        return []
 
-    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA)
+    tag_filters: list[str] = []
+    parsed_tags = tag_filter_str.split(",")
+
+    for parsed_tag in parsed_tags:
+        tag = parsed_tag.strip().casefold()
+        if len(tag) == 0:
+            continue
+        tag_filters.append(tag)
+
+    return tag_filters
 
 
-def latest_cache_schema(cache: ResourceCache) -> bool:
+def deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
+    """Deserialize the resource cache according to V2 schema. Returns None if the cache is invalid."""
+
+    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA_V2)
+
+
+def deserialize_v1_resource_cache(cache_str: str) -> ResourceCacheV1 | None:
+    """Deserialize the resource cache according to V1 schema. Returns None if the cache is invalid."""
+
+    return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA_V1)
+
+
+def is_v2_schema(cache: ResourceCache | None) -> bool:
+    if cache is None:
+        return False
+
     for _, resources_per_region in cache.items():
         for region in resources_per_region:
             resources = resources_per_region[region]
-            return isinstance(resources, dict)
-    return False
+            if not isinstance(resources, dict):
+                return False
+    return True
 
 
-def upgrade_cache_to_latest(cache: ResourceCache) -> ResourceCache:
+def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
+    if cache is None:
+        raise InvalidCacheError("Invalid cache")
+
+    upgraded_cache: ResourceCache = {}
+
     for sub_id, resources_per_region in cache.items():
+        upgraded_resources_per_region: dict[str, dict[str, ResourceMetadata]] = {}
         for region in resources_per_region:
             resources = resources_per_region[region]
             resource_metadatas: dict[str, ResourceMetadata] = {}
-            if isinstance(resources, dict):
-                for resource_id, resource_metadata in resources.items():
-                    if isinstance(resource_metadata, dict):
-                        resource_metadata = cast(ResourceMetadata, resource_metadata)
-                        resource_metadatas[resource_id] = resource_metadata
-                    else:
-                        metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
-                        resource_metadatas[resource_id] = metadata
-            else:
-                for r in resources:
-                    metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_OUT_KEY: False}
-                    resource_metadatas[r] = metadata
-            resources_per_region[region] = resource_metadatas
-        cache[sub_id] = resources_per_region
-    return cache
+            for r in resources:
+                metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: False}
+                resource_metadatas[r] = metadata
+            upgraded_resources_per_region[region] = resource_metadatas
+        upgraded_cache[sub_id] = upgraded_resources_per_region
+    return upgraded_cache
 
 
-def is_resource_filtered_out(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:
-    if not cache:
-        return False
+def is_resource_filtered_in(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:
+    if cache and is_v2_schema(cache):
+        return cache[sub_id][region][resource_id][FILTERED_IN_KEY]
 
-    resource_metadata_dict = cache[sub_id][region]
-    if isinstance(resource_metadata_dict, dict):  # filter info only available for newer resource dict schema
-        return resource_metadata_dict[resource_id][FILTERED_OUT_KEY]
-    else:
-        return False
+    return False
 
 
 def prune_resource_cache(cache: ResourceCache) -> None:

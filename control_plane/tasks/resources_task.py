@@ -15,10 +15,9 @@ from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
     deserialize_monitored_subscriptions,
-    deserialize_resource_cache,
-    latest_cache_schema,
+    deserialize_resource_tag_filters,
+    read_resource_cache,
     prune_resource_cache,
-    upgrade_cache_to_latest,
 )
 from tasks.client.resource_client import ResourceClient
 from tasks.task import Task, task_main
@@ -34,7 +33,7 @@ class ResourcesTask(Task):
         self.monitored_subscriptions = deserialize_monitored_subscriptions(
             getenv(MONITORED_SUBSCRIPTIONS_SETTING) or ""
         )
-        resource_cache = deserialize_resource_cache(resource_cache_state)
+        resource_cache, self.schema_upgrade = read_resource_cache(resource_cache_state)
         if resource_cache is None:
             self.log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}
@@ -43,27 +42,14 @@ class ResourcesTask(Task):
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
 
-        if not latest_cache_schema(resource_cache):
-            self.resource_cache = upgrade_cache_to_latest(resource_cache)
-
-        self.set_resource_tag_filters(getenv(RESOURCE_TAG_FILTER_SETTING, ""))
-
-    def set_resource_tag_filters(self, tag_filter_input: str):
-        self.inclusive_tags = []
-        self.excluding_tags = []
-        if len(tag_filter_input) == 0:
-            return
-
-        parsed_tags = tag_filter_input.split(",")
-
-        for parsed_tag in parsed_tags:
-            tag = parsed_tag.strip().casefold()
-            if tag.startswith("!"):
-                self.excluding_tags.append(tag[1:])
-            else:
-                self.inclusive_tags.append(tag)
+        self.tag_filters = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTER_SETTING, ""))
 
     async def run(self) -> None:
+        if self.schema_upgrade:
+            self.log.warning("Detected resource cache schema upgrade, flushing cache")
+            await write_cache(RESOURCE_CACHE_BLOB, dumps(self._resource_cache_initial_state, default=list))
+            self.schema_upgrade = False
+
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = [
                 cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
@@ -87,8 +73,7 @@ class ResourcesTask(Task):
         async with ResourceClient(
             self.log,
             self.credential,
-            self.inclusive_tags,
-            self.excluding_tags,
+            self.tag_filters,
             subscription_id,
         ) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
