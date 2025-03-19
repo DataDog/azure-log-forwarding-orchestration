@@ -15,8 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/dop251/goja/ast"
@@ -25,9 +23,11 @@ import (
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
 const AzureService = "azure"

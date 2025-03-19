@@ -47,8 +47,8 @@ func (b *Blob) IsCurrent(now time.Time) bool {
 	return b.CreationTime.After(now.Add(LookBackPeriod))
 }
 
+// IsJson returns true if the blob is a json file.
 func (b *Blob) IsJson() bool {
-	// check if last characters are .json
 	return len(b.Name) > 5 && b.Name[len(b.Name)-5:] == ".json"
 }
 

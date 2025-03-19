@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
-
 	// 3p
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
 func azureTimestamp(t time.Time) string {
