@@ -49,10 +49,6 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	//blobNameResourceId, err := blob.ResourceId()
-	//if err != nil {
-	//	blobNameResourceId = "" // resourceId from blob name is optional, there are other possible sources
-	//}
 	processedRawBytes, processedLogs, err := parseLogs(content.Reader, blob.Container.Name, blob, piiScrubber, logsChannel)
 
 	// linux newlines are 1 byte, but windows newlines are 2
