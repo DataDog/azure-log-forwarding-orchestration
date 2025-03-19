@@ -296,10 +296,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             )
         )
 
-        async with ResourceClient(self.log, self.cred, [], sub_id1) as client:
+        expected_child_tags = ["hey:there"]
+        async with ResourceClient(self.log, self.cred, expected_child_tags, sub_id1) as client:
             resources = await client.get_resources_per_region()
 
-        expected_child_tags = ["hey:there"]
         self.assertEqual(
             resources,
             {
@@ -358,10 +358,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    mockSqlManagedInstance.id.lower(): to_resource_metadata(mockSqlManagedInstance, False),
+                    mockSqlManagedInstance.id.lower(): to_resource_metadata(mockSqlManagedInstance, True),
                     "/subscriptions/.../db2": ResourceMetadata(tags=[], filtered_in=True),
                     "/subscriptions/.../db1": ResourceMetadata(tags=[], filtered_in=True),
-                    resource1.id.lower(): to_resource_metadata(resource1, False),
+                    resource1.id.lower(): to_resource_metadata(resource1, True),
                 }
             },
         )
@@ -404,7 +404,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(
                         tags=["datadog:true"], filtered_in=True
                     ),
-                    resource1.id.lower(): to_resource_metadata(resource1, False),
+                    resource1.id.lower(): to_resource_metadata(resource1, True),
                 }
             },
         )
@@ -435,7 +435,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    mock_function_app.id.lower(): to_resource_metadata(mock_function_app, False),
+                    mock_function_app.id.lower(): to_resource_metadata(mock_function_app, True),
                     "/subscriptions/.../function-app/slots/prod": ResourceMetadata(
                         tags=["datadog:true"], filtered_in=True
                     ),

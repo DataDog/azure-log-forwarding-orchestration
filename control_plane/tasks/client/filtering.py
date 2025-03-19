@@ -135,6 +135,9 @@ def _parse_reject_preds(filter_strs):
 
 
 def parse_filtering_rule(filter_strs, all_filters=False):
+    """Parses tag filter string and returns a filtering rule that can be invoked with a set of resource tags
+    True is returned by the filtering rule if the resource should be filtered in, false if it should be filtered out.
+    """
     return create_filtering_rule(
         accept_preds=_parse_accept_preds(filter_strs),
         reject_preds=_parse_reject_preds(filter_strs),

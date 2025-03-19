@@ -30,7 +30,7 @@ from cache.diagnostic_settings_cache import (
     deserialize_event_cache,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache, is_resource_filtered_out
+from cache.resources_cache import RESOURCE_CACHE_BLOB, is_resource_filtered_in, read_resource_cache
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -91,7 +91,7 @@ class DiagnosticSettingsTask(Task):
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
 
-        resource_cache = deserialize_resource_cache(resource_cache_state)
+        resource_cache, _ = read_resource_cache(resource_cache_state)
         if resource_cache is None:
             self.log.warning(
                 "Detected invalid resource cache, removal of diagnostic settings for filtered out resources will not occur"
@@ -231,7 +231,7 @@ class DiagnosticSettingsTask(Task):
         ):
             # diagnostic setting exists on resource and is configured correctly
             # check if we should delete the setting because the resource has recently been filtered out
-            if self.resource_cache and is_resource_filtered_out(self.resource_cache, sub_id, region, resource_id):
+            if self.resource_cache and not is_resource_filtered_in(self.resource_cache, sub_id, region, resource_id):
                 self.log.info(
                     "Resource %s has been filtered out and has diagnostic setting %s, deleting setting",
                     resource_id,
@@ -241,7 +241,7 @@ class DiagnosticSettingsTask(Task):
                     self.update_event_cache(sub_id, resource_id, num_diag_settings - 1)
             return
 
-        if self.resource_cache and is_resource_filtered_out(self.resource_cache, sub_id, region, resource_id):
+        if self.resource_cache and not is_resource_filtered_in(self.resource_cache, sub_id, region, resource_id):
             # prevent adding a new setting if the resource has been filtered out
             self.update_event_cache(sub_id, resource_id, num_diag_settings)
             return

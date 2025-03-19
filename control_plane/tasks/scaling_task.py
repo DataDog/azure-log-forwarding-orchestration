@@ -33,7 +33,7 @@ from cache.env import (
     parse_config_option,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, read_resource_cache
 from cache.user_config import convert_pii_rules_to_json
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors
@@ -133,7 +133,7 @@ class ScalingTask(Task):
         self.now = datetime.now()
 
         # Resource Cache
-        resource_cache = deserialize_resource_cache(resource_cache_state)
+        resource_cache, _ = read_resource_cache(resource_cache_state)
         if resource_cache is None:
             raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache

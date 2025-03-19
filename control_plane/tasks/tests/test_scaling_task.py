@@ -58,7 +58,7 @@ CONTROL_PLANE_ID = "5a095f74c60a"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
 
-resMetadata = ResourceMetadata(tags=[], filtered_out=False)
+resMetadata = ResourceMetadata(tags=[], filtered_in=True)
 
 
 def minutes_ago(minutes: float) -> float:
@@ -746,7 +746,7 @@ class TestScalingTask(TaskTestCase):
         assignment_cache[SUB_ID1][EAST_US]["resources"].update(noisy_resources)
 
         await self.run_scaling_task(
-            resource_cache_state={SUB_ID1: {EAST_US: {f"resource{i}" for i in range(20)}}},
+            resource_cache_state={SUB_ID1: {EAST_US: {f"resource{i}": resMetadata for i in range(20)}}},
             assignment_cache_state=assignment_cache,
         )
 

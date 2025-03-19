@@ -4,7 +4,13 @@ from typing import Any
 from unittest.mock import Mock
 
 # project
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, ResourceMetadata, deserialize_resource_cache
+from cache.resources_cache import (
+    RESOURCE_CACHE_BLOB,
+    ResourceCache,
+    ResourceCacheV1,
+    ResourceMetadata,
+    deserialize_v2_resource_cache,
+)
 from tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException, async_generator, mock
 
@@ -22,7 +28,7 @@ resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags={}
 )
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
-resMetadata = ResourceMetadata(tags=[], filtered_out=False)
+resMetadata = ResourceMetadata(tags=[], filtered_in=True)
 
 
 class TestResourcesTask(TaskTestCase):
@@ -36,7 +42,7 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client_mapping: ResourceCache = {}
         self.log = self.patch_path("tasks.task.log").getChild.return_value
 
-        def create_resource_client(_log: Any, _cred: Any, _inclusive_tags: Any, _excluding_tags: Any, sub_id: str):
+        def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str):
             c = AsyncMockClient()
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             c.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
@@ -45,13 +51,13 @@ class TestResourcesTask(TaskTestCase):
 
         self.resource_client.side_effect = create_resource_client
 
-    async def run_resources_task(self, cache: ResourceCache):
+    async def run_resources_task(self, cache: ResourceCache | ResourceCacheV1):
         async with ResourcesTask(dumps(cache, default=list)) as task:
             await task.run()
 
     @property
     def cache(self) -> ResourceCache:
-        return self.cache_value(RESOURCE_CACHE_BLOB, deserialize_resource_cache)
+        return self.cache_value(RESOURCE_CACHE_BLOB, deserialize_v2_resource_cache)
 
     async def test_invalid_cache(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
@@ -95,6 +101,8 @@ class TestResourcesTask(TaskTestCase):
                 sub_id2: {SUPPORTED_REGION_2: {"res3"}},
             }
         )
+
+        self.log.warning.assert_called_once_with("Detected resource cache schema upgrade, flushing cache")
 
         self.assertEqual(
             self.cache,

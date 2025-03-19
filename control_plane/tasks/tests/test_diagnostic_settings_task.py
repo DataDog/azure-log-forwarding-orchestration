@@ -2,7 +2,7 @@
 from collections.abc import AsyncIterable
 from json import dumps
 from os import environ
-from typing import Final, cast
+from typing import Final
 from unittest.mock import AsyncMock, Mock, patch
 
 # 3p
@@ -13,7 +13,7 @@ from azure.mgmt.monitor.models import CategoryType
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
-from cache.resources_cache import ResourceCache
+from cache.resources_cache import FILTERED_IN_KEY, TAGS_KEY, ResourceCache, ResourceCacheV1
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -63,7 +63,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
     async def run_diagnostic_settings_task(
         self,
-        resource_cache: ResourceCache | None,
+        resource_cache: ResourceCache | ResourceCacheV1 | None,
         assignment_cache: AssignmentCache,
         event_cache: DiagnosticSettingsCache | None,
     ) -> DiagnosticSettingsTask:
@@ -372,7 +372,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {"tags": ["filter:me"], "filtered_out": False},
+                        resource_id1: {TAGS_KEY: ["filter:me"], FILTERED_IN_KEY: True},
                     }
                 },
             },
@@ -404,11 +404,11 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
-        resource_cache = {
+        resource_cache: ResourceCacheV1 = {
             sub_id1: {region1: {resource_id1}},
         }
         await self.run_diagnostic_settings_task(
-            resource_cache=cast(ResourceCache, resource_cache),
+            resource_cache=resource_cache,
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -441,7 +441,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {"tags": ["filter:me"], "filtered_out": True},
+                        resource_id1: {TAGS_KEY: ["filter:me"], FILTERED_IN_KEY: False},
                     }
                 },
             },
@@ -467,7 +467,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {"tags": ["filter:me"], "filtered_out": True},
+                        resource_id1: {TAGS_KEY: ["filter:me"], FILTERED_IN_KEY: False},
                     }
                 },
             },

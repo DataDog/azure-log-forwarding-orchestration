@@ -2,7 +2,7 @@
 from typing import Any, TypeAlias, TypedDict
 
 # 3p
-from cache.common import InvalidCacheError, deserialize_cache
+from cache.common import deserialize_cache
 
 RESOURCE_CACHE_BLOB = "resources.json"
 
@@ -60,11 +60,12 @@ def read_resource_cache(cache_str: str) -> tuple[ResourceCache | None, bool]:
         return cache, False
 
     if cache is None:
-        # altan - None gets returned if cache is V1 here. Include error?
         v1_cache = deserialize_v1_resource_cache(cache_str)
+        if v1_cache is None:
+            return None, False
         return upgrade_cache_to_v2(v1_cache), True
 
-    raise InvalidCacheError("Invalid cache")
+    return None, False  # altan - think about this
 
 
 def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
@@ -113,7 +114,7 @@ def is_v2_schema(cache: ResourceCache | None) -> bool:
 
 def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
     if cache is None:
-        raise InvalidCacheError("Invalid cache")
+        return {}
 
     upgraded_cache: ResourceCache = {}
 
@@ -123,7 +124,7 @@ def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
             resources = resources_per_region[region]
             resource_metadatas: dict[str, ResourceMetadata] = {}
             for r in resources:
-                metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: False}
+                metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: True}
                 resource_metadatas[r] = metadata
             upgraded_resources_per_region[region] = resource_metadatas
         upgraded_cache[sub_id] = upgraded_resources_per_region

@@ -4,20 +4,20 @@ from unittest import TestCase
 
 # project
 from cache.resources_cache import (
+    FILTERED_IN_KEY,
+    TAGS_KEY,
     ResourceCache,
     ResourceMetadata,
     deserialize_monitored_subscriptions,
     deserialize_resource_tag_filters,
-    deserialize_v2_resource_cache,
     deserialize_v1_resource_cache,
-    read_resource_cache,
+    deserialize_v2_resource_cache,
     prune_resource_cache,
-    TAGS_KEY,
-    FILTERED_IN_KEY,
+    read_resource_cache,
 )
 from cache.tests import sub_id1, sub_id2
 
-default_metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: False}
+default_metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: True}
 filtered_in_metadata: ResourceMetadata = {TAGS_KEY: ["datadog:true"], FILTERED_IN_KEY: True}
 filtered_out_metadata: ResourceMetadata = {TAGS_KEY: ["hello:world"], FILTERED_IN_KEY: False}
 
