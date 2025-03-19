@@ -50,27 +50,39 @@ class TestDeserializeResourceCache(TestCase):
             {sub_id1: {"region2": {"resource1": default_metadata, "resource2": default_metadata}}},
         )
 
+    def test_v1_schema(self):
+        cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}})
+        self.assert_deserialize_v2_failure(cache_str)
+        cache = deserialize_v1_resource_cache(cache_str)
+        self.assertEqual(cache, {sub_id1: {"region2": ["resource1", "resource2"]}})
+
     def assert_deserialize_v2_failure(self, cache_str: str):
         cache = deserialize_v2_resource_cache(cache_str)
         self.assertIsNone(cache)
 
+    def assert_deserialize_v1_failure(self, cache_str: str):
+        cache = deserialize_v1_resource_cache(cache_str)
+        self.assertIsNone(cache)
+
     def test_invalid_json(self):
         self.assert_deserialize_v2_failure("{invalid_json}")
-
-    def test_v1_schema(self):
-        self.assert_deserialize_v2_failure(dumps({sub_id1: {"region2": ["resource1", "resource2"]}}))
+        self.assert_deserialize_v1_failure("{invalid_json}")
 
     def test_not_dict(self):
         self.assert_deserialize_v2_failure(dumps(["not_a_dict"]))
+        self.assert_deserialize_v1_failure(dumps(["not_a_dict"]))
 
     def test_dict_with_non_dict_regions(self):
         self.assert_deserialize_v2_failure(dumps({sub_id1: "not_a_dict_region_config"}))
+        self.assert_deserialize_v1_failure(dumps({sub_id1: "not_a_dict_region_config"}))
 
     def test_dict_with_non_list_resources(self):
         self.assert_deserialize_v2_failure(dumps({sub_id1: {"region": "not_a_list_of_resources"}}))
+        self.assert_deserialize_v1_failure(dumps({sub_id1: {"region": "not_a_list_of_resources"}}))
 
     def test_dict_with_some_non_list_values(self):
         self.assert_deserialize_v2_failure(dumps({sub_id1: {"region1": ["r1"]}, sub_id2: {"region2": 123}}))
+        self.assert_deserialize_v1_failure(dumps({sub_id1: {"region1": ["r1"]}, sub_id2: {"region2": 123}}))
 
     def test_prune_resources_cache_empty(self):
         cache: ResourceCache = {}
@@ -104,8 +116,11 @@ class TestDeserializeResourceCache(TestCase):
             ],
         )
 
-    def test_resource_filters_var(self):
-        env_var = "datadog:true, env:STAGING,!env:prod, !not:me"
-        inclusive_filters, excluding_filters = deserialize_resource_tag_filters(env_var)
-        self.assertEqual(inclusive_filters, ["datadog:true", "env:staging"])
-        self.assertEqual(excluding_filters, ["!env:prod", "!not:me"])
+    def test_deserialize_resource_tag_filters_var(self):
+        env_var = "datadog:true, env:STAGING,!env:pRoD        , !not:me"
+        tag_filters = deserialize_resource_tag_filters(env_var)
+        self.assertEqual(tag_filters, ["datadog:true", "env:staging", "!env:prod", "!not:me"])
+
+    def test_deserialize_empty_resource_tag_filters_var(self):
+        tag_filters = deserialize_resource_tag_filters("")
+        self.assertEqual(tag_filters, [])
