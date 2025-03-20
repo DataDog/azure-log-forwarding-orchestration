@@ -291,13 +291,13 @@ func BytesFromJSON(data []byte) ([]byte, error) {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, containerName string, blob storage.Blob, scrubber Scrubber) (*Log, error) {
+func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
 	logSize := len(logBytes) + newlineBytes
 	if blob.IsJson() {
-		if containerName == functionAppContainer {
+		if blob.Container.Name == functionAppContainer {
 			logBytes, err = BytesFromJSON(logBytes)
 			if err != nil {
 				if strings.Contains(err.Error(), "Unexpected token ;") {
@@ -323,7 +323,7 @@ func NewLog(logBytes []byte, containerName string, blob storage.Blob, scrubber S
 	currLog.BlobResourceId = blobNameResourceId
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes
-	currLog.Container = containerName
+	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
 
 	return currLog.ToLog(scrubber), nil
@@ -351,10 +351,6 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 		"level":           log.Level,
 		"originContainer": log.Container,
 		"originBlob":      log.Blob,
-	}
-
-	if log.ResourceId != "" {
-		additionalProperties["resourceId"] = log.ResourceId
 	}
 
 	logItem := datadogV2.HTTPLogItem{
@@ -456,7 +452,7 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, containerName string, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -466,7 +462,7 @@ func Parse(reader io.ReadCloser, containerName string, blob storage.Blob, piiScr
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			currLog, err := NewLog(currBytes, containerName, blob, piiScrubber)
+			currLog, err := NewLog(currBytes, blob, piiScrubber)
 			if err != nil {
 				if !yield(nil, err) {
 					return

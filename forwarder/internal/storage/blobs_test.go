@@ -341,16 +341,4 @@ func TestBlob_IsJson(t *testing.T) {
 		assert.False(t, isJson)
 	})
 
-	t.Run("blob name is json", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		blob := storage.Blob{Name: "test"}
-
-		// WHEN
-		isJson := blob.IsJson()
-
-		// THEN
-		assert.False(t, isJson)
-	})
-
 }
