@@ -36,7 +36,7 @@ def accept(_):
     return True
 
 
-def reject(_):
+def reject(v):
     """A predicate that is never satisfied"""
     return False
 
