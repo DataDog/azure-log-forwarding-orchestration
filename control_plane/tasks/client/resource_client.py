@@ -96,7 +96,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         super().__init__()
         self.log = log
         self.credential = cred
-        self.tag_filters = tag_filters
+        self.filtering_rule = parse_filtering_rule(tag_filters)
         self.subscription_id = subscription_id
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
@@ -241,9 +241,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
             resource_tags = resource_tag_dict_to_list(resource.tags)
-            metadata = ResourceMetadata(
-                tags=resource_tags, filtered_in=self.is_resource_filtered_in_by_tags(resource_tags)
-            )
+            metadata = ResourceMetadata(tags=resource_tags, filtered_in=self.filtering_rule(resource_tags))
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
         self.log.info(
@@ -262,6 +260,3 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             _, get_sub_resources = self._get_sub_resources_map[resource_type]
             async for sub_resource in get_sub_resources(resource):
                 yield sub_resource
-
-    def is_resource_filtered_in_by_tags(self, resource_tags: list[str]) -> bool:
-        return parse_filtering_rule(self.tag_filters)(resource_tags)

@@ -91,14 +91,6 @@ def _deserialize_v1_resource_cache(cache_str: str) -> ResourceCacheV1 | None:
     return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA_V1)
 
 
-def is_v2_schema(cache: ResourceCache | None) -> bool:
-    return cache is not None and all(
-        isinstance(resources, dict)
-        for resources_per_region in cache.values()
-        for resources in resources_per_region.values()
-    )
-
-
 def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
     """Upgrades resource cache from v1 to v2 schema.
     v1 schema -> each region maps to a set of resource IDs
@@ -116,12 +108,6 @@ def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
         }
         for sub_id, resources_per_region in cache.items()
     }
-
-
-def is_resource_filtered_in(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:
-    return is_v2_schema(cache) and cache.get(sub_id, {}).get(region, {}).get(resource_id, {}).get(
-        FILTERED_IN_KEY, False
-    )
 
 
 def prune_resource_cache(cache: ResourceCache) -> None:

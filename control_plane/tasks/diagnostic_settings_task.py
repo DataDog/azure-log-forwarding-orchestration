@@ -31,7 +31,7 @@ from cache.diagnostic_settings_cache import (
     update_cached_setting_count,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache, is_resource_filtered_in
+from cache.resources_cache import FILTERED_IN_KEY, RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -224,6 +224,10 @@ class DiagnosticSettingsTask(Task):
             resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
         )
 
+        filtered_in = (
+            (self.resource_cache or {}).get(sub_id, {}).get(region, {}).get(resource_id, {}).get(FILTERED_IN_KEY, True)
+        )
+
         if (
             current_setting
             and current_setting.storage_account_id
@@ -232,7 +236,7 @@ class DiagnosticSettingsTask(Task):
         ):
             # diagnostic setting exists on resource and is configured correctly
             # check if we should delete the setting because the resource has recently been filtered out
-            if self.resource_cache and not is_resource_filtered_in(self.resource_cache, sub_id, region, resource_id):
+            if not filtered_in:
                 self.log.info(
                     "Resource %s has been filtered out and has diagnostic setting %s, deleting setting",
                     resource_id,
@@ -242,8 +246,8 @@ class DiagnosticSettingsTask(Task):
                     remove_cached_resource(self.event_cache, sub_id, resource_id)
             return
 
-        if self.resource_cache and not is_resource_filtered_in(self.resource_cache, sub_id, region, resource_id):
-            # prevent adding a new setting if the resource has been filtered out
+        if not filtered_in:
+            # prevent adding a new diagnostic setting
             update_cached_setting_count(self.event_cache, sub_id, resource_id, num_diag_settings)
             return
 
