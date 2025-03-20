@@ -4,8 +4,7 @@ from fnmatch import translate
 from functools import reduce
 from re import Match, Pattern, compile
 
-# https://github.com/DataDog/dogweb/blob/prod/integration/common/filtering.py
-# This file is taken from dogweb to ensure consistency in filtering logic
+# Refer to details: https://datadoghq.atlassian.net/wiki/x/JQwJIwE
 
 
 def parse_filtering_rule(filter_strs, all_filters=False):
