@@ -126,10 +126,7 @@ def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
 
 
 def is_resource_filtered_in(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:
-    if cache and is_v2_schema(cache):
-        return cache[sub_id][region][resource_id][FILTERED_IN_KEY]
-
-    return False
+    return is_v2_schema(cache) and cache[sub_id][region][resource_id][FILTERED_IN_KEY]
 
 
 def prune_resource_cache(cache: ResourceCache) -> None:

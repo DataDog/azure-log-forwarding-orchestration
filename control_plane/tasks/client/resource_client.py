@@ -92,13 +92,7 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
 
 
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
-    def __init__(
-        self,
-        log: Logger,
-        cred: DefaultAzureCredential,
-        tag_filters: list[str],
-        subscription_id: str,
-    ) -> None:
+    def __init__(self, log: Logger, cred: DefaultAzureCredential, tag_filters: list[str], subscription_id: str) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
@@ -251,8 +245,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             metadata = ResourceMetadata(
                 tags=resource_tags, filtered_in=self.is_resource_filtered_in_by_tags(resource_tags)
             )
-            for id in resource_ids:
-                resource_id_metadata_dict[id] = metadata
+            resource_id_metadata_dict.update({id: metadata for id in resource_ids})
             resources_per_region.setdefault(region, {}).update(resource_id_metadata_dict)
 
         self.log.info(
