@@ -26,7 +26,7 @@ from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
 from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
-from control_plane.tasks.client.filtering import parse_filtering_rule
+from tasks.client.filtering import parse_filtering_rule
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
