@@ -1,17 +1,29 @@
-import fnmatch
-import re
+# stdlib
 from collections.abc import Iterable
+from fnmatch import translate
 from functools import reduce
+from re import Match, Pattern, compile
 
 # https://github.com/DataDog/dogweb/blob/prod/integration/common/filtering.py
 # This file is taken from dogweb to ensure consistency in filtering logic
 
 
-def _compile_wildcard(pattern: str) -> re.Pattern:
-    return re.compile(fnmatch.translate(pattern))
+def parse_filtering_rule(filter_strs, all_filters=False):
+    """Parses tag filter string and returns a filtering rule that can be invoked with a set of resource tags.
+    Filtering rule returns true if the resource should be filtered in, false if it should be filtered out.
+    """
+    return create_filtering_rule(
+        accept_preds=_parse_accept_preds(filter_strs),
+        reject_preds=_parse_reject_preds(filter_strs),
+        all_filters=all_filters,
+    )
 
 
-def get_wildcard_match(name: str, pattern: str, ignore_case: bool = True) -> re.Match | None:
+def _compile_wildcard(pattern: str) -> Pattern:
+    return compile(translate(pattern))
+
+
+def get_wildcard_match(name: str, pattern: str, ignore_case: bool = True) -> Match | None:
     return _compile_wildcard(pattern.lower() if ignore_case else pattern).match(name.lower() if ignore_case else name)
 
 
@@ -99,9 +111,6 @@ def create_filtering_rule(accept_preds=None, reject_preds=None, all_filters=Fals
     return FilteringRule(accept_preds, reject_preds, all_filters)
 
 
-# Parsing
-
-
 def _sanitize(string):
     return string.lower().strip()
 
@@ -132,14 +141,3 @@ def _parse_accept_preds(filter_strs):
 
 def _parse_reject_preds(filter_strs):
     return [_parse_reject_pred(pred) for pred in filter_strs if _is_reject_pred(pred)]
-
-
-def parse_filtering_rule(filter_strs, all_filters=False):
-    """Parses tag filter string and returns a filtering rule that can be invoked with a set of resource tags
-    True is returned by the filtering rule if the resource should be filtered in, false if it should be filtered out.
-    """
-    return create_filtering_rule(
-        accept_preds=_parse_accept_preds(filter_strs),
-        reject_preds=_parse_reject_preds(filter_strs),
-        all_filters=all_filters,
-    )

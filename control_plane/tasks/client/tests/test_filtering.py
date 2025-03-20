@@ -5,7 +5,7 @@ from unittest import TestCase
 from tasks.client.filtering import parse_filtering_rule
 
 
-class TestTagFiltering(TestCase):
+class TestFiltering(TestCase):
     def test_empty_tags_and_filters(self):
         tag_filters = []
         resource_tags = []
@@ -54,4 +54,9 @@ class TestTagFiltering(TestCase):
     def test_both_multiples_given_match_exclude(self):
         tag_filters = ["datadog:true", "env:test", "happy:days", "!major:fomo", "!good:bye", "!bad:times"]
         resource_tags = ["major:fomo"]
+        self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
+
+    def test_both_multiples_given_match_all(self):
+        tag_filters = ["datadog:true", "env:test", "happy:days", "!major:fomo", "!good:bye"]
+        resource_tags = ["datadog:true", "env:test", "happy:days", "major:fomo", "good:bye"]
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
