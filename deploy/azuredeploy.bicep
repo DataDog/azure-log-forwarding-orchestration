@@ -7,11 +7,14 @@ param controlPlaneSubscriptionId string
 param controlPlaneResourceGroupName string
 
 @secure()
+@description('Datadog API Key')
 param datadogApiKey string
+@description('Datadog Site')
 param datadogSite string
-param resourceTagFilter string
-param piiScrubberRules string
-
+@description('Comma separated list of tags to filter resources by')
+param resourceTagFilters string = ''
+@description('YAML formatted list of PII Scrubber Rules')
+param piiScrubberRules string = ''
 param datadogTelemetry bool = false
 param logLevel string = 'INFO'
 
@@ -68,7 +71,7 @@ module controlPlane './control_plane.bicep' = {
     datadogApiKey: datadogApiKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
-    resourceTagFilter: resourceTagFilter
+    resourceTagFilters: resourceTagFilters
     piiScrubberRules: piiScrubberRules
     imageRegistry: imageRegistry
     storageAccountUrl: storageAccountUrl
@@ -114,7 +117,7 @@ module initialRun './initial_run.bicep' = {
     logLevel: logLevel
     monitoredSubscriptions: monitoredSubscriptions
     piiScrubberRules: piiScrubberRules
-    resourceTagFilter: resourceTagFilter
+    resourceTagFilters: resourceTagFilters
     forwarderImage: '${imageRegistry}/forwarder:latest'
     storageAccountUrl: storageAccountUrl
   }

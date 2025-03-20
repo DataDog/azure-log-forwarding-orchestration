@@ -9,7 +9,7 @@ param logLevel string
 param monitoredSubscriptions string
 param forwarderImage string
 param piiScrubberRules string = ''
-param resourceTagFilter string = ''
+param resourceTagFilters string = ''
 param storageAccountUrl string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
@@ -45,7 +45,7 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'LOG_LEVEL', value: logLevel }
       { name: 'MONITORED_SUBSCRIPTIONS', value: monitoredSubscriptions }
       { name: 'PII_SCRUBBER_RULES', value: piiScrubberRules }
-      { name: 'RESOURCE_TAG_FILTER', value: resourceTagFilter }
+      { name: 'RESOURCE_TAG_FILTERS', value: resourceTagFilters }
     ]
     azCliVersion: '2.67.0'
     primaryScriptUri: '${storageAccountUrl}/lfo/initial_run.sh'

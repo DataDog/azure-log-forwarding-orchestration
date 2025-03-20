@@ -75,6 +75,7 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
+        self.write_cache.assert_called_once()
         self.assertEqual(
             self.cache,
             {
@@ -103,6 +104,32 @@ class TestResourcesTask(TaskTestCase):
         )
 
         self.log.warning.assert_called_once_with("Detected resource cache schema upgrade, flushing cache")
+        self.write_cache.assert_called_once()
+
+        self.assertEqual(
+            self.cache,
+            {
+                sub_id1: {SUPPORTED_REGION_1: {"res1": resMetadata, "res2": resMetadata}},
+                sub_id2: {SUPPORTED_REGION_2: {"res3": resMetadata}},
+            },
+        )
+
+    async def test_cache_upgrade_schema_add_resources(self):
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
+        self.resource_client_mapping = {
+            sub_id1: {SUPPORTED_REGION_1: {"res1": resMetadata, "res2": resMetadata}},
+            sub_id2: {SUPPORTED_REGION_2: {"res3": resMetadata}},
+        }
+
+        await self.run_resources_task(
+            {
+                sub_id1: {SUPPORTED_REGION_1: {"res1", "res2", "res3"}},
+                sub_id2: {SUPPORTED_REGION_2: {"res4", "res5", "res6"}},
+            }
+        )
+
+        self.log.warning.assert_called_once_with("Detected resource cache schema upgrade, flushing cache")
+        self.assertEqual(self.write_cache.call_count, 2)
 
         self.assertEqual(
             self.cache,
@@ -132,6 +159,7 @@ class TestResourcesTask(TaskTestCase):
             await task.run()
 
         self.log.warning.assert_called_once_with("Resource Cache is in an invalid format, task will reset the cache")
+        self.write_cache.assert_called_once()
         self.assertEqual(
             self.cache,
             {
@@ -185,6 +213,7 @@ class TestResourcesTask(TaskTestCase):
                 },
             }
         )
+        self.write_cache.assert_called_once()
         self.assertEqual(self.cache, {})
 
     async def test_subscriptions_gone(self):
@@ -205,6 +234,7 @@ class TestResourcesTask(TaskTestCase):
                 },
             }
         )
+        self.write_cache.assert_called_once()
         self.assertEqual(self.cache, {})
 
     async def test_unexpected_failure_skips_cache_write(self):
@@ -253,6 +283,7 @@ class TestResourcesTask(TaskTestCase):
             },
         }
         await self.run_resources_task({})
+        self.write_cache.assert_called_once()
         self.assertEqual(
             self.cache,
             {

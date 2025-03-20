@@ -318,9 +318,7 @@ class DiagnosticSettingsTask(Task):
             self.log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
             return False
         except Exception:
-            self.log.error(
-                "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
-            )
+            self.log.exception("Unexpected error when trying to add diagnostic setting for resource %s", resource_id)
             return False
 
     async def delete_diagnostic_setting(self, client: MonitorManagementClient, resource_id: str) -> bool:
@@ -330,14 +328,11 @@ class DiagnosticSettingsTask(Task):
         """
         try:
             await client.diagnostic_settings.delete(resource_id, self.diagnostic_settings_name)
-        except HttpResponseError as e:
-            self.log.error("Failed to delete diagnostic setting for resource %s", resource_id)
-            self.log.error(e)
+        except HttpResponseError:
+            self.log.exception("Failed to delete diagnostic setting for resource %s", resource_id)
             return False
         except Exception:
-            self.log.error(
-                "Unexpected error when trying to delete diagnostic setting for resource %s", resource_id, exc_info=True
-            )
+            self.log.exception("Unexpected error when trying to delete diagnostic setting for resource %s", resource_id)
             return False
 
         return True

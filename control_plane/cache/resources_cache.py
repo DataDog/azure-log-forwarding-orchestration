@@ -23,7 +23,7 @@ ResourceCacheV1: TypeAlias = dict[str, dict[str, set[str]]]
 
 RegionToResourcesDict: TypeAlias = dict[str, dict[str, ResourceMetadata]]
 ResourceCache: TypeAlias = dict[str, RegionToResourcesDict]
-"""mapping of subscription_id to region to resource metadata dicts"""
+"""mapping of subscription_id to region to resource ID to resource metadata"""
 
 TAGS_KEY = "tags"
 FILTERED_IN_KEY = "filtered_in"
@@ -52,20 +52,18 @@ RESOURCE_CACHE_SCHEMA_V1: dict[str, Any] = {
 def read_resource_cache(cache_str: str) -> tuple[ResourceCache | None, bool]:
     """Read the resource cache and returns it in the v2 schema.
     If the existing cache is in the v1 schema, it will be upgraded to the v2 schema.
-    Returns a tuple of the cache and a boolean indicating whether the caller should
+    Returns the cache and a bool indicating whether the caller should
     flush the cache because a schema upgrade occurred."""
 
     cache = deserialize_v2_resource_cache(cache_str)
-    if is_v2_schema(cache):
+    if cache is not None:
         return cache, False
 
-    if cache is None:
-        v1_cache = deserialize_v1_resource_cache(cache_str)
-        if v1_cache is None:
-            return None, False
+    v1_cache = deserialize_v1_resource_cache(cache_str)
+    if v1_cache is not None:
         return upgrade_cache_to_v2(v1_cache), True
 
-    return None, False  # altan - think about this
+    return None, False
 
 
 def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
@@ -101,15 +99,11 @@ def deserialize_v1_resource_cache(cache_str: str) -> ResourceCacheV1 | None:
 
 
 def is_v2_schema(cache: ResourceCache | None) -> bool:
-    if cache is None:
-        return False
-
-    for _, resources_per_region in cache.items():
-        for region in resources_per_region:
-            resources = resources_per_region[region]
-            if not isinstance(resources, dict):
-                return False
-    return True
+    return cache is not None and all(
+        isinstance(resources, dict)
+        for resources_per_region in cache.values()
+        for resources in resources_per_region.values()
+    )
 
 
 def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:

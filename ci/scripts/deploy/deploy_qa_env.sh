@@ -21,4 +21,4 @@ az deployment mg create --management-group-id "Azure-Integrations-Mg" \
     --parameters monitoredSubscriptions="[\"$AZURE_SUBSCRIPTION_ID\"]" --parameters controlPlaneLocation=eastus \
     --parameters controlPlaneSubscriptionId="$AZURE_SUBSCRIPTION_ID" --parameters controlPlaneResourceGroupName=$resource_group \
     --parameters datadogApiKey="$DD_API_KEY" --parameters datadogSite=datadoghq.com --parameters datadogTelemetry=true \
-    --parameters piiScrubberRules="" --parameters resourceTagFilter="" --parameters imageRegistry=lfoqa.azurecr.io --parameters 'storageAccountUrl=https://lfoqa.blob.core.windows.net'
+    --parameters imageRegistry=lfoqa.azurecr.io --parameters 'storageAccountUrl=https://lfoqa.blob.core.windows.net'

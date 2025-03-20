@@ -10,21 +10,12 @@ param monitoredSubscriptions string
 param imageRegistry string
 param storageAccountUrl string
 
-@description('Datadog API Key')
 @secure()
 param datadogApiKey string
-
-@description('Datadog Site')
 param datadogSite string
-
-@description('PII Scrubber Rules')
 param piiScrubberRules string
-
-@description('Tags to filter resources')
-param resourceTagFilter string
-
+param resourceTagFilters string
 param datadogTelemetry bool
-
 param logLevel string
 
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
@@ -41,14 +32,15 @@ var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
 var CONTROL_PLANE_REGION_SETTING = 'CONTROL_PLANE_REGION'
 var CONTROL_PLANE_ID_SETTING = 'CONTROL_PLANE_ID'
 var MONITORED_SUBSCRIPTIONS_SETTING = 'MONITORED_SUBSCRIPTIONS'
+var RESOURCE_TAG_FILTERS_SETTING = 'RESOURCE_TAG_FILTERS'
 var PII_SCRUBBER_RULES_SETTING = 'PII_SCRUBBER_RULES'
 var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
 var LOG_LEVEL_SETTING = 'LOG_LEVEL'
-var RESOURCE_TAG_FILTER_SETTING = 'RESOURCE_TAG_FILTER'
 
 // Secret Names
 var DD_API_KEY_SECRET = 'dd-api-key'
 var CONNECTION_STRING_SECRET = 'connection-string'
+
 // CONTROL PLANE RESOURCES
 
 resource asp 'Microsoft.Web/serverfarms@2022-09-01' = {
@@ -123,7 +115,7 @@ resource resourceTask 'Microsoft.Web/sites@2022-09-01' = {
       appSettings: union(commonAppSettings, [
         { name: 'WEBSITE_CONTENTSHARE', value: resourceTaskName }
         { name: MONITORED_SUBSCRIPTIONS_SETTING, value: monitoredSubscriptions }
-        { name: RESOURCE_TAG_FILTER_SETTING, value: resourceTagFilter }
+        { name: RESOURCE_TAG_FILTERS_SETTING, value: resourceTagFilters }
       ])
       linuxFxVersion: 'Python|3.11'
     }

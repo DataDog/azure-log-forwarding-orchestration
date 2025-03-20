@@ -1,6 +1,5 @@
 # stdlib
 from asyncio import gather, run
-from copy import deepcopy
 from json import dumps
 from os import getenv
 from typing import cast
@@ -10,14 +9,14 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import write_cache
-from cache.env import MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTER_SETTING
+from cache.env import MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTERS_SETTING
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
     deserialize_monitored_subscriptions,
     deserialize_resource_tag_filters,
-    read_resource_cache,
     prune_resource_cache,
+    read_resource_cache,
 )
 from tasks.client.resource_client import ResourceClient
 from tasks.task import Task, task_main
@@ -37,12 +36,12 @@ class ResourcesTask(Task):
         if resource_cache is None:
             self.log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}
-        self._resource_cache_initial_state = deepcopy(resource_cache)
+        self._resource_cache_initial_state = resource_cache
 
         self.resource_cache: ResourceCache = {}
-        "in-memory cache of subscription_id to resource_ids"
+        "in-memory cache of subscription_id to regions to resource_ids to resource metadata"
 
-        self.tag_filters = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTER_SETTING, ""))
+        self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
 
     async def run(self) -> None:
         if self.schema_upgrade:
@@ -73,7 +72,7 @@ class ResourcesTask(Task):
         async with ResourceClient(
             self.log,
             self.credential,
-            self.tag_filters,
+            self.tag_filter_list,
             subscription_id,
         ) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()

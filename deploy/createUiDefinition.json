@@ -172,8 +172,8 @@
                 "name": "resourceTagFilters",
                 "type": "Microsoft.Common.TextBox",
                 "label": "Tag Filters",
-                "toolTip": "Providing multiple inclusive tags will AND them together, so resources with all inclusive tags will forward logs. Providing multiple excluding tags will OR them together, so resources with one excluding tag will not forward logs.",
-                "placeholder": "Datadog:true,Business:Finance,!Classification:Confidential",
+                "toolTip": "Providing multiple tags within an inclusion/exclusion rule will OR tags together, so a resource with any matching tag will be included/excluded.",
+                "placeholder": "env:prod,datadog:true,!datadog:false",
                 "constraints": {
                   "required": false,
                   "regex": "^(?:[^,\n]*)(?:,[^,\n]*)*$",

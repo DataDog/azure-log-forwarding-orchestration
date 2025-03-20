@@ -21,7 +21,12 @@ class TestFiltering(TestCase):
         resource_tags = ["datadog:true"]
         self.assertTrue(parse_filtering_rule(tag_filters)(resource_tags))
 
-    def test_single_inclusive_nonmatch(self):
+    def test_multiple_inclusive_match_one(self):
+        tag_filters = ["datadog:true", "env:test"]
+        resource_tags = ["datadog:true"]
+        self.assertTrue(parse_filtering_rule(tag_filters)(resource_tags))
+
+    def test_inclusive_nonmatch(self):
         tag_filters = ["datadog:true"]
         resource_tags = []
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
@@ -31,14 +36,19 @@ class TestFiltering(TestCase):
         resource_tags = ["major:fomo"]
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
 
-    def test_single_excluding_nonmatch(self):
+    def test_excluding_nonmatch(self):
         tag_filters = ["!major:fomo"]
-        resource_tags = ["minor:polo"]
+        resource_tags = []
         self.assertTrue(parse_filtering_rule(tag_filters)(resource_tags))
 
     def test_single_both_given(self):
         tag_filters = ["datadog:true", "!major:fomo"]
         resource_tags = ["datadog:true", "major:fomo"]
+        self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
+
+    def test_multiple_excluding_match_one(self):
+        tag_filters = ["!major:fomo", "!no:sir"]
+        resource_tags = ["major:fomo"]
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
 
     def test_same_value_given(self):
@@ -59,4 +69,17 @@ class TestFiltering(TestCase):
     def test_both_multiples_given_match_all(self):
         tag_filters = ["datadog:true", "env:test", "happy:days", "!major:fomo", "!good:bye"]
         resource_tags = ["datadog:true", "env:test", "happy:days", "major:fomo", "good:bye"]
+        self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
+
+    def test_star_filter(self):
+        tag_filters = ["datadog:*"]
+        resource_tags = ["datadog:true"]
+        self.assertTrue(parse_filtering_rule(tag_filters)(resource_tags))
+
+    def test_question_mark_filter(self):
+        tag_filters = ["datadog:?"]
+        resource_tags = ["datadog:t"]
+        self.assertTrue(parse_filtering_rule(tag_filters)(resource_tags))
+
+        resource_tags = ["datadog:trex"]
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
