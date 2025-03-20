@@ -14,9 +14,9 @@ from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
     deserialize_monitored_subscriptions,
+    deserialize_resource_cache,
     deserialize_resource_tag_filters,
     prune_resource_cache,
-    read_resource_cache,
 )
 from tasks.client.resource_client import ResourceClient
 from tasks.task import Task, task_main
@@ -32,7 +32,7 @@ class ResourcesTask(Task):
         self.monitored_subscriptions = deserialize_monitored_subscriptions(
             getenv(MONITORED_SUBSCRIPTIONS_SETTING) or ""
         )
-        resource_cache, self.schema_upgrade = read_resource_cache(resource_cache_state)
+        resource_cache, self.schema_upgrade = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             self.log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}

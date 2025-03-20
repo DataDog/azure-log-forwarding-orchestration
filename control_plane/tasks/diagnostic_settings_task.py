@@ -31,7 +31,7 @@ from cache.diagnostic_settings_cache import (
     update_cached_setting_count,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
-from cache.resources_cache import RESOURCE_CACHE_BLOB, is_resource_filtered_in, read_resource_cache
+from cache.resources_cache import RESOURCE_CACHE_BLOB, deserialize_resource_cache, is_resource_filtered_in
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -92,7 +92,7 @@ class DiagnosticSettingsTask(Task):
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
 
-        resource_cache, _ = read_resource_cache(resource_cache_state)
+        resource_cache, _ = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             self.log.warning(
                 "Detected invalid resource cache, removal of diagnostic settings for filtered out resources will not occur"

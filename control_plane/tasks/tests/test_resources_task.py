@@ -9,7 +9,7 @@ from cache.resources_cache import (
     ResourceCache,
     ResourceCacheV1,
     ResourceMetadata,
-    deserialize_v2_resource_cache,
+    _deserialize_v2_resource_cache,
 )
 from tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException, async_generator, mock
@@ -57,7 +57,7 @@ class TestResourcesTask(TaskTestCase):
 
     @property
     def cache(self) -> ResourceCache:
-        return self.cache_value(RESOURCE_CACHE_BLOB, deserialize_v2_resource_cache)
+        return self.cache_value(RESOURCE_CACHE_BLOB, _deserialize_v2_resource_cache)
 
     async def test_invalid_cache(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))

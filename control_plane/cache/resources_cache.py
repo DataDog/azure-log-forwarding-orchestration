@@ -18,12 +18,14 @@ class ResourceMetadata(TypedDict, total=True):
     filtered_in: bool
 
 
-ResourceCacheV1: TypeAlias = dict[str, dict[str, set[str]]]
-"""mapping of subscription_id to region to resource IDs"""
-
 RegionToResourcesDict: TypeAlias = dict[str, dict[str, ResourceMetadata]]
+"""mapping of region to resource ID to resource metadata"""
+
 ResourceCache: TypeAlias = dict[str, RegionToResourcesDict]
 """mapping of subscription_id to region to resource ID to resource metadata"""
+
+ResourceCacheV1: TypeAlias = dict[str, dict[str, set[str]]]
+"""mapping of subscription_id to region to resource ID string set"""
 
 TAGS_KEY = "tags"
 FILTERED_IN_KEY = "filtered_in"
@@ -49,17 +51,17 @@ RESOURCE_CACHE_SCHEMA_V1: dict[str, Any] = {
 }
 
 
-def read_resource_cache(cache_str: str) -> tuple[ResourceCache | None, bool]:
+def deserialize_resource_cache(cache_str: str) -> tuple[ResourceCache | None, bool]:
     """Read the resource cache and returns it in the v2 schema.
     If the existing cache is in the v1 schema, it will be upgraded to the v2 schema.
     Returns the cache and a bool indicating whether the caller should
     flush the cache because a schema upgrade occurred."""
 
-    cache = deserialize_v2_resource_cache(cache_str)
+    cache = _deserialize_v2_resource_cache(cache_str)
     if cache is not None:
         return cache, False
 
-    v1_cache = deserialize_v1_resource_cache(cache_str)
+    v1_cache = _deserialize_v1_resource_cache(cache_str)
     if v1_cache is not None:
         return upgrade_cache_to_v2(v1_cache), True
 
@@ -77,13 +79,13 @@ def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
     return [tag.strip().casefold() for tag in tag_filter_str.split(",") if len(tag) > 0]
 
 
-def deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
+def _deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
     """Deserialize the resource cache according to V2 schema. Returns None if the cache is invalid."""
 
     return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA_V2)
 
 
-def deserialize_v1_resource_cache(cache_str: str) -> ResourceCacheV1 | None:
+def _deserialize_v1_resource_cache(cache_str: str) -> ResourceCacheV1 | None:
     """Deserialize the resource cache according to V1 schema. Returns None if the cache is invalid."""
 
     return deserialize_cache(cache_str, RESOURCE_CACHE_SCHEMA_V1)

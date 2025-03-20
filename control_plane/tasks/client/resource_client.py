@@ -238,15 +238,13 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
         )
 
-        resource_id_metadata_dict: dict[str, ResourceMetadata] = {}
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
             resource_tags = resource_tag_dict_to_list(resource.tags)
             metadata = ResourceMetadata(
                 tags=resource_tags, filtered_in=self.is_resource_filtered_in_by_tags(resource_tags)
             )
-            resource_id_metadata_dict.update({id: metadata for id in resource_ids})
-            resources_per_region.setdefault(region, {}).update(resource_id_metadata_dict)
+            resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
         self.log.info(
             "Subscription %s: Collected %s resources",

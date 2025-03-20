@@ -8,12 +8,12 @@ from cache.resources_cache import (
     TAGS_KEY,
     ResourceCache,
     ResourceMetadata,
+    _deserialize_v1_resource_cache,
+    _deserialize_v2_resource_cache,
     deserialize_monitored_subscriptions,
+    deserialize_resource_cache,
     deserialize_resource_tag_filters,
-    deserialize_v1_resource_cache,
-    deserialize_v2_resource_cache,
     prune_resource_cache,
-    read_resource_cache,
 )
 from cache.tests import sub_id1, sub_id2
 
@@ -30,7 +30,7 @@ class TestDeserializeResourceCache(TestCase):
                 sub_id2: {"region3": {"resource3": default_metadata}},
             }
         )
-        cache = deserialize_v2_resource_cache(cache_str)
+        cache = _deserialize_v2_resource_cache(cache_str)
 
         self.assertEqual(
             cache,
@@ -42,7 +42,7 @@ class TestDeserializeResourceCache(TestCase):
 
     def test_read_cache_existing_v1_upgrades(self):
         cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}})
-        cache, should_flush = read_resource_cache(cache_str)
+        cache, should_flush = deserialize_resource_cache(cache_str)
 
         self.assertTrue(should_flush)
         self.assertEqual(
@@ -53,15 +53,15 @@ class TestDeserializeResourceCache(TestCase):
     def test_v1_schema(self):
         cache_str = dumps({sub_id1: {"region2": ["resource1", "resource2"]}})
         self.assert_deserialize_v2_failure(cache_str)
-        cache = deserialize_v1_resource_cache(cache_str)
+        cache = _deserialize_v1_resource_cache(cache_str)
         self.assertEqual(cache, {sub_id1: {"region2": ["resource1", "resource2"]}})
 
     def assert_deserialize_v2_failure(self, cache_str: str):
-        cache = deserialize_v2_resource_cache(cache_str)
+        cache = _deserialize_v2_resource_cache(cache_str)
         self.assertIsNone(cache)
 
     def assert_deserialize_v1_failure(self, cache_str: str):
-        cache = deserialize_v1_resource_cache(cache_str)
+        cache = _deserialize_v1_resource_cache(cache_str)
         self.assertIsNone(cache)
 
     def test_invalid_json(self):
