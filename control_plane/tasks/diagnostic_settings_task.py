@@ -23,11 +23,12 @@ from datadog_api_client.v1.models import EventCreateRequest, EventCreateResponse
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import InvalidCacheError, LogForwarderType, write_cache
 from cache.diagnostic_settings_cache import (
-    DIAGNOSTIC_SETTINGS_COUNT,
     EVENT_CACHE_BLOB,
     SENT_EVENT,
     EventDict,
     deserialize_event_cache,
+    remove_cached_resource,
+    update_cached_setting_count,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
 from cache.resources_cache import RESOURCE_CACHE_BLOB, is_resource_filtered_in, read_resource_cache
@@ -238,12 +239,12 @@ class DiagnosticSettingsTask(Task):
                     self.diagnostic_settings_name,
                 )
                 if await self.delete_diagnostic_setting(client, resource_id):
-                    self.update_event_cache(sub_id, resource_id, num_diag_settings - 1)
+                    remove_cached_resource(self.event_cache, sub_id, resource_id)
             return
 
         if self.resource_cache and not is_resource_filtered_in(self.resource_cache, sub_id, region, resource_id):
             # prevent adding a new setting if the resource has been filtered out
-            self.update_event_cache(sub_id, resource_id, num_diag_settings)
+            update_cached_setting_count(self.event_cache, sub_id, resource_id, num_diag_settings)
             return
 
         if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
@@ -268,10 +269,7 @@ class DiagnosticSettingsTask(Task):
         )
 
         if current_setting is None and add_setting_success:
-            self.update_event_cache(sub_id, resource_id, num_diag_settings + 1)
-
-    def update_event_cache(self, sub_id: str, resource_id: str, num_diag_settings: int) -> None:
-        self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings
+            update_cached_setting_count(self.event_cache, sub_id, resource_id, num_diag_settings + 1)
 
     async def create_or_update_diagnostic_setting(
         self,

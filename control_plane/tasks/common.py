@@ -82,9 +82,7 @@ def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
 
 def resource_tag_dict_to_list(tags_dict: dict[str, str] | None) -> list[str]:
     """Convert a dictionary of resource tags to a list of normalized tag strings in the format 'key:value'"""
-    if not tags_dict:
-        return []
-    return [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in tags_dict.items()]
+    return [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in (tags_dict or {}).items()]
 
 
 def now() -> str:

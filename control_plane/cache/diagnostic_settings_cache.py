@@ -49,3 +49,11 @@ SETTINGS_EVENT_CACHE_SCHEMA: dict[str, Any] = {
 def deserialize_event_cache(cache_str: str) -> DiagnosticSettingsCache | None:
     """Deserialize the diagnostic settings event cache. Returns None if the cache is invalid."""
     return deserialize_cache(cache_str, SETTINGS_EVENT_CACHE_SCHEMA)
+
+
+def remove_cached_resource(cache: DiagnosticSettingsCache, sub_id: str, resource_id: str):
+    cache[sub_id].pop(resource_id, None)
+
+
+def update_cached_setting_count(cache: DiagnosticSettingsCache, sub_id: str, resource_id: str, num_diag_settings: int):
+    cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings

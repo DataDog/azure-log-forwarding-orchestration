@@ -234,9 +234,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS),
         )
-        event_cache = {
-            sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=False)}
-        }
 
         task = await self.run_diagnostic_settings_task(
             resource_cache=None,
@@ -248,7 +245,9 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            event_cache=event_cache,
+            event_cache={
+                sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=False)}
+            },
         )
 
         self.create_or_update_setting.assert_not_awaited()
@@ -261,9 +260,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS),
         )
-        event_cache = {
-            sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=True)}
-        }
 
         task = await self.run_diagnostic_settings_task(
             resource_cache=None,
@@ -275,7 +271,9 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            event_cache=event_cache,
+            event_cache={
+                sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=True)}
+            },
         )
 
         self.create_or_update_setting.assert_not_awaited()
@@ -288,7 +286,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS),
         )
-        event_cache = {sub_id1: {resource_id1: EventDict(diagnostic_settings_count=0, sent_event=False)}}
 
         task = await self.run_diagnostic_settings_task(
             resource_cache=None,
@@ -300,7 +297,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            event_cache=event_cache,
+            event_cache={sub_id1: {resource_id1: EventDict(diagnostic_settings_count=0, sent_event=False)}},
         )
 
         self.create_or_update_setting.assert_awaited_once()
@@ -313,7 +310,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS),
         )
-        event_cache = {sub_id1: {resource_id1: EventDict(diagnostic_settings_count=2, sent_event=False)}}
 
         task = await self.run_diagnostic_settings_task(
             resource_cache=None,
@@ -325,7 +321,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            event_cache=event_cache,
+            event_cache={sub_id1: {resource_id1: EventDict(diagnostic_settings_count=2, sent_event=False)}},
         )
 
         self.create_or_update_setting.assert_awaited_once()
@@ -338,9 +334,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS),
         )
-        event_cache = {
-            sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=False)}
-        }
 
         self.send_max_settings_reached_event.return_value = False
 
@@ -354,7 +347,9 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            event_cache=event_cache,
+            event_cache={
+                sub_id1: {resource_id1: EventDict(diagnostic_settings_count=MAX_DIAGNOSTIC_SETTINGS, sent_event=False)}
+            },
         )
 
         self.create_or_update_setting.assert_not_awaited()
@@ -362,7 +357,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], MAX_DIAGNOSTIC_SETTINGS)
         self.assertFalse(task.event_cache[sub_id1][resource_id1][SENT_EVENT])
 
-    async def test_latest_resources_cache_schema_creates_setting(self):
+    async def test_v2_resources_cache_schema_creates_setting(self):
         self.list_diagnostic_settings.return_value = async_generator()
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS)
@@ -398,17 +393,14 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             ),
         )
 
-    async def test_old_resources_cache_schema_creates_setting(self):
+    async def test_v1_resources_cache_schema_creates_setting(self):
         self.list_diagnostic_settings.return_value = async_generator()
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS)
         )
 
-        resource_cache: ResourceCacheV1 = {
-            sub_id1: {region1: {resource_id1}},
-        }
         await self.run_diagnostic_settings_task(
-            resource_cache=resource_cache,
+            resource_cache={sub_id1: {region1: {resource_id1}}},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -463,7 +455,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             mock(name=DIAGNOSTIC_SETTING_NAME, storage_account_id=storage_account)
         )
 
-        await self.run_diagnostic_settings_task(
+        task = await self.run_diagnostic_settings_task(
             resource_cache={
                 sub_id1: {
                     region1: {
@@ -479,8 +471,9 @@ class TestDiagnosticSettingsTask(TaskTestCase):
                     }
                 }
             },
-            event_cache=None,
+            event_cache={sub_id1: {resource_id1: EventDict(diagnostic_settings_count=2, sent_event=False)}},
         )
 
         self.create_or_update_setting.assert_not_awaited()
         self.delete_diagnostic_setting.assert_awaited_once_with(resource_id1, DIAGNOSTIC_SETTING_NAME)
+        self.assertEqual(len(task.event_cache[sub_id1]), 0)

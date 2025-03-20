@@ -107,26 +107,28 @@ def is_v2_schema(cache: ResourceCache | None) -> bool:
 
 
 def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
+    """Upgrades resource cache from v1 to v2 schema.
+    v1 schema -> each region maps to a set of resource IDs
+    v2 schema -> each region maps to a dict where key=resource ID and value=resource metadata
+    The default value for a new resource metadata is { tags=[], filtered_in=True } to be backwards compatible
+    Returns the upgraded cache according to the v2 schema.
+    """
     if cache is None:
         return {}
 
-    upgraded_cache: ResourceCache = {}
-
-    for sub_id, resources_per_region in cache.items():
-        upgraded_resources_per_region: dict[str, dict[str, ResourceMetadata]] = {}
-        for region in resources_per_region:
-            resources = resources_per_region[region]
-            resource_metadatas: dict[str, ResourceMetadata] = {}
-            for r in resources:
-                metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: True}
-                resource_metadatas[r] = metadata
-            upgraded_resources_per_region[region] = resource_metadatas
-        upgraded_cache[sub_id] = upgraded_resources_per_region
-    return upgraded_cache
+    return {
+        sub_id: {
+            region: {resource_id: {TAGS_KEY: [], FILTERED_IN_KEY: True} for resource_id in resources}
+            for region, resources in resources_per_region.items()
+        }
+        for sub_id, resources_per_region in cache.items()
+    }
 
 
 def is_resource_filtered_in(cache: ResourceCache, sub_id: str, region: str, resource_id: str) -> bool:
-    return is_v2_schema(cache) and cache[sub_id][region][resource_id][FILTERED_IN_KEY]
+    return is_v2_schema(cache) and cache.get(sub_id, {}).get(region, {}).get(resource_id, {}).get(
+        FILTERED_IN_KEY, False
+    )
 
 
 def prune_resource_cache(cache: ResourceCache) -> None:
