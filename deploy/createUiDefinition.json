@@ -172,7 +172,7 @@
                 "name": "resourceTagFilters",
                 "type": "Microsoft.Common.TextBox",
                 "label": "Tag Filters",
-                "toolTip": "Providing multiple tags within an inclusion/exclusion rule will OR tags together, so a resource with any matching tag will be included/excluded.",
+                "toolTip": "Providing multiple tags within an inclusion/exclusion rule will OR tags together, so a resource with any matching tag will be included/excluded. Wildcards are supported - use '*' to match multiple characters or '?' for a single character.",
                 "placeholder": "env:prod,datadog:true,!datadog:false",
                 "constraints": {
                   "required": false,
