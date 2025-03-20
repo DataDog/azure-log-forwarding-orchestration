@@ -74,16 +74,7 @@ def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
     if len(tag_filter_str) == 0:
         return []
 
-    tag_filters: list[str] = []
-    parsed_tags = tag_filter_str.split(",")
-
-    for parsed_tag in parsed_tags:
-        tag = parsed_tag.strip().casefold()
-        if len(tag) == 0:
-            continue
-        tag_filters.append(tag)
-
-    return tag_filters
+    return [tag.strip().casefold() for tag in tag_filter_str.split(",") if len(tag) > 0]
 
 
 def deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
