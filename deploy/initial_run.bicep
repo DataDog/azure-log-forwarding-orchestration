@@ -8,8 +8,8 @@ param datadogTelemetry bool
 param logLevel string
 param monitoredSubscriptions string
 param forwarderImage string
-param piiScrubberRules string = ''
-param resourceTagFilters string = ''
+param piiScrubberRules string
+param resourceTagFilters string
 param storageAccountUrl string
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
