@@ -306,11 +306,10 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error)
 				return nil, err
 			}
 		}
-		decoder := json.NewDecoder(bytes.NewReader(logBytes))
-		err = decoder.Decode(&currLog)
+		err = json.Unmarshal(logBytes, &currLog)
 
 		if err != nil {
-			if errors.Is(err, io.ErrUnexpectedEOF) {
+			if errors.Is(err, io.ErrUnexpectedEOF) || err.Error() == "unexpected end of JSON input" {
 				return nil, ErrIncompleteLogFile
 			}
 			return nil, err
