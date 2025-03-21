@@ -44,7 +44,7 @@ const initialBufferSize = 1024 * 1024 * 5
 const newlineBytes = 1
 
 const functionAppContainer = "insights-logs-functionapplogs"
-const flowEventContainer = "networksecuritygroupflowevent"
+const flowEventContainer = "insights-logs-networksecuritygroupflowevent"
 
 // DefaultTags are the tags to include with every log.
 var DefaultTags []string
@@ -176,6 +176,19 @@ func sourceTag(resourceType string) string {
 	return strings.Replace(parts[0], "microsoft.", "azure.", -1)
 }
 
+func tagsFromResourceId(resourceId *arm.ResourceID) []string {
+	if resourceId == nil {
+		return []string{}
+	}
+	tags := []string{
+		fmt.Sprintf("subscription_id:%s", resourceId.SubscriptionID),
+		fmt.Sprintf("source:%s", sourceTag(resourceId.ResourceType.String())),
+		fmt.Sprintf("resource_group:%s", resourceId.ResourceGroupName),
+		fmt.Sprintf("resource_type:%s", resourceId.ResourceType.String()),
+	}
+	return tags
+}
+
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var logSource string
 	var resourceId string
@@ -186,12 +199,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	if parsedId := l.ResourceId(); parsedId != nil {
 		logSource = sourceTag(parsedId.ResourceType.String())
 		resourceId = parsedId.String()
-		tags = append(tags,
-			fmt.Sprintf("subscription_id:%s", parsedId.SubscriptionID),
-			fmt.Sprintf("source:%s", logSource),
-			fmt.Sprintf("resource_group:%s", parsedId.ResourceGroupName),
-			fmt.Sprintf("resource_type:%s", parsedId.ResourceType.String()),
-		)
+		tags = append(tags, tagsFromResourceId(parsedId)...)
 	}
 
 	if l.Level == "" {
@@ -444,6 +452,72 @@ func (c *Client) shouldFlushBytes(bytes int64) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+bytes >= MaxPayloadSize
 }
 
+type vnetFlowLog struct {
+	Time          time.Time `json:"time"`
+	SystemID      string    `json:"systemId"`
+	MacAddress    string    `json:"macAddress"`
+	Category      string    `json:"category"`
+	ResourceID    string    `json:"resourceId"`
+	OperationName string    `json:"operationName"`
+	Properties    struct {
+		Version int `json:"Version"`
+		Flows   []struct {
+			Rule  string `json:"rule"`
+			Flows []struct {
+				Mac        string   `json:"mac"`
+				FlowTuples []string `json:"flowTuples"`
+			} `json:"flows"`
+		} `json:"flows"`
+	} `json:"properties"`
+}
+
+type vnetFlowLogs struct {
+	Records []vnetFlowLog `json:"records"`
+}
+
+func (l *vnetFlowLog) Bytes() (*[]byte, error) {
+	logBytes, err := json.Marshal(l)
+	if err != nil {
+		return nil, err
+	}
+	return &logBytes, nil
+}
+
+func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
+	var logSource string
+	logBytes, err := l.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	parsedId, err := arm.ParseResourceID(l.ResourceID)
+	if err != nil && l.ResourceID != "" {
+		return nil, err
+	}
+
+	var tags []string
+	tags = append(tags, DefaultTags...)
+
+	if parsedId != nil {
+		tags = append(tags, tagsFromResourceId(parsedId)...)
+		logSource = sourceTag(parsedId.ResourceType.String())
+	}
+	tags = append(tags, tagsFromResourceId(parsedId)...)
+
+	return &Log{
+		Time:       l.Time,
+		Category:   l.Category,
+		ResourceId: l.ResourceID,
+		Service:    AzureService,
+		Source:     logSource,
+		content:    logBytes,
+		Container:  blob.Container.Name,
+		Blob:       blob.Name,
+		Level:      "Informational",
+		Tags:       tags,
+	}, nil
+}
+
 // Parse reads logs from a reader and parses them into Log objects.
 func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
 	scanner := bufio.NewScanner(reader)
@@ -455,6 +529,32 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
+			if blob.Container.Name == flowEventContainer {
+				var flowLogs vnetFlowLogs
+				originalSize := len(currBytes)
+				scrubbedBytes := piiScrubber.Scrub(&currBytes)
+				err := json.Unmarshal(*scrubbedBytes, &flowLogs)
+				if err != nil {
+					if !yield(nil, err) {
+						return
+					}
+				}
+				for idx, flowLog := range flowLogs.Records {
+					currLog, err := flowLog.ToLog(blob)
+					if err != nil {
+						if !yield(nil, err) {
+							return
+						}
+					}
+					if idx == len(flowLogs.Records)-1 {
+						currLog.RawByteSize = int64(originalSize)
+					}
+					if !yield(currLog, nil) {
+						return
+					}
+				}
+				continue
+			}
 			currLog, err := NewLog(currBytes, blob, piiScrubber)
 			if err != nil {
 				if !yield(nil, err) {

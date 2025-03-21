@@ -409,4 +409,31 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, got, 7)
 	})
 
+	t.Run("can parse vnet flow logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		workingDir, err := os.Getwd()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/networksecuritygroupflowevent_logs.json", workingDir))
+		require.NoError(t, err)
+
+		reader := bytes.NewReader(data)
+		closer := io.NopCloser(reader)
+
+		var got int
+
+		// WHEN
+		for currLog, currErr := range logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data)) {
+			require.NoError(t, currErr)
+			require.Equal(t, "NetworkSecurityGroupFlowEvent", currLog.Category)
+			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, 2, got)
+	})
+
 }
