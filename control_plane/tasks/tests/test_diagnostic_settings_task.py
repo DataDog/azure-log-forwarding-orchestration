@@ -73,9 +73,16 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             await task.run()
         return task
 
+    def test_malformed_resources_cache_errors_in_constructor(self):
+        with self.assertRaises(InvalidCacheError) as e:
+            DiagnosticSettingsTask("malformed", "", "")
+        self.assertEqual(
+            str(e.exception), "Resource Cache is in an invalid format, failing this task until it is valid"
+        )
+
     def test_malformed_assignment_cache_errors_in_constructor(self):
         with self.assertRaises(InvalidCacheError) as e:
-            DiagnosticSettingsTask("", "malformed", "")
+            DiagnosticSettingsTask("{}", "malformed", "")
         self.assertEqual(
             str(e.exception), "Assignment Cache is in an invalid format, failing this task until it is valid"
         )
@@ -87,7 +94,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -118,7 +125,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.return_value = async_generator()
 
         await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -141,7 +148,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -176,7 +183,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.list_diagnostic_settings_categories.side_effect = AssertionError("Should not be called")
 
         await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -213,7 +220,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -236,7 +243,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         task = await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -262,7 +269,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         task = await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -288,7 +295,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         task = await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -312,7 +319,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
 
         task = await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {
@@ -338,7 +345,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.send_max_settings_reached_event.return_value = False
 
         task = await self.run_diagnostic_settings_task(
-            resource_cache=None,
+            resource_cache={},
             assignment_cache={
                 sub_id1: {
                     region1: {

@@ -94,9 +94,7 @@ class DiagnosticSettingsTask(Task):
 
         resource_cache, _ = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
-            self.log.warning(
-                "Detected invalid resource cache, removal of diagnostic settings for filtered out resources will not occur"
-            )
+            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
 
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)

@@ -73,9 +73,6 @@ def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
 
 
 def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
-    if len(tag_filter_str) == 0:
-        return []
-
     return [tag.strip().casefold() for tag in tag_filter_str.split(",") if len(tag) > 0]
 
 
@@ -98,7 +95,7 @@ def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
     The default value for a new resource metadata is { tags=[], filtered_in=True } to be backwards compatible
     Returns the upgraded cache according to the v2 schema.
     """
-    if cache is None:
+    if not cache:
         return {}
 
     return {
