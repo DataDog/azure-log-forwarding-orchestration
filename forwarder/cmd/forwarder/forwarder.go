@@ -271,7 +271,6 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now) error {
 	start := time.Now()
 
-	datadogConfig.AddDefaultHeader("Content-Encoding", "gzip")
 	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	datadogClient := datadog.NewAPIClient(datadogConfig)
