@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -45,6 +46,11 @@ type Blob struct {
 // IsCurrent returns true if the blob was created within the look back period
 func (b *Blob) IsCurrent(now time.Time) bool {
 	return b.CreationTime.After(now.Add(LookBackPeriod))
+}
+
+// IsJson returns true if the blob is a json file.
+func (b *Blob) IsJson() bool {
+	return strings.HasSuffix(b.Name, ".json")
 }
 
 func (b *Blob) ResourceId() (string, error) {

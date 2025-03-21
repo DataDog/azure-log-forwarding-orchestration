@@ -82,6 +82,13 @@ func getBlobName(name string) string {
 	return "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/" + name + "/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
 }
 
+func newBlob(blobName, containerName string) storage.Blob {
+	return storage.Blob{
+		Name:      getBlobName(blobName),
+		Container: storage.Container{Name: containerName},
+	}
+}
+
 func newBlobItem(name string, contentLength int64, blobTime time.Time) *container.BlobItem {
 	blobName := getBlobName(name)
 	return &container.BlobItem{
@@ -349,7 +356,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -397,7 +404,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, resourceId, newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -436,7 +443,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, resourceId, newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -476,7 +483,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, newMockPiiScrubber(ctrl), logsChannel)
+			_, _, err := parseLogs(reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsChannel)
 			return err
 		})
 		err := eg.Wait()

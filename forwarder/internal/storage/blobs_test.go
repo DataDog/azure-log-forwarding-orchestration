@@ -313,3 +313,32 @@ func TestResourceId(t *testing.T) {
 		assert.Contains(t, err.Error(), "test")
 	})
 }
+
+func TestBlob_IsJson(t *testing.T) {
+	t.Parallel()
+
+	t.Run("blob name is json", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := storage.Blob{Name: "test.json"}
+
+		// WHEN
+		isJson := blob.IsJson()
+
+		// THEN
+		assert.True(t, isJson)
+	})
+
+	t.Run("blob name is not json", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		blob := storage.Blob{Name: "test"}
+
+		// WHEN
+		isJson := blob.IsJson()
+
+		// THEN
+		assert.False(t, isJson)
+	})
+
+}
