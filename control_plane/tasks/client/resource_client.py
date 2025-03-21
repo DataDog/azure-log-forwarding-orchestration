@@ -241,7 +241,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
             resource_tags = resource_tag_dict_to_list(resource.tags)
-            metadata = ResourceMetadata(tags=resource_tags, filtered_in=self.filtering_rule(resource_tags))
+            metadata = ResourceMetadata(tags=resource_tags, include=self.filtering_rule(resource_tags))
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
         self.log.info(

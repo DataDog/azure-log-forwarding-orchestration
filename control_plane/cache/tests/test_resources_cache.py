@@ -4,7 +4,7 @@ from unittest import TestCase
 
 # project
 from cache.resources_cache import (
-    FILTERED_IN_KEY,
+    INCLUDE_KEY,
     TAGS_KEY,
     ResourceCache,
     ResourceMetadata,
@@ -17,16 +17,16 @@ from cache.resources_cache import (
 )
 from cache.tests import sub_id1, sub_id2
 
-default_metadata: ResourceMetadata = {TAGS_KEY: [], FILTERED_IN_KEY: True}
-filtered_in_metadata: ResourceMetadata = {TAGS_KEY: ["datadog:true"], FILTERED_IN_KEY: True}
-filtered_out_metadata: ResourceMetadata = {TAGS_KEY: ["hello:world"], FILTERED_IN_KEY: False}
+default_metadata: ResourceMetadata = {TAGS_KEY: [], INCLUDE_KEY: True}
+included_metadata: ResourceMetadata = {TAGS_KEY: ["datadog:true"], INCLUDE_KEY: True}
+excluded_metadata: ResourceMetadata = {TAGS_KEY: ["hello:world"], INCLUDE_KEY: False}
 
 
 class TestDeserializeResourceCache(TestCase):
     def test_read_cache_existing_v2(self):
         cache_str = dumps(
             {
-                sub_id1: {"region2": {"resource1": filtered_in_metadata, "resource2": filtered_out_metadata}},
+                sub_id1: {"region2": {"resource1": included_metadata, "resource2": excluded_metadata}},
                 sub_id2: {"region3": {"resource3": default_metadata}},
             }
         )
@@ -35,7 +35,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(
             cache,
             {
-                sub_id1: {"region2": {"resource1": filtered_in_metadata, "resource2": filtered_out_metadata}},
+                sub_id1: {"region2": {"resource1": included_metadata, "resource2": excluded_metadata}},
                 sub_id2: {"region3": {"resource3": default_metadata}},
             },
         )

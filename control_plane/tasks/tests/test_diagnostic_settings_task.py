@@ -13,7 +13,7 @@ from azure.mgmt.monitor.models import CategoryType
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
-from cache.resources_cache import FILTERED_IN_KEY, TAGS_KEY, ResourceCache, ResourceCacheV1
+from cache.resources_cache import INCLUDE_KEY, TAGS_KEY, ResourceCache, ResourceCacheV1
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -374,7 +374,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {TAGS_KEY: ["filter:me"], FILTERED_IN_KEY: True},
+                        resource_id1: {TAGS_KEY: ["filter:me"], INCLUDE_KEY: True},
                     }
                 },
             },
@@ -430,7 +430,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             ),
         )
 
-    async def test_filtered_resource_skips_setting_create(self):
+    async def test_filtered_out_resource_skips_setting_create(self):
         self.list_diagnostic_settings.return_value = async_generator()
         self.list_diagnostic_settings_categories.return_value = async_generator(
             mock(name="cool_logs", category_type=CategoryType.LOGS)
@@ -440,7 +440,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {TAGS_KEY: ["filter:me"], FILTERED_IN_KEY: False},
+                        resource_id1: {TAGS_KEY: ["filter:me"], INCLUDE_KEY: False},
                     }
                 },
             },
@@ -457,7 +457,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
 
         self.create_or_update_setting.assert_not_awaited()
 
-    async def test_filtered_resource_deletes_existing_setting(self):
+    async def test_filtered_out_resource_deletes_existing_setting(self):
         self.list_diagnostic_settings.return_value = async_generator(
             mock(name=DIAGNOSTIC_SETTING_NAME, storage_account_id=storage_account)
         )
@@ -466,7 +466,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {TAGS_KEY: ["filter:me"], FILTERED_IN_KEY: False},
+                        resource_id1: {TAGS_KEY: ["filter:me"], INCLUDE_KEY: False},
                     }
                 },
             },

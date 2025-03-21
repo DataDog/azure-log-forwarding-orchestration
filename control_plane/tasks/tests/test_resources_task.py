@@ -28,7 +28,7 @@ resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags={}
 )
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
-resMetadata = ResourceMetadata(tags=[], filtered_in=True)
+resMetadata = ResourceMetadata(tags=[], include=True)
 
 
 class TestResourcesTask(TaskTestCase):

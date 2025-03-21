@@ -15,7 +15,7 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 
 class ResourceMetadata(TypedDict, total=True):
     tags: list[str]
-    filtered_in: bool
+    include: bool
 
 
 RegionToResourcesDict: TypeAlias = dict[str, dict[str, ResourceMetadata]]
@@ -28,7 +28,7 @@ ResourceCacheV1: TypeAlias = dict[str, dict[str, set[str]]]
 """mapping of subscription_id to region to resource ID string set"""
 
 TAGS_KEY = "tags"
-FILTERED_IN_KEY = "filtered_in"
+INCLUDE_KEY = "include"
 RESOURCE_CACHE_SCHEMA_V2: dict[str, Any] = {
     "type": "object",
     "propertyNames": {"format": "uuid"},
@@ -38,7 +38,7 @@ RESOURCE_CACHE_SCHEMA_V2: dict[str, Any] = {
             "type": "object",
             "properties": {
                 TAGS_KEY: {"type": "array", "items": {"type": "string"}},
-                FILTERED_IN_KEY: {"type": "boolean"},
+                INCLUDE_KEY: {"type": "boolean"},
             },
         },
     },
@@ -92,7 +92,7 @@ def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
     """Upgrades resource cache from v1 to v2 schema.
     v1 schema -> each region maps to a set of resource IDs
     v2 schema -> each region maps to a dict where key=resource ID and value=resource metadata
-    The default value for a new resource metadata is { tags=[], filtered_in=True } to be backwards compatible
+    The default value for a new resource metadata is { tags=[], include=True } to be backwards compatible
     Returns the upgraded cache according to the v2 schema.
     """
     if not cache:
@@ -100,7 +100,7 @@ def upgrade_cache_to_v2(cache: ResourceCacheV1 | None) -> ResourceCache:
 
     return {
         sub_id: {
-            region: {resource_id: {TAGS_KEY: [], FILTERED_IN_KEY: True} for resource_id in resources}
+            region: {resource_id: {TAGS_KEY: [], INCLUDE_KEY: True} for resource_id in resources}
             for region, resources in resources_per_region.items()
         }
         for sub_id, resources_per_region in cache.items()

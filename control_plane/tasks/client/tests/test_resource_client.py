@@ -29,11 +29,11 @@ resource2 = mock(
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
 
 
-def to_resource_metadata(mock: Mock, expected_filtered_in: bool) -> ResourceMetadata:
+def to_resource_metadata(mock: Mock, expect_included: bool) -> ResourceMetadata:
     tags = list()
     for k, v in mock.tags.items() if mock.tags else []:
         tags.append(f"{k.strip().casefold()}:{v.strip().casefold()}")
-    return ResourceMetadata(tags=tags, filtered_in=expected_filtered_in)
+    return ResourceMetadata(tags=tags, include=expect_included)
 
 
 class TestResourceClientHelpers(TestCase):
@@ -197,19 +197,19 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 SUPPORTED_REGION_1: {
                     "/subscriptions/whatever/whatever/some-storage-account/fileservices/default": ResourceMetadata(
                         tags=[],
-                        filtered_in=True,
+                        include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/queueservices/default": ResourceMetadata(
                         tags=[],
-                        filtered_in=True,
+                        include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/blobservices/default": ResourceMetadata(
                         tags=[],
-                        filtered_in=True,
+                        include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/tableservices/default": ResourceMetadata(
                         tags=[],
-                        filtered_in=True,
+                        include=True,
                     ),
                     "res1": to_resource_metadata(resource1, True),
                 }
@@ -306,19 +306,19 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 SUPPORTED_REGION_1: {
                     "/subscriptions/whatever/whatever/some-storage-account/fileservices/default": ResourceMetadata(
                         tags=expected_child_tags,
-                        filtered_in=True,
+                        include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/queueservices/default": ResourceMetadata(
                         tags=expected_child_tags,
-                        filtered_in=True,
+                        include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/blobservices/default": ResourceMetadata(
                         tags=expected_child_tags,
-                        filtered_in=True,
+                        include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/tableservices/default": ResourceMetadata(
                         tags=expected_child_tags,
-                        filtered_in=True,
+                        include=True,
                     ),
                     "res1": to_resource_metadata(resource1, False),
                 }
@@ -359,8 +359,8 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {
                 SUPPORTED_REGION_1: {
                     mockSqlManagedInstance.id.lower(): to_resource_metadata(mockSqlManagedInstance, True),
-                    "/subscriptions/.../db2": ResourceMetadata(tags=[], filtered_in=True),
-                    "/subscriptions/.../db1": ResourceMetadata(tags=[], filtered_in=True),
+                    "/subscriptions/.../db2": ResourceMetadata(tags=[], include=True),
+                    "/subscriptions/.../db1": ResourceMetadata(tags=[], include=True),
                     resource1.id.lower(): to_resource_metadata(resource1, True),
                 }
             },
@@ -399,10 +399,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {
                 SUPPORTED_REGION_1: {
                     "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(
-                        tags=["datadog:true"], filtered_in=True
+                        tags=["datadog:true"], include=True
                     ),
                     "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(
-                        tags=["datadog:true"], filtered_in=True
+                        tags=["datadog:true"], include=True
                     ),
                     resource1.id.lower(): to_resource_metadata(resource1, True),
                 }
@@ -436,11 +436,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {
                 SUPPORTED_REGION_1: {
                     mock_function_app.id.lower(): to_resource_metadata(mock_function_app, True),
-                    "/subscriptions/.../function-app/slots/prod": ResourceMetadata(
-                        tags=["datadog:true"], filtered_in=True
-                    ),
+                    "/subscriptions/.../function-app/slots/prod": ResourceMetadata(tags=["datadog:true"], include=True),
                     "/subscriptions/.../function-app/slots/staging": ResourceMetadata(
-                        tags=["datadog:true"], filtered_in=True
+                        tags=["datadog:true"], include=True
                     ),
                 }
             },
@@ -484,8 +482,8 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(tags=[], filtered_in=True),
-                    "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(tags=[], filtered_in=True),
+                    "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(tags=[], include=True),
+                    "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(tags=[], include=True),
                 }
             },
         )

@@ -58,7 +58,7 @@ CONTROL_PLANE_ID = "5a095f74c60a"
 OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
 
-resMetadata = ResourceMetadata(tags=[], filtered_in=True)
+resMetadata = ResourceMetadata(tags=[], include=True)
 
 
 def minutes_ago(minutes: float) -> float:
