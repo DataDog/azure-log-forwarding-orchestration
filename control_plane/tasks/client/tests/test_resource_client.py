@@ -9,7 +9,7 @@ from azure.core.exceptions import ResourceNotFoundError
 from cache.resources_cache import ResourceMetadata
 from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource
 from tasks.constants import FETCHED_RESOURCE_TYPES
-from tasks.tests.common import AsyncMockClient, Mock, async_generator, mock
+from tasks.tests.common import AsyncMockClient, async_generator, mock
 
 sub_id1 = "a062baee-fdd3-4784-beb4-d817f591422c"
 sub_id2 = "77602a31-36b2-4417-a27c-9071107ca3e6"
@@ -24,16 +24,9 @@ resource1 = mock(
     id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/virtualMachines", tags={"datadog": "true"}
 )
 resource2 = mock(
-    id="res1", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
+    id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
 )
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
-
-
-def to_resource_metadata(mock: Mock, expect_included: bool) -> ResourceMetadata:
-    tags = list()
-    for k, v in mock.tags.items() if mock.tags else []:
-        tags.append(f"{k.strip().casefold()}:{v.strip().casefold()}")
-    return ResourceMetadata(tags=tags, include=expect_included)
 
 
 class TestResourceClientHelpers(TestCase):
@@ -155,7 +148,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         async with ResourceClient(self.log, self.cred, [], sub_id1) as client:
             resources = await client.get_resources_per_region()
 
-        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource2.id: to_resource_metadata(resource2, True)}})
+        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource2.id: ResourceMetadata(include=True)}})
 
     async def test_lfo_resource_is_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
@@ -165,6 +158,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     name="scaling-task-12983471",
                     location=SUPPORTED_REGION_1,
                     type="Microsoft.Web/sites",
+                    tags={},
                 ),
                 resource1,
             )
@@ -172,7 +166,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         async with ResourceClient(self.log, self.cred, [], sub_id1) as client:
             resources = await client.get_resources_per_region()
-        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, True)}})
+        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=True)}})
 
     async def test_storage_account_sub_resources_collected(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
@@ -196,22 +190,18 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {
                 SUPPORTED_REGION_1: {
                     "/subscriptions/whatever/whatever/some-storage-account/fileservices/default": ResourceMetadata(
-                        tags=[],
                         include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/queueservices/default": ResourceMetadata(
-                        tags=[],
                         include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/blobservices/default": ResourceMetadata(
-                        tags=[],
                         include=True,
                     ),
                     "/subscriptions/whatever/whatever/some-storage-account/tableservices/default": ResourceMetadata(
-                        tags=[],
                         include=True,
                     ),
-                    "res1": to_resource_metadata(resource1, True),
+                    "res1": ResourceMetadata(include=True),
                 }
             },
         )
@@ -230,7 +220,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, True)}},
+            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=True)}},
         )
 
     async def test_resource_filtered_out_by_excluding_tags(self):
@@ -246,7 +236,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, False)}},
+            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
         )
 
     async def test_resource_filtered_out_by_inclusive_tags(self):
@@ -262,7 +252,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, False)}},
+            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
         )
 
     async def test_resource_included_by_inclusive_tags(self):
@@ -278,51 +268,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: to_resource_metadata(resource1, True)}},
-        )
-
-    async def test_sub_resources_tagged_like_parent(self):
-        parent_tags = {"hey": "there"}
-        self.mock_clients["ResourceManagementClient"].resources.list = mock(
-            return_value=async_generator(
-                mock(
-                    id="/subscriptions/WHATEVER/whatever/some-storage-account",
-                    name="some-storage-account",
-                    location=SUPPORTED_REGION_1,
-                    type="MICROSOFT.STORAGE/STORAGEACCOUNTS",
-                    tags=parent_tags,
-                ),
-                resource1,
-            )
-        )
-
-        expected_child_tags = ["hey:there"]
-        async with ResourceClient(self.log, self.cred, expected_child_tags, sub_id1) as client:
-            resources = await client.get_resources_per_region()
-
-        self.assertEqual(
-            resources,
-            {
-                SUPPORTED_REGION_1: {
-                    "/subscriptions/whatever/whatever/some-storage-account/fileservices/default": ResourceMetadata(
-                        tags=expected_child_tags,
-                        include=True,
-                    ),
-                    "/subscriptions/whatever/whatever/some-storage-account/queueservices/default": ResourceMetadata(
-                        tags=expected_child_tags,
-                        include=True,
-                    ),
-                    "/subscriptions/whatever/whatever/some-storage-account/blobservices/default": ResourceMetadata(
-                        tags=expected_child_tags,
-                        include=True,
-                    ),
-                    "/subscriptions/whatever/whatever/some-storage-account/tableservices/default": ResourceMetadata(
-                        tags=expected_child_tags,
-                        include=True,
-                    ),
-                    "res1": to_resource_metadata(resource1, False),
-                }
-            },
+            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=True)}},
         )
 
     async def test_sql_managedinstances_manageddatabases_collected(self):
@@ -358,10 +304,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    mockSqlManagedInstance.id.lower(): to_resource_metadata(mockSqlManagedInstance, True),
-                    "/subscriptions/.../db2": ResourceMetadata(tags=[], include=True),
-                    "/subscriptions/.../db1": ResourceMetadata(tags=[], include=True),
-                    resource1.id.lower(): to_resource_metadata(resource1, True),
+                    mockSqlManagedInstance.id.lower(): ResourceMetadata(include=True),
+                    "/subscriptions/.../db2": ResourceMetadata(include=True),
+                    "/subscriptions/.../db1": ResourceMetadata(include=True),
+                    resource1.id.lower(): ResourceMetadata(include=True),
                 }
             },
         )
@@ -398,13 +344,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(
-                        tags=["datadog:true"], include=True
-                    ),
-                    "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(
-                        tags=["datadog:true"], include=True
-                    ),
-                    resource1.id.lower(): to_resource_metadata(resource1, True),
+                    "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(include=True),
+                    "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(include=True),
+                    resource1.id.lower(): ResourceMetadata(include=True),
                 }
             },
         )
@@ -435,11 +377,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    mock_function_app.id.lower(): to_resource_metadata(mock_function_app, True),
-                    "/subscriptions/.../function-app/slots/prod": ResourceMetadata(tags=["datadog:true"], include=True),
-                    "/subscriptions/.../function-app/slots/staging": ResourceMetadata(
-                        tags=["datadog:true"], include=True
-                    ),
+                    mock_function_app.id.lower(): ResourceMetadata(include=True),
+                    "/subscriptions/.../function-app/slots/prod": ResourceMetadata(include=True),
+                    "/subscriptions/.../function-app/slots/staging": ResourceMetadata(include=True),
                 }
             },
         )
@@ -482,8 +422,8 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             resources,
             {
                 SUPPORTED_REGION_1: {
-                    "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(tags=[], include=True),
-                    "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(tags=[], include=True),
+                    "/subscriptions/.../some-sql-server/databases/db1": ResourceMetadata(include=True),
+                    "/subscriptions/.../some-sql-server/databases/db2": ResourceMetadata(include=True),
                 }
             },
         )

@@ -13,7 +13,7 @@ from azure.mgmt.monitor.models import CategoryType
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
-from cache.resources_cache import INCLUDE_KEY, TAGS_KEY, ResourceCache, ResourceCacheV1
+from cache.resources_cache import INCLUDE_KEY, ResourceCache, ResourceCacheV1
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
     DIAGNOSTIC_SETTING_PREFIX,
@@ -374,7 +374,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {TAGS_KEY: ["filter:me"], INCLUDE_KEY: True},
+                        resource_id1: {INCLUDE_KEY: True},
                     }
                 },
             },
@@ -440,7 +440,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {TAGS_KEY: ["filter:me"], INCLUDE_KEY: False},
+                        resource_id1: {INCLUDE_KEY: False},
                     }
                 },
             },
@@ -466,7 +466,7 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             resource_cache={
                 sub_id1: {
                     region1: {
-                        resource_id1: {TAGS_KEY: ["filter:me"], INCLUDE_KEY: False},
+                        resource_id1: {INCLUDE_KEY: False},
                     }
                 },
             },

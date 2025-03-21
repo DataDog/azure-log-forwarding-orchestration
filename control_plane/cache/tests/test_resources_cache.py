@@ -5,7 +5,6 @@ from unittest import TestCase
 # project
 from cache.resources_cache import (
     INCLUDE_KEY,
-    TAGS_KEY,
     ResourceCache,
     ResourceMetadata,
     _deserialize_v1_resource_cache,
@@ -17,9 +16,9 @@ from cache.resources_cache import (
 )
 from cache.tests import sub_id1, sub_id2
 
-default_metadata: ResourceMetadata = {TAGS_KEY: [], INCLUDE_KEY: True}
-included_metadata: ResourceMetadata = {TAGS_KEY: ["datadog:true"], INCLUDE_KEY: True}
-excluded_metadata: ResourceMetadata = {TAGS_KEY: ["hello:world"], INCLUDE_KEY: False}
+default_metadata: ResourceMetadata = {INCLUDE_KEY: True}
+included_metadata: ResourceMetadata = {INCLUDE_KEY: True}
+excluded_metadata: ResourceMetadata = {INCLUDE_KEY: False}
 
 
 class TestDeserializeResourceCache(TestCase):
