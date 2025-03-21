@@ -3,6 +3,7 @@ package main
 import (
 	// stdlib
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -175,8 +176,22 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 			if err != nil {
 				return nil, err
 			}
+
+			// body is gzipped, so we need to decompress it
+			data := bytes.NewReader(body)
+			r, err := gzip.NewReader(data)
+			if err != nil {
+				return nil, err
+			}
+
+			// read the decompressed body
+			bodyBytes, err := io.ReadAll(r)
+			if err != nil {
+				return nil, err
+			}
+
 			var currLogs []datadogV2.HTTPLogItem
-			err = json.Unmarshal(body, &currLogs)
+			err = json.Unmarshal(bodyBytes, &currLogs)
 			if err != nil {
 				return nil, err
 			}
@@ -290,8 +305,8 @@ func TestRun(t *testing.T) {
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
 
-		assert.Equal(t, latestHeaders.Get("Content-Encoding"), "gzip")
-		assert.Equal(t, latestHeaders.Get("dd_evp_origin"), "lfo")
+		assert.Equal(t, "gzip", latestHeaders.Get("Content-Encoding"))
+		assert.Equal(t, "lfo", latestHeaders.Get("dd_evp_origin"))
 	})
 
 	t.Run("continues processing on errors", func(t *testing.T) {
