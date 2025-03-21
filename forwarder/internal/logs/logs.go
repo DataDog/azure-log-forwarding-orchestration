@@ -347,13 +347,6 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	return logItem
 }
 
-// DatadogLogsSubmitter wraps around the datadogV2.LogsApi struct.
-//
-//go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
-type DatadogLogsSubmitter interface {
-	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
-}
-
 // DatadogApiClient wraps around the datadog.ApiClient struct.
 //
 //go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
@@ -416,26 +409,18 @@ func NewClient(apiClient DatadogApiClient) *Client {
 // - 500: Internal Server Error, the server encountered an unexpected condition that prevented it from fulfilling the request, request should be retried after some time
 // - 503: Service Unavailable, the server is not ready to handle the request probably because it is overloaded, request should be retried after some time
 func (c *Client) SubmitLogs(ctx context.Context) error {
-	var (
-		localVarHTTPMethod  = http.MethodPost
-		localVarReturnValue interface{}
-	)
-
-	localBasePath, err := c.apiClient.GetConfig().ServerURLWithContext(ctx, "v2.LogsApi.SubmitLog")
+	basePath, err := c.apiClient.GetConfig().ServerURLWithContext(ctx, "v2.LogsApi.SubmitLog")
 	if err != nil {
 		return datadog.GenericOpenAPIError{ErrorMessage: err.Error()}
 	}
 
-	localVarPath := localBasePath + "/api/v2/logs"
+	logsPath := basePath + "/api/v2/logs"
 
-	localVarQueryParams := url.Values{}
-	localVarFormParams := url.Values{}
-
-	// replace default tags on all logs?
-	//if optionalParams.Ddtags != nil {
-	//	localVarQueryParams.Add("ddtags", datadog.ParameterToString(*optionalParams.Ddtags, ""))
-	//}
-	localVarHeaderParams := map[string]string{
+	// TODO(AZINTS-3281): replace default tags on all logs
+	// if optionalParams.Ddtags != nil {
+	//  	localVarQueryParams.Add("ddtags", datadog.ParameterToString(*optionalParams.Ddtags, ""))
+	// }
+	headerParams := map[string]string{
 		"Content-Type":     "application/json",
 		"Accept":           "application/json",
 		"Content-Encoding": "gzip",
@@ -443,32 +428,32 @@ func (c *Client) SubmitLogs(ctx context.Context) error {
 
 	datadog.SetAuthKeys(
 		ctx,
-		&localVarHeaderParams,
+		&headerParams,
 		[2]string{"apiKeyAuth", "DD-API-KEY"},
 	)
-	req, err := c.apiClient.PrepareRequest(ctx, localVarPath, localVarHTTPMethod, &c.logsBuffer, localVarHeaderParams, localVarQueryParams, localVarFormParams, nil)
+	req, err := c.apiClient.PrepareRequest(ctx, logsPath, http.MethodPost, &c.logsBuffer, headerParams, url.Values{}, url.Values{}, nil)
 	if err != nil {
 		return err
 	}
 
-	localVarHTTPResponse, err := c.apiClient.CallAPI(req)
-	if err != nil || localVarHTTPResponse == nil {
+	resp, err := c.apiClient.CallAPI(req)
+	if err != nil || resp == nil {
 		return err
 	}
 
-	localVarBody, err := datadog.ReadBody(localVarHTTPResponse)
+	body, err := datadog.ReadBody(resp)
 	if err != nil {
 		return err
 	}
 
-	if localVarHTTPResponse.StatusCode >= 300 {
+	if resp.StatusCode >= 300 {
 		newErr := datadog.GenericOpenAPIError{
-			ErrorBody:    localVarBody,
-			ErrorMessage: localVarHTTPResponse.Status,
+			ErrorBody:    body,
+			ErrorMessage: resp.Status,
 		}
-		if localVarHTTPResponse.StatusCode == 400 || localVarHTTPResponse.StatusCode == 401 || localVarHTTPResponse.StatusCode == 403 || localVarHTTPResponse.StatusCode == 408 || localVarHTTPResponse.StatusCode == 413 || localVarHTTPResponse.StatusCode == 429 || localVarHTTPResponse.StatusCode == 500 || localVarHTTPResponse.StatusCode == 503 {
+		if resp.StatusCode == 400 || resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 408 || resp.StatusCode == 413 || resp.StatusCode == 429 || resp.StatusCode == 500 || resp.StatusCode == 503 {
 			var v datadogV2.HTTPLogErrors
-			err = c.apiClient.Decode(&v, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+			err = c.apiClient.Decode(&v, body, resp.Header.Get("Content-Type"))
 			if err != nil {
 				return newErr
 			}
@@ -477,10 +462,12 @@ func (c *Client) SubmitLogs(ctx context.Context) error {
 		return newErr
 	}
 
-	err = c.apiClient.Decode(&localVarReturnValue, localVarBody, localVarHTTPResponse.Header.Get("Content-Type"))
+	var returnValue interface{}
+
+	err = c.apiClient.Decode(&returnValue, body, resp.Header.Get("Content-Type"))
 	if err != nil {
 		newErr := datadog.GenericOpenAPIError{
-			ErrorBody:    localVarBody,
+			ErrorBody:    body,
 			ErrorMessage: err.Error(),
 		}
 		return newErr

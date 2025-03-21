@@ -28,10 +28,6 @@ func TestHook(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		var submittedLogs []datadogV2.HTTPLogItem
 		mockDDClient := logmocks.NewMockDatadogApiClient(ctrl)
-		//mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
-		//	submittedLogs = append(submittedLogs, body...)
-		//	return nil, nil, nil
-		//})
 		client := logs.NewClient(mockDDClient)
 
 		nullLog := log.New()
