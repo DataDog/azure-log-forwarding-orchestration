@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/dop251/goja/ast"
@@ -25,7 +23,9 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"

@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -28,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	// project
