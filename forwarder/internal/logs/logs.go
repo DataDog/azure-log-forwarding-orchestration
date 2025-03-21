@@ -42,6 +42,7 @@ const initialBufferSize = 1024 * 1024 * 5
 const newlineBytes = 1
 
 const functionAppContainer = "insights-logs-functionapplogs"
+const flowEventContainer = "networksecuritygroupflowevent"
 
 // DefaultTags are the tags to include with every log.
 var DefaultTags []string
@@ -269,8 +270,8 @@ func mapFromJSON(data []byte) (map[string]any, error) {
 	return objectLiteralToMap(objectLiteral)
 }
 
-// BytesFromJSON converts bytes representing a JavaScript object to bytes representing a JSON object.
-func BytesFromJSON(data []byte) ([]byte, error) {
+// BytesFromJavaScriptObject converts bytes representing a JavaScript object to bytes representing a JSON object.
+func BytesFromJavaScriptObject(data []byte) ([]byte, error) {
 	logMap, err := mapFromJSON(data)
 	if err != nil {
 		return nil, err
@@ -286,7 +287,7 @@ func NewLog(logBytes []byte, containerName, blobNameResourceId string, scrubber 
 	logSize := len(logBytes) + newlineBytes
 
 	if containerName == functionAppContainer {
-		logBytes, err = BytesFromJSON(logBytes)
+		logBytes, err = BytesFromJavaScriptObject(logBytes)
 		if err != nil {
 			if strings.Contains(err.Error(), "Unexpected token ;") {
 				return nil, ErrUnexpectedToken
