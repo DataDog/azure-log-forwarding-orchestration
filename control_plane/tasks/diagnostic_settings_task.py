@@ -330,12 +330,8 @@ class DiagnosticSettingsTask(Task):
         """
         try:
             await client.diagnostic_settings.delete(resource_id, self.diagnostic_settings_name)
-        except HttpResponseError:
-            self.log.exception("Failed to delete diagnostic setting for resource %s", resource_id)
-            return False
         except Exception:
-            self.log.exception("Unexpected error when trying to delete diagnostic setting for resource %s", resource_id)
-            return False
+            self.log.exception("Failed to delete diagnostic setting for resource %s", resource_id)
 
         return True
 
