@@ -4,9 +4,11 @@ import (
 	// stdlib
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -18,6 +20,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
+	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs/mocks"
 )
@@ -31,6 +38,18 @@ const resourceId string = "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/r
 func getLogWithContent(content string, delay time.Duration) []byte {
 	timestamp := time.Now().Add(-delay)
 	return []byte("{ \"time\": \"" + azureTimestamp(timestamp) + "\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
+}
+
+func prepareRequest(ctx, path, method, postBody, headerParams, queryParams, formParams, formFile any) (*http.Request, error) {
+	var currLogs *[]datadogV2.HTTPLogItem
+	currLogs = postBody.(*[]datadogV2.HTTPLogItem)
+	req := &http.Request{}
+	bodyBytes, err := json.Marshal(currLogs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal logs: %w", err)
+	}
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	return req, nil
 }
 
 const functionAppContainer = "insights-logs-functionapplogs"
@@ -59,12 +78,13 @@ func TestAddLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var payload []*logs.Log
+		const numLogs = 12
 		prefix := "{\"category\":\"a\",\"resourceId\":\"/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfo-qa/providers/Microsoft.Web/sites/loggya/appServices\",\"key\":\""
 		suffix := "\"}"
 		targetSize := logs.MaxLogSize/2 - len(prefix) - len(suffix) - 3
 		logString := fmt.Sprintf("%s%s%s", prefix, strings.Repeat("a", targetSize), suffix)
 		logBytes := []byte(logString)
-		for range 12 {
+		for range numLogs {
 			currLog, err := logs.NewLog(logBytes, functionAppContainer, resourceId, MockScrubber(t, logBytes))
 			currLog.Time = time.Now().Add(-5 * time.Minute)
 			require.NoError(t, err)
@@ -72,7 +92,22 @@ func TestAddLog(t *testing.T) {
 		}
 
 		ctrl := gomock.NewController(t)
+		var submittedLogs []datadogV2.HTTPLogItem
 		mockClient := mocks.NewMockDatadogApiClient(ctrl)
+		mockClient.EXPECT().GetConfig().Return(datadog.NewConfiguration()).AnyTimes()
+		mockClient.EXPECT().PrepareRequest(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(prepareRequest)
+		mockClient.EXPECT().Decode(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+		mockClient.EXPECT().CallAPI(gomock.Any()).AnyTimes().DoAndReturn(func(req *http.Request) (*http.Response, error) {
+			var currLogs []datadogV2.HTTPLogItem
+			err := json.NewDecoder(req.Body).Decode(&currLogs)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode logs: %w", err)
+			}
+			submittedLogs = append(submittedLogs, currLogs...)
+			currResp := &http.Response{}
+			currResp.Body = io.NopCloser(strings.NewReader(""))
+			return currResp, nil
+		})
 
 		client := logs.NewClient(mockClient)
 		ctx := context.Background()
@@ -88,6 +123,7 @@ func TestAddLog(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 		assert.Empty(t, buffer)
+		assert.Len(t, submittedLogs, numLogs)
 	})
 }
 
