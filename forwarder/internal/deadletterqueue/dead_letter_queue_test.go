@@ -63,7 +63,7 @@ func TestLoadDLQ(t *testing.T) {
 
 		storageClient := storage.NewClient(mockClient)
 
-		datadogClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
+		datadogClient := logmocks.NewMockDatadogApiClient(ctrl)
 		logsClient := logs.NewClient(datadogClient)
 
 		// WHEN
@@ -122,7 +122,7 @@ func TestSaveDLQ(t *testing.T) {
 
 		client := storage.NewClient(mockClient)
 
-		datadogClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
+		datadogClient := logmocks.NewMockDatadogApiClient(ctrl)
 		logsClient := logs.NewClient(datadogClient)
 
 		dlq, err := deadletterqueue.FromBytes(logsClient, []byte("[]"))
