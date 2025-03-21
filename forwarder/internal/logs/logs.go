@@ -424,6 +424,7 @@ func (c *Client) SubmitLogs(ctx context.Context) error {
 		"Content-Type":     "application/json",
 		"Accept":           "application/json",
 		"Content-Encoding": "gzip",
+		"dd_evp_origin":    "lfo",
 	}
 
 	datadog.SetAuthKeys(
