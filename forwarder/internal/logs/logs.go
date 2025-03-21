@@ -316,6 +316,12 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error)
 			}
 		}
 		err = json.Unmarshal(logBytes, &currLog)
+		if err != nil {
+			if err.Error() == "unexpected end of JSON input" {
+				return nil, ErrIncompleteLogFile
+			}
+			return nil, err
+		}
 	} else {
 		currLog = &azureLog{Time: time.Now()}
 	}
