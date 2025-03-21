@@ -46,7 +46,7 @@ class ResourcesTask(Task):
     async def run(self) -> None:
         if self.schema_upgrade:
             self.log.warning("Detected resource cache schema upgrade, flushing cache")
-            await write_cache(RESOURCE_CACHE_BLOB, dumps(self._resource_cache_initial_state, default=list))
+            await self.write_caches(is_schema_upgrade=True)
             self.schema_upgrade = False
 
         async with SubscriptionClient(self.credential) as subscription_client:
@@ -77,7 +77,11 @@ class ResourcesTask(Task):
         ) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 
-    async def write_caches(self) -> None:
+    async def write_caches(self, is_schema_upgrade: bool = False) -> None:
+        if is_schema_upgrade:
+            await write_cache(RESOURCE_CACHE_BLOB, dumps(self._resource_cache_initial_state))
+            return
+
         prune_resource_cache(self.resource_cache)
 
         subscription_count = len(self.resource_cache)
