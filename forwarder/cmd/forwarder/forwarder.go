@@ -97,7 +97,7 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 		resourceIdCh <- logItem.ResourceId
 		currErr := logsClient.AddLog(ctx, logger, logItem)
 		err = errors.Join(err, currErr)
-		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: int64(logItem.ScrubbedLength())}
+		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}
 	}
 	flushErr := logsClient.Flush(ctx)
 	err = errors.Join(err, flushErr)
@@ -194,7 +194,6 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	logsEg, logsCtx := errgroup.WithContext(ctx)
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
-			// TODO (AZINTS-2955): Add a dead letter queue to not drop logs when datadog errors
 			// TODO (AZINTS-3044): Limit failure modes where we return nil and drop data
 			processLogsErr := processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
 			if processLogsErr != nil {

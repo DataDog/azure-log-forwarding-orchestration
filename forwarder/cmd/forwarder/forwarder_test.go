@@ -228,7 +228,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, len(blobPage)-1, totalLoad)
-		// assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes) TODO: investigate `expectedBytesForLog` returning unexpected value for function app logs https://datadoghq.atlassian.net/browse/AZINTS-3153
+		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		assert.Equal(t, int64(0), finalCursors.Get(containerName, *expiredBlob.Name))
@@ -300,7 +300,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, len(blobPage)-1, totalLoad)
-		// assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes) TODO: investigate `expectedBytesForLog` returning unexpected value for function app logs https://datadoghq.atlassian.net/browse/AZINTS-3153
+		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		for _, logItem := range submittedLogs {
