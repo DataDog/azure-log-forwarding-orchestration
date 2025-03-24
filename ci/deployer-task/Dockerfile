@@ -10,4 +10,8 @@ RUN python3.11 -m pip install -e '.[deployer_task]'
 COPY ./cache ./cache
 COPY ./tasks ./tasks
 
+# Set the version
+ARG VERSION_TAG="latest"
+ENV VERSION_TAG=$VERSION_TAG
+
 CMD ["python3.11", "-m", "tasks.deployer_task"]

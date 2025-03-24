@@ -12,4 +12,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build cmd/forwarder/forwarder.go
 FROM registry.ddbuild.io/images/mirror/alpine:latest
 WORKDIR /
 COPY --from=builder /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder/forwarder /forwarder
+
+# Set the version
+ARG VERSION_TAG="latest"
+ENV VERSION_TAG=$VERSION_TAG
+
 CMD ["/forwarder"]
