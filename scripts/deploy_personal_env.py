@@ -159,16 +159,19 @@ if not SKIP_DOCKER:
     )
     print(login_output)
 
+    # short commit sha
+    commit_sha = run("git rev-parse --short HEAD", cwd=lfo_dir)
+
     # build and push deployer
     run(
-        f"docker buildx build --platform=linux/amd64 --tag {container_registry_name}.azurecr.io/deployer:latest "
+        f"docker buildx build --platform=linux/amd64 --build-arg VERSION_TAG={commit_sha} --tag {container_registry_name}.azurecr.io/deployer:latest "
         + f"-f {lfo_dir}/ci/deployer-task/Dockerfile ./control_plane --push",
         cwd=lfo_dir,
     )
 
     # build and push forwarder
     run(
-        f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest",
+        f"ci/scripts/forwarder/build_and_push.sh {container_registry_name}.azurecr.io latest {commit_sha}",
         cwd=lfo_dir,
     )
 
