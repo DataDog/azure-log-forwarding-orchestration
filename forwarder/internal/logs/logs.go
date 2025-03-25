@@ -30,6 +30,17 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
+// DefaultTags are the tags to include with every log.
+var DefaultTags []string
+
+func init() {
+	DefaultTags = []string{
+		"forwarder:lfo",
+		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.ControlPlaneId)),
+		fmt.Sprintf("config_id:%s", environment.Get(environment.ConfigId)),
+	}
+}
+
 const AzureService = "azure"
 
 // maxBufferSize is the maximum buffer to use for scanning logs.
@@ -46,55 +57,27 @@ const newlineBytes = 1
 const functionAppContainer = "insights-logs-functionapplogs"
 const flowEventContainer = "insights-logs-networksecuritygroupflowevent"
 
-// DefaultTags are the tags to include with every log.
-var DefaultTags []string
+// ErrUnexpectedToken is an error for when an unexpected token is found in a log.
+var ErrUnexpectedToken = errors.New("found unexpected token in log")
 
-func init() {
-	DefaultTags = []string{
-		"forwarder:lfo",
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.ControlPlaneId)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.ConfigId)),
-	}
-}
+// ErrIncompleteLogFile is an error for when a log file is incomplete.
+var ErrIncompleteLogFile = errors.New("received a partial log file")
 
-// Log represents a log to send to Datadog.
-type Log struct {
-	content          *[]byte
-	RawByteSize      int64
-	ScrubbedByteSize int64
-	Tags             []string
-	Category         string
-	Container        string
-	Blob             string
-	ResourceId       string
-	Service          string
-	Source           string
-	Time             time.Time
-	Level            string
-}
+// bufferSize is the maximum number of logs per post to Logs API.
+// https://docs.datadoghq.com/api/latest/logs/
+const bufferSize = 950
 
-// Content converts the log content to a string.
-func (l *Log) Content() string {
-	if l.content == nil {
-		return ""
-	}
-	return string(*l.content)
-}
+// MaxPayloadSize is the maximum byte size of the payload to Logs API.
+// https://docs.datadoghq.com/api/latest/logs/
+const MaxPayloadSize = 4 * 1000000
 
-// RawLength returns the length of the original Azure log content.
-func (l *Log) RawLength() int64 {
-	return l.RawByteSize
-}
+// MaxLogSize is the maximum byte size of a single log to Logs API.
+// https://docs.datadoghq.com/api/latest/logs/
+const MaxLogSize = 1000000
 
-// ScrubbedLength returns the length of the log content after it has been scrubbed for PII.
-func (l *Log) ScrubbedLength() int64 {
-	return l.ScrubbedByteSize
-}
-
-// Validate checks if the log is valid to send to Datadog.
-func (l *Log) Validate(logger *log.Entry) bool {
-	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, logger)
-}
+// MaxLogAge is the maximum age a log in the payload to Logs API.
+// https://docs.datadoghq.com/api/latest/logs/
+const MaxLogAge = 18 * time.Hour
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
 func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
@@ -148,29 +131,6 @@ func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *l
 	return true
 }
 
-type azureLog struct {
-	Raw             *[]byte
-	ByteSize        int64
-	Category        string `json:"category"`
-	Container       string `json:"container"`
-	Blob            string `json:"blob"`
-	ResourceIdLower string `json:"resourceId,omitempty"`
-	ResourceIdUpper string `json:"ResourceId,omitempty"`
-	// resource ID from blob name, used as a backup
-	BlobResourceId string
-	Time           time.Time `json:"time"`
-	Level          string    `json:"level,omitempty"`
-}
-
-func (l *azureLog) ResourceId() *arm.ResourceID {
-	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.BlobResourceId} {
-		if r, err := arm.ParseResourceID(resourceId); err == nil {
-			return r
-		}
-	}
-	return nil
-}
-
 func sourceTag(resourceType string) string {
 	parts := strings.Split(strings.ToLower(resourceType), "/")
 	return strings.Replace(parts[0], "microsoft.", "azure.", -1)
@@ -188,48 +148,6 @@ func tagsFromResourceId(resourceId *arm.ResourceID) []string {
 	}
 	return tags
 }
-
-func (l *azureLog) ToLog(scrubber Scrubber) *Log {
-	var logSource string
-	var resourceId string
-	var tags []string
-	tags = append(tags, DefaultTags...)
-
-	// Try to add additional tags, source, and resource ID
-	if parsedId := l.ResourceId(); parsedId != nil {
-		logSource = sourceTag(parsedId.ResourceType.String())
-		resourceId = parsedId.String()
-		tags = append(tags, tagsFromResourceId(parsedId)...)
-	}
-
-	if l.Level == "" {
-		l.Level = "Informational"
-	}
-
-	scrubbedLog := scrubber.Scrub(l.Raw)
-	scrubbedByteSize := len(*scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
-
-	return &Log{
-		content:          scrubbedLog,
-		RawByteSize:      l.ByteSize,
-		ScrubbedByteSize: int64(scrubbedByteSize),
-		Category:         l.Category,
-		ResourceId:       resourceId,
-		Service:          AzureService,
-		Source:           logSource,
-		Time:             l.Time,
-		Level:            l.Level,
-		Tags:             tags,
-		Container:        l.Container,
-		Blob:             l.Blob,
-	}
-}
-
-// ErrUnexpectedToken is an error for when an unexpected token is found in a log.
-var ErrUnexpectedToken = errors.New("found unexpected token in log")
-
-// ErrIncompleteLogFile is an error for when a log file is incomplete.
-var ErrIncompleteLogFile = errors.New("received a partial log file")
 
 func astToAny(node any) (any, error) {
 	switch v := node.(type) {
@@ -298,59 +216,6 @@ func BytesFromJavaScriptObject(data []byte) ([]byte, error) {
 	}
 	return json.Marshal(logMap)
 }
-
-// NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error) {
-	var err error
-	var currLog *azureLog
-
-	logSize := len(logBytes) + newlineBytes
-	if blob.IsJson() {
-		if blob.Container.Name == functionAppContainer {
-			logBytes, err = BytesFromJavaScriptObject(logBytes)
-			if err != nil {
-				if strings.Contains(err.Error(), "Unexpected token ;") {
-					return nil, ErrUnexpectedToken
-				}
-				return nil, err
-			}
-		}
-		err = json.Unmarshal(logBytes, &currLog)
-		if err != nil {
-			if err.Error() == "unexpected end of JSON input" {
-				return nil, ErrIncompleteLogFile
-			}
-			return nil, err
-		}
-	} else {
-		currLog = &azureLog{Time: time.Now()}
-	}
-
-	blobNameResourceId, _ := blob.ResourceId()
-	currLog.BlobResourceId = blobNameResourceId
-	currLog.ByteSize = int64(logSize)
-	currLog.Raw = &logBytes
-	currLog.Container = blob.Container.Name
-	currLog.Blob = blob.Name
-
-	return currLog.ToLog(scrubber), nil
-}
-
-// bufferSize is the maximum number of logs per post to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const bufferSize = 950
-
-// MaxPayloadSize is the maximum byte size of the payload to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const MaxPayloadSize = 4 * 1000000
-
-// MaxLogSize is the maximum byte size of a single log to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const MaxLogSize = 1000000
-
-// MaxLogAge is the maximum age a log in the payload to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const MaxLogAge = 18 * time.Hour
 
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 	additionalProperties := map[string]string{
@@ -456,72 +321,6 @@ func (c *Client) shouldFlush(log *Log) bool {
 // shouldFlushBytes checks if adding a log with a given size to the buffer would result in an invalid payload.
 func (c *Client) shouldFlushBytes(bytes int64) bool {
 	return len(c.logsBuffer)+1 >= bufferSize || c.currentSize+bytes >= MaxPayloadSize
-}
-
-type vnetFlowLog struct {
-	Time          time.Time `json:"time"`
-	SystemID      string    `json:"systemId"`
-	MacAddress    string    `json:"macAddress"`
-	Category      string    `json:"category"`
-	ResourceID    string    `json:"resourceId"`
-	OperationName string    `json:"operationName"`
-	Properties    struct {
-		Version int `json:"Version"`
-		Flows   []struct {
-			Rule  string `json:"rule"`
-			Flows []struct {
-				Mac        string   `json:"mac"`
-				FlowTuples []string `json:"flowTuples"`
-			} `json:"flows"`
-		} `json:"flows"`
-	} `json:"properties"`
-}
-
-type vnetFlowLogs struct {
-	Records []vnetFlowLog `json:"records"`
-}
-
-func (l *vnetFlowLog) Bytes() (*[]byte, error) {
-	logBytes, err := json.Marshal(l)
-	if err != nil {
-		return nil, err
-	}
-	return &logBytes, nil
-}
-
-func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
-	var logSource string
-	logBytes, err := l.Bytes()
-	if err != nil {
-		return nil, err
-	}
-
-	parsedId, err := arm.ParseResourceID(l.ResourceID)
-	if err != nil && l.ResourceID != "" {
-		return nil, err
-	}
-
-	var tags []string
-	tags = append(tags, DefaultTags...)
-
-	if parsedId != nil {
-		tags = append(tags, tagsFromResourceId(parsedId)...)
-		logSource = sourceTag(parsedId.ResourceType.String())
-	}
-	tags = append(tags, tagsFromResourceId(parsedId)...)
-
-	return &Log{
-		Time:       l.Time,
-		Category:   l.Category,
-		ResourceId: l.ResourceID,
-		Service:    AzureService,
-		Source:     logSource,
-		content:    logBytes,
-		Container:  blob.Container.Name,
-		Blob:       blob.Name,
-		Level:      "Informational",
-		Tags:       tags,
-	}, nil
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
