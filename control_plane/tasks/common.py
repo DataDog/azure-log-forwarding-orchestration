@@ -85,7 +85,7 @@ def resource_tag_dict_to_list(tags_dict: dict[str, str] | None) -> list[str]:
     tag_list = []
     for k, v in (tags_dict or {}).items():
         tag = f"{k.strip().casefold()}"
-        if v.strip().casefold():
+        if v.strip():
             tag += f":{v.strip().casefold()}"
         tag_list.append(tag)
 
