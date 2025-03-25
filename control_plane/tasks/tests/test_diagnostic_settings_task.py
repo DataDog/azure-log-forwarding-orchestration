@@ -484,3 +484,34 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.create_or_update_setting.assert_not_awaited()
         self.delete_diagnostic_setting.assert_awaited_once_with(resource_id1, DIAGNOSTIC_SETTING_NAME)
         self.assertEqual(len(task.event_cache[sub_id1]), 0)
+
+    async def test_filtered_out_resource_delete_fails(self):
+        self.list_diagnostic_settings.return_value = async_generator(
+            mock(name=DIAGNOSTIC_SETTING_NAME, storage_account_id=storage_account)
+        )
+
+        self.delete_diagnostic_setting.side_effect = HttpResponseError("503 - service unavailable")
+
+        task = await self.run_diagnostic_settings_task(
+            resource_cache={
+                sub_id1: {
+                    region1: {
+                        resource_id1: {INCLUDE_KEY: False},
+                    }
+                },
+            },
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            event_cache={sub_id1: {resource_id1: EventDict(diagnostic_settings_count=2, sent_event=False)}},
+        )
+
+        self.delete_diagnostic_setting.assert_awaited_once_with(resource_id1, DIAGNOSTIC_SETTING_NAME)
+        self.log.exception.assert_called_with("Failed to delete diagnostic setting for resource %s", resource_id1)
+        self.assertIsNotNone(task.event_cache[sub_id1][resource_id1])
+        self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], 2)
