@@ -346,10 +346,8 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 				}
 				for idx, flowLog := range flowLogs.Records {
 					currLog, err := flowLog.ToLog(blob)
-					if err != nil {
-						if !yield(nil, err) {
-							return
-						}
+					if err != nil && !yield(nil, err) {
+						return
 					}
 					if idx == len(flowLogs.Records)-1 {
 						currLog.RawByteSize = int64(originalSize)
@@ -361,10 +359,8 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 				continue
 			}
 			currLog, err := NewLog(currBytes, blob, piiScrubber)
-			if err != nil {
-				if !yield(nil, err) {
-					return
-				}
+			if err != nil && !yield(nil, err) {
+				return
 			}
 			if !yield(currLog, nil) {
 				return
