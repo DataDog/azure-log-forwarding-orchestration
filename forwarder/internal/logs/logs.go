@@ -12,6 +12,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	// 3p
@@ -37,7 +38,9 @@ var (
 		"config_id:%s" + environment.Get(environment.ConfigId),
 	}
 	sourceTagMap   map[string]string
+	sourceTagMu    sync.Mutex
 	resourceTagMap map[string][]string
+	resourceTagMu  sync.Mutex
 )
 
 const (
@@ -127,6 +130,10 @@ func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *l
 }
 
 func sourceTag(resourceType string) string {
+	sourceTagMu.Lock()
+	defer func() {
+		sourceTagMu.Unlock()
+	}()
 	val, ok := sourceTagMap[resourceType]
 	if ok {
 		return val
@@ -141,6 +148,10 @@ func tagsFromResourceId(resourceId *arm.ResourceID) []string {
 	if resourceId == nil {
 		return nil
 	}
+	resourceTagMu.Lock()
+	defer func() {
+		resourceTagMu.Unlock()
+	}()
 	val, ok := resourceTagMap[resourceId.String()]
 	if ok {
 		return val
