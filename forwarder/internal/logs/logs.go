@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -73,12 +72,6 @@ const (
 	// https://docs.datadoghq.com/api/latest/logs/
 	bufferSize = 950
 )
-
-// ErrUnexpectedToken is an error for when an unexpected token is found in a log.
-var ErrUnexpectedToken = errors.New("found unexpected token in log")
-
-// ErrIncompleteLogFile is an error for when a log file is incomplete.
-var ErrIncompleteLogFile = errors.New("received a partial log file")
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
 func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
@@ -283,9 +276,6 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 	}
 	return nil
 }
-
-// ErrInvalidLog is an error for when a log is invalid.
-var ErrInvalidLog = errors.New("invalid log")
 
 // AddFormattedLog adds a datadog formatted log to the buffer for future submission.
 func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log datadogV2.HTTPLogItem) error {
