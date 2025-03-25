@@ -81,8 +81,15 @@ def get_event_hub_namespace(config_id: str) -> str:  # pragma: no cover
 
 
 def resource_tag_dict_to_list(tags_dict: dict[str, str] | None) -> list[str]:
-    """Convert a dictionary of resource tags to a list of normalized tag strings in the format 'key:value'"""
-    return [f"{k.strip().casefold()}:{v.strip().casefold()}" for k, v in (tags_dict or {}).items()]
+    """Convert a dictionary of Azure resource tags to a list of normalized tag strings"""
+    tag_list = []
+    for k, v in (tags_dict or {}).items():
+        tag = f"{k.strip().casefold()}"
+        if v.strip().casefold():
+            tag += f":{v.strip().casefold()}"
+        tag_list.append(tag)
+
+    return tag_list
 
 
 def now() -> str:
