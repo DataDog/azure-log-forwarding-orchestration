@@ -328,10 +328,10 @@ class DiagnosticSettingsTask(Task):
         """
         try:
             await client.diagnostic_settings.delete(resource_id, self.diagnostic_settings_name)
+            return True
         except Exception:
             self.log.exception("Failed to delete diagnostic setting for resource %s", resource_id)
-
-        return True
+            return False
 
     async def write_caches(self) -> None:
         if self.event_cache == self.initial_event_cache:
