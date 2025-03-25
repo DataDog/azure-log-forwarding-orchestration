@@ -36,7 +36,8 @@ var (
 		"control_plane_id:%" + environment.Get(environment.ControlPlaneId),
 		"config_id:%s" + environment.Get(environment.ConfigId),
 	}
-	sourceTagMap map[string]string
+	sourceTagMap   map[string]string
+	resourceTagMap map[string][]string
 )
 
 const (
@@ -138,14 +139,20 @@ func sourceTag(resourceType string) string {
 
 func tagsFromResourceId(resourceId *arm.ResourceID) []string {
 	if resourceId == nil {
-		return []string{}
+		return nil
 	}
+	val, ok := resourceTagMap[resourceId.String()]
+	if ok {
+		return val
+	}
+
 	tags := []string{
-		fmt.Sprintf("subscription_id:%s", resourceId.SubscriptionID),
-		fmt.Sprintf("source:%s", sourceTag(resourceId.ResourceType.String())),
-		fmt.Sprintf("resource_group:%s", resourceId.ResourceGroupName),
-		fmt.Sprintf("resource_type:%s", resourceId.ResourceType.String()),
+		"subscription_id:" + resourceId.SubscriptionID,
+		"source:" + sourceTag(resourceId.ResourceType.String()),
+		"resource_group:" + resourceId.ResourceGroupName,
+		"resource_type:" + resourceId.ResourceType.String(),
 	}
+	resourceTagMap[resourceId.String()] = tags
 	return tags
 }
 
