@@ -30,54 +30,55 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
-// DefaultTags are the tags to include with every log.
-var DefaultTags []string
-
-func init() {
+var (
+	// DefaultTags are the tags to include with every log.
 	DefaultTags = []string{
 		"forwarder:lfo",
-		fmt.Sprintf("control_plane_id:%s", environment.Get(environment.ControlPlaneId)),
-		fmt.Sprintf("config_id:%s", environment.Get(environment.ConfigId)),
+		"control_plane_id:%" + environment.Get(environment.ControlPlaneId),
+		"config_id:%s" + environment.Get(environment.ConfigId),
 	}
-}
+	sourceTagMap map[string]string
+)
 
-const AzureService = "azure"
+const (
+	AzureService = "azure"
 
-// maxBufferSize is the maximum buffer to use for scanning logs.
-// Logs greater than this buffer will be dropped by bufio.Scanner.
-// The buffer is defaulted to the maximum value of an integer.
-const maxBufferSize = math.MaxInt32
+	// maxBufferSize is the maximum buffer to use for scanning logs.
+	// Logs greater than this buffer will be dropped by bufio.Scanner.
+	// The buffer is defaulted to the maximum value of an integer.
+	maxBufferSize = math.MaxInt32
 
-// initialBufferSize is the initial buffer size to use for scanning logs.
-const initialBufferSize = 1024 * 1024 * 5
+	// initialBufferSize is the initial buffer size to use for scanning logs.
+	initialBufferSize = 1024 * 1024 * 5
 
-// newlineBytes is the number of bytes in a newline character in utf-8.
-const newlineBytes = 1
+	// newlineBytes is the number of bytes in a newline character in utf-8.
+	newlineBytes = 1
 
-const functionAppContainer = "insights-logs-functionapplogs"
-const flowEventContainer = "insights-logs-networksecuritygroupflowevent"
+	functionAppContainer = "insights-logs-functionapplogs"
+	flowEventContainer   = "insights-logs-networksecuritygroupflowevent"
+
+	// MaxPayloadSize is the maximum byte size of the payload to Logs API.
+	// https://docs.datadoghq.com/api/latest/logs/
+	MaxPayloadSize = 4 * 1000000
+
+	// MaxLogSize is the maximum byte size of a single log to Logs API.
+	// https://docs.datadoghq.com/api/latest/logs/
+	MaxLogSize = 1000000
+
+	// MaxLogAge is the maximum age a log in the payload to Logs API.
+	// https://docs.datadoghq.com/api/latest/logs/
+	MaxLogAge = 18 * time.Hour
+
+	// bufferSize is the maximum number of logs per post to Logs API.
+	// https://docs.datadoghq.com/api/latest/logs/
+	bufferSize = 950
+)
 
 // ErrUnexpectedToken is an error for when an unexpected token is found in a log.
 var ErrUnexpectedToken = errors.New("found unexpected token in log")
 
 // ErrIncompleteLogFile is an error for when a log file is incomplete.
 var ErrIncompleteLogFile = errors.New("received a partial log file")
-
-// bufferSize is the maximum number of logs per post to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const bufferSize = 950
-
-// MaxPayloadSize is the maximum byte size of the payload to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const MaxPayloadSize = 4 * 1000000
-
-// MaxLogSize is the maximum byte size of a single log to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const MaxLogSize = 1000000
-
-// MaxLogAge is the maximum age a log in the payload to Logs API.
-// https://docs.datadoghq.com/api/latest/logs/
-const MaxLogAge = 18 * time.Hour
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
 func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
@@ -132,8 +133,14 @@ func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *l
 }
 
 func sourceTag(resourceType string) string {
+	val, ok := sourceTagMap[resourceType]
+	if ok {
+		return val
+	}
 	parts := strings.Split(strings.ToLower(resourceType), "/")
-	return strings.Replace(parts[0], "microsoft.", "azure.", -1)
+	tag := strings.Replace(parts[0], "microsoft.", "azure.", -1)
+	sourceTagMap[resourceType] = tag
+	return tag
 }
 
 func tagsFromResourceId(resourceId *arm.ResourceID) []string {
