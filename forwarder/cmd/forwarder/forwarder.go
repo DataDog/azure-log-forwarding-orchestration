@@ -268,12 +268,17 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 	return dlq.Save(ctx, storageClient, logger)
 }
 
-func run(ctx context.Context, logParent *log.Logger, goroutineCount int, logsApiClient logs.DatadogLogsSubmitter, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now) error {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now) error {
 	start := time.Now()
+
+	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
+	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
+	datadogClient := datadog.NewAPIClient(datadogConfig)
+	datadogLogsClient := datadogV2.NewLogsApi(datadogClient)
 
 	var hookClient *logs.Client
 	if environment.Enabled(environment.TelemetryEnabled) {
-		hookClient = logs.NewClient(logsApiClient)
+		hookClient = logs.NewClient(datadogLogsClient)
 		hookLogger := log.New()
 
 		logParent.AddHook(logs.NewHook(hookClient, log.NewEntry(hookLogger)))
@@ -286,12 +291,12 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, logsApi
 
 	var logsClients []*logs.Client
 	for range goroutineCount {
-		logsClients = append(logsClients, logs.NewClient(logsApiClient))
+		logsClients = append(logsClients, logs.NewClient(datadogLogsClient))
 	}
 
 	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now)
 
-	dlqErr := processDeadLetterQueue(ctx, logger, storageClient, logs.NewClient(logsApiClient), logsClients)
+	dlqErr := processDeadLetterQueue(ctx, logger, storageClient, logs.NewClient(datadogLogsClient), logsClients)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
@@ -343,12 +348,6 @@ func main() {
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.New()
 
-	// Initialize Datadog API client
-	datadogConfig := datadog.NewConfiguration()
-	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
-	datadogClient := datadog.NewAPIClient(datadogConfig)
-	datadogLogsClient := datadogV2.NewLogsApi(datadogClient)
-
 	goroutineString := environment.Get(environment.NumGoroutines)
 	if goroutineString == "" {
 		goroutineString = "10"
@@ -374,7 +373,7 @@ func main() {
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
 
-	err = run(ctx, logger, int(goroutineCount), datadogLogsClient, azBlobClient, piiScrubber, time.Now)
+	err = run(ctx, logger, int(goroutineCount), datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now)
 
 	if err != nil {
 		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
