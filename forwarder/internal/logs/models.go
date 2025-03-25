@@ -196,7 +196,6 @@ func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 	tags = append(tags, DefaultTags...)
 
 	if parsedId != nil {
-		tags = append(tags, tagsFromResourceId(parsedId)...)
 		logSource = sourceTag(parsedId.ResourceType.String())
 	}
 	tags = append(tags, tagsFromResourceId(parsedId)...)
