@@ -2,7 +2,7 @@
 from unittest import TestCase
 
 # project
-from tasks.client.filtering import parse_filtering_rule
+from tasks.client.filtering import p_all, parse_filtering_rule
 
 
 class TestFiltering(TestCase):
@@ -83,3 +83,17 @@ class TestFiltering(TestCase):
 
         resource_tags = ["datadog:trex"]
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
+
+    def test_p_all(self):
+        def has_datadog(tags):
+            return "datadog:true" in tags
+
+        def has_env(tags):
+            return "env:test" in tags
+
+        def has_happy_days(tags):
+            return "happy:days" in tags
+
+        all_predicate = p_all([has_datadog, has_env, has_happy_days])
+        self.assertTrue(all_predicate(["datadog:true", "env:test", "happy:days"]))
+        self.assertFalse(all_predicate(["datadog:true", "env:test"]))

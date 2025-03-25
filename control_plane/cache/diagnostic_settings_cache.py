@@ -52,7 +52,8 @@ def deserialize_event_cache(cache_str: str) -> DiagnosticSettingsCache | None:
 
 
 def remove_cached_resource(cache: DiagnosticSettingsCache, sub_id: str, resource_id: str):
-    cache[sub_id].pop(resource_id, None)
+    if sub_id in cache:
+        cache[sub_id].pop(resource_id, None)
 
 
 def update_cached_setting_count(cache: DiagnosticSettingsCache, sub_id: str, resource_id: str, num_diag_settings: int):
