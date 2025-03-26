@@ -105,8 +105,7 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	var logSource string
 	var resourceId string
-	var tags []string
-	tags = append(tags, DefaultTags...)
+	tags := append([]string(nil), DefaultTags...)
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
@@ -177,8 +176,7 @@ func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 		return nil, err
 	}
 
-	var tags []string
-	tags = append(tags, DefaultTags...)
+	tags := append([]string(nil), DefaultTags...)
 
 	if parsedId != nil {
 		logSource = sourceTag(parsedId.ResourceType.String())
