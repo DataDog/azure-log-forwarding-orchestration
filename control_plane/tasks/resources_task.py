@@ -9,12 +9,13 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import write_cache
-from cache.env import MONITORED_SUBSCRIPTIONS_SETTING
+from cache.env import MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTERS_SETTING
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
+    deserialize_resource_tag_filters,
     prune_resource_cache,
 )
 from tasks.client.resource_client import ResourceClient
@@ -31,7 +32,7 @@ class ResourcesTask(Task):
         self.monitored_subscriptions = deserialize_monitored_subscriptions(
             getenv(MONITORED_SUBSCRIPTIONS_SETTING) or ""
         )
-        resource_cache = deserialize_resource_cache(resource_cache_state)
+        resource_cache, self.schema_upgrade = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             self.log.warning("Resource Cache is in an invalid format, task will reset the cache")
             resource_cache = {}
@@ -40,7 +41,14 @@ class ResourcesTask(Task):
         self.resource_cache: ResourceCache = {}
         "in-memory cache of subscription_id to resource_ids"
 
+        self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
+
     async def run(self) -> None:
+        if self.schema_upgrade:
+            self.log.warning("Detected resource cache schema upgrade, flushing cache")
+            await self.write_caches(is_schema_upgrade=True)
+            self.schema_upgrade = False
+
         async with SubscriptionClient(self.credential) as subscription_client:
             subscriptions = [
                 cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
@@ -61,10 +69,14 @@ class ResourcesTask(Task):
 
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
-        async with ResourceClient(self.log, self.credential, subscription_id) as client:
+        async with ResourceClient(self.log, self.credential, self.tag_filter_list, subscription_id) as client:
             self.resource_cache[subscription_id] = await client.get_resources_per_region()
 
-    async def write_caches(self) -> None:
+    async def write_caches(self, is_schema_upgrade: bool = False) -> None:
+        if is_schema_upgrade:
+            await write_cache(RESOURCE_CACHE_BLOB, dumps(self._resource_cache_initial_state))
+            return
+
         prune_resource_cache(self.resource_cache)
 
         subscription_count = len(self.resource_cache)
@@ -77,8 +89,7 @@ class ResourcesTask(Task):
             self.log.info("Resources have not changed, no update needed to %s resources", resources_count)
             return
 
-        # since sets cannot be json serialized, we convert them to lists before storing
-        await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache, default=list))
+        await write_cache(RESOURCE_CACHE_BLOB, dumps(self.resource_cache))
 
         self.log.info(
             "Updated Resources, monitoring %s resources stored in the cache across %s regions across %s subscriptions",
