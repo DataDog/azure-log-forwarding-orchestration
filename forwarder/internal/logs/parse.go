@@ -130,5 +130,10 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 			return iterator
 		}
 	}
-	return nil
+
+	// we should never reach this point
+	// but if we do, return an empty iterator
+	return func(yield func(*Log, error) bool) {
+		return
+	}
 }
