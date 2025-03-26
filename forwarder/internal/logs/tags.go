@@ -16,8 +16,8 @@ var (
 	// DefaultTags are the tags to include with every log.
 	DefaultTags = []string{
 		"forwarder:lfo",
-		"control_plane_id:%" + environment.Get(environment.ControlPlaneId),
-		"config_id:%s" + environment.Get(environment.ConfigId),
+		"control_plane_id:" + environment.Get(environment.ControlPlaneId),
+		"config_id:" + environment.Get(environment.ConfigId),
 	}
 	sourceTagMap   map[string]string
 	sourceTagMu    sync.Mutex
@@ -36,6 +36,9 @@ func sourceTag(resourceType string) string {
 	}
 	parts := strings.Split(strings.ToLower(resourceType), "/")
 	tag := strings.Replace(parts[0], "microsoft.", "azure.", -1)
+	if sourceTagMap == nil {
+		sourceTagMap = make(map[string]string)
+	}
 	sourceTagMap[resourceType] = tag
 	return tag
 }
@@ -58,6 +61,9 @@ func tagsFromResourceId(resourceId *arm.ResourceID) []string {
 		"source:" + sourceTag(resourceId.ResourceType.String()),
 		"resource_group:" + resourceId.ResourceGroupName,
 		"resource_type:" + resourceId.ResourceType.String(),
+	}
+	if resourceTagMap == nil {
+		resourceTagMap = make(map[string][]string)
 	}
 	resourceTagMap[resourceId.String()] = tags
 	return tags

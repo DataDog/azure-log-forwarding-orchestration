@@ -60,7 +60,9 @@ func MockLogger() (*log.Entry, *bytes.Buffer) {
 func MockScrubber(t *testing.T, scrubbedLog []byte) *mocks.MockScrubber {
 	ctrl := gomock.NewController(t)
 	mockScrubber := mocks.NewMockScrubber(ctrl)
-	mockScrubber.EXPECT().Scrub(gomock.Any()).Return(&scrubbedLog).AnyTimes()
+	mockScrubber.EXPECT().Scrub(gomock.Any()).DoAndReturn(func(logBytes []byte) []byte {
+		return logBytes
+	}).AnyTimes()
 	return mockScrubber
 }
 
@@ -77,7 +79,7 @@ func TestAddLog(t *testing.T) {
 		logString := fmt.Sprintf("%s%s%s", prefix, strings.Repeat("a", targetSize), suffix)
 		logBytes := []byte(logString)
 		for range 12 {
-			currLog, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, logBytes))
+			currLog, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, logBytes), int64(len(logBytes)))
 			currLog.Time = time.Now().Add(-5 * time.Minute)
 			require.NoError(t, err)
 			payload = append(payload, currLog)
@@ -122,11 +124,16 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("creates a Log from raw log", func(t *testing.T) {
 		t.Parallel()
+		// GIVEN
+		logBytes, err := logs.BytesFromJavaScriptObject(validLog)
+		require.NoError(t, err)
+
 		// WHEN
-		log, err := logs.NewLog(validLog, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog))
+		log, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog), int64(len(validLog)))
 
 		// THEN
 		assert.NoError(t, err)
+		require.NotNil(t, log.ResourceId)
 		assert.Equal(t, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING", strings.ToUpper(log.ResourceId))
 		assert.Equal(t, "FunctionAppLogs", log.Category)
 		assertTags(t, log)
@@ -138,9 +145,11 @@ func TestNewLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':['app1', 'app2'],'roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
+		logBytes, err := logs.BytesFromJavaScriptObject(validLog)
+		require.NoError(t, err)
 
 		// WHEN
-		log, err := logs.NewLog(validLog, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog))
+		log, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog), int64(len(validLog)))
 
 		// THEN
 		assert.NoError(t, err)
@@ -155,12 +164,14 @@ func TestNewLog(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':[{'app1': null, 'app2': true}, {'app3': 3.0}],'roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
+		logBytes, err := logs.BytesFromJavaScriptObject(validLog)
 
 		// WHEN
-		log, err := logs.NewLog(validLog, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog))
+		log, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog), int64(len(validLog)))
 
 		// THEN
 		assert.NoError(t, err)
+		require.NotNil(t, log.ResourceId)
 		assert.Equal(t, "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING", strings.ToUpper(log.ResourceId))
 		assert.Equal(t, "FunctionAppLogs", log.Category)
 		assertTags(t, log)
@@ -170,9 +181,12 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("applies correct tags", func(t *testing.T) {
 		t.Parallel()
+		// GIVEN
+		logBytes, err := logs.BytesFromJavaScriptObject(validLog)
+		require.NoError(t, err)
 
 		// WHEN
-		log, err := logs.NewLog(validLog, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog))
+		log, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog), int64(len(validLog)))
 
 		// THEN
 		assert.NoError(t, err)
@@ -186,23 +200,15 @@ func TestNewLog(t *testing.T) {
 
 	t.Run("returns custom error on incomplete json for standard logs", func(t *testing.T) {
 		t.Parallel()
+		// GIVEN
+		partialLog := []byte("{ \"time\": \"2024-08-21T15:12:24Z\", ")
+
 		// WHEN
-		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "), newBlob(resourceId, "something.json"), MockScrubber(t, incompleteJsonLog))
+		log, err := logs.NewLog(partialLog, newBlob(resourceId, "something.json"), MockScrubber(t, incompleteJsonLog), int64(len(partialLog)))
 
 		// THEN
 		assert.Error(t, err)
 		assert.ErrorIs(t, err, logs.ErrIncompleteLogFile)
-		assert.Nil(t, log)
-	})
-
-	t.Run("returns custom error on incomplete json for function apps", func(t *testing.T) {
-		t.Parallel()
-		// WHEN
-		log, err := logs.NewLog([]byte("{ \"time\": \"2024-08-21T15:12:24Z\", "), newBlob(resourceId, functionAppContainer), MockScrubber(t, incompleteJsonLog))
-
-		// THEN
-		assert.Error(t, err)
-		assert.ErrorIs(t, err, logs.ErrUnexpectedToken)
 		assert.Nil(t, log)
 	})
 
@@ -211,7 +217,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("uses resource id from blob on invalid resource id", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog(invalidResourceIdLog, newBlob(resourceId, "something normal"), MockScrubber(t, invalidResourceIdLog))
+		log, err := logs.NewLog(invalidResourceIdLog, newBlob(resourceId, "something normal"), MockScrubber(t, invalidResourceIdLog), int64(len(invalidResourceIdLog)))
 
 		// THEN
 		assert.NoError(t, err)
@@ -221,7 +227,7 @@ func TestNewLog(t *testing.T) {
 	t.Run("uses resource id from blob on invalid resource id for function apps", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
-		log, err := logs.NewLog(invalidResourceIdLog, newBlob(resourceId, functionAppContainer), MockScrubber(t, invalidResourceIdLog))
+		log, err := logs.NewLog(invalidResourceIdLog, newBlob(resourceId, functionAppContainer), MockScrubber(t, invalidResourceIdLog), int64(len(invalidResourceIdLog)))
 
 		// THEN
 		assert.NoError(t, err)
@@ -239,7 +245,7 @@ func TestNewLog(t *testing.T) {
 		}
 
 		// WHEN
-		plainTextLog, err := logs.NewLog(plaintextLog, blob, MockScrubber(t, plaintextLog))
+		plainTextLog, err := logs.NewLog(plaintextLog, blob, MockScrubber(t, plaintextLog), int64(len(plaintextLog)))
 		require.NoError(t, err)
 
 		// THEN
@@ -259,7 +265,7 @@ func TestNewLog(t *testing.T) {
 			Name:      "/some/blob/path/test.txt",
 			Container: storage.Container{Name: "something normal"},
 		}
-		log, err := logs.NewLog(plaintextLog, blob, MockScrubber(t, plaintextLog))
+		log, err := logs.NewLog(plaintextLog, blob, MockScrubber(t, plaintextLog), int64(len(plaintextLog)))
 		assert.NoError(t, err)
 		assert.NotNil(t, log)
 		assert.Equal(t, string(plaintextLog), log.Content())
@@ -279,7 +285,10 @@ func TestValid(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		content := getLogWithContent("test", 5*time.Minute)
-		l, err := logs.NewLog(content, newBlob(resourceId, functionAppContainer), MockScrubber(t, []byte(content)))
+		logBytes, err := logs.BytesFromJavaScriptObject(content)
+		require.NoError(t, err)
+
+		l, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, []byte(content)), int64(len(content)))
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
 
@@ -295,7 +304,10 @@ func TestValid(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		content := getLogWithContent(strings.Repeat("a", logs.MaxPayloadSize), 5*time.Minute)
-		l, err := logs.NewLog(content, newBlob(resourceId, functionAppContainer), MockScrubber(t, []byte(content)))
+		logBytes, err := logs.BytesFromJavaScriptObject(content)
+		require.NoError(t, err)
+
+		l, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, []byte(content)), int64(len(content)))
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
 
@@ -310,7 +322,10 @@ func TestValid(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		content := getLogWithContent("short content", (18*time.Hour)+time.Minute)
-		l, err := logs.NewLog(content, newBlob(resourceId, functionAppContainer), MockScrubber(t, []byte(content)))
+		logBytes, err := logs.BytesFromJavaScriptObject(content)
+		require.NoError(t, err)
+
+		l, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, []byte(content)), int64(len(content)))
 		require.NoError(t, err)
 		logger, buffer := MockLogger()
 

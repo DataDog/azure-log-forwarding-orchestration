@@ -31,9 +31,9 @@ func TestPiiScrubber(t *testing.T) {
 		}
 
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
-		scrubbed := piiScrubber.Scrub(&piiLog)
+		scrubbed := piiScrubber.Scrub(piiLog)
 
-		assert.Equal(t, string(piiLog), string(*scrubbed))
+		assert.Equal(t, string(piiLog), string(scrubbed))
 	})
 
 	t.Run("IP regex scrub should remmove IP addresses", func(t *testing.T) {
@@ -49,10 +49,10 @@ func TestPiiScrubber(t *testing.T) {
 		}
 
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
-		scrubbed := piiScrubber.Scrub(&piiLog)
+		scrubbed := piiScrubber.Scrub(piiLog)
 
-		assert.Contains(t, string(*scrubbed), fmt.Sprintf(`"ip": "%s"`, replacement))
-		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
+		assert.Contains(t, string(scrubbed), fmt.Sprintf(`"ip": "%s"`, replacement))
+		verifyScrubbedLog(t, string(piiLog), string(scrubbed), piiStr, replacement)
 	})
 
 	t.Run("execute all other regex if one is uncompilable", func(t *testing.T) {
@@ -78,13 +78,13 @@ func TestPiiScrubber(t *testing.T) {
 		}
 
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
-		scrubbed := piiScrubber.Scrub(&piiLog)
+		scrubbed := piiScrubber.Scrub(piiLog)
 
-		assert.NotContains(t, string(*scrubbed), versionPii)
-		assert.NotContains(t, string(*scrubbed), idPii)
-		assert.Contains(t, string(*scrubbed), versionReplacement)
-		assert.Contains(t, string(*scrubbed), idReplacement)
-		assert.Equal(t, 44, len(piiLog)-len(*scrubbed))
+		assert.NotContains(t, string(scrubbed), versionPii)
+		assert.NotContains(t, string(scrubbed), idPii)
+		assert.Contains(t, string(scrubbed), versionReplacement)
+		assert.Contains(t, string(scrubbed), idReplacement)
+		assert.Equal(t, 44, len(piiLog)-len(scrubbed))
 	})
 
 	t.Run("email regex scrub should remove emails", func(t *testing.T) {
@@ -102,10 +102,10 @@ func TestPiiScrubber(t *testing.T) {
 
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
 		source := []byte(piiLog)
-		scrubbed := piiScrubber.Scrub(&source)
+		scrubbed := piiScrubber.Scrub(source)
 
-		assert.Contains(t, string(*scrubbed), fmt.Sprintf(`"contact": "%s"`, replacement))
-		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
+		assert.Contains(t, string(scrubbed), fmt.Sprintf(`"contact": "%s"`, replacement))
+		verifyScrubbedLog(t, string(piiLog), string(scrubbed), piiStr, replacement)
 	})
 
 	t.Run("multiple string matches should replace all of them", func(t *testing.T) {
@@ -123,9 +123,9 @@ func TestPiiScrubber(t *testing.T) {
 		}
 
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
-		scrubbed := piiScrubber.Scrub(&piiLog)
+		scrubbed := piiScrubber.Scrub(piiLog)
 
-		verifyScrubbedLog(t, string(piiLog), string(*scrubbed), piiStr, replacement)
+		verifyScrubbedLog(t, string(piiLog), string(scrubbed), piiStr, replacement)
 	})
 
 	t.Run("multiple defined regex rules should all execute and replace", func(t *testing.T) {
@@ -147,13 +147,13 @@ func TestPiiScrubber(t *testing.T) {
 		}
 
 		var piiScrubber = logs.NewPiiScrubber(scrubberRuleConfigs)
-		scrubbed := piiScrubber.Scrub(&piiLog)
+		scrubbed := piiScrubber.Scrub(piiLog)
 
-		assert.NotContains(t, string(*scrubbed), versionPii)
-		assert.NotContains(t, string(*scrubbed), idPii)
-		assert.Contains(t, string(*scrubbed), versionReplacement)
-		assert.Contains(t, string(*scrubbed), idReplacement)
-		assert.Equal(t, 44, len(piiLog)-len(*scrubbed))
+		assert.NotContains(t, string(scrubbed), versionPii)
+		assert.NotContains(t, string(scrubbed), idPii)
+		assert.Contains(t, string(scrubbed), versionReplacement)
+		assert.Contains(t, string(scrubbed), idReplacement)
+		assert.Equal(t, 44, len(piiLog)-len(scrubbed))
 	})
 }
 
