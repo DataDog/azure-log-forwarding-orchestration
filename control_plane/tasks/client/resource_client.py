@@ -26,6 +26,7 @@ from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
 from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
+from tasks.client.filtering import parse_filtering_rule
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
@@ -33,6 +34,7 @@ from tasks.common import (
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
+    resource_tag_dict_to_list,
 )
 from tasks.concurrency import safe_collect
 from tasks.constants import (
@@ -95,6 +97,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
+        self.filtering_rule = parse_filtering_rule(tag_filters)
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
         cdn_client = CdnManagementClient(cred, subscription_id)
@@ -236,8 +239,8 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         )
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            # resource_tags = resource_tag_dict_to_list(resource.tags)
-            metadata = ResourceMetadata(include=True)
+            resource_tags = resource_tag_dict_to_list(resource.tags)
+            metadata = ResourceMetadata(include=self.filtering_rule(resource_tags))
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
         self.log.info(
