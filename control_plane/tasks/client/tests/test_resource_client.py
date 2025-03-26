@@ -26,7 +26,6 @@ resource1 = mock(
 resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
 )
-resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers", tags={})
 
 
 class TestResourceClientHelpers(TestCase):
@@ -269,6 +268,28 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(
             resources,
             {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=True)}},
+        )
+
+    async def test_resource_included_by_key_only_tag(self):
+        inclusive_tags = ["datadog"]
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(
+                mock(
+                    id="res_key_only",
+                    name="1",
+                    location=SUPPORTED_REGION_1,
+                    type="Microsoft.Compute/virtualMachines",
+                    tags={"datadog": ""},
+                )
+            )
+        )
+
+        async with ResourceClient(self.log, self.cred, inclusive_tags, sub_id1) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertEqual(
+            resources,
+            {SUPPORTED_REGION_1: {"res_key_only": ResourceMetadata(include=True)}},
         )
 
     async def test_sql_managedinstances_manageddatabases_collected(self):

@@ -84,6 +84,14 @@ class TestFiltering(TestCase):
         resource_tags = ["datadog:trex"]
         self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
 
+    def test_key_only_filter(self):
+        tag_filters = ["datadog"]
+        resource_tags = ["datadog"]
+        self.assertTrue(parse_filtering_rule(tag_filters)(resource_tags))
+
+        resource_tags = ["datadog:true"]
+        self.assertFalse(parse_filtering_rule(tag_filters)(resource_tags))
+
     def test_p_all(self):
         def has_datadog(tags):
             return "datadog:true" in tags
