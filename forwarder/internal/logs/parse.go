@@ -4,6 +4,7 @@ import (
 	// stdlib
 	"bufio"
 	"encoding/json"
+	"errors"
 	"io"
 	"iter"
 	"strings"
@@ -131,9 +132,7 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 		}
 	}
 
-	// we should never reach this point
-	// but if we do, return an empty iterator
 	return func(yield func(*Log, error) bool) {
-		return
+		yield(nil, errors.New("no parser found for blob"))
 	}
 }
