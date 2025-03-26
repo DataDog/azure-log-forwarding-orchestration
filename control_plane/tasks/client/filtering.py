@@ -7,7 +7,7 @@ from typing import Any, TypeAlias
 
 # Refer to details: https://datadoghq.atlassian.net/wiki/x/JQwJIwE
 
-Predicate: TypeAlias = Callable[[Any], bool]
+Predicate: TypeAlias = Callable[[list[str]], bool]
 
 
 class FilteringRule:
@@ -21,8 +21,8 @@ class FilteringRule:
 
     def __init__(
         self,
-        accept_preds: list[Predicate] | None,
-        reject_preds: list[Predicate] | None,
+        accept_preds: list[Predicate] | None = None,
+        reject_preds: list[Predicate] | None = None,
         all_filters: bool = False,
     ):
         self.accept_preds = accept_preds or []
@@ -36,6 +36,21 @@ class FilteringRule:
 
     def __call__(self, tags: list[str]) -> bool:
         return self.pred(tags)
+
+
+def create_filtering_rule(
+    accept_preds: list[Predicate] | None = None,
+    reject_preds: list[Predicate] | None = None,
+    all_filters: bool = False,
+) -> FilteringRule:
+    """Create a predicate that is satisfied when at least one acceptance predicate is satisfied
+    and no rejection predicates are satisfied.  If no acceptance predicates are specified and no
+    rejection predicates are satisfied, this predicate accepts.
+    :param accept_preds: list[Predicate] | None - list of predicates that define acceptance criteria
+    :param reject_preds: list[Predicate] | None - list of predicates that define rejection criteria
+    :param all_filters: bool - if true, rule will require all rules to match, not any
+    """
+    return FilteringRule(accept_preds, reject_preds, all_filters)
 
 
 def parse_filtering_rule(filter_strs: list[str], all_filters: bool = False) -> FilteringRule:
@@ -99,21 +114,6 @@ def p_none(preds: list[Predicate]) -> Predicate:
 def p_all(preds: list[Predicate]) -> Predicate:
     """Create a predicate that is satisfied when all of the given predicates are satisfied"""
     return p_none(list(map(p_not, preds)))
-
-
-def create_filtering_rule(
-    accept_preds: list[Predicate] | None = None,
-    reject_preds: list[Predicate] | None = None,
-    all_filters: bool = False,
-) -> FilteringRule:
-    """Create a predicate that is satisfied when at least one acceptance predicate is satisfied
-    and no rejection predicates are satisfied.  If no acceptance predicates are specified and no
-    rejection predicates are satisfied, this predicate accepts.
-    :param accept_preds: list[Predicate] | None - list of predicates that define acceptance criteria
-    :param reject_preds: list[Predicate] | None - list of predicates that define rejection criteria
-    :param all_filters: bool - if true, rule will require all rules to match, not any
-    """
-    return FilteringRule(accept_preds, reject_preds, all_filters)
 
 
 def _sanitize(string: str) -> str:
