@@ -59,10 +59,6 @@ def remove_cached_resource(cache: DiagnosticSettingsCache, sub_id: str, resource
 def update_cached_event(
     cache: DiagnosticSettingsCache, sub_id: str, resource_id: str, num_diag_settings: int, sent_event: bool
 ):
-    if sub_id in cache and resource_id in cache[sub_id]:
-        cache[sub_id][resource_id] = EventDict(diagnostic_settings_count=num_diag_settings, sent_event=sent_event)
-        return
-
-    cache.setdefault(sub_id, {}).setdefault(
-        resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=sent_event)
+    cache.setdefault(sub_id, {})[resource_id] = EventDict(
+        diagnostic_settings_count=num_diag_settings, sent_event=sent_event
     )

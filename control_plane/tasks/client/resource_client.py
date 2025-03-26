@@ -97,7 +97,10 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
-        self.tag_filter_evaluate = parse_filtering_rule(tag_filters)
+        self.should_include_predicate = parse_filtering_rule(tag_filters)
+        """Predicate which takes a resource's tags as input and evaluates them against the 
+        user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
+
         self.resources_client = ResourceManagementClient(cred, subscription_id)
         redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
         cdn_client = CdnManagementClient(cred, subscription_id)
@@ -240,10 +243,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
             resource_tags = resource_tag_dict_to_list(resource.tags)
-
-            # tag_filter_evaluate() takes a resource's tags and evaluates them against user-configured tag
-            # filters to determine whether the resource's logs should be forwarded
-            metadata = ResourceMetadata(include=self.tag_filter_evaluate(resource_tags))
+            metadata = ResourceMetadata(include=self.should_include_predicate(resource_tags))
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
         self.log.info(

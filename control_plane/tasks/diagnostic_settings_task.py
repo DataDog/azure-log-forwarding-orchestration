@@ -222,9 +222,7 @@ class DiagnosticSettingsTask(Task):
             resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
         )
 
-        included = (
-            (self.resource_cache or {}).get(sub_id, {}).get(region, {}).get(resource_id, {}).get(INCLUDE_KEY, True)
-        )
+        included = self.resource_cache.get(sub_id, {}).get(region, {}).get(resource_id, {}).get(INCLUDE_KEY, True)
 
         if (
             current_setting
