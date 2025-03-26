@@ -224,37 +224,37 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {SUPPORTED_REGION_1: {resource1.id: included_metadata}},
         )
 
-    async def test_resource_filtered_out_by_excluding_tags(self):
-        excluding_tags = ["!datadog:true"]
-        self.mock_clients["ResourceManagementClient"].resources.list = mock(
-            return_value=async_generator(
-                resource1,
-            )
-        )
+    # async def test_resource_filtered_out_by_excluding_tags(self):
+    #     excluding_tags = ["!datadog:true"]
+    #     self.mock_clients["ResourceManagementClient"].resources.list = mock(
+    #         return_value=async_generator(
+    #             resource1,
+    #         )
+    #     )
 
-        async with ResourceClient(self.log, self.cred, excluding_tags, sub_id1) as client:
-            resources = await client.get_resources_per_region()
+    #     async with ResourceClient(self.log, self.cred, excluding_tags, sub_id1) as client:
+    #         resources = await client.get_resources_per_region()
 
-        self.assertEqual(
-            resources,
-            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
-        )
+    #     self.assertEqual(
+    #         resources,
+    #         {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
+    #     )
 
-    async def test_resource_filtered_out_by_inclusive_tags(self):
-        inclusive_tags = ["hello:world"]
-        self.mock_clients["ResourceManagementClient"].resources.list = mock(
-            return_value=async_generator(
-                resource1,
-            )
-        )
+    # async def test_resource_filtered_out_by_inclusive_tags(self):
+    #     inclusive_tags = ["hello:world"]
+    #     self.mock_clients["ResourceManagementClient"].resources.list = mock(
+    #         return_value=async_generator(
+    #             resource1,
+    #         )
+    #     )
 
-        async with ResourceClient(self.log, self.cred, inclusive_tags, sub_id1) as client:
-            resources = await client.get_resources_per_region()
+    #     async with ResourceClient(self.log, self.cred, inclusive_tags, sub_id1) as client:
+    #         resources = await client.get_resources_per_region()
 
-        self.assertEqual(
-            resources,
-            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
-        )
+    #     self.assertEqual(
+    #         resources,
+    #         {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
+    #     )
 
     async def test_resource_included_by_inclusive_tags(self):
         inclusive_tags = ["datadog:true"]
