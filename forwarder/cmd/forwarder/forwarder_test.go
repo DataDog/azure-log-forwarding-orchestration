@@ -57,7 +57,7 @@ func nullLogger() *log.Logger {
 
 func newMockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
 	mockScrubber := logmocks.NewMockScrubber(ctrl)
-	mockScrubber.EXPECT().Scrub(gomock.Any()).AnyTimes().DoAndReturn(func(logBytes *[]byte) *[]byte {
+	mockScrubber.EXPECT().Scrub(gomock.Any()).AnyTimes().DoAndReturn(func(logBytes []byte) []byte {
 		return logBytes
 	})
 

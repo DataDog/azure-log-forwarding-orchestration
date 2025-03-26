@@ -31,8 +31,8 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 			currBytes := scanner.Bytes()
 			var flowLogs vnetFlowLogs
 			originalSize := len(currBytes)
-			scrubbedBytes := piiScrubber.Scrub(&currBytes)
-			err := json.Unmarshal(*scrubbedBytes, &flowLogs)
+			scrubbedBytes := piiScrubber.Scrub(currBytes)
+			err := json.Unmarshal(scrubbedBytes, &flowLogs)
 			if err != nil {
 				if !yield(nil, err) {
 					return
@@ -81,8 +81,8 @@ func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiS
 				}
 			}
 
-			scrubbedBytes := piiScrubber.Scrub(&currBytes)
-			currLog, err := NewLog(*scrubbedBytes, blob, piiScrubber, int64(originalSize))
+			scrubbedBytes := piiScrubber.Scrub(currBytes)
+			currLog, err := NewLog(scrubbedBytes, blob, piiScrubber, int64(originalSize))
 			if err != nil && !yield(nil, err) {
 				return
 			}

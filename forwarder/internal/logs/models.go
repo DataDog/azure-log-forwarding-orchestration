@@ -15,7 +15,7 @@ import (
 
 // Log represents a log to send to Datadog.
 type Log struct {
-	content          *[]byte
+	content          []byte
 	RawByteSize      int64
 	ScrubbedByteSize int64
 	Tags             []string
@@ -49,7 +49,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 	blobNameResourceId, _ := blob.ResourceId()
 	currLog.BlobResourceId = blobNameResourceId
 	currLog.ByteSize = originalSize + newlineBytes
-	currLog.Raw = &logBytes
+	currLog.Raw = logBytes
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
 
@@ -61,7 +61,7 @@ func (l *Log) Content() string {
 	if l.content == nil {
 		return ""
 	}
-	return string(*l.content)
+	return string(l.content)
 }
 
 // RawLength returns the length of the original Azure log content.
@@ -80,7 +80,7 @@ func (l *Log) Validate(logger *log.Entry) bool {
 }
 
 type azureLog struct {
-	Raw             *[]byte
+	Raw             []byte
 	ByteSize        int64
 	Category        string `json:"category"`
 	Container       string `json:"container"`
@@ -120,7 +120,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	}
 
 	scrubbedLog := scrubber.Scrub(l.Raw)
-	scrubbedByteSize := len(*scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
+	scrubbedByteSize := len(scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
 
 	return &Log{
 		content:          scrubbedLog,
@@ -161,12 +161,8 @@ type vnetFlowLogs struct {
 	Records []vnetFlowLog `json:"records"`
 }
 
-func (l *vnetFlowLog) Bytes() (*[]byte, error) {
-	logBytes, err := json.Marshal(l)
-	if err != nil {
-		return nil, err
-	}
-	return &logBytes, nil
+func (l *vnetFlowLog) Bytes() ([]byte, error) {
+	return json.Marshal(l)
 }
 
 func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
