@@ -23,13 +23,15 @@ from datadog_api_client.v1.models import EventCreateRequest, EventCreateResponse
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
 from cache.common import InvalidCacheError, LogForwarderType, write_cache
 from cache.diagnostic_settings_cache import (
-    DIAGNOSTIC_SETTINGS_COUNT,
     EVENT_CACHE_BLOB,
     SENT_EVENT,
     EventDict,
     deserialize_event_cache,
+    remove_cached_resource,
+    update_cached_event,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+from cache.resources_cache import INCLUDE_KEY, RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -82,13 +84,18 @@ def get_diagnostic_setting(
 class DiagnosticSettingsTask(Task):
     NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
-    def __init__(self, assignment_cache_state: str, event_cache_state: str) -> None:
+    def __init__(self, resource_cache_state: str, assignment_cache_state: str, event_cache_state: str) -> None:
         super().__init__()
 
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.diagnostic_settings_name = (
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
+
+        resource_cache, _ = deserialize_resource_cache(resource_cache_state)
+        if resource_cache is None:
+            raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
+        self.resource_cache = resource_cache
 
         assignment_cache = deserialize_assignment_cache(assignment_cache_state)
         if assignment_cache is None:
@@ -115,8 +122,12 @@ class DiagnosticSettingsTask(Task):
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
             resources = [
-                (resource, DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]))
-                for region_config in self.assignment_cache[sub_id].values()
+                (
+                    resource,
+                    region,
+                    DiagnosticSettingConfiguration(config_id, region_config["configurations"][config_id]),
+                )
+                for region, region_config in self.assignment_cache[sub_id].items()
                 for resource, config_id in region_config["resources"].items()
             ]
             shuffle(resources)
@@ -127,9 +138,10 @@ class DiagnosticSettingsTask(Task):
                         client,
                         sub_id,
                         resource,
+                        region,
                         ds,
                     )
-                    for resource, ds in resources
+                    for resource, region, ds in resources
                 ),
             )
 
@@ -185,6 +197,7 @@ class DiagnosticSettingsTask(Task):
         client: MonitorManagementClient,
         sub_id: str,
         resource_id: str,
+        region: str,
         assigned_config: DiagnosticSettingConfiguration,
     ) -> None:
         try:
@@ -205,6 +218,11 @@ class DiagnosticSettingsTask(Task):
         )
 
         num_diag_settings = len(current_diagnostic_settings)
+        self.event_cache.setdefault(sub_id, {}).setdefault(
+            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
+        )
+
+        included = self.resource_cache.get(sub_id, {}).get(region, {}).get(resource_id, {}).get(INCLUDE_KEY, True)
 
         if (
             current_setting
@@ -212,16 +230,26 @@ class DiagnosticSettingsTask(Task):
             and current_setting.storage_account_id.lower()
             == get_storage_account_id(sub_id, self.resource_group, assigned_config.id)
         ):
-            return  # current diagnostic setting is correctly configured
+            # diagnostic setting exists on resource and is configured correctly
+            # check if we should delete the setting because the resource has recently been filtered out
+            if not included:
+                self.log.info(
+                    "Deleting diagnostic setting %s on resource %s because it has been filtered out",
+                    self.diagnostic_settings_name,
+                    resource_id,
+                )
+                if await self.delete_diagnostic_setting(client, resource_id):
+                    remove_cached_resource(self.event_cache, sub_id, resource_id)
+            return
 
-        self.event_cache.setdefault(sub_id, {}).setdefault(
-            resource_id, EventDict(diagnostic_settings_count=num_diag_settings, sent_event=False)
-        )
+        if not included:
+            # prevent adding a new diagnostic setting on filtered out resource
+            return
 
         if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
                 event_sent_success = await self.send_max_settings_reached_event(sub_id, resource_id)
-                self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
+                update_cached_event(self.event_cache, sub_id, resource_id, num_diag_settings, event_sent_success)
 
             self.log.warning(
                 "Max number of diagnostic settings reached for resource %s, will not add another",
@@ -230,7 +258,7 @@ class DiagnosticSettingsTask(Task):
             )
             return
 
-        success = await self.create_or_update_diagnostic_setting(
+        add_setting_success = await self.create_or_update_diagnostic_setting(
             client,
             sub_id,
             resource_id,
@@ -239,9 +267,8 @@ class DiagnosticSettingsTask(Task):
             categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
         )
 
-        new_setting_to_add = current_setting is None
-        if new_setting_to_add and success:
-            self.event_cache[sub_id][resource_id][DIAGNOSTIC_SETTINGS_COUNT] = num_diag_settings + 1
+        if current_setting is None and add_setting_success:
+            update_cached_event(self.event_cache, sub_id, resource_id, num_diag_settings + 1, False)
 
     async def create_or_update_diagnostic_setting(
         self,
@@ -288,9 +315,19 @@ class DiagnosticSettingsTask(Task):
             self.log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
             return False
         except Exception:
-            self.log.error(
-                "Unexpected error when trying to add diagnostic setting for resource %s", resource_id, exc_info=True
-            )
+            self.log.exception("Unexpected error when trying to add diagnostic setting for resource %s", resource_id)
+            return False
+
+    async def delete_diagnostic_setting(self, client: MonitorManagementClient, resource_id: str) -> bool:
+        """Deletes a diagnostic setting for an Azure resource
+
+        Returns True if the diagnostic setting was successfully deleted, False otherwise
+        """
+        try:
+            await client.diagnostic_settings.delete(resource_id, self.diagnostic_settings_name)
+            return True
+        except Exception:
+            self.log.exception("Failed to delete diagnostic setting for resource %s", resource_id)
             return False
 
     async def write_caches(self) -> None:
@@ -301,7 +338,7 @@ class DiagnosticSettingsTask(Task):
 
 
 async def main() -> None:
-    await task_main(DiagnosticSettingsTask, [ASSIGNMENT_CACHE_BLOB, EVENT_CACHE_BLOB])
+    await task_main(DiagnosticSettingsTask, [RESOURCE_CACHE_BLOB, ASSIGNMENT_CACHE_BLOB, EVENT_CACHE_BLOB])
 
 
 if __name__ == "__main__":  # pragma: no cover
