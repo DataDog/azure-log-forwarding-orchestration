@@ -17,6 +17,7 @@ from tasks.common import (
     get_resource_group_id,
     get_storage_account_id,
     now,
+    resource_tag_dict_to_list,
 )
 from tasks.deploy_common import wait_for_resource
 
@@ -96,3 +97,33 @@ class TestCommon(IsolatedAsyncioTestCase):
             get_storage_account_id(sub1, rg1, config1),
         )
         self.assertTrue(get_storage_account_id("UpperCaseSub", "SomeUpperCaseRG", config1).islower())
+
+    def test_resource_tag_dict_to_list_values(self):
+        self.assertEqual(
+            ["environment:dev", "team:engineering"],
+            resource_tag_dict_to_list({"environment": "dev", "team": "engineering"}),
+        )
+
+    def test_resource_tag_dict_to_list_normalized(self):
+        self.assertEqual(
+            ["environment:dev", "team:engineering"],
+            resource_tag_dict_to_list({"Environment": " Dev", "TEAM": "engineering   "}),
+        )
+
+    def test_resource_tag_dict_to_list_keys_only(self):
+        self.assertEqual(
+            ["environment", "team"],
+            resource_tag_dict_to_list({"environment": "", "team": ""}),
+        )
+
+    def test_resource_tag_dict_to_list_empty(self):
+        self.assertEqual(
+            [],
+            resource_tag_dict_to_list({}),
+        )
+
+    def test_resource_tag_dict_to_list_none(self):
+        self.assertEqual(
+            [],
+            resource_tag_dict_to_list(None),
+        )
