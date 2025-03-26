@@ -3,7 +3,6 @@ package logs
 import (
 	// stdlib
 	"encoding/json"
-	"strings"
 	"time"
 
 	// 3p
@@ -31,21 +30,11 @@ type Log struct {
 }
 
 // NewLog creates a new Log from the given log bytes.
-func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error) {
+func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize int64) (*Log, error) {
 	var err error
 	var currLog *azureLog
 
-	logSize := len(logBytes) + newlineBytes
 	if blob.IsJson() {
-		if blob.Container.Name == functionAppContainer {
-			logBytes, err = BytesFromJavaScriptObject(logBytes)
-			if err != nil {
-				if strings.Contains(err.Error(), "Unexpected token ;") {
-					return nil, ErrUnexpectedToken
-				}
-				return nil, err
-			}
-		}
 		err = json.Unmarshal(logBytes, &currLog)
 		if err != nil {
 			if err.Error() == "unexpected end of JSON input" {
@@ -59,7 +48,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error)
 
 	blobNameResourceId, _ := blob.ResourceId()
 	currLog.BlobResourceId = blobNameResourceId
-	currLog.ByteSize = int64(logSize)
+	currLog.ByteSize = originalSize + newlineBytes
 	currLog.Raw = &logBytes
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
