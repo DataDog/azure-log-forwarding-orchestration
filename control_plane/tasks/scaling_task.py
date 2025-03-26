@@ -132,7 +132,7 @@ class ScalingTask(Task):
         self.now = datetime.now()
 
         # Resource Cache
-        resource_cache = deserialize_resource_cache(resource_cache_state)
+        resource_cache, _ = deserialize_resource_cache(resource_cache_state)
         if resource_cache is None:
             raise InvalidCacheError("Resource Cache is in an invalid format, failing this task until it is valid")
         self.resource_cache = resource_cache
@@ -232,7 +232,7 @@ class ScalingTask(Task):
         config_id, config_type = log_forwarder
         self.assignment_cache.setdefault(subscription_id, {})[region] = {
             "configurations": {config_id: config_type},
-            "resources": {resource: config_id for resource in self.resource_cache[subscription_id][region]},
+            "resources": {resource_id: config_id for resource_id in self.resource_cache[subscription_id][region]},
         }
         await self.write_caches()
 
