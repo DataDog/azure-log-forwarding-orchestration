@@ -31,11 +31,10 @@ type Log struct {
 
 // NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize int64) (*Log, error) {
-	var err error
 	var currLog *azureLog
 
 	if blob.IsJson() {
-		err = json.Unmarshal(logBytes, &currLog)
+		err := json.Unmarshal(logBytes, &currLog)
 		if err != nil {
 			if err.Error() == "unexpected end of JSON input" {
 				return nil, ErrIncompleteLogFile
@@ -103,9 +102,10 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 }
 
 func (l *azureLog) ToLog(scrubber Scrubber) *Log {
+	tags := append([]string(nil), DefaultTags...)
+
 	var logSource string
 	var resourceId string
-	tags := append([]string(nil), DefaultTags...)
 
 	// Try to add additional tags, source, and resource ID
 	if parsedId := l.ResourceId(); parsedId != nil {
@@ -165,7 +165,6 @@ func (l *vnetFlowLog) Bytes() ([]byte, error) {
 }
 
 func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
-	var logSource string
 	logBytes, err := l.Bytes()
 	if err != nil {
 		return nil, err
@@ -178,6 +177,7 @@ func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 
 	tags := append([]string(nil), DefaultTags...)
 
+	var logSource string
 	if parsedId != nil {
 		logSource = sourceTag(parsedId.ResourceType.String())
 	}
