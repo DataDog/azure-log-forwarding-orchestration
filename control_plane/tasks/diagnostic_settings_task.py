@@ -28,7 +28,7 @@ from cache.diagnostic_settings_cache import (
     EventDict,
     deserialize_event_cache,
     remove_cached_resource,
-    update_cached_setting_count,
+    update_cached_event,
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
 from cache.resources_cache import INCLUDE_KEY, RESOURCE_CACHE_BLOB, deserialize_resource_cache
@@ -236,23 +236,22 @@ class DiagnosticSettingsTask(Task):
             # check if we should delete the setting because the resource has recently been filtered out
             if not included:
                 self.log.info(
-                    "Resource %s has been filtered out and has diagnostic setting %s, deleting setting",
-                    resource_id,
+                    "Deleting diagnostic setting %s on resource %s because it has been filtered out",
                     self.diagnostic_settings_name,
+                    resource_id,
                 )
                 if await self.delete_diagnostic_setting(client, resource_id):
                     remove_cached_resource(self.event_cache, sub_id, resource_id)
             return
 
         if not included:
-            # prevent adding a new diagnostic setting
-            update_cached_setting_count(self.event_cache, sub_id, resource_id, num_diag_settings)
+            # prevent adding a new diagnostic setting on filtered out resource
             return
 
         if num_diag_settings >= MAX_DIAGNOSTIC_SETTINGS:
             if self.event_cache[sub_id][resource_id][SENT_EVENT] is False:
                 event_sent_success = await self.send_max_settings_reached_event(sub_id, resource_id)
-                self.event_cache[sub_id][resource_id][SENT_EVENT] = event_sent_success
+                update_cached_event(self.event_cache, sub_id, resource_id, num_diag_settings, event_sent_success)
 
             self.log.warning(
                 "Max number of diagnostic settings reached for resource %s, will not add another",
@@ -271,7 +270,7 @@ class DiagnosticSettingsTask(Task):
         )
 
         if current_setting is None and add_setting_success:
-            update_cached_setting_count(self.event_cache, sub_id, resource_id, num_diag_settings + 1)
+            update_cached_event(self.event_cache, sub_id, resource_id, num_diag_settings + 1, False)
 
     async def create_or_update_diagnostic_setting(
         self,
