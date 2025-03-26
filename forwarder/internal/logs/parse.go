@@ -13,21 +13,21 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
+// ordered list of parsers, the first parser that returns true will be used
 var parsers = []Parser{FlowEventParser{}, FunctionAppParser{}, AzureLogParser{}}
 
 // Parser is an interface for parsing logs.
 type Parser interface {
-	Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) (iter.Seq2[*Log, error], bool)
+	Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error]
+	Valid(blob storage.Blob) bool
 }
 
 // FlowEventParser is a parser for flow events.
 type FlowEventParser struct{}
 
-func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) (iter.Seq2[*Log, error], bool) {
-	if blob.Container.Name != flowEventContainer {
-		return nil, false
-	}
-	parsingFunc := func(yield func(*Log, error) bool) {
+// Parse reads logs from a reader and parses them into Log objects.
+func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			var flowLogs vnetFlowLogs
@@ -55,17 +55,17 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 
 		}
 	}
+}
 
-	return parsingFunc, true
+// Valid checks if the blob is in a flow event container.
+func (f FlowEventParser) Valid(blob storage.Blob) bool {
+	return blob.Container.Name == flowEventContainer
 }
 
 type FunctionAppParser struct{}
 
-func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) (iter.Seq2[*Log, error], bool) {
-	if blob.Container.Name != functionAppContainer {
-		return nil, false
-	}
-	parsingFunc := func(yield func(*Log, error) bool) {
+func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			originalSize := len(currBytes)
@@ -93,14 +93,17 @@ func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiS
 			}
 		}
 	}
+}
 
-	return parsingFunc, true
+// Valid checks if the blob is in a function app container.
+func (f FunctionAppParser) Valid(blob storage.Blob) bool {
+	return blob.Container.Name == functionAppContainer
 }
 
 type AzureLogParser struct{}
 
-func (a AzureLogParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) (iter.Seq2[*Log, error], bool) {
-	parsingFunc := func(yield func(*Log, error) bool) {
+func (a AzureLogParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+	return func(yield func(*Log, error) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			originalSize := len(currBytes)
@@ -113,7 +116,11 @@ func (a AzureLogParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScru
 			}
 		}
 	}
-	return parsingFunc, true
+}
+
+// Valid is always true for AzureLogParser.
+func (a AzureLogParser) Valid(blob storage.Blob) bool {
+	return true
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
@@ -126,9 +133,8 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 
 	// iterate over parsers
 	for _, parser := range parsers {
-		iterator, ok := parser.Parse(scanner, blob, piiScrubber)
-		if ok {
-			return iterator
+		if parser.Valid(blob) {
+			return parser.Parse(scanner, blob, piiScrubber)
 		}
 	}
 
