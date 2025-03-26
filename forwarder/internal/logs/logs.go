@@ -409,7 +409,10 @@ func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log dat
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
 	if len(c.logsBuffer) > 0 {
-		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer)
+		option := datadogV2.SubmitLogOptionalParameters{
+			ContentEncoding: pointer.Get(datadogV2.CONTENTENCODING_GZIP),
+		}
+		_, _, err = c.logsSubmitter.SubmitLog(ctx, c.logsBuffer, option)
 
 		if err != nil {
 			c.FailedLogs = append(c.FailedLogs, c.logsBuffer...)
