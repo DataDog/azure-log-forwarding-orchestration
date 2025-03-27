@@ -18,6 +18,8 @@ class MetricBlobEntry(TypedDict, total=True):
     "A mapping of resource id ->log volume in number of logs"
     resource_log_bytes: dict[str, int]
     "A mapping of resource id ->log volume in number of bytes"
+    forwarder_version: str | None
+    "The version tag of the forwarder"
 
 
 METRIC_NAMES = ("resource_log_volume", "resource_log_bytes", "runtime_seconds")
@@ -29,8 +31,9 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
         "runtime_seconds": {"type": "number"},
         "resource_log_volume": {"type": "object", "additionalProperties": {"type": "number"}},
         "resource_log_bytes": {"type": "object", "additionalProperties": {"type": "number"}},
+        "forwarder_version": {"type": "string"},
     },
-    "required": ["timestamp", "runtime_seconds", "resource_log_volume", "resource_log_bytes"],
+    "required": ["timestamp", "runtime_seconds", "resource_log_volume", "resource_log_bytes", "forwarder_version"],
     "additionalProperties": False,
 }
 
