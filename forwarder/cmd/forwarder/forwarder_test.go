@@ -289,6 +289,7 @@ func TestRun(t *testing.T) {
 		totalLoad := 0
 		totalBytes := 0
 		for _, metric := range finalMetrics {
+			assert.Equal(t, versionTag, metric.ForwarderVersion)
 			for _, value := range metric.ResourceLogVolumes {
 				totalLoad += int(value)
 			}
