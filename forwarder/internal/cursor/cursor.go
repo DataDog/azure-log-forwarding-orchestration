@@ -100,7 +100,7 @@ func FromBytes(data []byte, logger *log.Entry) *Cursors {
 	var cursorMap map[string]int64
 	err := json.Unmarshal(data, &cursorMap)
 	if err != nil {
-		logger.Errorf(fmt.Errorf("could not unmarshal log cursors: %w", err).Error())
+		logger.Error(fmt.Errorf("could not unmarshal log cursors: %w", err).Error())
 		return New(nil)
 	}
 	return New(cursorMap)
