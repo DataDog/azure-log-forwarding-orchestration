@@ -93,18 +93,18 @@ FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
         "runtime_seconds": 2.80,
         "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 6},
         "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 600},
-        "forwarder_version": "74a5f6a",
+        "version": "74a5f6a",
     },
     {
         "timestamp": 1723040911,
         "runtime_seconds": 2.81,
         "resource_log_volume": {"5a095f74c60a": 4, "93a5885365f5": 7},
         "resource_log_bytes": {"5a095f74c60a": 400, "93a5885365f5": 701},
-        "forwarder_version": "74a5f6a",
+        "version": "74a5f6a",
     },
 ]
 
-METRIC_TAGS = ["control_plane_id:e90ecb54476d", "region:eastus", "forwarder_version:74a5f6a"]
+METRIC_TAGS = ["control_plane_id:e90ecb54476d", "region:eastus", "version:74a5f6a"]
 
 FAKE_METRIC_PAYLOAD = MetricPayload(
     series=[
@@ -662,7 +662,7 @@ class TestLogForwarderClient(AsyncTestCase):
                         "resource_log_volume": {},
                         "timestamp": 1723040910,
                         "resource_log_bytes": {},
-                        "forwarder_version": "74a5f6a",
+                        "version": "74a5f6a",
                     }
                 ],
                 EAST_US,

@@ -1,14 +1,12 @@
 # stdlib
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 # 3p
 from cache.common import deserialize_cache
 
 
 class MetricBlobEntry(TypedDict, total=True):
-    """
-    A representation of the metric blob entries
-    """
+    """A representation of the metric blob entries"""
 
     timestamp: float
     "a UNIX timestamp when metric was created"
@@ -18,7 +16,7 @@ class MetricBlobEntry(TypedDict, total=True):
     "A mapping of resource id ->log volume in number of logs"
     resource_log_bytes: dict[str, int]
     "A mapping of resource id ->log volume in number of bytes"
-    forwarder_version: str | None
+    version: NotRequired[str]
     "The version tag of the forwarder"
 
 
@@ -31,10 +29,10 @@ METRIC_BLOB_SCHEMA: dict[str, Any] = {
         "runtime_seconds": {"type": "number"},
         "resource_log_volume": {"type": "object", "additionalProperties": {"type": "number"}},
         "resource_log_bytes": {"type": "object", "additionalProperties": {"type": "number"}},
-        "forwarder_version": {"type": "string"},
+        "version": {"type": "string"},
     },
-    "required": ["timestamp", "runtime_seconds", "resource_log_volume", "resource_log_bytes", "forwarder_version"],
-    "additionalProperties": False,
+    "required": ["timestamp", "runtime_seconds", "resource_log_volume", "resource_log_bytes"],
+    "additionalProperties": True,
 }
 
 
