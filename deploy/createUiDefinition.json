@@ -165,19 +165,19 @@
                 "type": "Microsoft.Common.TextBlock",
                 "visible": true,
                 "options": {
-                  "text": "Optional - To include or exclude certain resources for log forwarding, enter Azure resource tags below in CSV format. Inclusive tags can be written as-is while excluding tags must be prefixed with '!'"
+                  "text": "Optional - To include or exclude certain resources for log forwarding, enter Azure resource tags below in comma-separated format. Inclusive tags can be written as-is. Excluding tags must be prefixed with '!'"
                 }
               },
               {
                 "name": "resourceTagFilters",
                 "type": "Microsoft.Common.TextBox",
                 "label": "Tag Filters",
-                "toolTip": "Providing multiple tags within an inclusion/exclusion rule will OR tags together; a resource with any matching tag will be included/excluded. Wildcards are supported - use '*' to match multiple characters or '?' for a single character.",
+                "toolTip": "Resources with any inclusion tag will send logs to Datadog. Resources with any exclusion tag will not send logs to Datadog. If a resource has both inclusion and exclusion tags, the exclusion tags take precedence. Wildcards are supported - use '*' to match multiple characters or '?' for a single character.",
                 "placeholder": "env:prod,datadog:true,!datadog:false",
                 "constraints": {
                   "required": false,
-                  "regex": "^(?:[^,\n]*)(?:,[^,\n]*)*$",
-                  "validationMessage": "Must valid CSV format. Inclusive tags should be written normally while excluding tags should be prefixed with '!'"
+                  "regex": "^$|^[^,]+(?:,[^,]+)*$",
+                  "validationMessage": "Must be a comma-separated list of tags. Ensure there are no leading or trailing commas. Inclusive tags should be written normally while excluding tags should be prefixed with '!'"
                 },
                 "visible": true
               }
