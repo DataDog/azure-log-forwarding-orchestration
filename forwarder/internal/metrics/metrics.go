@@ -15,7 +15,7 @@ type MetricEntry struct {
 	RuntimeSeconds     float64          `json:"runtime_seconds"`
 	ResourceLogVolumes map[string]int64 `json:"resource_log_volume"`
 	ResourceLogBytes   map[string]int64 `json:"resource_log_bytes"`
-	ForwarderVersion   string           `json:"forwarder_version"`
+	Version            string           `json:"version"`
 }
 
 // FromBytes converts a byte slice to a slice of MetricEntry

@@ -130,7 +130,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 		RuntimeSeconds:     time.Since(startTime).Seconds(),
 		ResourceLogVolumes: resourceVolumes,
 		ResourceLogBytes:   resourceBytes,
-		ForwarderVersion:   versionTag,
+		Version:            versionTag,
 	}
 
 	metricBuffer, err := metricBlob.ToBytes()
