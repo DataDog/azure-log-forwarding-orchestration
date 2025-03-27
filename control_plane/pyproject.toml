@@ -5,7 +5,7 @@ requires-python = ">= 3.11"
 
 # common dependencies
 dependencies = [
-    "aiohttp==3.11.0b0",
+    "aiohttp==3.11.14",
     "azure-identity==1.15.0",
     "azure-storage-blob==12.20.0",
     "datadog-api-client[async]==2.26.0",
