@@ -42,7 +42,10 @@ import (
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
-const resourceId string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+const (
+	resourceId string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+	versionTag string = "test-version"
+)
 
 func azureTimestamp(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05Z")
@@ -204,7 +207,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 		Transport: customRoundTripper,
 	}
 
-	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now)
+	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
 	return submittedLogs, err
 }
 
