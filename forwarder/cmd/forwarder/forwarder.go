@@ -353,21 +353,21 @@ func main() {
 	}
 	goroutineCount, err := strconv.ParseInt(goroutineString, 10, 64)
 	if err != nil {
-		logger.Fatalf(fmt.Errorf("error parsing %s: %w", environment.NumGoroutines, err).Error())
+		logger.Fatal(fmt.Errorf("error parsing %s: %w", environment.NumGoroutines, err).Error())
 	}
 
 	// Initialize storage client
 	storageAccountConnectionString := environment.Get(environment.AzureWebJobsStorage)
 	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
 	if err != nil {
-		logger.Fatalf(fmt.Errorf("error creating azure blob client: %w", err).Error())
+		logger.Fatal(fmt.Errorf("error creating azure blob client: %w", err).Error())
 		return
 	}
 
 	piiConfigJSON := environment.Get(environment.PiiScrubberRules)
 	piiScrubRules, err := parsePiiScrubRules(piiConfigJSON)
 	if err != nil {
-		logger.Fatalf(fmt.Errorf("error parsing PII scrubber rules: %w", err).Error())
+		logger.Fatal(fmt.Errorf("error parsing PII scrubber rules: %w", err).Error())
 	}
 
 	piiScrubber := logs.NewPiiScrubber(piiScrubRules)
@@ -375,6 +375,6 @@ func main() {
 	err = run(ctx, logger, int(goroutineCount), datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now)
 
 	if err != nil {
-		logger.Fatalf(fmt.Errorf("error while running: %w", err).Error())
+		logger.Fatal(fmt.Errorf("error while running: %w", err).Error())
 	}
 }
