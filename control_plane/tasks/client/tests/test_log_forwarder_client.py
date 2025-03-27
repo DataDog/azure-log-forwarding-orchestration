@@ -662,7 +662,6 @@ class TestLogForwarderClient(AsyncTestCase):
                         "resource_log_volume": {},
                         "timestamp": 1723040910,
                         "resource_log_bytes": {},
-                        "version": "74a5f6a",
                     }
                 ],
                 EAST_US,
