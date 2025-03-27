@@ -1,7 +1,6 @@
 module github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 
-go 1.23.2
-toolchain go1.24.1
+go 1.24.0
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.14.0
@@ -12,7 +11,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/mock v0.4.0
-	golang.org/x/sync v0.11.0
+	golang.org/x/sync v0.12.0
 )
 
 require (
