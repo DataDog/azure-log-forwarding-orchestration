@@ -16,6 +16,7 @@ const (
 	TelemetryEnabled    = "DD_TELEMETRY"
 	NumGoroutines       = "NUM_GOROUTINES"
 	PiiScrubberRules    = "PII_SCRUBBER_RULES"
+	VersionTag          = "VERSION_TAG"
 )
 
 func Get(envVar string) string {
