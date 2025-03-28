@@ -4,16 +4,16 @@ from unittest.mock import DEFAULT, MagicMock, call
 
 # 3p
 from azure.core.exceptions import HttpResponseError
-from control_plane.cache.env import (
+
+# project
+from cache.common import InvalidCacheError
+from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
     SUBSCRIPTION_ID_SETTING,
     VERSION_TAG_SETTING,
 )
-
-# project
-from cache.common import InvalidCacheError
 from cache.manifest_cache import ManifestCache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
