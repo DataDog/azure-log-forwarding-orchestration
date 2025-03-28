@@ -15,7 +15,7 @@ import (
 
 // Log represents a log to send to Datadog.
 type Log struct {
-	content          []byte
+	Content          []byte
 	RawByteSize      int64
 	ScrubbedByteSize int64
 	Tags             []string
@@ -56,12 +56,12 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 }
 
 // Content converts the log content to a string.
-func (l *Log) Content() string {
-	if l.content == nil {
-		return ""
-	}
-	return string(l.content)
-}
+//func (l *Log) Content() string {
+//	if l.content == nil {
+//		return ""
+//	}
+//	return string(l.content)
+//}
 
 // RawLength returns the length of the original Azure log content.
 func (l *Log) RawLength() int64 {
@@ -122,7 +122,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	scrubbedByteSize := len(scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
 
 	return &Log{
-		content:          scrubbedLog,
+		Content:          scrubbedLog,
 		RawByteSize:      l.ByteSize,
 		ScrubbedByteSize: int64(scrubbedByteSize),
 		Category:         l.Category,
@@ -189,7 +189,7 @@ func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 		ResourceId: l.ResourceID,
 		Service:    azureService,
 		Source:     logSource,
-		content:    logBytes,
+		Content:    logBytes,
 		Container:  blob.Container.Name,
 		Blob:       blob.Name,
 		Level:      "Informational",

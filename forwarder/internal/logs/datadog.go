@@ -100,7 +100,7 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 		Service:              pointer.Get(log.Service),
 		Ddsource:             pointer.Get(log.Source),
 		Ddtags:               pointer.Get(strings.Join(log.Tags, ",")),
-		Message:              log.Content(),
+		Message:              string(log.Content),
 		AdditionalProperties: additionalProperties,
 	}
 	return logItem

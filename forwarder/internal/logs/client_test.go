@@ -24,7 +24,7 @@ import (
 
 const (
 	azureService        = "azure"
-	resourceId   string = "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/forwarder-integration-testing/providers/Microsoft.Web/sites/forwarderintegrationtesting"
+	resourceId   string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
 )
 
 func azureTimestamp(t time.Time) string {
@@ -130,9 +130,10 @@ func TestNewLog(t *testing.T) {
 		// GIVEN
 		logBytes, err := logs.BytesFromJavaScriptObject(validLog)
 		require.NoError(t, err)
+		blob := newBlob(resourceId, functionAppContainer)
 
 		// WHEN
-		log, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, validLog), int64(len(validLog)))
+		log, err := logs.NewLog(logBytes, blob, MockScrubber(t, validLog), int64(len(validLog)))
 
 		// THEN
 		assert.NoError(t, err)
@@ -141,7 +142,6 @@ func TestNewLog(t *testing.T) {
 		assert.Equal(t, "FunctionAppLogs", log.Category)
 		assertTags(t, log)
 		assert.NotNil(t, log)
-
 	})
 
 	t.Run("handles an array of strings", func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestNewLog(t *testing.T) {
 
 		// THEN
 		assert.NotNil(t, plainTextLog)
-		assert.Equal(t, string(plaintextLog), plainTextLog.Content())
+		assert.Equal(t, plaintextLog, plainTextLog.Content)
 		assert.Equal(t, "", plainTextLog.ResourceId)
 		assert.Equal(t, "", plainTextLog.Source)
 		assert.Empty(t, plainTextLog.Category)
@@ -271,7 +271,7 @@ func TestNewLog(t *testing.T) {
 		log, err := logs.NewLog(plaintextLog, blob, MockScrubber(t, plaintextLog), int64(len(plaintextLog)))
 		assert.NoError(t, err)
 		assert.NotNil(t, log)
-		assert.Equal(t, string(plaintextLog), log.Content())
+		assert.Equal(t, plaintextLog, log.Content)
 		assert.Empty(t, log.ResourceId)
 		assert.Empty(t, log.Category)
 		assert.Empty(t, log.Source)
