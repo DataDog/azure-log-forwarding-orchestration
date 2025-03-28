@@ -3,8 +3,11 @@ package main
 import (
 	// stdlib
 	"bytes"
+	"compress/gzip"
 	"context"
 	_ "embed"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +29,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	// datadog
+	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 
 	// project
@@ -39,7 +43,10 @@ import (
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
 )
 
-const resourceId string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+const (
+	resourceId string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+	versionTag string = "test-version"
+)
 
 func azureTimestamp(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05Z")
@@ -54,6 +61,17 @@ func nullLogger() *log.Logger {
 	l := log.New()
 	l.SetOutput(io.Discard)
 	return l
+}
+
+// CustomRoundTripper implements the http.RoundTripper interface
+type CustomRoundTripper struct {
+	transport   http.RoundTripper
+	getResponse func(req *http.Request) (*http.Response, error)
+}
+
+// RoundTrip implements the RoundTrip method required by the http.RoundTripper interface
+func (c *CustomRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return c.getResponse(req)
 }
 
 func newMockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
@@ -114,7 +132,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
-func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error)) ([]datadogV2.HTTPLogItem, error) {
+func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error), getDatadogLogResp func(req *http.Request) (*http.Response, error)) ([]datadogV2.HTTPLogItem, error) {
 	ctrl := gomock.NewController(t)
 	mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
@@ -157,7 +175,47 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	ctx := context.Background()
 
-	err := run(ctx, nullLogger(), 1, mockDDClient, mockClient, mockPiiScrubber, time.Now)
+	// Use the CustomRoundTripper with a standard http.Transport
+	customRoundTripper := &CustomRoundTripper{
+		transport: &http.Transport{},
+		getResponse: func(req *http.Request) (*http.Response, error) {
+			if req == nil {
+				return nil, errors.New("request is nil")
+			}
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+
+			// body is gzipped, so we need to decompress it
+			data := bytes.NewReader(body)
+			r, err := gzip.NewReader(data)
+			if err != nil {
+				return nil, err
+			}
+
+			// read the decompressed body
+			bodyBytes, err := io.ReadAll(r)
+			if err != nil {
+				return nil, err
+			}
+
+			var currLogs []datadogV2.HTTPLogItem
+			err = json.Unmarshal(bodyBytes, &currLogs)
+			if err != nil {
+				return nil, err
+			}
+			submittedLogs = append(submittedLogs, currLogs...)
+			return getDatadogLogResp(req)
+		},
+	}
+
+	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.HTTPClient = &http.Client{
+		Transport: customRoundTripper,
+	}
+
+	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
 	return submittedLogs, err
 }
 
@@ -216,9 +274,20 @@ func TestRun(t *testing.T) {
 			}
 			return azblob.UploadBufferResponse{}, nil
 		}
+		var latestHeaders http.Header
+		logResp := func(req *http.Request) (*http.Response, error) {
+			if req == nil {
+				return nil, errors.New("request is nil")
+			}
+			latestHeaders = req.Header
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
 
 		// THEN
 		assert.NoError(t, err)
@@ -228,6 +297,7 @@ func TestRun(t *testing.T) {
 		totalLoad := 0
 		totalBytes := 0
 		for _, metric := range finalMetrics {
+			assert.Equal(t, versionTag, metric.Version)
 			for _, value := range metric.ResourceLogVolumes {
 				totalLoad += int(value)
 			}
@@ -236,7 +306,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, len(blobPage)-1, totalLoad)
-		// assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes) TODO: investigate `expectedBytesForLog` returning unexpected value for function app logs https://datadoghq.atlassian.net/browse/AZINTS-3153
+		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		assert.Equal(t, int64(0), finalCursors.Get(containerName, *expiredBlob.Name))
@@ -245,6 +315,9 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
+
+		assert.Equal(t, "gzip", latestHeaders.Get("Content-Encoding"))
+		assert.Equal(t, "lfo", latestHeaders.Get("dd_evp_origin"))
 	})
 
 	t.Run("continues processing on errors", func(t *testing.T) {
@@ -288,9 +361,15 @@ func TestRun(t *testing.T) {
 			}
 			return azblob.UploadBufferResponse{}, nil
 		}
+		logResp := func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
+		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
 
 		// THEN
 		assert.NoError(t, err)
@@ -308,7 +387,7 @@ func TestRun(t *testing.T) {
 			}
 		}
 		assert.Equal(t, len(blobPage)-1, totalLoad)
-		// assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes) TODO: investigate `expectedBytesForLog` returning unexpected value for function app logs https://datadoghq.atlassian.net/browse/AZINTS-3153
+		assert.Equal(t, (len(blobPage)-1)*(expectedBytesForLog), totalBytes)
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		for _, logItem := range submittedLogs {
@@ -555,8 +634,15 @@ func TestCursors(t *testing.T) {
 				return resp
 			}
 
+			logResp := func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
+
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc, logResp)
 
 			// THEN
 			assert.NoError(t, err)
@@ -619,9 +705,15 @@ func TestCursors(t *testing.T) {
 				resp.Body = io.NopCloser(strings.NewReader(string(currentLogData[o.Range.Offset:])))
 				return resp
 			}
+			logResp := func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
 
 			// THEN
 			assert.NoError(t, err)

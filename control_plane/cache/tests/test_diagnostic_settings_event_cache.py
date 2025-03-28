@@ -8,6 +8,8 @@ from cache.diagnostic_settings_cache import (
     SENT_EVENT,
     DiagnosticSettingsCache,
     deserialize_event_cache,
+    remove_cached_resource,
+    update_cached_event,
 )
 from cache.tests import sub_id1, sub_id2
 
@@ -51,3 +53,55 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
 
     def test_wrong_alert_type_event_config_is_invalid(self):
         self.assert_deserialize_failure(dumps({sub_id1: {"resource1_id": {SENT_EVENT: "not_a_bool"}}}))
+
+    def test_remove_cached_resource(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {
+                "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+                "resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 2, SENT_EVENT: False},
+            },
+        }
+        remove_cached_resource(cache, sub_id1, "resource2_id")
+        self.assertEqual(cache, {sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}}})
+
+    def test_remove_cached_resource_missing_sub_id(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {
+                "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+                "resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 2, SENT_EVENT: False},
+            },
+        }
+        remove_cached_resource(cache, sub_id2, "resource2_id")
+        self.assertEqual(
+            cache,
+            {
+                sub_id1: {
+                    "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+                    "resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 2, SENT_EVENT: False},
+                }
+            },
+        )
+
+    def test_update_cached_setting(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {
+                "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+            },
+        }
+        update_cached_event(cache, sub_id1, "resource1_id", 2, False)
+        self.assertEqual(cache, {sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 2, SENT_EVENT: False}}})
+
+    def test_update_cached_setting_count_new_sub_id(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {
+                "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+            },
+        }
+        update_cached_event(cache, sub_id2, "resource2_id", 5, True)
+        self.assertEqual(
+            cache,
+            {
+                sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}},
+                sub_id2: {"resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 5, SENT_EVENT: True}},
+            },
+        )

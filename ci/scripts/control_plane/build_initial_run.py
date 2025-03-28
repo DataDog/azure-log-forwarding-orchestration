@@ -34,7 +34,8 @@ script_content = f"""#!/usr/bin/env bash
 set -euo pipefail
 curl https://bootstrap.pypa.io/get-pip.py | python3
 pip install {" ".join(deps)} > /dev/null
-python3 -c '{python_content}'
+echo '{python_content}' > initial_run_script.py
+python3 initial_run_script.py
 """
 
 with open(INITIAL_RUN_SCRIPT, "w") as f:
