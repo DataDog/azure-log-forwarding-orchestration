@@ -134,7 +134,7 @@ class DeployerTask(Task):
 
         self.tags.append(f"deployer_version:{self.version_tag}")
         for component in cast(Iterable[ManifestKey], self.manifest_cache):
-            if component == "forwarder":
+            if component == "forwarder":  # forwarder version gets reported by scaling task
                 continue
             self.tags.append(
                 f"{component}_version:{self.manifest_cache[component] if self.manifest_cache[component] else 'unknown'}"
@@ -210,7 +210,6 @@ class DeployerTask(Task):
         self.log.info(f"Finished deploying {component}")
 
     async def deploy_log_forwarder_image(self) -> None:
-        # TODO(AZINTS-2770): Implement this
         self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
