@@ -63,7 +63,8 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		logger.Warningf("Skipping log without a time field for resource %s", resourceId)
 		return 0, false
 	}
-	parsedTime, err := time.Parse(time.RFC3339, timeString)
+
+	parsedTime, err := time.Parse(time.RFC3339, timeString.(string))
 	if err != nil {
 		// log has an invalid time field and cannot be validated
 		logger.WithError(err).Warningf("Skipping log with an invalid time field for resource %s", resourceId)
@@ -88,7 +89,7 @@ func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *l
 }
 
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
-	additionalProperties := map[string]string{
+	additionalProperties := map[string]interface{}{
 		"time":            log.Time.Format(time.RFC3339),
 		"level":           log.Level,
 		"originContainer": log.Container,

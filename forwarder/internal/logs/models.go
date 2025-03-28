@@ -65,7 +65,7 @@ func (l *Log) Content() string {
 
 // RawLength returns the length of the original Azure log content.
 func (l *Log) RawLength() int64 {
-	return l.RawByteSize
+	return l.RawByteSize + newlineBytes
 }
 
 // ScrubbedLength returns the length of the log content after it has been scrubbed for PII.
@@ -127,7 +127,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		ScrubbedByteSize: int64(scrubbedByteSize),
 		Category:         l.Category,
 		ResourceId:       resourceId,
-		Service:          AzureService,
+		Service:          azureService,
 		Source:           logSource,
 		Time:             l.Time,
 		Level:            l.Level,
@@ -187,7 +187,7 @@ func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 		Time:       l.Time,
 		Category:   l.Category,
 		ResourceId: l.ResourceID,
-		Service:    AzureService,
+		Service:    azureService,
 		Source:     logSource,
 		content:    logBytes,
 		Container:  blob.Container.Name,

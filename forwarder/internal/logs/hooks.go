@@ -41,7 +41,7 @@ func (h Hook) Levels() []logrus.Level {
 
 // Fire sends the log entry to Datadog.
 func (h Hook) Fire(entry *logrus.Entry) error {
-	additionalProperties := map[string]string{
+	additionalProperties := map[string]interface{}{
 		"time":  entry.Time.Format(time.RFC3339),
 		"level": entry.Level.String(),
 	}

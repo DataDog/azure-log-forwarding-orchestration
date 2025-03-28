@@ -22,11 +22,14 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
+const (
+	azureService        = "azure"
+	resourceId   string = "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/forwarder-integration-testing/providers/Microsoft.Web/sites/forwarderintegrationtesting"
+)
+
 func azureTimestamp(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15:04:05Z")
 }
-
-const resourceId string = "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/forwarder-integration-testing/providers/Microsoft.Web/sites/forwarderintegrationtesting"
 
 func getBlobName(name string) string {
 	return "resourceId=" + name + "/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
@@ -114,7 +117,7 @@ func assertTags(t *testing.T, log *logs.Log) {
 	assert.Contains(t, log.Tags, "control_plane_id:")
 	assert.Contains(t, log.Tags, "config_id:")
 	assert.Contains(t, log.Source, "azure.web")
-	assert.Contains(t, log.Service, logs.AzureService)
+	assert.Contains(t, log.Service, azureService)
 }
 
 var validLog = []byte("{ \"time\": \"2024-08-21T15:12:24Z\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'LoggerFilterOptions\\n{\\n  \\'MinLevel\\': \\'None\\',\\n  \\'Rules\\': [\\n    {\\n      \\'ProviderName\\': null,\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'None\\',\\n      \\'Filter\\': null\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Script.WebHost.Diagnostics.SystemLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': null,\\n      \\'Filter\\': \\'<AddFilter>b__0\\'\\n    },\\n    {\\n      \\'ProviderName\\': \\'Microsoft.Azure.WebJobs.Logging.ApplicationInsights.ApplicationInsightsLoggerProvider\\',\\n      \\'CategoryName\\': null,\\n      \\'LogLevel\\': \\'Trace\\',\\n      \\'Filter\\': null\\n    }\\n  ]\\n}','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
@@ -255,7 +258,7 @@ func TestNewLog(t *testing.T) {
 		assert.Equal(t, "", plainTextLog.Source)
 		assert.Empty(t, plainTextLog.Category)
 		assert.Equal(t, logs.DefaultTags, plainTextLog.Tags)
-		assert.Equal(t, logs.AzureService, plainTextLog.Service)
+		assert.Equal(t, azureService, plainTextLog.Service)
 		assert.Equal(t, "Informational", plainTextLog.Level)
 	})
 
@@ -273,7 +276,7 @@ func TestNewLog(t *testing.T) {
 		assert.Empty(t, log.Category)
 		assert.Empty(t, log.Source)
 		assert.Equal(t, logs.DefaultTags, log.Tags)
-		assert.Equal(t, logs.AzureService, log.Service)
+		assert.Equal(t, azureService, log.Service)
 		assert.Equal(t, log.Level, "Informational")
 	})
 }
