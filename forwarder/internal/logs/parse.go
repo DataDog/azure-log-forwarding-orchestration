@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"iter"
-	"strings"
+
+	// 3p
+	"github.com/dop251/goja/parser"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
@@ -72,8 +74,8 @@ func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiS
 
 			currBytes, err := BytesFromJavaScriptObject(currBytes)
 			if err != nil {
-				if strings.Contains(err.Error(), "Unexpected token ;") {
-					if !yield(nil, ErrUnexpectedToken) {
+				if errors.As(err, &parser.ErrorList{}) || errors.As(err, &parser.Error{}) {
+					if !yield(nil, errors.Join(ErrUnexpectedToken, err)) {
 						return
 					}
 				}

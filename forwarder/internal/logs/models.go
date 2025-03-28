@@ -45,7 +45,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 		currLog = &azureLog{Time: time.Now()}
 	}
 
-	blobNameResourceId, _ := blob.ResourceId()
+	blobNameResourceId := blob.ResourceId()
 	currLog.BlobResourceId = blobNameResourceId
 	currLog.ByteSize = originalSize + newlineBytes
 	currLog.Raw = logBytes

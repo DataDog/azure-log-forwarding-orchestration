@@ -567,9 +567,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str, region: str
     ) -> MetricPayload:
         log_forwarder_name = get_container_app_name(log_forwarder_id)
+        version = metric_entries[0].get("version", "unknown") if metric_entries else "unknown"
         tags = [
             f"control_plane_id:{self.control_plane_id}",
             f"region:{region}",
+            f"version:{version}",
         ]
         return cast(
             MetricPayload,

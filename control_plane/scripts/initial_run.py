@@ -39,7 +39,7 @@ async def run_tasks() -> None:
     async with ScalingTask(resource_cache, assignment_cache) as scaling_task:
         await scaling_task.run()
         assignment_cache = dumps(scaling_task.assignment_cache)
-    async with DiagnosticSettingsTask(assignment_cache, "") as diagnostic_settings_task:
+    async with DiagnosticSettingsTask(resource_cache, assignment_cache, "") as diagnostic_settings_task:
         await diagnostic_settings_task.run()
 
 
