@@ -124,8 +124,6 @@ class DeployerTask(Task):
             }
         ).copy()
 
-        self.add_version_tags()
-
         await gather(
             *[
                 self.deploy_component(component, current_components)
@@ -134,12 +132,13 @@ class DeployerTask(Task):
             ]
         )
 
-    def add_version_tags(self) -> None:
         self.tags.append(f"deployer_version:{self.version_tag}")
-        for key in cast(Iterable[ManifestKey], self.manifest_cache):
-            if key == "forwarder":
+        for component in cast(Iterable[ManifestKey], self.manifest_cache):
+            if component == "forwarder":
                 continue
-            self.tags.append(f"{key}_version:{self.manifest_cache[key]}")
+            self.tags.append(
+                f"{component}_version:{self.manifest_cache[component] if self.manifest_cache[component] else 'unknown'}"
+            )
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
