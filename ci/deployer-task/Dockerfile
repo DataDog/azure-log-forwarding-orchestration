@@ -1,4 +1,4 @@
-FROM python:3.11-alpine
+FROM registry.ddbuild.io/images/mirror/python:3.11.5-alpine3.18
 
 RUN mkdir /app
 WORKDIR /app
