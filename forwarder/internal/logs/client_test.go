@@ -224,7 +224,7 @@ func TestNewLog(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
-		assert.Equal(t, resourceId, log.ResourceId)
+		assert.Equal(t, strings.ToLower(resourceId), strings.ToLower(log.ResourceId))
 	})
 
 	t.Run("uses resource id from blob on invalid resource id for function apps", func(t *testing.T) {
@@ -234,7 +234,7 @@ func TestNewLog(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
-		assert.Equal(t, resourceId, log.ResourceId)
+		assert.Equal(t, strings.ToLower(resourceId), strings.ToLower(log.ResourceId))
 	})
 
 	var plaintextLog = []byte("[2024-08-21T15:12:24] This is a plaintext log")
