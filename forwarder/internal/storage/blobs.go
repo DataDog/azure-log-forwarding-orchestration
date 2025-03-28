@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"strings"
+	"path/filepath"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -50,7 +50,7 @@ func (b *Blob) IsCurrent(now time.Time) bool {
 
 // IsJson returns true if the blob is a json file.
 func (b *Blob) IsJson() bool {
-	return strings.HasSuffix(b.Name, ".json")
+	return filepath.Ext(b.Name) == ".json"
 }
 
 func (b *Blob) ResourceId() string {
