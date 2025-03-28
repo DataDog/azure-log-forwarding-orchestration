@@ -46,7 +46,7 @@ Pull requests should be labelled with at least a component, in addition to the t
 > Always add a `comp:` and a `type:` label.
 
 >[!NOTE]
-> For reference, the [full list of all labels available](https://github.com/DataDog/dd-trace-java/labels).
+> For reference, the [full list of all labels available](https://github.com/DataDog/azure-log-forwarding-orchestration/labels).
 
 ## Pull request reviews
 
