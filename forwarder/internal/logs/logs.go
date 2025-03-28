@@ -300,8 +300,8 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error)
 		if blob.Container.Name == functionAppContainer {
 			logBytes, err = BytesFromJSON(logBytes)
 			if err != nil {
-				if strings.Contains(err.Error(), "Unexpected token ;") {
-					return nil, ErrUnexpectedToken
+				if errors.As(err, &parser.ErrorList{}) || errors.As(err, &parser.Error{}) {
+					return nil, errors.Join(ErrUnexpectedToken, err)
 				}
 				return nil, err
 			}
@@ -318,7 +318,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber) (*Log, error)
 		currLog = &azureLog{Time: time.Now()}
 	}
 
-	blobNameResourceId, _ := blob.ResourceId()
+	blobNameResourceId := blob.ResourceId()
 	currLog.BlobResourceId = blobNameResourceId
 	currLog.ByteSize = int64(logSize)
 	currLog.Raw = &logBytes

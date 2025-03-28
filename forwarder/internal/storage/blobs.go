@@ -53,11 +53,11 @@ func (b *Blob) IsJson() bool {
 	return strings.HasSuffix(b.Name, ".json")
 }
 
-func (b *Blob) ResourceId() (string, error) {
+func (b *Blob) ResourceId() string {
 	if len(b.Name) < idBeginIndex+idEndOffset {
-		return "", fmt.Errorf("invalid resource id for blob %s: %w", b.Name, ErrInvalidResourceId)
+		return ""
 	}
-	return b.Name[idBeginIndex : len(b.Name)-idEndOffset], nil
+	return b.Name[idBeginIndex : len(b.Name)-idEndOffset]
 }
 
 func NewBlob(container Container, item *container.BlobItem) Blob {
