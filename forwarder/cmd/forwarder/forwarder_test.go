@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -98,6 +99,13 @@ func getListContainersResponse(containers []*service.ContainerItem) azblob.ListC
 
 func getBlobName(name string) string {
 	return "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/" + name + "/y=2024/m=10/d=28/h=16/m=00/PT1H.json"
+}
+
+func newBlob(blobName, containerName string) storage.Blob {
+	return storage.Blob{
+		Name:      getBlobName(blobName),
+		Container: storage.Container{Name: containerName},
+	}
 }
 
 func newBlobItem(name string, contentLength int64, blobTime time.Time) *container.BlobItem {
@@ -428,7 +436,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -476,7 +484,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, resourceId, newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -515,7 +523,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, containerName, resourceId, newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -555,7 +563,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, _, err := parseLogs(reader, "insights-logs-functionapplogs", resourceId, newMockPiiScrubber(ctrl), logsChannel)
+			_, _, err := parseLogs(reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsChannel)
 			return err
 		})
 		err := eg.Wait()
@@ -566,18 +574,20 @@ func TestParseLogs(t *testing.T) {
 	})
 }
 
+var (
+	//go:embed fixtures/aks_logs.json
+	aksLogData string
+
+	//go:embed fixtures/function_app_logs.json
+	functionAppLogData string
+)
+
 func TestCursors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("works with aks logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		originalLogData, err := os.ReadFile(fmt.Sprintf("%s/fixtures/aks_logs.json", workingDir))
-		require.NoError(t, err)
-
 		containerName := "insights-logs-kube-audit"
 		blobName := "aks_logs.json"
 
@@ -594,7 +604,7 @@ func TestCursors(t *testing.T) {
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
-			currentLogData = append(currentLogData, originalLogData...)
+			currentLogData = append(currentLogData, aksLogData...)
 			currentLength := int64(len(currentLogData))
 
 			blobItem := &container.BlobItem{
@@ -614,7 +624,6 @@ func TestCursors(t *testing.T) {
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
 					lastCursor = cursor.FromBytes(content, log.NewEntry(nullLogger()))
-					require.NoError(t, err)
 				}
 				return azblob.UploadBufferResponse{}, nil
 			}
@@ -651,12 +660,6 @@ func TestCursors(t *testing.T) {
 	t.Run("works with function app logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		originalLogData, err := os.ReadFile(fmt.Sprintf("%s/fixtures/function_app_logs.json", workingDir))
-		require.NoError(t, err)
-
 		containerName := "insights-logs-functionapplogs"
 		blobName := "function_app_logs.json"
 
@@ -673,7 +676,7 @@ func TestCursors(t *testing.T) {
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
-			currentLogData = append(currentLogData, originalLogData...)
+			currentLogData = append(currentLogData, functionAppLogData...)
 			currentLength := int64(len(currentLogData))
 
 			blobItem := &container.BlobItem{
@@ -693,7 +696,6 @@ func TestCursors(t *testing.T) {
 			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
 				if blobName == cursor.BlobName {
 					lastCursor = cursor.FromBytes(content, log.NewEntry(nullLogger()))
-					require.NoError(t, err)
 				}
 				return azblob.UploadBufferResponse{}, nil
 			}

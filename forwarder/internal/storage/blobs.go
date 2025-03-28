@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"path/filepath"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -47,11 +48,16 @@ func (b *Blob) IsCurrent(now time.Time) bool {
 	return b.CreationTime.After(now.Add(LookBackPeriod))
 }
 
-func (b *Blob) ResourceId() (string, error) {
+// IsJson returns true if the blob is a json file.
+func (b *Blob) IsJson() bool {
+	return filepath.Ext(b.Name) == ".json"
+}
+
+func (b *Blob) ResourceId() string {
 	if len(b.Name) < idBeginIndex+idEndOffset {
-		return "", fmt.Errorf("invalid resource id for blob %s: %w", b.Name, ErrInvalidResourceId)
+		return ""
 	}
-	return b.Name[idBeginIndex : len(b.Name)-idEndOffset], nil
+	return b.Name[idBeginIndex : len(b.Name)-idEndOffset]
 }
 
 func NewBlob(container Container, item *container.BlobItem) Blob {
