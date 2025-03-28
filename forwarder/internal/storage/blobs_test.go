@@ -317,7 +317,7 @@ func TestBlob_IsJson(t *testing.T) {
 	t.Run("blob name is json", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		blob := storage.Blob{Name: "test.json"}
+		blob := storage.Blob{Name: "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/MIKE-AZURE-CENTRAL/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/MIKE-AZURE-VM11-NSG/y=2024/m=11/d=08/h=22/m=00/PT1H.json"}
 
 		// WHEN
 		isJson := blob.IsJson()
