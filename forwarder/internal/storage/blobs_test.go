@@ -18,7 +18,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
 	// project
@@ -290,8 +289,7 @@ func TestResourceId(t *testing.T) {
 		blob := storage.Blob{Name: blobName}
 
 		// WHEN
-		resourceId, err := blob.ResourceId()
-		require.NoError(t, err)
+		resourceId := blob.ResourceId()
 		parsedId, err := arm.ParseResourceID(resourceId)
 
 		// THEN
@@ -300,17 +298,16 @@ func TestResourceId(t *testing.T) {
 		assert.Equal(t, parsedId.SubscriptionID, "123")
 	})
 
-	t.Run("short blob name throws an error", func(t *testing.T) {
+	t.Run("blob names that are not resource ids return empty resource ids", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		blob := storage.Blob{Name: "test"}
 
 		// WHEN
-		_, err := blob.ResourceId()
+		resourceId := blob.ResourceId()
 
 		// THEN
-		assert.ErrorIs(t, err, storage.ErrInvalidResourceId)
-		assert.Contains(t, err.Error(), "test")
+		assert.Equal(t, "", resourceId)
 	})
 }
 
@@ -320,7 +317,7 @@ func TestBlob_IsJson(t *testing.T) {
 	t.Run("blob name is json", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		blob := storage.Blob{Name: "test.json"}
+		blob := storage.Blob{Name: "resourceId=/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/MIKE-AZURE-CENTRAL/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/MIKE-AZURE-VM11-NSG/y=2024/m=11/d=08/h=22/m=00/PT1H.json"}
 
 		// WHEN
 		isJson := blob.IsJson()
