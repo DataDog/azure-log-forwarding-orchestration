@@ -132,11 +132,12 @@ class DeployerTask(Task):
             ]
         )
 
+        # add control plane task versions as tags reported in runtime metrics/logs
         self.tags.append(f"deployer_version:{self.version_tag}")
-        for component in cast(Iterable[ManifestKey], self.manifest_cache):
+        for component, version in cast(Iterable[tuple[ManifestKey, str]], self.manifest_cache.items()):
             if component == "forwarder":  # forwarder version gets reported by scaling task
                 continue
-            self.tags.append(f"{component}_version:{self.manifest_cache.get(component, 'unknown')}")
+            self.tags.append(f"{component}_version:{version}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
