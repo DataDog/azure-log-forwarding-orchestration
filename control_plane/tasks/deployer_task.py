@@ -136,9 +136,7 @@ class DeployerTask(Task):
         for component in cast(Iterable[ManifestKey], self.manifest_cache):
             if component == "forwarder":  # forwarder version gets reported by scaling task
                 continue
-            self.tags.append(
-                f"{component}_version:{self.manifest_cache[component] if self.manifest_cache[component] else 'unknown'}"
-            )
+            self.tags.append(f"{component}_version:{self.manifest_cache.get(component, 'unknown')}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
