@@ -3,7 +3,7 @@ from asyncio import gather, run
 from json import dumps
 from os import environ
 from types import TracebackType
-from typing import NamedTuple, Self, cast
+from typing import Self, cast
 
 # 3p
 from aiohttp import ClientSession
@@ -33,8 +33,6 @@ from cache.manifest_cache import (
     deserialize_manifest_cache,
 )
 from tasks.common import (
-    CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX,
-    CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
@@ -49,12 +47,6 @@ DEPLOYER_TASK_NAME = "deployer_task"
 
 MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
-
-
-class ControlPlaneResources(NamedTuple):
-    app_service_plans: set[str]
-    storage_accounts: set[str]
-    function_apps: set[str]
 
 
 class DeployError(Exception):
@@ -107,7 +99,7 @@ class DeployerTask(Task):
 
     async def run(self) -> None:
         public_manifest, private_manifest, current_components = await gather(
-            self.get_public_manifests(), self.get_private_manifests(), self.get_current_components()
+            self.get_public_manifests(), self.get_private_manifests(), self.get_current_function_apps()
         )
         if not private_manifest:
             self.log.info("Failed to read private manifest. Deploying all components.")
@@ -155,42 +147,22 @@ class DeployerTask(Task):
             return None
         return deserialize_manifest_cache(blob_data)
 
-    async def get_current_components(self) -> ControlPlaneResources:
-        current_apps, current_service_plans, storage_accounts = await gather(
-            collect(self.web_client.web_apps.list_by_resource_group(self.resource_group)),
-            collect(self.web_client.app_service_plans.list_by_resource_group(self.resource_group)),
-            collect(self.storage_client.storage_accounts.list_by_resource_group(self.resource_group)),
-        )
-        return ControlPlaneResources(
-            app_service_plans={
-                app.name
-                for app in cast(list[Resource], current_service_plans)
-                if app.name.startswith(CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX)
-            },
-            storage_accounts={
-                storage.name
-                for storage in cast(list[Resource], storage_accounts)
-                if storage.name.startswith(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX)
-            },
-            function_apps={
-                task.name
-                for task in cast(list[Resource], current_apps)
-                if any(
-                    task.name.startswith(prefix)
-                    for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX)
-                )
-            },
-        )
-
-    async def deploy_component(
-        self, component: ControlPlaneComponent, current_components: ControlPlaneResources
-    ) -> None:
-        task_prefix = f"{component.replace('_', '-')}-task-"
-        function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
-        if not function_app:
-            self.log.error(
-                f"Function app for {component} not found in {current_components.function_apps}, skipping deployment"
+    async def get_current_function_apps(self) -> set[str]:
+        current_apps = await collect(self.web_client.web_apps.list_by_resource_group(self.resource_group))
+        return {
+            task.name
+            for task in cast(list[Resource], current_apps)
+            if any(
+                task.name.startswith(prefix)
+                for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX)
             )
+        }
+
+    async def deploy_component(self, component: ControlPlaneComponent, current_function_app_ids: set[str]) -> None:
+        task_prefix = f"{component.replace('_', '-')}-task-"
+        function_app = next((app for app in current_function_app_ids if app.startswith(task_prefix)), None)
+        if not function_app:
+            self.log.error(f"Function app for {component} not found in {current_function_app_ids}, skipping deployment")
             return
         try:
             self.log.info(f"Downloading function app data for {component}")
