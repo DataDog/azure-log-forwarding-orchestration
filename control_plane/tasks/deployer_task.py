@@ -117,7 +117,6 @@ class DeployerTask(Task):
         self.manifest_cache = (
             private_manifest
             or {
-                "forwarder": "",
                 "resources": "",
                 "scaling": "",
                 "diagnostic_settings": "",
@@ -187,8 +186,6 @@ class DeployerTask(Task):
         )
 
     async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
-        if component == "forwarder":
-            return await self.deploy_log_forwarder_image()
         task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
         if not function_app:
@@ -207,9 +204,6 @@ class DeployerTask(Task):
             return
         self.manifest_cache[component] = self.public_manifest[component]
         self.log.info(f"Finished deploying {component}")
-
-    async def deploy_log_forwarder_image(self) -> None:
-        self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
@@ -231,7 +225,7 @@ class DeployerTask(Task):
             raise DeployError(f"Failed to sync function app triggers: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def download_function_app_data(self, component: str) -> bytes:
+    async def download_function_app_data(self, component: ManifestKey) -> bytes:
         blob_name = KEY_TO_ZIP[component]
         stream = await self.public_storage_client.download_blob(blob_name)
         app_data = await stream.readall()

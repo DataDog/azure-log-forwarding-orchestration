@@ -1,33 +1,23 @@
 # stdlib
-from typing import Any, Literal, TypeAlias, TypedDict
+from typing import Any, Literal, TypeAlias
 
 # project
 from cache.common import deserialize_cache
 
-ManifestKey: TypeAlias = Literal["forwarder", "resources", "scaling", "diagnostic_settings"]
-
-
-class ManifestCache(TypedDict, total=True):
-    """
-    Mapping of deployable name to SHA-256 manifest
-    """
-
-    forwarder: str
-    resources: str
-    scaling: str
-    diagnostic_settings: str
+ManifestKey: TypeAlias = Literal["resources", "scaling", "diagnostic_settings"]
+ManifestCache: TypeAlias = dict[ManifestKey, str]
+"""Mapping of deployable name to SHA-256 manifest"""
 
 
 MANIFEST_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "forwarder": {"type": "string"},
         "resources": {"type": "string"},
         "scaling": {"type": "string"},
         "diagnostic_settings": {"type": "string"},
     },
-    "required": ["resources", "forwarder", "diagnostic_settings", "scaling"],
-    "additionalProperties": False,
+    "required": ["resources", "diagnostic_settings", "scaling"],
+    "additionalProperties": True,
 }
 
 MANIFEST_CACHE_NAME = "manifest.json"
@@ -41,13 +31,13 @@ SCALING_TASK_ZIP = "scaling_task.zip"
 DIAGNOSTIC_SETTINGS_TASK_ZIP = "diagnostic_settings_task.zip"
 MANIFEST_FILE_NAME = "manifest.json"
 
-ALL_ZIPS = [RESOURCES_TASK_ZIP, SCALING_TASK_ZIP, DIAGNOSTIC_SETTINGS_TASK_ZIP]
-
-KEY_TO_ZIP = {
+KEY_TO_ZIP: dict[ManifestKey, str] = {
     "resources": RESOURCES_TASK_ZIP,
     "scaling": SCALING_TASK_ZIP,
     "diagnostic_settings": DIAGNOSTIC_SETTINGS_TASK_ZIP,
 }
+
+ALL_ZIPS = list(KEY_TO_ZIP.values())
 
 
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
