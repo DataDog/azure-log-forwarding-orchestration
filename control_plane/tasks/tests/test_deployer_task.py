@@ -14,7 +14,7 @@ from cache.env import (
     SUBSCRIPTION_ID_SETTING,
     VERSION_TAG_SETTING,
 )
-from cache.manifest_cache import ManifestCache
+from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
 
@@ -27,6 +27,10 @@ ALL_FUNCTIONS = [
 
 class TestDeployerTask(TaskTestCase):
     TASK_NAME = DEPLOYER_TASK_NAME
+
+    @property
+    def cache(self) -> ManifestCache:
+        return self.cache_value(MANIFEST_CACHE_NAME, deserialize_manifest_cache)
 
     def setUp(self) -> None:
         super().setUp()
@@ -71,13 +75,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -91,7 +93,6 @@ class TestDeployerTask(TaskTestCase):
     async def test_deploy_task_diff_func_app(self):
         public_cache: ManifestCache = {
             "resources": "2",
-            "forwarder": "1",
             "scaling": "1",
             "diagnostic_settings": "1",
         }
@@ -99,7 +100,6 @@ class TestDeployerTask(TaskTestCase):
             public_cache=public_cache,
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -108,42 +108,15 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.assertEqual(self.cache, public_cache)
         self.assertEqual(
             self.rest_client.post.mock_calls[0][1][0],
             "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
         )
 
-    async def test_deploy_task_diff_container_app(self):
-        public_cache: ManifestCache = {
-            "resources": "1",
-            "forwarder": "2",
-            "scaling": "1",
-            "diagnostic_settings": "1",
-        }
-        self.set_caches(
-            public_cache=public_cache,
-            private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
-        self.set_current_function_apps(ALL_FUNCTIONS)
-
-        await self.run_deployer_task()
-
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
-
     async def test_deploy_task_diff_func_and_container_app(self):
         public_cache: ManifestCache = {
             "resources": "2",
-            "forwarder": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
         }
@@ -151,7 +124,6 @@ class TestDeployerTask(TaskTestCase):
             public_cache=public_cache,
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -160,9 +132,7 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        self.assertEqual(self.cache, public_cache)
         self.assertEqual(
             self.rest_client.post.mock_calls[0][1][0],
             "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
@@ -172,13 +142,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "2",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -194,21 +162,19 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(
-            {
-                "resources": "2",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            }
-        )
         self.assertEqual(
             self.rest_client.post.mock_calls[0][1][0],
             "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
         )
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
         self.assertEqual(
-            self.public_client.download_blob.mock_calls,
+            self.cache,
+            {
+                "resources": "2",
+                "scaling": "1",
+                "diagnostic_settings": "1",
+            },
+        )
+        self.public_client.download_blob.assert_has_calls(
             [
                 call("manifest.json"),
                 call().readall(),
@@ -220,6 +186,7 @@ class TestDeployerTask(TaskTestCase):
                 call("diagnostic_settings_task.zip"),
                 call("diagnostic_settings_task.zip"),
             ],
+            any_order=True,
         )
 
     async def test_deploy_task_no_public_manifest(self):
@@ -227,9 +194,8 @@ class TestDeployerTask(TaskTestCase):
         self.read_private_cache.return_value = dumps(
             {
                 "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
                 "diagnostic_settings": "1",
+                "scaling": "1",
             }
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
@@ -243,7 +209,6 @@ class TestDeployerTask(TaskTestCase):
 
     async def test_deploy_task_no_private_manifests(self):
         public_cache: ManifestCache = {
-            "forwarder": "2",
             "resources": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
@@ -272,7 +237,6 @@ class TestDeployerTask(TaskTestCase):
 
     async def test_deploy_task_private_manifest_retry_error(self):
         public_cache: ManifestCache = {
-            "forwarder": "2",
             "resources": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
@@ -292,13 +256,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -316,13 +278,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -333,16 +293,13 @@ class TestDeployerTask(TaskTestCase):
 
         self.credential.get_token.assert_awaited_once_with("https://management.usgovcloudapi.net/.default")
 
-        self.write_cache.assert_awaited_once_with(
-            "manifest.json",
-            dumps(
-                {
-                    "resources": "2",
-                    "forwarder": "1",
-                    "scaling": "1",
-                    "diagnostic_settings": "1",
-                }
-            ),
+        self.assertEqual(
+            self.cache,
+            {
+                "resources": "2",
+                "scaling": "1",
+                "diagnostic_settings": "1",
+            },
         )
         self.assertEqual(
             self.rest_client.post.mock_calls[0][1][0],
@@ -354,7 +311,6 @@ class TestDeployerTask(TaskTestCase):
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
         public_cache: ManifestCache = {
             "resources": "1",
-            "forwarder": "",
             "scaling": "1",
             "diagnostic_settings": "1",
         }
@@ -362,7 +318,6 @@ class TestDeployerTask(TaskTestCase):
             public_cache=public_cache,
             private_cache={
                 "resources": "1",
-                "forwarder": "",
                 "scaling": "3",
                 "diagnostic_settings": "4",
             },
