@@ -71,13 +71,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -91,7 +89,6 @@ class TestDeployerTask(TaskTestCase):
     async def test_deploy_task_diff_func_app(self):
         public_cache: ManifestCache = {
             "resources": "2",
-            "forwarder": "1",
             "scaling": "1",
             "diagnostic_settings": "1",
         }
@@ -99,7 +96,6 @@ class TestDeployerTask(TaskTestCase):
             public_cache=public_cache,
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -116,34 +112,9 @@ class TestDeployerTask(TaskTestCase):
             "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
         )
 
-    async def test_deploy_task_diff_container_app(self):
-        public_cache: ManifestCache = {
-            "resources": "1",
-            "forwarder": "2",
-            "scaling": "1",
-            "diagnostic_settings": "1",
-        }
-        self.set_caches(
-            public_cache=public_cache,
-            private_cache={
-                "resources": "1",
-                "forwarder": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
-        self.set_current_function_apps(ALL_FUNCTIONS)
-
-        await self.run_deployer_task()
-
-        public_cache_str = dumps(public_cache)
-
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
-
     async def test_deploy_task_diff_func_and_container_app(self):
         public_cache: ManifestCache = {
             "resources": "2",
-            "forwarder": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
         }
@@ -151,7 +122,6 @@ class TestDeployerTask(TaskTestCase):
             public_cache=public_cache,
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -172,13 +142,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "2",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -197,7 +165,6 @@ class TestDeployerTask(TaskTestCase):
         public_cache_str = dumps(
             {
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             }
@@ -227,7 +194,6 @@ class TestDeployerTask(TaskTestCase):
         self.read_private_cache.return_value = dumps(
             {
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             }
@@ -243,7 +209,6 @@ class TestDeployerTask(TaskTestCase):
 
     async def test_deploy_task_no_private_manifests(self):
         public_cache: ManifestCache = {
-            "forwarder": "2",
             "resources": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
@@ -272,7 +237,6 @@ class TestDeployerTask(TaskTestCase):
 
     async def test_deploy_task_private_manifest_retry_error(self):
         public_cache: ManifestCache = {
-            "forwarder": "2",
             "resources": "2",
             "scaling": "1",
             "diagnostic_settings": "1",
@@ -292,13 +256,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -316,13 +278,11 @@ class TestDeployerTask(TaskTestCase):
         self.set_caches(
             public_cache={
                 "resources": "2",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
             private_cache={
                 "resources": "1",
-                "forwarder": "1",
                 "scaling": "1",
                 "diagnostic_settings": "1",
             },
@@ -338,7 +298,6 @@ class TestDeployerTask(TaskTestCase):
             dumps(
                 {
                     "resources": "2",
-                    "forwarder": "1",
                     "scaling": "1",
                     "diagnostic_settings": "1",
                 }

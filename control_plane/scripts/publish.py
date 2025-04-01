@@ -43,7 +43,6 @@ hashes: ManifestCache = {
     "resources": sha256(files[RESOURCES_TASK_ZIP]).hexdigest(),
     "scaling": sha256(files[SCALING_TASK_ZIP]).hexdigest(),
     "diagnostic_settings": sha256(files[DIAGNOSTIC_SETTINGS_TASK_ZIP]).hexdigest(),
-    "forwarder": "",  # TODO(AZINTS-2780)
 }
 
 log.info(
