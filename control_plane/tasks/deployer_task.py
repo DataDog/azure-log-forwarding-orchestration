@@ -94,7 +94,7 @@ class DeployerTask(Task):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
-        public_manifest, private_manifest, current_components = await gather(
+        public_manifest, private_manifest, current_function_app_ids = await gather(
             self.get_public_manifests(), self.get_private_manifests(), self.get_current_function_apps()
         )
         if not private_manifest:
@@ -112,7 +112,7 @@ class DeployerTask(Task):
 
         await gather(
             *[
-                self.deploy_component(component, current_components)
+                self.deploy_component(component, current_function_app_ids)
                 for component in public_manifest
                 if not private_manifest or public_manifest[component] != private_manifest[component]
             ]
