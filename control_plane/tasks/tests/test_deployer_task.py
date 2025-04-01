@@ -53,10 +53,6 @@ class TestDeployerTask(TaskTestCase):
         self.web_client.app_service_plans.list_by_resource_group = MagicMock(return_value=async_generator())
         self.patch("WebSiteManagementClient").return_value = self.web_client
 
-        self.storage_client = AsyncMockClient()
-        self.storage_client.storage_accounts.list_by_resource_group = MagicMock(return_value=async_generator())
-        self.patch("StorageManagementClient").return_value = self.storage_client
-
     def set_caches(self, public_cache: ManifestCache, private_cache: ManifestCache):
         self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
         self.read_private_cache.return_value = dumps(private_cache)
