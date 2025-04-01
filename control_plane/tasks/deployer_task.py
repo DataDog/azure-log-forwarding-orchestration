@@ -1,5 +1,4 @@
 # stdlib
-
 from asyncio import gather, run
 from collections.abc import Iterable
 from json import dumps
@@ -22,6 +21,7 @@ from cache.env import (
     RESOURCE_GROUP_SETTING,
     STORAGE_ACCOUNT_URL_SETTING,
     SUBSCRIPTION_ID_SETTING,
+    VERSION_TAG_SETTING,
     get_config_option,
 )
 from cache.manifest_cache import (
@@ -74,6 +74,7 @@ class DeployerTask(Task):
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
+        self.version_tag = environ.get(VERSION_TAG_SETTING, "unknown")
         storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
         self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()
@@ -130,6 +131,13 @@ class DeployerTask(Task):
                 if not private_manifest or public_manifest[component] != private_manifest[component]
             ]
         )
+
+        # add control plane task versions as tags reported in runtime metrics/logs
+        self.tags.append(f"deployer_version:{self.version_tag}")
+        for component, version in cast(Iterable[tuple[ManifestKey, str]], self.manifest_cache.items()):
+            if component == "forwarder":  # forwarder version gets reported by scaling task
+                continue
+            self.tags.append(f"{component}_version:{version}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
@@ -201,7 +209,6 @@ class DeployerTask(Task):
         self.log.info(f"Finished deploying {component}")
 
     async def deploy_log_forwarder_image(self) -> None:
-        # TODO(AZINTS-2770): Implement this
         self.manifest_cache["forwarder"] = self.public_manifest["forwarder"]
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))

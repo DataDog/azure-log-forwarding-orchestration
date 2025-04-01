@@ -7,6 +7,13 @@ from azure.core.exceptions import HttpResponseError
 
 # project
 from cache.common import InvalidCacheError
+from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    SUBSCRIPTION_ID_SETTING,
+    VERSION_TAG_SETTING,
+)
 from cache.manifest_cache import ManifestCache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
@@ -24,11 +31,12 @@ class TestDeployerTask(TaskTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.env = {
-            "RESOURCE_GROUP": "test_rg",
-            "CONTROL_PLANE_REGION": "region1",
-            "SUBSCRIPTION_ID": "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
+            RESOURCE_GROUP_SETTING: "test_rg",
+            CONTROL_PLANE_REGION_SETTING: "region1",
+            SUBSCRIPTION_ID_SETTING: "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
         }
         self.patch("get_config_option").side_effect = lambda k: self.env[k]
+        self.patch("environ.get").side_effect = lambda k, default="unset test env var": self.env.get(k, default)
 
         self.public_client = AsyncMockClient()
         self.patch("ContainerClient").return_value = self.public_client
@@ -54,9 +62,10 @@ class TestDeployerTask(TaskTestCase):
             *(mock(name=app) for app in function_apps)
         )
 
-    async def run_deployer_task(self):
+    async def run_deployer_task(self) -> DeployerTask:
         async with DeployerTask() as task:
             await task.run()
+        return task
 
     async def test_deploy_task_no_diff(self):
         self.set_caches(
@@ -303,7 +312,7 @@ class TestDeployerTask(TaskTestCase):
         self.assertEqual(self.rest_client.post.await_count, 5)
 
     async def test_deploy_task_govcloud(self):
-        self.env["CONTROL_PLANE_REGION"] = "usgovarizona"
+        self.env[CONTROL_PLANE_REGION_SETTING] = "usgovarizona"
         self.set_caches(
             public_cache={
                 "resources": "2",
@@ -338,4 +347,39 @@ class TestDeployerTask(TaskTestCase):
         self.assertEqual(
             self.rest_client.post.mock_calls[0][1][0],
             "https://resources-task-0863329b4b49.scm.azurewebsites.us/api/zipdeploy",
+        )
+
+    async def test_deployer_tags(self):
+        self.env[VERSION_TAG_SETTING] = "v345"
+        self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
+        public_cache: ManifestCache = {
+            "resources": "1",
+            "forwarder": "",
+            "scaling": "1",
+            "diagnostic_settings": "1",
+        }
+        self.set_caches(
+            public_cache=public_cache,
+            private_cache={
+                "resources": "1",
+                "forwarder": "",
+                "scaling": "3",
+                "diagnostic_settings": "4",
+            },
+        )
+
+        task = await self.run_deployer_task()
+
+        self.assertEqual(task.version_tag, "v345")
+        self.assertCountEqual(
+            task.tags,
+            [
+                "forwarder:lfocontrolplane",
+                "task:deployer_task",
+                "control_plane_id:a2b4c5d6",
+                "deployer_version:v345",
+                "resources_version:1",
+                "scaling_version:3",
+                "diagnostic_settings_version:4",
+            ],
         )
