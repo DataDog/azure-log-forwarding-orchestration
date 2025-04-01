@@ -5,6 +5,7 @@
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
+from itertools import chain
 from json import dumps
 from logging import INFO, WARNING, basicConfig, getLogger
 
@@ -34,7 +35,7 @@ getLogger("azure").setLevel(WARNING)
 
 log.info("Reading artifacts from dist/")
 files: dict[str, bytes] = {}
-for filename in ALL_ZIPS + ["initial_run.sh"]:
+for filename in chain(ALL_ZIPS, ["initial_run.sh"]):
     with open(f"dist/{filename}", "rb") as f:
         files[filename] = f.read()
 

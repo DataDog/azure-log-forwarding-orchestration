@@ -37,8 +37,14 @@ KEY_TO_ZIP: dict[ControlPlaneComponent, str] = {
     "diagnostic_settings": DIAGNOSTIC_SETTINGS_TASK_ZIP,
 }
 
-ALL_ZIPS = list(KEY_TO_ZIP.values())
+ALL_ZIPS = frozenset(KEY_TO_ZIP.values())
+ALL_COMPONENTS = frozenset(KEY_TO_ZIP)
+
+
+def prune_manifest_cache(manifest_cache: ManifestCache) -> ManifestCache:
+    """Remove any components from the manifest cache that are not in the list of components."""
+    return {component: manifest_cache[component] for component in ALL_COMPONENTS if component in manifest_cache}
 
 
 def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
-    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA)
+    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA, prune_manifest_cache)
