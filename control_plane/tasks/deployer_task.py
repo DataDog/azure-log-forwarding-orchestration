@@ -1,6 +1,5 @@
 # stdlib
 from asyncio import gather, run
-from collections.abc import Iterable
 from json import dumps
 from os import environ
 from types import TracebackType
@@ -126,7 +125,7 @@ class DeployerTask(Task):
         await gather(
             *[
                 self.deploy_component(component, current_components)
-                for component in cast(Iterable[ControlPlaneComponent], public_manifest)
+                for component in public_manifest
                 if not private_manifest or public_manifest[component] != private_manifest[component]
             ]
         )

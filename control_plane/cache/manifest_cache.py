@@ -42,7 +42,7 @@ ALL_COMPONENTS = frozenset(KEY_TO_ZIP)
 
 
 def prune_manifest_cache(manifest_cache: ManifestCache) -> ManifestCache:
-    """Remove any components from the manifest cache that are not in the list of components."""
+    """Remove any components from the manifest cache that are not valid components"""
     return {component: manifest_cache[component] for component in ALL_COMPONENTS if component in manifest_cache}
 
 
