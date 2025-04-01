@@ -8,7 +8,6 @@ from typing import Self, cast
 # 3p
 from aiohttp import ClientSession
 from azure.core.exceptions import ResourceNotFoundError
-from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
 from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 from azure.storage.blob.aio import ContainerClient
 from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
@@ -70,7 +69,6 @@ class DeployerTask(Task):
         self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
-        self.storage_client = StorageManagementClient(self.credential, self.subscription_id)
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -78,7 +76,6 @@ class DeployerTask(Task):
             self.public_storage_client.__aenter__(),
             self.rest_client.__aenter__(),
             self.web_client.__aenter__(),
-            self.storage_client.__aenter__(),
         )
         token_scope = get_azure_mgmt_url(self.region) + "/.default"
         token = await self.credential.get_token(token_scope)
@@ -93,7 +90,6 @@ class DeployerTask(Task):
             self.public_storage_client.__aexit__(exc_type, exc_val, exc_tb),
             self.rest_client.__aexit__(exc_type, exc_val, exc_tb),
             self.web_client.__aexit__(exc_type, exc_val, exc_tb),
-            self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
         )
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
