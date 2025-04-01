@@ -29,8 +29,8 @@ from cache.manifest_cache import (
     MANIFEST_FILE_NAME,
     PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
+    ControlPlaneComponent,
     ManifestCache,
-    ManifestKey,
     deserialize_manifest_cache,
 )
 from tasks.common import (
@@ -126,7 +126,7 @@ class DeployerTask(Task):
         await gather(
             *[
                 self.deploy_component(component, current_components)
-                for component in cast(Iterable[ManifestKey], public_manifest)
+                for component in cast(Iterable[ControlPlaneComponent], public_manifest)
                 if not private_manifest or public_manifest[component] != private_manifest[component]
             ]
         )
@@ -185,7 +185,9 @@ class DeployerTask(Task):
             },
         )
 
-    async def deploy_component(self, component: ManifestKey, current_components: ControlPlaneResources) -> None:
+    async def deploy_component(
+        self, component: ControlPlaneComponent, current_components: ControlPlaneResources
+    ) -> None:
         task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_components.function_apps if app.startswith(task_prefix)), None)
         if not function_app:
@@ -225,7 +227,7 @@ class DeployerTask(Task):
             raise DeployError(f"Failed to sync function app triggers: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def download_function_app_data(self, component: ManifestKey) -> bytes:
+    async def download_function_app_data(self, component: ControlPlaneComponent) -> bytes:
         blob_name = KEY_TO_ZIP[component]
         stream = await self.public_storage_client.download_blob(blob_name)
         app_data = await stream.readall()

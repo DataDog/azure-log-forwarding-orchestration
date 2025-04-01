@@ -4,8 +4,8 @@ from typing import Any, Literal, TypeAlias
 # project
 from cache.common import deserialize_cache
 
-ManifestKey: TypeAlias = Literal["resources", "scaling", "diagnostic_settings"]
-ManifestCache: TypeAlias = dict[ManifestKey, str]
+ControlPlaneComponent: TypeAlias = Literal["resources", "scaling", "diagnostic_settings"]
+ManifestCache: TypeAlias = dict[ControlPlaneComponent, str]
 """Mapping of deployable name to SHA-256 manifest"""
 
 
@@ -31,7 +31,7 @@ SCALING_TASK_ZIP = "scaling_task.zip"
 DIAGNOSTIC_SETTINGS_TASK_ZIP = "diagnostic_settings_task.zip"
 MANIFEST_FILE_NAME = "manifest.json"
 
-KEY_TO_ZIP: dict[ManifestKey, str] = {
+KEY_TO_ZIP: dict[ControlPlaneComponent, str] = {
     "resources": RESOURCES_TASK_ZIP,
     "scaling": SCALING_TASK_ZIP,
     "diagnostic_settings": DIAGNOSTIC_SETTINGS_TASK_ZIP,
