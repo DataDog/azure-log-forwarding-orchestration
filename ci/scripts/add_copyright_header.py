@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
-#
-# This product includes software developed at Datadog (https://www.datadoghq.com/  Copyright 2025 Datadog, Inc.
 
 from datetime import datetime
 import os
@@ -34,11 +31,8 @@ def get_template_first_line(template_text: str) -> str:
     if not lines:
         return ""
 
-    # Get the first line
-    first_line: str = lines[0]
-
     # Add comment prefix
-    return f"# {first_line}"
+    return f"# {lines[0]}"
 
 
 def create_header(template_text: str) -> str:
@@ -102,6 +96,9 @@ def check_and_update_python_files(directory: str, template_first_line: str, head
 def main() -> int:
     # Get the script directory
     script_dir: str = os.path.dirname(os.path.abspath(__file__))
+
+    # yell at me if these comments are still here
+    # this file needs moved to licensing and then remove licensing here
     template_path: str = os.path.join(script_dir, "licensing", "template")
 
     # Read the template
