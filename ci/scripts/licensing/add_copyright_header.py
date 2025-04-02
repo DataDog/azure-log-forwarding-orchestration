@@ -67,7 +67,7 @@ def should_ignore(path: str, gitignore_patterns: set[str]) -> bool:
 def read_template(template_path: str) -> str:
     """Read the template file and return its content."""
     try:
-        with open(template_path, "r") as f:
+        with open(template_path) as f:
             return f.read().strip()
     except FileNotFoundError:
         print(f"Error: Template file not found at {template_path}")
@@ -76,7 +76,7 @@ def read_template(template_path: str) -> str:
 
 def get_template_first_line(template_text: str, comment_char: str) -> str:
     """Get the first line of the template with the appropriate comment style."""
-    lines: list[str] = template_text.splitlines()
+    lines = template_text.splitlines()
     if not lines:
         return ""
 
@@ -87,10 +87,10 @@ def create_header(template_text: str, comment_char: str) -> str:
     """Create a commented header from the template with the current year."""
     year = datetime.now().year
 
-    header_text: str = template_text.replace("$year", str(year))
+    header_text = template_text.replace("$year", str(year))
 
     # Split into lines and add comment prefix based on file type
-    commented_lines: list[str] = [f"{comment_char} {line}" for line in header_text.splitlines()]
+    commented_lines = [f"{comment_char} {line}" for line in header_text.splitlines()]
 
     return "\n".join(commented_lines) + "\n\n"
 
@@ -121,7 +121,7 @@ def check_and_update_files(
                     continue
 
                 try:
-                    with open(file_path, "r") as f:
+                    with open(file_path) as f:
                         content: str = f.read()
 
                         if not has_header(content, template_first_line):
