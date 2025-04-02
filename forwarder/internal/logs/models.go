@@ -117,7 +117,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		Content:          scrubbedLog,
 		RawByteSize:      l.byteSize,
 		ScrubbedByteSize: int64(scrubbedByteSize),
-		Category:         l.category,
+		Category:         l.Category,
 		ResourceId:       resourceId,
 		Service:          azureService,
 		Source:           logSource,
