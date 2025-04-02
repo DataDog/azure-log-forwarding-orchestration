@@ -46,9 +46,9 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 	}
 
 	blobNameResourceId := blob.ResourceId()
-	currLog.BlobResourceId = blobNameResourceId
-	currLog.ByteSize = originalSize + newlineBytes
-	currLog.Raw = logBytes
+	currLog.blobResourceId = blobNameResourceId
+	currLog.byteSize = originalSize + newlineBytes
+	currLog.raw = logBytes
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
 
@@ -71,21 +71,21 @@ func (l *Log) Validate(logger *log.Entry) bool {
 }
 
 type azureLog struct {
-	Raw             []byte
-	ByteSize        int64
+	raw             []byte
+	byteSize        int64
 	Category        string `json:"category"`
 	Container       string `json:"container"`
 	Blob            string `json:"blob"`
 	ResourceIdLower string `json:"resourceId,omitempty"`
 	ResourceIdUpper string `json:"ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
-	BlobResourceId string
+	blobResourceId string
 	Time           time.Time `json:"time"`
 	Level          string    `json:"level,omitempty"`
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
-	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.BlobResourceId} {
+	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.blobResourceId} {
 		if r, err := arm.ParseResourceID(resourceId); err == nil {
 			return r
 		}
@@ -110,14 +110,14 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		l.Level = "Informational"
 	}
 
-	scrubbedLog := scrubber.Scrub(l.Raw)
+	scrubbedLog := scrubber.Scrub(l.raw)
 	scrubbedByteSize := len(scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
 
 	return &Log{
 		Content:          scrubbedLog,
-		RawByteSize:      l.ByteSize,
+		RawByteSize:      l.byteSize,
 		ScrubbedByteSize: int64(scrubbedByteSize),
-		Category:         l.Category,
+		Category:         l.category,
 		ResourceId:       resourceId,
 		Service:          azureService,
 		Source:           logSource,
