@@ -3,11 +3,11 @@
 #
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
-from datetime import datetime
+import fnmatch
 import os
 import re
 import sys
-import fnmatch
+from datetime import datetime
 
 
 IGNORED_FOLDERS: list[str] = [
@@ -108,7 +108,7 @@ def check_and_update_files(
 
     for root, dirs, files in os.walk(directory):
         # Skip ignored folders and directories that match gitignore patterns
-        dirs = [
+        dirs[:] = [
             d for d in dirs if d not in IGNORED_FOLDERS and not should_ignore(os.path.join(root, d), gitignore_patterns)
         ]
 
