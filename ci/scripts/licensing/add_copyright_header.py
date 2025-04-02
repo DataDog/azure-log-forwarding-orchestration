@@ -149,7 +149,7 @@ def check_and_update_files(
     return modified_files
 
 
-def main() -> int:
+def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     template_path = os.path.join(script_dir, "template")
@@ -172,11 +172,9 @@ def main() -> int:
         print(f"Added copyright header to {len(all_modified_files)} files:")
         for file in all_modified_files:
             print(f"  - {file}")
-        return 0
     else:
         print("All files already have the copyright header.")
-        return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
