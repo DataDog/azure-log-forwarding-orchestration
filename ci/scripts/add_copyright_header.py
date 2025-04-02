@@ -24,12 +24,19 @@ def read_template(template_path):
 
 def create_regex_pattern(template_text):
     """Create a regex pattern from the template, replacing $year with a regex for years."""
+    # Split the template into lines and add comment prefix to each line
+    commented_lines = [f"# {line}" for line in template_text.splitlines()]
+    commented_template = "\n".join(commented_lines)
+
     # Replace $year with a regex pattern that matches 4-digit years
-    pattern = template_text.replace("$year", r"\d{4}")
+    pattern = commented_template.replace("$year", r"\d{4}")
+
     # Escape special regex characters
     pattern = re.escape(pattern)
+
     # Restore the year pattern
     pattern = pattern.replace(r"\d\{4\}", r"\d{4}")
+
     return re.compile(pattern, re.MULTILINE | re.DOTALL)
 
 
