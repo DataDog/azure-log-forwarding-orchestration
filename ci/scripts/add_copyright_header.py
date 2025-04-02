@@ -7,16 +7,18 @@
 import os
 import re
 import sys
+from typing import List, Optional
+
 
 # List of folders to ignore
-IGNORED_FOLDERS = [
+IGNORED_FOLDERS: List[str] = [
     "dist",
     "node_modules",
     "venv",
 ]
 
 
-def read_template(template_path):
+def read_template(template_path: str) -> str:
     """Read the template file and return its content."""
     try:
         with open(template_path, "r") as f:
@@ -26,21 +28,21 @@ def read_template(template_path):
         sys.exit(1)
 
 
-def get_template_first_line(template_text):
+def get_template_first_line(template_text: str) -> str:
     """Get the first line of the template without the year variable."""
-    lines = template_text.splitlines()
+    lines: List[str] = template_text.splitlines()
     if not lines:
         return ""
 
     # Get the first line and remove the $year variable if present
-    first_line = lines[0]
+    first_line: str = lines[0]
     first_line = first_line.replace("$year", "")
 
     # Add comment prefix
     return f"# {first_line}"
 
 
-def create_header(template_text, year=None):
+def create_header(template_text: str, year: Optional[int] = None) -> str:
     """Create a commented header from the template with the specified year."""
     if year is None:
         from datetime import datetime
@@ -48,23 +50,23 @@ def create_header(template_text, year=None):
         year = datetime.now().year
 
     # Replace $year with the actual year
-    header_text = template_text.replace("$year", str(year))
+    header_text: str = template_text.replace("$year", str(year))
 
     # Split into lines and add comment prefix
-    commented_lines = [f"# {line}" for line in header_text.splitlines()]
+    commented_lines: List[str] = [f"# {line}" for line in header_text.splitlines()]
 
     # Join with newlines and add an extra newline at the end
     return "\n".join(commented_lines) + "\n\n"
 
 
-def has_header(content, template_first_line):
+def has_header(content: str, template_first_line: str) -> bool:
     """Check if the content already has the header by looking for the first line."""
     return template_first_line in content
 
 
-def check_and_update_python_files(directory, template_first_line, header):
+def check_and_update_python_files(directory: str, template_first_line: str, header: str) -> List[str]:
     """Check Python files for the header and add it if missing."""
-    modified_files = []
+    modified_files: List[str] = []
 
     for root, dirs, files in os.walk(directory):
         # Skip ignored folders
@@ -72,21 +74,21 @@ def check_and_update_python_files(directory, template_first_line, header):
 
         for file in files:
             if file.endswith(".py"):
-                file_path = os.path.join(root, file)
+                file_path: str = os.path.join(root, file)
                 try:
                     with open(file_path, "r") as f:
-                        content = f.read()
+                        content: str = f.read()
 
                         # Check if the file already has the header
                         if not has_header(content, template_first_line):
                             # Check if the file starts with a shebang line
-                            shebang_match = re.match(r"^#!.*\n", content)
+                            shebang_match: Optional[re.Match] = re.match(r"^#!.*\n", content)
 
                             if shebang_match:
                                 # Insert header after shebang line
-                                shebang_line = shebang_match.group(0)
-                                rest_of_content = content[len(shebang_line) :]
-                                new_content = shebang_line + header + rest_of_content
+                                shebang_line: str = shebang_match.group(0)
+                                rest_of_content: str = content[len(shebang_line) :]
+                                new_content: str = shebang_line + header + rest_of_content
                             else:
                                 # No shebang, add header at the beginning
                                 new_content = header + content
@@ -101,22 +103,22 @@ def check_and_update_python_files(directory, template_first_line, header):
     return modified_files
 
 
-def main():
+def main() -> int:
     # Get the script directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    template_path = os.path.join(script_dir, "licensing", "template")
+    script_dir: str = os.path.dirname(os.path.abspath(__file__))
+    template_path: str = os.path.join(script_dir, "licensing", "template")
 
     # Read the template
-    template_text = read_template(template_path)
+    template_text: str = read_template(template_path)
 
     # Get the first line of the template for header detection
-    template_first_line = get_template_first_line(template_text)
+    template_first_line: str = get_template_first_line(template_text)
 
     # Create header with current year
-    header = create_header(template_text)
+    header: str = create_header(template_text)
 
     # Check and update Python files
-    modified_files = check_and_update_python_files(".", template_first_line, header)
+    modified_files: List[str] = check_and_update_python_files(".", template_first_line, header)
 
     # Print results
     if modified_files:
