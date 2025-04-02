@@ -55,14 +55,6 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 	return currLog.ToLog(scrubber), nil
 }
 
-// Content converts the log content to a string.
-//func (l *Log) Content() string {
-//	if l.content == nil {
-//		return ""
-//	}
-//	return string(l.content)
-//}
-
 // RawLength returns the length of the original Azure log content.
 func (l *Log) RawLength() int64 {
 	return l.RawByteSize + newlineBytes
