@@ -89,7 +89,7 @@ func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *l
 }
 
 func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
-	additionalProperties := map[string]interface{}{
+	additionalProperties := map[string]any{
 		"time":            log.Time.Format(time.RFC3339),
 		"level":           log.Level,
 		"originContainer": log.Container,
@@ -110,5 +110,5 @@ func newHTTPLogItem(log *Log) datadogV2.HTTPLogItem {
 //
 //go:generate mockgen -package=mocks -source=$GOFILE -destination=mocks/mock_$GOFILE
 type DatadogLogsSubmitter interface {
-	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error)
+	SubmitLog(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error)
 }
