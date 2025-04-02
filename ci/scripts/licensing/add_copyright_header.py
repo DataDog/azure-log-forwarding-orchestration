@@ -10,7 +10,6 @@ import sys
 import fnmatch
 
 
-# List of folders to ignore
 IGNORED_FOLDERS: list[str] = [
     ".git",
     "dist",
@@ -81,7 +80,6 @@ def get_template_first_line(template_text: str, comment_char: str) -> str:
     if not lines:
         return ""
 
-    # Add comment prefix based on file type
     return f"{comment_char} {lines[0]}"
 
 
@@ -89,13 +87,11 @@ def create_header(template_text: str, comment_char: str) -> str:
     """Create a commented header from the template with the current year."""
     year = datetime.now().year
 
-    # Replace $year with the actual year
     header_text: str = template_text.replace("$year", str(year))
 
     # Split into lines and add comment prefix based on file type
     commented_lines: list[str] = [f"{comment_char} {line}" for line in header_text.splitlines()]
 
-    # Join with newlines and add an extra newline at the end
     return "\n".join(commented_lines) + "\n\n"
 
 
@@ -128,9 +124,7 @@ def check_and_update_files(
                     with open(file_path, "r") as f:
                         content: str = f.read()
 
-                        # Check if the file already has the header
                         if not has_header(content, template_first_line):
-                            # Check if the file starts with a shebang line
                             shebang_match: re.Match | None = re.match(r"^#!.*\n", content)
 
                             if shebang_match:
@@ -142,7 +136,6 @@ def check_and_update_files(
                                 # No shebang, add header at the beginning
                                 new_content = header + content
 
-                            # Write the updated content back to the file
                             with open(file_path, "w") as f:
                                 f.write(new_content)
                             modified_files.append(file_path)
@@ -158,29 +151,22 @@ def main() -> int:
 
     template_path: str = os.path.join(script_dir, "template")
 
-    # Read the template
     template_text: str = read_template(template_path)
 
-    # Read .gitignore patterns
     gitignore_patterns: set[str] = read_gitignore(".")
 
-    # Process each file type
     all_modified_files: list[str] = []
 
     for file_ext, comment_char in FILE_TYPES.items():
-        # Get the first line of the template for header detection
         template_first_line: str = get_template_first_line(template_text, comment_char)
 
-        # Create header with current year
         header: str = create_header(template_text, comment_char)
 
-        # Check and update files
         modified_files: list[str] = check_and_update_files(
             ".", template_first_line, header, file_ext, gitignore_patterns
         )
         all_modified_files.extend(modified_files)
 
-    # Print results
     if all_modified_files:
         print(f"Added copyright header to {len(all_modified_files)} files:")
         for file in all_modified_files:
