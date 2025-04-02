@@ -13,6 +13,7 @@ from datetime import datetime
 IGNORED_FOLDERS: list[str] = [
     ".git",
     "dist",
+    "mocks",
     "node_modules",
     "venv",
 ]
