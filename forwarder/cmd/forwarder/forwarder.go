@@ -263,7 +263,7 @@ func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClien
 	return dlq.Save(ctx, storageClient, logger)
 }
 
-func run(ctx context.Context, logParent *log.Logger, goroutineCount int64, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
 	start := time.Now()
 
 	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
@@ -347,7 +347,7 @@ func main() {
 	if goroutineString == "" {
 		goroutineString = "10"
 	}
-	goroutineCount, err := strconv.ParseInt(goroutineString, 10, 64)
+	goroutineCount, err := strconv.Atoi(goroutineString)
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error parsing %s: %w", environment.NumGoroutines, err).Error())
 	}
