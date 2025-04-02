@@ -3,7 +3,7 @@
 #
 # This product includes software developed at Datadog (https://www.datadoghq.com/  Copyright 2025 Datadog, Inc.
 
-
+from datetime import datetime
 import os
 import re
 import sys
@@ -29,25 +29,21 @@ def read_template(template_path: str) -> str:
 
 
 def get_template_first_line(template_text: str) -> str:
-    """Get the first line of the template without the year variable."""
+    """Get the first line of the template."""
     lines: List[str] = template_text.splitlines()
     if not lines:
         return ""
 
-    # Get the first line and remove the $year variable if present
+    # Get the first line
     first_line: str = lines[0]
-    first_line = first_line.replace("$year", "")
 
     # Add comment prefix
     return f"# {first_line}"
 
 
-def create_header(template_text: str, year: Optional[int] = None) -> str:
-    """Create a commented header from the template with the specified year."""
-    if year is None:
-        from datetime import datetime
-
-        year = datetime.now().year
+def create_header(template_text: str) -> str:
+    """Create a commented header from the template with the curent year."""
+    year = datetime.now().year
 
     # Replace $year with the actual year
     header_text: str = template_text.replace("$year", str(year))
