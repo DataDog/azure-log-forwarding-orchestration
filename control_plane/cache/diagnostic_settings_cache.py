@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+#
+# This product includes software developed at Datadog (https://www.datadoghq.com/  Copyright 2025 Datadog, Inc.
+
 # stdlib
 from typing import Any, TypeAlias, TypedDict
 
@@ -16,7 +20,7 @@ class EventDict(TypedDict):
 
 DiagnosticSettingsCache: TypeAlias = dict[str, dict[str, EventDict]]
 """
-ex) 
+ex)
 {
     "subscription_uuid1": {
         "resource_id1": {

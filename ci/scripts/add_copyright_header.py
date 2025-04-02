@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+#
+# This product includes software developed at Datadog (https://www.datadoghq.com/  Copyright 2025 Datadog, Inc.
+
 
 import os
 import re
@@ -22,27 +26,45 @@ def read_template(template_path):
         sys.exit(1)
 
 
-def create_regex_pattern(template_text):
-    """Create a regex pattern from the template, replacing $year with a regex for years."""
-    # Split the template into lines and add comment prefix to each line
-    commented_lines = [f"# {line}" for line in template_text.splitlines()]
-    commented_template = "\n".join(commented_lines)
+def get_template_first_line(template_text):
+    """Get the first line of the template without the year variable."""
+    lines = template_text.splitlines()
+    if not lines:
+        return ""
 
-    # Replace $year with a regex pattern that matches 4-digit years
-    pattern = commented_template.replace("$year", r"\d{4}")
+    # Get the first line and remove the $year variable if present
+    first_line = lines[0]
+    first_line = first_line.replace("$year", "")
 
-    # Escape special regex characters
-    pattern = re.escape(pattern)
-
-    # Restore the year pattern
-    pattern = pattern.replace(r"\d\{4\}", r"\d{4}")
-
-    return re.compile(pattern, re.MULTILINE | re.DOTALL)
+    # Add comment prefix
+    return f"# {first_line}"
 
 
-def check_python_files(directory, pattern):
-    """Check all Python files in the directory and subdirectories for the header."""
-    missing_header_files = []
+def create_header(template_text, year=None):
+    """Create a commented header from the template with the specified year."""
+    if year is None:
+        from datetime import datetime
+
+        year = datetime.now().year
+
+    # Replace $year with the actual year
+    header_text = template_text.replace("$year", str(year))
+
+    # Split into lines and add comment prefix
+    commented_lines = [f"# {line}" for line in header_text.splitlines()]
+
+    # Join with newlines and add an extra newline at the end
+    return "\n".join(commented_lines) + "\n\n"
+
+
+def has_header(content, template_first_line):
+    """Check if the content already has the header by looking for the first line."""
+    return template_first_line in content
+
+
+def check_and_update_python_files(directory, template_first_line, header):
+    """Check Python files for the header and add it if missing."""
+    modified_files = []
 
     for root, dirs, files in os.walk(directory):
         # Skip ignored folders
@@ -54,12 +76,29 @@ def check_python_files(directory, pattern):
                 try:
                     with open(file_path, "r") as f:
                         content = f.read()
-                        if not pattern.search(content):
-                            missing_header_files.append(file_path)
-                except Exception as e:
-                    print(f"Error reading {file_path}: {e}")
 
-    return missing_header_files
+                        # Check if the file already has the header
+                        if not has_header(content, template_first_line):
+                            # Check if the file starts with a shebang line
+                            shebang_match = re.match(r"^#!.*\n", content)
+
+                            if shebang_match:
+                                # Insert header after shebang line
+                                shebang_line = shebang_match.group(0)
+                                rest_of_content = content[len(shebang_line) :]
+                                new_content = shebang_line + header + rest_of_content
+                            else:
+                                # No shebang, add header at the beginning
+                                new_content = header + content
+
+                            # Write the updated content back to the file
+                            with open(file_path, "w") as f:
+                                f.write(new_content)
+                            modified_files.append(file_path)
+                except Exception as e:
+                    print(f"Error processing {file_path}: {e}")
+
+    return modified_files
 
 
 def main():
@@ -70,20 +109,23 @@ def main():
     # Read the template
     template_text = read_template(template_path)
 
-    # Create regex pattern
-    pattern = create_regex_pattern(template_text)
+    # Get the first line of the template for header detection
+    template_first_line = get_template_first_line(template_text)
 
-    # Check Python files
-    missing_header_files = check_python_files(".", pattern)
+    # Create header with current year
+    header = create_header(template_text)
+
+    # Check and update Python files
+    modified_files = check_and_update_python_files(".", template_first_line, header)
 
     # Print results
-    if missing_header_files:
-        print("The following Python files are missing the copyright header:")
-        for file in missing_header_files:
+    if modified_files:
+        print(f"Added copyright header to {len(modified_files)} files:")
+        for file in modified_files:
             print(f"  - {file}")
-        return 1
+        return 0
     else:
-        print("All Python files have the copyright header.")
+        print("All Python files already have the copyright header.")
         return 0
 
 
