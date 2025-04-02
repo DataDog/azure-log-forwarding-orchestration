@@ -1,14 +1,20 @@
 #!/usr/bin/env python
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+#
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 
 from datetime import datetime
 import os
 import re
 import sys
-from typing import List, Optional, Dict
+import fnmatch
+from typing import List, Optional, Dict, Set
 
 
 # List of folders to ignore
 IGNORED_FOLDERS: List[str] = [
+    ".git",
     "dist",
     "node_modules",
     "venv",
@@ -20,6 +26,45 @@ FILE_TYPES: Dict[str, str] = {
     ".go": "//",
     ".sh": "#",
 }
+
+
+def read_gitignore(root_dir: str) -> Set[str]:
+    """Read .gitignore file and return a set of patterns to ignore."""
+    gitignore_path = os.path.join(root_dir, ".gitignore")
+    if not os.path.exists(gitignore_path):
+        return set()
+
+    patterns = set()
+    try:
+        with open(gitignore_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments
+                if line and not line.startswith("#"):
+                    patterns.add(line)
+    except Exception as e:
+        print(f"Warning: Error reading .gitignore: {e}")
+
+    return patterns
+
+
+def should_ignore(path: str, gitignore_patterns: Set[str]) -> bool:
+    """Check if a path should be ignored based on .gitignore patterns."""
+    # Convert path to relative path from the root
+    rel_path = os.path.relpath(path, ".")
+
+    # Check if the path matches any gitignore pattern
+    for pattern in gitignore_patterns:
+        if fnmatch.fnmatch(rel_path, pattern):
+            return True
+        # Also check if any parent directory matches
+        parent = os.path.dirname(rel_path)
+        while parent:
+            if fnmatch.fnmatch(parent, pattern):
+                return True
+            parent = os.path.dirname(parent)
+
+    return False
 
 
 def read_template(template_path: str) -> str:
@@ -61,7 +106,9 @@ def has_header(content: str, template_first_line: str) -> bool:
     return template_first_line in content
 
 
-def check_and_update_files(directory: str, template_first_line: str, header: str, file_ext: str) -> List[str]:
+def check_and_update_files(
+    directory: str, template_first_line: str, header: str, file_ext: str, gitignore_patterns: Set[str]
+) -> List[str]:
     """Check files for the header and add it if missing."""
     modified_files: List[str] = []
 
@@ -69,9 +116,17 @@ def check_and_update_files(directory: str, template_first_line: str, header: str
         # Skip ignored folders
         dirs[:] = [d for d in dirs if d not in IGNORED_FOLDERS]
 
+        # Skip directories that match gitignore patterns
+        dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), gitignore_patterns)]
+
         for file in files:
             if file.endswith(file_ext):
                 file_path: str = os.path.join(root, file)
+
+                # Skip files that match gitignore patterns
+                if should_ignore(file_path, gitignore_patterns):
+                    continue
+
                 try:
                     with open(file_path, "r") as f:
                         content: str = f.read()
@@ -111,6 +166,9 @@ def main() -> int:
     # Read the template
     template_text: str = read_template(template_path)
 
+    # Read .gitignore patterns
+    gitignore_patterns: Set[str] = read_gitignore(".")
+
     # Process each file type
     all_modified_files: List[str] = []
 
@@ -122,7 +180,9 @@ def main() -> int:
         header: str = create_header(template_text, comment_char)
 
         # Check and update files
-        modified_files: List[str] = check_and_update_files(".", template_first_line, header, file_ext)
+        modified_files: List[str] = check_and_update_files(
+            ".", template_first_line, header, file_ext, gitignore_patterns
+        )
         all_modified_files.extend(modified_files)
 
     # Print results
