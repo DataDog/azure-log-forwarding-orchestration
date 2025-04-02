@@ -44,8 +44,9 @@ import (
 )
 
 const (
-	resourceId string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
-	versionTag string = "test-version"
+	resourceId   string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+	versionTag   string = "test-version"
+	azureService string = "azure"
 )
 
 func azureTimestamp(t time.Time) string {
@@ -76,7 +77,7 @@ func (c *CustomRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 
 func newMockPiiScrubber(ctrl *gomock.Controller) *logmocks.MockScrubber {
 	mockScrubber := logmocks.NewMockScrubber(ctrl)
-	mockScrubber.EXPECT().Scrub(gomock.Any()).AnyTimes().DoAndReturn(func(logBytes *[]byte) *[]byte {
+	mockScrubber.EXPECT().Scrub(gomock.Any()).AnyTimes().DoAndReturn(func(logBytes []byte) []byte {
 		return logBytes
 	})
 
@@ -166,7 +167,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 
 	var submittedLogs []datadogV2.HTTPLogItem
 	mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-	mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+	mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
 		submittedLogs = append(submittedLogs, body...)
 		return nil, nil, nil
 	})
@@ -182,14 +183,9 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 			if req == nil {
 				return nil, errors.New("request is nil")
 			}
-			body, err := io.ReadAll(req.Body)
-			if err != nil {
-				return nil, err
-			}
 
 			// body is gzipped, so we need to decompress it
-			data := bytes.NewReader(body)
-			r, err := gzip.NewReader(data)
+			r, err := gzip.NewReader(req.Body)
 			if err != nil {
 				return nil, err
 			}
@@ -311,7 +307,7 @@ func TestRun(t *testing.T) {
 
 		assert.Equal(t, int64(0), finalCursors.Get(containerName, *expiredBlob.Name))
 		for _, logItem := range submittedLogs {
-			assert.Equal(t, logs.AzureService, *logItem.Service)
+			assert.Equal(t, azureService, *logItem.Service)
 			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
@@ -391,7 +387,7 @@ func TestRun(t *testing.T) {
 		assert.Len(t, submittedLogs, len(blobPage)-1)
 
 		for _, logItem := range submittedLogs {
-			assert.Equal(t, logs.AzureService, *logItem.Service)
+			assert.Equal(t, azureService, *logItem.Service)
 			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
@@ -414,7 +410,7 @@ func TestProcessLogs(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		var submittedLogs []datadogV2.HTTPLogItem
 		mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
 			submittedLogs = append(submittedLogs, body...)
 			return nil, nil, nil
 		})
@@ -445,7 +441,7 @@ func TestProcessLogs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, submittedLogs, 3)
 		for _, logItem := range submittedLogs {
-			assert.Equal(t, logs.AzureService, *logItem.Service)
+			assert.Equal(t, azureService, *logItem.Service)
 			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
@@ -650,7 +646,7 @@ func TestCursors(t *testing.T) {
 			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
-				assert.Equal(t, logs.AzureService, *logItem.Service)
+				assert.Equal(t, azureService, *logItem.Service)
 				assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
@@ -721,7 +717,7 @@ func TestCursors(t *testing.T) {
 			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
 
 			for _, logItem := range submittedLogs {
-				assert.Equal(t, logs.AzureService, *logItem.Service)
+				assert.Equal(t, azureService, *logItem.Service)
 				assert.Equal(t, "azure.web.sites", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
@@ -749,7 +745,7 @@ func TestProcessDLQ(t *testing.T) {
 		formattedTime := currentTime.Format(time.RFC3339)
 		logItem := datadogV2.HTTPLogItem{
 			Message:              fmt.Sprintf("{\"time\":\"%s\"}", formattedTime),
-			AdditionalProperties: map[string]string{"time": formattedTime},
+			AdditionalProperties: map[string]any{"time": formattedTime},
 		}
 		queue := []datadogV2.HTTPLogItem{logItem}
 		dlq.Add(queue)
