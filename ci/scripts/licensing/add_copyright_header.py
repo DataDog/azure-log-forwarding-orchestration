@@ -90,7 +90,7 @@ def create_header(template_text: str, comment_char: str) -> str:
     header_text = template_text.replace("$year", str(year))
 
     # Split into lines and add comment prefix based on file type
-    commented_lines = [f"{comment_char} {line}" for line in header_text.splitlines()]
+    commented_lines = [f"{comment_char} {line}" if line.strip() else "" for line in header_text.splitlines()]
 
     return "\n".join(commented_lines) + "\n\n"
 
