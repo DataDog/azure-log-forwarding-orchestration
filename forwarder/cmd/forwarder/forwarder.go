@@ -347,7 +347,7 @@ func main() {
 	if goroutineString == "" {
 		goroutineString = "10"
 	}
-	goroutineCount, err := strconv.ParseInt(goroutineString, 10, 64)
+	goroutineCount, err := strconv.Atoi(goroutineString)
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error parsing %s: %w", environment.NumGoroutines, err).Error())
 	}
@@ -373,7 +373,7 @@ func main() {
 		versionTag = "unknown"
 	}
 
-	err = run(ctx, logger, int(goroutineCount), datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now, versionTag)
+	err = run(ctx, logger, goroutineCount, datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now, versionTag)
 
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error while running: %w", err).Error())
