@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import re
 import sys
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 
 # List of folders to ignore
@@ -13,6 +13,13 @@ IGNORED_FOLDERS: List[str] = [
     "node_modules",
     "venv",
 ]
+
+# File extensions and their comment styles
+FILE_TYPES: Dict[str, str] = {
+    ".py": "#",
+    ".go": "//",
+    ".sh": "#",
+}
 
 
 def read_template(template_path: str) -> str:
@@ -25,25 +32,25 @@ def read_template(template_path: str) -> str:
         sys.exit(1)
 
 
-def get_template_first_line(template_text: str) -> str:
-    """Get the first line of the template."""
+def get_template_first_line(template_text: str, comment_char: str) -> str:
+    """Get the first line of the template with the appropriate comment style."""
     lines: List[str] = template_text.splitlines()
     if not lines:
         return ""
 
-    # Add comment prefix
-    return f"# {lines[0]}"
+    # Add comment prefix based on file type
+    return f"{comment_char} {lines[0]}"
 
 
-def create_header(template_text: str) -> str:
-    """Create a commented header from the template with the curent year."""
+def create_header(template_text: str, comment_char: str) -> str:
+    """Create a commented header from the template with the current year."""
     year = datetime.now().year
 
     # Replace $year with the actual year
     header_text: str = template_text.replace("$year", str(year))
 
-    # Split into lines and add comment prefix
-    commented_lines: List[str] = [f"# {line}" for line in header_text.splitlines()]
+    # Split into lines and add comment prefix based on file type
+    commented_lines: List[str] = [f"{comment_char} {line}" for line in header_text.splitlines()]
 
     # Join with newlines and add an extra newline at the end
     return "\n".join(commented_lines) + "\n\n"
@@ -54,8 +61,8 @@ def has_header(content: str, template_first_line: str) -> bool:
     return template_first_line in content
 
 
-def check_and_update_python_files(directory: str, template_first_line: str, header: str) -> List[str]:
-    """Check Python files for the header and add it if missing."""
+def check_and_update_files(directory: str, template_first_line: str, header: str, file_ext: str) -> List[str]:
+    """Check files for the header and add it if missing."""
     modified_files: List[str] = []
 
     for root, dirs, files in os.walk(directory):
@@ -63,7 +70,7 @@ def check_and_update_python_files(directory: str, template_first_line: str, head
         dirs[:] = [d for d in dirs if d not in IGNORED_FOLDERS]
 
         for file in files:
-            if file.endswith(".py"):
+            if file.endswith(file_ext):
                 file_path: str = os.path.join(root, file)
                 try:
                     with open(file_path, "r") as f:
@@ -104,23 +111,28 @@ def main() -> int:
     # Read the template
     template_text: str = read_template(template_path)
 
-    # Get the first line of the template for header detection
-    template_first_line: str = get_template_first_line(template_text)
+    # Process each file type
+    all_modified_files: List[str] = []
 
-    # Create header with current year
-    header: str = create_header(template_text)
+    for file_ext, comment_char in FILE_TYPES.items():
+        # Get the first line of the template for header detection
+        template_first_line: str = get_template_first_line(template_text, comment_char)
 
-    # Check and update Python files
-    modified_files: List[str] = check_and_update_python_files(".", template_first_line, header)
+        # Create header with current year
+        header: str = create_header(template_text, comment_char)
+
+        # Check and update files
+        modified_files: List[str] = check_and_update_files(".", template_first_line, header, file_ext)
+        all_modified_files.extend(modified_files)
 
     # Print results
-    if modified_files:
-        print(f"Added copyright header to {len(modified_files)} files:")
-        for file in modified_files:
+    if all_modified_files:
+        print(f"Added copyright header to {len(all_modified_files)} files:")
+        for file in all_modified_files:
             print(f"  - {file}")
         return 0
     else:
-        print("All Python files already have the copyright header.")
+        print("All files already have the copyright header.")
         return 0
 
 
