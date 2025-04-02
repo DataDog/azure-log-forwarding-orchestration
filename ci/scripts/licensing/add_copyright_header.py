@@ -8,11 +8,10 @@ import os
 import re
 import sys
 import fnmatch
-from typing import List, Optional, Dict, Set
 
 
 # List of folders to ignore
-IGNORED_FOLDERS: List[str] = [
+IGNORED_FOLDERS: list[str] = [
     ".git",
     "dist",
     "node_modules",
@@ -20,14 +19,14 @@ IGNORED_FOLDERS: List[str] = [
 ]
 
 # File extensions and their comment styles
-FILE_TYPES: Dict[str, str] = {
+FILE_TYPES: dict[str, str] = {
     ".py": "#",
     ".go": "//",
     ".sh": "#",
 }
 
 
-def read_gitignore(root_dir: str) -> Set[str]:
+def read_gitignore(root_dir: str) -> set[str]:
     """Read .gitignore file and return a set of patterns to ignore."""
     gitignore_path = os.path.join(root_dir, ".gitignore")
     if not os.path.exists(gitignore_path):
@@ -47,7 +46,7 @@ def read_gitignore(root_dir: str) -> Set[str]:
     return patterns
 
 
-def should_ignore(path: str, gitignore_patterns: Set[str]) -> bool:
+def should_ignore(path: str, gitignore_patterns: set[str]) -> bool:
     """Check if a path should be ignored based on .gitignore patterns."""
     # Convert path to relative path from the root
     rel_path = os.path.relpath(path, ".")
@@ -78,7 +77,7 @@ def read_template(template_path: str) -> str:
 
 def get_template_first_line(template_text: str, comment_char: str) -> str:
     """Get the first line of the template with the appropriate comment style."""
-    lines: List[str] = template_text.splitlines()
+    lines: list[str] = template_text.splitlines()
     if not lines:
         return ""
 
@@ -94,7 +93,7 @@ def create_header(template_text: str, comment_char: str) -> str:
     header_text: str = template_text.replace("$year", str(year))
 
     # Split into lines and add comment prefix based on file type
-    commented_lines: List[str] = [f"{comment_char} {line}" for line in header_text.splitlines()]
+    commented_lines: list[str] = [f"{comment_char} {line}" for line in header_text.splitlines()]
 
     # Join with newlines and add an extra newline at the end
     return "\n".join(commented_lines) + "\n\n"
@@ -106,17 +105,16 @@ def has_header(content: str, template_first_line: str) -> bool:
 
 
 def check_and_update_files(
-    directory: str, template_first_line: str, header: str, file_ext: str, gitignore_patterns: Set[str]
-) -> List[str]:
+    directory: str, template_first_line: str, header: str, file_ext: str, gitignore_patterns: set[str]
+) -> list[str]:
     """Check files for the header and add it if missing."""
-    modified_files: List[str] = []
+    modified_files: list[str] = []
 
     for root, dirs, files in os.walk(directory):
-        # Skip ignored folders
-        dirs[:] = [d for d in dirs if d not in IGNORED_FOLDERS]
-
-        # Skip directories that match gitignore patterns
-        dirs[:] = [d for d in dirs if not should_ignore(os.path.join(root, d), gitignore_patterns)]
+        # Skip ignored folders and directories that match gitignore patterns
+        dirs = [
+            d for d in dirs if d not in IGNORED_FOLDERS and not should_ignore(os.path.join(root, d), gitignore_patterns)
+        ]
 
         for file in files:
             if file.endswith(file_ext):
@@ -133,7 +131,7 @@ def check_and_update_files(
                         # Check if the file already has the header
                         if not has_header(content, template_first_line):
                             # Check if the file starts with a shebang line
-                            shebang_match: Optional[re.Match] = re.match(r"^#!.*\n", content)
+                            shebang_match: re.Match | None = re.match(r"^#!.*\n", content)
 
                             if shebang_match:
                                 # Insert header after shebang line
@@ -164,10 +162,10 @@ def main() -> int:
     template_text: str = read_template(template_path)
 
     # Read .gitignore patterns
-    gitignore_patterns: Set[str] = read_gitignore(".")
+    gitignore_patterns: set[str] = read_gitignore(".")
 
     # Process each file type
-    all_modified_files: List[str] = []
+    all_modified_files: list[str] = []
 
     for file_ext, comment_char in FILE_TYPES.items():
         # Get the first line of the template for header detection
@@ -177,7 +175,7 @@ def main() -> int:
         header: str = create_header(template_text, comment_char)
 
         # Check and update files
-        modified_files: List[str] = check_and_update_files(
+        modified_files: list[str] = check_and_update_files(
             ".", template_first_line, header, file_ext, gitignore_patterns
         )
         all_modified_files.extend(modified_files)
