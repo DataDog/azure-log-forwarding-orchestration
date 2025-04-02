@@ -113,58 +113,59 @@ def check_and_update_files(
         ]
 
         for file in files:
-            if file.endswith(file_ext):
-                file_path: str = os.path.join(root, file)
+            if not file.endswith(file_ext):
+                continue
+            file_path: str = os.path.join(root, file)
 
-                # Skip files that match gitignore patterns
-                if should_ignore(file_path, gitignore_patterns):
-                    continue
+            # Skip files that match gitignore patterns
+            if should_ignore(file_path, gitignore_patterns):
+                continue
 
-                try:
-                    with open(file_path) as f:
-                        content: str = f.read()
+            try:
+                with open(file_path) as f:
+                    content: str = f.read()
+            except Exception as e:
+                print(f"Error processing {file_path}: {e}")
+                sys.exit(1)
 
-                        if not has_header(content, template_first_line):
-                            shebang_match: re.Match | None = re.match(r"^#!.*\n", content)
+            if has_header(content, template_first_line):
+                continue
 
-                            if shebang_match:
-                                # Insert header after shebang line
-                                shebang_line: str = shebang_match.group(0)
-                                rest_of_content: str = content[len(shebang_line) :]
-                                new_content: str = shebang_line + header + rest_of_content
-                            else:
-                                # No shebang, add header at the beginning
-                                new_content = header + content
+            shebang_match: re.Match | None = re.match(r"^#!.*\n", content)
 
-                            with open(file_path, "w") as f:
-                                f.write(new_content)
-                            modified_files.append(file_path)
-                except Exception as e:
-                    print(f"Error processing {file_path}: {e}")
+            if shebang_match:
+                # Insert header after shebang line
+                shebang_line: str = shebang_match.group(0)
+                rest_of_content: str = content[len(shebang_line) :]
+                new_content: str = shebang_line + header + rest_of_content
+            else:
+                # No shebang, add header at the beginning
+                new_content = header + content
+
+            with open(file_path, "w") as f:
+                f.write(new_content)
+            modified_files.append(file_path)
 
     return modified_files
 
 
 def main() -> int:
-    # Get the script directory
-    script_dir: str = os.path.dirname(os.path.abspath(__file__))
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    template_path: str = os.path.join(script_dir, "template")
+    template_path = os.path.join(script_dir, "template")
 
-    template_text: str = read_template(template_path)
+    template_text = read_template(template_path)
 
-    gitignore_patterns: set[str] = read_gitignore(".")
+    gitignore_patterns = read_gitignore(".")
 
     all_modified_files: list[str] = []
 
     for file_ext, comment_char in FILE_TYPES.items():
-        template_first_line: str = get_template_first_line(template_text, comment_char)
+        template_first_line = get_template_first_line(template_text, comment_char)
 
-        header: str = create_header(template_text, comment_char)
+        header = create_header(template_text, comment_char)
 
-        modified_files: list[str] = check_and_update_files(
-            ".", template_first_line, header, file_ext, gitignore_patterns
-        )
+        modified_files = check_and_update_files(".", template_first_line, header, file_ext, gitignore_patterns)
         all_modified_files.extend(modified_files)
 
     if all_modified_files:
