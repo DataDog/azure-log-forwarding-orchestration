@@ -231,6 +231,9 @@ copyright-headers:
   image: $CI_IMAGE
   stage: build
   tags: ['arch:amd64']
+  dependencies:
+    - forwarder-tests
+    - control-plane-tests
   script:
     - ci/scripts/licensing/add_copyright_header.py
     - git diff --exit-code
