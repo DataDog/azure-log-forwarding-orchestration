@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from asyncio import gather
 from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping
@@ -98,7 +102,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self.credential = cred
         self.subscription_id = subscription_id
         self.should_include = parse_filtering_rule(tag_filters)
-        """Predicate which takes a resource's tags as input and evaluates them against the 
+        """Predicate which takes a resource's tags as input and evaluates them against the
         user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
 
         self.resources_client = ResourceManagementClient(cred, subscription_id)
