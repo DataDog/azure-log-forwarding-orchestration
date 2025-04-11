@@ -229,6 +229,7 @@ ALLOWED_RESOURCE_TYPES: Final = [
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
 ]
 ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
+ALLOWED_RESOURCE_TYPES_FILTER_GRAPH: Final = " or ".join([f"type =~ '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
 PROGRESS_BAR_LENGTH: Final = 40
 MAX_RETRIES = 6
 RESOURCE_GROUP_DELETION_POLLING_DELAY = 5  # seconds
@@ -424,7 +425,14 @@ def az(cmd: str) -> str:
     raise SystemExit(1)  # unreachable
 
 
-def list_users_subscriptions(sub_id=None) -> dict:
+def set_extension_config():
+    """Sets up the Azure CLI to auto-install extensions if they're required for certain commands.
+    We use Azure Resource Graph to query resource information, so we need the resource graph extension"""
+    az("config set extension.use_dynamic_install=yes_without_prompt")
+
+
+def list_users_subscriptions(sub_id=None) -> dict[str, str]:
+    """Returns a mapping of subscription ID to subscription name for all subscriptions accessible by the current user"""
     if sub_id is None:
         log.info("Fetching details for all subscriptions accessible by current user... ")
         print_progress(0, 1)
@@ -452,7 +460,36 @@ def list_users_subscriptions(sub_id=None) -> dict:
     return {subs_json["id"]: subs_json["name"]}
 
 
-def list_resources(sub_id: str, sub_name: str) -> set:
+def list_resources_graph(sub_id: str, sub_name: str) -> set[str]:
+    """Returns a set of resource IDs for all resources that LFO could process in a given subscription"""
+    log.info(f"Searching for resources in {sub_name} ({sub_id})... ")
+
+    resource_ids = set()
+    result = json.loads(
+        az(
+            f"graph query -q \"Resources | where subscriptionId =~ '{sub_id}' | where {ALLOWED_RESOURCE_TYPES_FILTER_GRAPH} | summarize by id\" --first 1000 --output json"
+        )
+    )
+
+    resource_ids.update([r["id"] for r in result["data"]])
+
+    # The max number of resources returned is 1000. If there are more
+    # than 1000 resources, use skip token to paginate and get the next batch
+    skip_token = result["skip_token"]
+    while skip_token:
+        result = json.loads(
+            az(
+                f'graph query --skip-token {skip_token} -q "Resources | where {ALLOWED_RESOURCE_TYPES_FILTER_GRAPH} | project id" --first 1000 --output json'
+            )
+        )
+        skip_token = result["skip_token"]
+        resource_ids.update([r["id"] for r in result["data"]])
+
+    return resource_ids
+
+
+def list_resources(sub_id: str, sub_name: str) -> set[str]:
+    """Returns a set of resource IDs for all resources that LFO would process in a given subscription"""
     log.info(f"Searching for resources in {sub_name} ({sub_id})... ")
 
     resource_ids = json.loads(
@@ -464,6 +501,7 @@ def list_resources(sub_id: str, sub_name: str) -> set:
 
 
 def num_resources_in_group(sub_id: str, resource_group: str) -> int:
+    """Returns the number of resources in a given resource group. If the resource group is not found, returns 0"""
     try:
         return int(
             az(
@@ -504,7 +542,7 @@ def find_all_control_planes(
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """
     Queries for all LFO control planes that the user has access to.
-    Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to control plane ID mapping
+    Returns 2 dictionaries - a subcription ID to resource group mapping for the subscriptions we can access and a resource group to control plane ID mapping
     """
 
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
@@ -527,6 +565,14 @@ def find_all_control_planes(
             )
 
     return sub_to_rg, rg_to_lfo_id
+
+
+def sub_has_rg(sub_id: str, rg_name: str) -> bool:
+    """Returns True if the given subscription has the given resource group, False otherwise"""
+    try:
+        return az(f"group exists --name {rg_name} --subscription {sub_id}").strip().casefold() == "true"
+    except subprocess.CalledProcessError:
+        return False
 
 
 def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> list[dict[str, str]]:
@@ -562,30 +608,78 @@ def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str, st
 def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set) -> dict[str, list[str]]:
     """Returns mapping of resource ID to list of LFO diagnostic settings"""
 
-    resource_ids = list_resources(sub_id, sub_name)
+    resource_ids = list_resources_graph(sub_id, sub_name)
     resource_count = len(resource_ids)
     resource_ds_map = defaultdict(list)
     if not resource_ids:
         return resource_ds_map
 
-    log.info(f"Looking for Datadog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
-    ds_count = 0
+    # log.info(f"Searching for Datadog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
+    # ds_count = 0
     diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
-    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
-        ds_futures = [
-            tpe.submit(
-                az,
-                f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"',
-            )
-            for resource_id in resource_ids
-        ]
-        progress_spinner(resource_count, lambda: sum(not f.running() for f in ds_futures))
+    # with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+    #     ds_futures = [
+    #         tpe.submit(
+    #             az,
+    #             f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"',
+    #         )
+    #         for resource_id in resource_ids
+    #     ]
+    #     progress_spinner(resource_count, lambda: sum(f.done() for f in ds_futures))
 
-    for resource_id, ds_future in zip(resource_ids, ds_futures):
-        ds_names = json.loads(ds_future.result())
-        for ds_name in ds_names:
-            resource_ds_map[resource_id].append(ds_name)
-            ds_count += 1
+    # for resource_id, ds_future in zip(resource_ids, ds_futures):
+    #     ds_names = json.loads(ds_future.result())
+    #     for ds_name in ds_names:
+    #         resource_ds_map[resource_id].append(ds_name)
+    #         ds_count += 1
+
+    # Process in batches
+    BATCH_SIZE = 25
+    total_processed = 0
+    ds_count = 0
+    batch_count = 0
+    for i in range(0, resource_count, BATCH_SIZE):
+        batch_count += 1
+        log.info(f"Starting batch {batch_count} of {(resource_count + BATCH_SIZE - 1) // BATCH_SIZE}")
+        batch = list(resource_ids)[i : i + BATCH_SIZE]
+        batch_size = len(batch)
+
+        try:
+            log.info(f"Creating thread pool with {min(THREAD_POOL_SIZE, batch_size)} threads")
+            with ThreadPoolExecutor(min(THREAD_POOL_SIZE, batch_size)) as tpe:
+                log.info(f"Submitting {batch_size} tasks to thread pool")
+                ds_futures = []
+                for resource_id in batch:
+                    future = tpe.submit(
+                        az,
+                        f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"',
+                    )
+                    ds_futures.append(future)
+                # Show progress within this batch
+                # local_spinner = lambda: sum(not f.running() for f in ds_futures)
+                # progress_spinner(batch_size, local_spinner)
+                log.info(f"Submitted {len(ds_futures)} tasks. Waiting for completion...")
+
+            log.info(f"Thread pool for batch {batch_count} has completed")
+
+            # Process results after ThreadPoolExecutor is closed
+            for idx, (resource_id, ds_future) in enumerate(zip(batch, ds_futures)):
+                log.info(f"Processing result {idx + 1}/{batch_size} for batch {batch_count}")
+                log.info(f"Fetching diagnostic settings for {resource_id}")
+                try:
+                    ds_names = json.loads(ds_future.result())
+                    for ds_name in ds_names:
+                        resource_ds_map[resource_id].append(ds_name)
+                        ds_count += 1
+                except Exception as e:
+                    log.warning(f"Error getting diagnostic settings for {resource_id}: {e}")
+
+            total_processed += batch_size
+            log.info(
+                f"Processed {total_processed}/{resource_count} resources ({(total_processed / resource_count) * 100:.1f}%)"
+            )
+        except Exception as e:
+            log.error(f"Error processing batch {batch_count}: {e}", exc_info=True)
 
     log.info(f"Found {ds_count} diagnostic settings to remove (searched through {resource_count} resources)")
     return resource_ds_map
@@ -721,7 +815,9 @@ def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_grou
     """For given subscription, prompt the user to choose which resource group (or all) to delete if there's multiple. Returns a list of resource groups to delete"""
 
     if len(resource_groups_in_sub) == 1:
-        log.info(f"Found single resource group with log forwarding artifact: '{resource_groups_in_sub[0]}'")
+        log.info(
+            f"Found single resource group with log forwarding artifact in '{sub_name}' ({sub_id}): '{resource_groups_in_sub[0]}'"
+        )
         return resource_groups_in_sub
 
     log.info(
@@ -755,8 +851,13 @@ def mark_rg_deletions_per_sub(
         sub_name = sub_id_to_name[sub_id]
         rgs_to_delete = identify_resource_groups_to_delete(sub_id, sub_name, rg_list)
         if any(rgs_to_delete):
-            sub_id_to_rg_deletions[sub_id] = rgs_to_delete
+            sub_id_to_rg_deletions.setdefault(sub_id, []).extend(rgs_to_delete)
 
+        # Check if other subs have the resource group that the user chose to delete, mark them for deletion if so
+        for sub_id, _ in sub_id_to_rgs.items():
+            for rg in rgs_to_delete:
+                if sub_has_rg(sub_id, rg) and rg not in sub_id_to_rg_deletions.get(sub_id, []):
+                    sub_id_to_rg_deletions.setdefault(sub_id, []).append(rg)
     return sub_id_to_rg_deletions
 
 
@@ -861,6 +962,7 @@ def main():
     """
 
     args = parse_args()
+    set_extension_config()
 
     sub_id_to_name = list_users_subscriptions(args.subscription)
     sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)

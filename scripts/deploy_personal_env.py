@@ -62,7 +62,7 @@ def run(cmd: str | list[str], **kwargs: Any) -> str:
 # shared variables
 home = environ.get("HOME")
 user = environ.get("USER")
-lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}"))
+lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}v2"))
 lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
 subscription_id = environ.get("AZURE_SUBSCRIPTION_ID") or run("az account show --query id -o tsv")
 credential = AzureCliCredential()
@@ -194,7 +194,7 @@ if initial_deploy or FORCE_ARM_DEPLOY:
     )
     api_key = environ["DD_API_KEY"]
     params = {
-        "monitoredSubscriptions": dumps([subscription_id]),
+        "monitoredSubscriptions": dumps([subscription_id, "34464906-34fe-401e-a420-79bd0ce2a1da"]),
         "controlPlaneLocation": LOCATION,
         "controlPlaneSubscriptionId": subscription_id,
         "controlPlaneResourceGroupName": resource_group_name,
