@@ -7,7 +7,7 @@ RUN go mod download
 # Copy the code into the container
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build cmd/forwarder/forwarder.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" cmd/forwarder/forwarder.go
 
 FROM registry.ddbuild.io/images/mirror/alpine:latest
 WORKDIR /
