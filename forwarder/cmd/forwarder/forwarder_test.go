@@ -229,7 +229,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 		return nil
 	})
 
-	runErr := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
+	runErr, _ := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
 	close(logsChan)
 	logsErr := submittedLogsGroup.Wait()
 	return submittedLogs, errors.Join(runErr, logsErr)
@@ -845,7 +845,7 @@ func getAzuriteConnectionString(ctx context.Context, container testcontainers.Co
 
 }
 
-func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlobClient, now customtime.Now) ([]datadogV2.HTTPLogItem, error) {
+func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlobClient, now customtime.Now) ([]datadogV2.HTTPLogItem, error, map[string]error) {
 	datadogConfig, logsChan := getDatadogConfig(func(req *http.Request) (*http.Response, error) {
 		if req == nil {
 			return nil, errors.New("request is nil")
@@ -869,12 +869,12 @@ func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlo
 		return nil
 	})
 
-	runErr := run(ctx, nullLogger(), 1, datadogConfig, azBlobClient, mockPiiScrubber, now, versionTag)
+	runErr, blobErrors := run(ctx, nullLogger(), 1, datadogConfig, azBlobClient, mockPiiScrubber, now, versionTag)
 
 	close(logsChan)
 	logsErr := submittedLogsGroup.Wait()
 
-	return submittedLogs, errors.Join(runErr, logsErr)
+	return submittedLogs, errors.Join(runErr, logsErr), blobErrors
 }
 
 var (
@@ -891,9 +891,9 @@ func TestRunWithAzurite(t *testing.T) {
 
 	t.Run("run two stage test against run", func(t *testing.T) {
 		t.Parallel()
-		if os.Getenv("RUN_AZURITE_TESTS") != "true" {
-			t.Skip("Skipping azurite tests as RUN_AZURITE_TESTS is not set to true")
-		}
+		//if os.Getenv("RUN_AZURITE_TESTS") != "true" {
+		//	t.Skip("Skipping azurite tests as RUN_AZURITE_TESTS is not set to true")
+		//}
 		ctx := context.Background()
 		req := testcontainers.ContainerRequest{
 			Image:        "mcr.microsoft.com/azure-storage/azurite",
@@ -928,7 +928,7 @@ func TestRunWithAzurite(t *testing.T) {
 		}
 
 		// Do run A
-		_, err = azuriteRun(t, ctx, azBlobClient, customNow)
+		_, err, _ = azuriteRun(t, ctx, azBlobClient, customNow)
 		require.NoError(t, err)
 
 		// Upload the second state
@@ -936,7 +936,7 @@ func TestRunWithAzurite(t *testing.T) {
 		require.NoError(t, err)
 
 		// Do run B
-		_, err = azuriteRun(t, ctx, azBlobClient, customNow)
+		_, err, _ = azuriteRun(t, ctx, azBlobClient, customNow)
 		require.NoError(t, err)
 
 		testcontainers.CleanupContainer(t, azurite)
