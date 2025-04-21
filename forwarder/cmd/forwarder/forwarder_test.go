@@ -142,7 +142,7 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 }
 
 func getDatadogConfig(getDatadogLogResp func(req *http.Request) (*http.Response, error)) (*datadog.Configuration, chan datadogV2.HTTPLogItem) {
-	submittedLogs := make(chan datadogV2.HTTPLogItem)
+	submittedLogsChan := make(chan datadogV2.HTTPLogItem)
 	// Use the CustomRoundTripper with a standard http.Transport
 	customRoundTripper := &CustomRoundTripper{
 		transport: &http.Transport{},
@@ -170,7 +170,7 @@ func getDatadogConfig(getDatadogLogResp func(req *http.Request) (*http.Response,
 			}
 			// Send the logs to the channel
 			for _, logItem := range currLogs {
-				submittedLogs <- logItem
+				submittedLogsChan <- logItem
 			}
 			return getDatadogLogResp(req)
 		},
@@ -180,7 +180,7 @@ func getDatadogConfig(getDatadogLogResp func(req *http.Request) (*http.Response,
 	datadogConfig.HTTPClient = &http.Client{
 		Transport: customRoundTripper,
 	}
-	return datadogConfig, submittedLogs
+	return datadogConfig, submittedLogsChan
 }
 
 func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error), getDatadogLogResp func(req *http.Request) (*http.Response, error)) ([]datadogV2.HTTPLogItem, error) {
