@@ -215,46 +215,9 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	var resp azblob.CreateContainerResponse
 	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
 
-	//var submittedLogs []datadogV2.HTTPLogItem
-	//mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-	//mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
-	//	submittedLogs = append(submittedLogs, body...)
-	//	return nil, nil, nil
-	//})
-
 	mockPiiScrubber := newMockPiiScrubber(ctrl)
 
 	ctx := context.Background()
-
-	// Use the CustomRoundTripper with a standard http.Transport
-	//customRoundTripper := &CustomRoundTripper{
-	//	transport: &http.Transport{},
-	//	getResponse: func(req *http.Request) (*http.Response, error) {
-	//		if req == nil {
-	//			return nil, errors.New("request is nil")
-	//		}
-	//
-	//		// body is gzipped, so we need to decompress it
-	//		r, err := gzip.NewReader(req.Body)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//
-	//		// read the decompressed body
-	//		bodyBytes, err := io.ReadAll(r)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//
-	//		var currLogs []datadogV2.HTTPLogItem
-	//		err = json.Unmarshal(bodyBytes, &currLogs)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		submittedLogs = append(submittedLogs, currLogs...)
-	//		return getDatadogLogResp(req)
-	//	},
-	//}
 
 	datadogConfig, logsChan := getDatadogConfig(getDatadogLogResp)
 	submittedLogs := make([]datadogV2.HTTPLogItem, 0)
@@ -265,12 +228,6 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 		}
 		return nil
 	})
-
-	//
-	//datadogConfig := datadog.NewConfiguration()
-	//datadogConfig.HTTPClient = &http.Client{
-	//	Transport: customRoundTripper,
-	//}
 
 	runErr := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
 	close(logsChan)
