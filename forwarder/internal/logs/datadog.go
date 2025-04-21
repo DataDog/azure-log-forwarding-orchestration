@@ -13,14 +13,13 @@ import (
 	"strings"
 	"time"
 
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
-
 	// 3p
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
 	log "github.com/sirupsen/logrus"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 const (

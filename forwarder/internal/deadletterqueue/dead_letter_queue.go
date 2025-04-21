@@ -11,16 +11,17 @@ import (
 	"errors"
 	"fmt"
 
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
-
+	// 3p
 	log "github.com/sirupsen/logrus"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 // BlobName is the name of the blob that contains the dead letter queue.

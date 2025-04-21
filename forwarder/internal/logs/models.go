@@ -9,14 +9,13 @@ import (
 	"encoding/json"
 	"time"
 
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
-
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	log "github.com/sirupsen/logrus"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 // Log represents a log to send to Datadog.

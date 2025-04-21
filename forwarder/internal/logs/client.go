@@ -9,8 +9,6 @@ import (
 	"context"
 	"math"
 
-	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
-
 	// 3p
 	log "github.com/sirupsen/logrus"
 
@@ -19,6 +17,7 @@ import (
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 const (
