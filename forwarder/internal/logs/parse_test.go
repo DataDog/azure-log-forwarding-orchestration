@@ -38,8 +38,9 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data)) {
-			require.NoError(t, err)
+		for parsedLog := range logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data)) {
+			currLog := parsedLog.ParsedLog
+			require.NoError(t, parsedLog.Err)
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, resourceId, currLog.ResourceId)
 			require.False(t, currLog.Time.IsZero())
@@ -65,8 +66,9 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, err := range logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data)) {
-			require.NoError(t, err)
+		for parsedLog := range logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data)) {
+			require.NoError(t, parsedLog.Err)
+			currLog := parsedLog.ParsedLog
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, resourceId, currLog.ResourceId)
 			require.False(t, currLog.Time.IsZero())
@@ -92,8 +94,9 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, currErr := range logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data)) {
-			require.NoError(t, currErr)
+		for parsedLog := range logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data)) {
+			require.NoError(t, parsedLog.Err)
+			currLog := parsedLog.ParsedLog
 			require.Equal(t, "WorkflowRuntime", currLog.Category)
 			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
 			require.False(t, currLog.Time.IsZero())
@@ -119,8 +122,9 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		for currLog, currErr := range logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data)) {
-			require.NoError(t, currErr)
+		for parsedLog := range logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data)) {
+			require.NoError(t, parsedLog.Err)
+			currLog := parsedLog.ParsedLog
 			require.Equal(t, "NetworkSecurityGroupFlowEvent", currLog.Category)
 			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
 			require.False(t, currLog.Time.IsZero())

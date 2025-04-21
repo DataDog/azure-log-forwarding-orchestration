@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"time"
 
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	log "github.com/sirupsen/logrus"
@@ -70,8 +72,8 @@ func (l *Log) ScrubbedLength() int64 {
 }
 
 // Validate checks if the log is valid to send to Datadog.
-func (l *Log) Validate(logger *log.Entry) bool {
-	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, logger)
+func (l *Log) Validate(now customtime.Now, logger *log.Entry) bool {
+	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, now, logger)
 }
 
 type azureLog struct {

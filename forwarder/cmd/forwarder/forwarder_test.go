@@ -20,6 +20,9 @@ import (
 	"testing"
 	"time"
 
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
+	"github.com/docker/go-connections/nat"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
@@ -29,6 +32,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/mock/gomock"
 	"golang.org/x/sync/errgroup"
 
@@ -137,6 +142,48 @@ func getListBlobsFlatResponse(containers []*container.BlobItem) azblob.ListBlobs
 	}
 }
 
+func getDatadogConfig(getDatadogLogResp func(req *http.Request) (*http.Response, error)) (*datadog.Configuration, chan datadogV2.HTTPLogItem) {
+	submittedLogs := make(chan datadogV2.HTTPLogItem)
+	// Use the CustomRoundTripper with a standard http.Transport
+	customRoundTripper := &CustomRoundTripper{
+		transport: &http.Transport{},
+		getResponse: func(req *http.Request) (*http.Response, error) {
+			if req == nil {
+				return nil, errors.New("request is nil")
+			}
+
+			// body is gzipped, so we need to decompress it
+			r, err := gzip.NewReader(req.Body)
+			if err != nil {
+				return nil, err
+			}
+
+			// read the decompressed body
+			bodyBytes, err := io.ReadAll(r)
+			if err != nil {
+				return nil, err
+			}
+
+			var currLogs []datadogV2.HTTPLogItem
+			err = json.Unmarshal(bodyBytes, &currLogs)
+			if err != nil {
+				return nil, err
+			}
+			// Send the logs to the channel
+			for _, logItem := range currLogs {
+				submittedLogs <- logItem
+			}
+			return getDatadogLogResp(req)
+		},
+	}
+
+	datadogConfig := datadog.NewConfiguration()
+	datadogConfig.HTTPClient = &http.Client{
+		Transport: customRoundTripper,
+	}
+	return datadogConfig, submittedLogs
+}
+
 func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error), getDatadogLogResp func(req *http.Request) (*http.Response, error)) ([]datadogV2.HTTPLogItem, error) {
 	ctrl := gomock.NewController(t)
 	mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
@@ -169,54 +216,67 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	var resp azblob.CreateContainerResponse
 	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
 
-	var submittedLogs []datadogV2.HTTPLogItem
-	mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-	mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
-		submittedLogs = append(submittedLogs, body...)
-		return nil, nil, nil
-	})
+	//var submittedLogs []datadogV2.HTTPLogItem
+	//mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
+	//mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
+	//	submittedLogs = append(submittedLogs, body...)
+	//	return nil, nil, nil
+	//})
 
 	mockPiiScrubber := newMockPiiScrubber(ctrl)
 
 	ctx := context.Background()
 
 	// Use the CustomRoundTripper with a standard http.Transport
-	customRoundTripper := &CustomRoundTripper{
-		transport: &http.Transport{},
-		getResponse: func(req *http.Request) (*http.Response, error) {
-			if req == nil {
-				return nil, errors.New("request is nil")
-			}
+	//customRoundTripper := &CustomRoundTripper{
+	//	transport: &http.Transport{},
+	//	getResponse: func(req *http.Request) (*http.Response, error) {
+	//		if req == nil {
+	//			return nil, errors.New("request is nil")
+	//		}
+	//
+	//		// body is gzipped, so we need to decompress it
+	//		r, err := gzip.NewReader(req.Body)
+	//		if err != nil {
+	//			return nil, err
+	//		}
+	//
+	//		// read the decompressed body
+	//		bodyBytes, err := io.ReadAll(r)
+	//		if err != nil {
+	//			return nil, err
+	//		}
+	//
+	//		var currLogs []datadogV2.HTTPLogItem
+	//		err = json.Unmarshal(bodyBytes, &currLogs)
+	//		if err != nil {
+	//			return nil, err
+	//		}
+	//		submittedLogs = append(submittedLogs, currLogs...)
+	//		return getDatadogLogResp(req)
+	//	},
+	//}
 
-			// body is gzipped, so we need to decompress it
-			r, err := gzip.NewReader(req.Body)
-			if err != nil {
-				return nil, err
-			}
+	datadogConfig, logsChan := getDatadogConfig(getDatadogLogResp)
+	submittedLogs := make([]datadogV2.HTTPLogItem, 0)
+	submittedLogsGroup, ctx := errgroup.WithContext(ctx)
+	submittedLogsGroup.Go(func() error {
+		for logItem := range logsChan {
+			submittedLogs = append(submittedLogs, logItem)
+		}
+		return nil
+	})
 
-			// read the decompressed body
-			bodyBytes, err := io.ReadAll(r)
-			if err != nil {
-				return nil, err
-			}
+	//
+	//datadogConfig := datadog.NewConfiguration()
+	//datadogConfig.HTTPClient = &http.Client{
+	//	Transport: customRoundTripper,
+	//}
 
-			var currLogs []datadogV2.HTTPLogItem
-			err = json.Unmarshal(bodyBytes, &currLogs)
-			if err != nil {
-				return nil, err
-			}
-			submittedLogs = append(submittedLogs, currLogs...)
-			return getDatadogLogResp(req)
-		},
-	}
-
-	datadogConfig := datadog.NewConfiguration()
-	datadogConfig.HTTPClient = &http.Client{
-		Transport: customRoundTripper,
-	}
-
-	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
-	return submittedLogs, err
+	runErr := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
+	close(logsChan)
+	logsErr := submittedLogsGroup.Wait()
+	return submittedLogs, errors.Join(runErr, logsErr)
 }
 
 func TestRun(t *testing.T) {
@@ -432,7 +492,7 @@ func TestProcessLogs(t *testing.T) {
 		eg.Go(func() error {
 			defer close(volumeCh)
 			defer close(bytesCh)
-			return processLogs(egCtx, datadogClient, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
+			return processLogs(egCtx, datadogClient, time.Now, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
@@ -480,7 +540,7 @@ func TestProcessLogs(t *testing.T) {
 		eg.Go(func() error {
 			defer close(volumeCh)
 			defer close(bytesCh)
-			return processLogs(egCtx, datadogClient, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
+			return processLogs(egCtx, datadogClient, time.Now, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
@@ -519,7 +579,7 @@ func TestProcessLogs(t *testing.T) {
 		eg.Go(func() error {
 			defer close(volumeCh)
 			defer close(bytesCh)
-			return processLogs(egCtx, datadogClient, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
+			return processLogs(egCtx, datadogClient, time.Now, log.NewEntry(nullLogger()), logsCh, volumeCh, bytesCh)
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
@@ -783,7 +843,7 @@ func TestProcessDLQ(t *testing.T) {
 		ctx := context.Background()
 
 		// WHEN
-		err = processDeadLetterQueue(ctx, log.NewEntry(nullLogger()), storageClient, logsClient, processedClients)
+		err = processDeadLetterQueue(ctx, time.Now, log.NewEntry(nullLogger()), storageClient, logsClient, processedClients)
 
 		// THEN
 		assert.NoError(t, err)
@@ -796,9 +856,134 @@ func TestRunMain(t *testing.T) {
 
 	t.Run("fetchAndProcessLogs main", func(t *testing.T) {
 		t.Parallel()
-		if os.Getenv("CI") != "" {
-			t.Skip("Skipping testing in CI environment")
+		if os.Getenv("FORWARDER_PROFILING") != "true" {
+			t.Skip("Skipping profiling tests as FORWARDER_PROFILING is not set to true")
 		}
 		main()
+	})
+}
+
+func getAzuriteConnectionString(ctx context.Context, container testcontainers.Container) (string, error) {
+	ports, err := container.Ports(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	// map exposed ports to host ports
+	portMapping := make(map[nat.Port]string)
+	for port, bindings := range ports {
+		for _, binding := range bindings {
+			portMapping[port] = binding.HostPort
+		}
+	}
+
+	blobEndpoint := portMapping["10000/tcp"]
+	queueEndpoint := portMapping["10001/tcp"]
+	tableEndpoint := portMapping["10002/tcp"]
+
+	// Construct the connection string
+	return fmt.Sprintf(
+		"DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:%s/devstoreaccount1;QueueEndpoint=http://127.0.0.1:%s/devstoreaccount1;TableEndpoint=http://127.0.0.1:%s/devstoreaccount1;",
+		blobEndpoint, queueEndpoint, tableEndpoint,
+	), nil
+
+}
+
+func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlobClient, now customtime.Now) ([]datadogV2.HTTPLogItem, error) {
+	datadogConfig, logsChan := getDatadogConfig(func(req *http.Request) (*http.Response, error) {
+		if req == nil {
+			return nil, errors.New("request is nil")
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+		}, nil
+	})
+
+	submittedLogs := make([]datadogV2.HTTPLogItem, 0)
+	submittedLogsGroup, ctx := errgroup.WithContext(ctx)
+
+	ctrl := gomock.NewController(t)
+	mockPiiScrubber := newMockPiiScrubber(ctrl)
+
+	submittedLogsGroup.Go(func() error {
+		for logItem := range logsChan {
+			submittedLogs = append(submittedLogs, logItem)
+		}
+		return nil
+	})
+
+	runErr := run(ctx, nullLogger(), 1, datadogConfig, azBlobClient, mockPiiScrubber, now, versionTag)
+
+	close(logsChan)
+	logsErr := submittedLogsGroup.Wait()
+
+	return submittedLogs, errors.Join(runErr, logsErr)
+}
+
+var (
+	//go:embed fixtures/cursor_validation_state_a.json
+	blobStateA []byte
+
+	//go:embed fixtures/cursor_validation_state_b.json
+	blobStateB []byte
+)
+
+// TestRunWithAzurite exists for performance testing purposes.
+func TestRunWithAzurite(t *testing.T) {
+	t.Parallel()
+
+	t.Run("run two stage test against run", func(t *testing.T) {
+		t.Parallel()
+		if os.Getenv("RUN_AZURITE_TESTS") != "true" {
+			t.Skip("Skipping azurite tests as RUN_AZURITE_TESTS is not set to true")
+		}
+		ctx := context.Background()
+		req := testcontainers.ContainerRequest{
+			Image:        "mcr.microsoft.com/azure-storage/azurite",
+			ExposedPorts: []string{"10000/tcp", "10001/tcp", "10002/tcp"},
+			WaitingFor:   wait.ForLog("Azurite Blob service is successfully listening at http://0.0.0.0:10000"),
+		}
+		azurite, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+			ContainerRequest: req,
+			Started:          true,
+		})
+
+		connectionString, err := getAzuriteConnectionString(ctx, azurite)
+		require.NoError(t, err)
+
+		azBlobClient, err := azblob.NewClientFromConnectionString(connectionString, nil)
+		require.NoError(t, err)
+
+		functionAppContainer := "insights-logs-functionapplogs"
+
+		_, err = azBlobClient.CreateContainer(ctx, functionAppContainer, nil)
+		require.NoError(t, err)
+
+		blobName := "resourceId=/SUBSCRIPTIONS/34464906-34FE-401E-A420-79BD0CE2A1DA/RESOURCEGROUPS/LOGGY-EASTUS2_GROUP/PROVIDERS/MICROSOFT.WEB/SITES/LOGGY-EASTUS2/y=2025/m=04/d=17/h=20/m=00/PT1H.json"
+
+		_, err = azBlobClient.UploadBuffer(ctx, functionAppContainer, blobName, blobStateA, nil)
+		require.NoError(t, err)
+
+		// mock now
+		customNow := func() time.Time {
+			// return the time object for timestamp (UTC): 2025-04-21T17:30:25Z
+			return time.Date(2025, 4, 21, 18, 30, 0, 0, time.UTC)
+		}
+
+		// Do run A
+		_, err = azuriteRun(t, ctx, azBlobClient, customNow)
+		require.NoError(t, err)
+
+		// Upload the second state
+		_, err = azBlobClient.UploadBuffer(ctx, functionAppContainer, blobName, blobStateB, nil)
+		require.NoError(t, err)
+
+		// Do run B
+		_, err = azuriteRun(t, ctx, azBlobClient, customNow)
+		require.NoError(t, err)
+
+		testcontainers.CleanupContainer(t, azurite)
+		require.NoError(t, err)
 	})
 }

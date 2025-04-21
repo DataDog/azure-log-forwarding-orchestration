@@ -22,9 +22,15 @@ import (
 // ordered list of parsers, the first parser that returns true will be used
 var parsers = []Parser{FlowEventParser{}, FunctionAppParser{}, AzureLogParser{}}
 
+// ParsedLogResponse is the response type for parsers
+type ParsedLogResponse struct {
+	ParsedLog *Log
+	Err       error
+}
+
 // Parser is an interface for parsing logs.
 type Parser interface {
-	Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error]
+	Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse]
 	Valid(blob storage.Blob) bool
 }
 
@@ -32,28 +38,34 @@ type Parser interface {
 type FlowEventParser struct{}
 
 // Parse reads logs from a reader and parses them into Log objects.
-func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
-	return func(yield func(*Log, error) bool) {
+func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
+	return func(yield func(ParsedLogResponse) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			var flowLogs vnetFlowLogs
 			originalSize := len(currBytes)
 			scrubbedBytes := piiScrubber.Scrub(currBytes)
+
+			response := ParsedLogResponse{}
+
 			err := json.Unmarshal(scrubbedBytes, &flowLogs)
 			if err != nil {
-				if !yield(nil, err) {
-					return
-				}
+				response.Err = err
+				yield(response)
+				return
 			}
 			for idx, flowLog := range flowLogs.Records {
 				currLog, err := flowLog.ToLog(blob)
-				if err != nil && !yield(nil, err) {
+				if err != nil {
+					response.Err = err
+					yield(response)
 					return
 				}
 				if idx == len(flowLogs.Records)-1 {
 					currLog.RawByteSize = int64(originalSize)
 				}
-				if !yield(currLog, nil) {
+				response.ParsedLog = currLog
+				if !yield(response) {
 					return
 				}
 			}
@@ -70,31 +82,35 @@ func (f FlowEventParser) Valid(blob storage.Blob) bool {
 
 type FunctionAppParser struct{}
 
-func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
-	return func(yield func(*Log, error) bool) {
+func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
+	return func(yield func(ParsedLogResponse) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			originalSize := len(currBytes)
 
-			currBytes, err := BytesFromJavaScriptObject(currBytes)
+			parsedBytes, err := BytesFromJavaScriptObject(currBytes)
+			response := ParsedLogResponse{}
 			if err != nil {
 				if errors.As(err, &parser.ErrorList{}) || errors.As(err, &parser.Error{}) {
-					if !yield(nil, errors.Join(ErrUnexpectedToken, err)) {
-						return
-					}
-				}
-				if !yield(nil, err) {
+					response.Err = errors.Join(ErrUnexpectedToken, err)
+					yield(response)
 					return
 				}
+				response.Err = err
+				yield(response)
+				return
 			}
 
-			scrubbedBytes := piiScrubber.Scrub(currBytes)
+			scrubbedBytes := piiScrubber.Scrub(parsedBytes)
 			currLog, err := NewLog(scrubbedBytes, blob, piiScrubber, int64(originalSize))
-			if err != nil && !yield(nil, err) {
+			if err != nil {
+				response.Err = err
+				yield(response)
 				return
 			}
 			currLog.RawByteSize = int64(originalSize)
-			if !yield(currLog, nil) {
+			response.ParsedLog = currLog
+			if !yield(response) {
 				return
 			}
 		}
@@ -108,16 +124,20 @@ func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 
 type AzureLogParser struct{}
 
-func (a AzureLogParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
-	return func(yield func(*Log, error) bool) {
+func (a AzureLogParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
+	return func(yield func(response ParsedLogResponse) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			originalSize := len(currBytes)
 			currLog, err := NewLog(currBytes, blob, piiScrubber, int64(originalSize))
-			if err != nil && !yield(nil, err) {
+			response := ParsedLogResponse{}
+			if err != nil {
+				response.Err = err
+				yield(response)
 				return
 			}
-			if !yield(currLog, nil) {
+			response.ParsedLog = currLog
+			if !yield(response) {
 				return
 			}
 		}
@@ -130,7 +150,7 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -144,7 +164,11 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 		}
 	}
 
-	return func(yield func(*Log, error) bool) {
-		yield(nil, errors.New("no parser found for blob"))
+	return func(yield func(response ParsedLogResponse) bool) {
+		// if no parser is found, yield an error
+		response := ParsedLogResponse{
+			Err: errors.New("no parser found for blob"),
+		}
+		yield(response)
 	}
 }

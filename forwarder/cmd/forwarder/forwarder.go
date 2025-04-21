@@ -80,10 +80,11 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 
 	var currLog *logs.Log
 	var err error
-	for currLog, err = range logs.Parse(reader, blob, piiScrubber) {
-		if err != nil {
+	for parsedLog := range logs.Parse(reader, blob, piiScrubber) {
+		if parsedLog.Err != nil {
 			break
 		}
+		currLog = parsedLog.ParsedLog
 
 		processedRawBytes += currLog.RawByteSize
 		processedLogs += 1
@@ -92,10 +93,10 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 	return processedRawBytes, processedLogs, err
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
-		currErr := logsClient.AddLog(ctx, logger, logItem)
+		currErr := logsClient.AddLog(ctx, now, logger, logItem)
 		err = errors.Join(err, currErr)
 		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}
 	}
@@ -195,7 +196,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
 			// TODO (AZINTS-3044): Limit failure modes where we return nil and drop data
-			processLogsErr := processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
+			processLogsErr := processLogs(logsCtx, logsClient, now, logger, logCh, resourceIdCh, resourceBytesCh)
 			if processLogsErr != nil {
 				logger.Warning(fmt.Errorf("error processing logs: %w", processLogsErr))
 			}
@@ -252,19 +253,19 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	return err
 }
 
-func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
+func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
 	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
 	if err != nil {
 		return err
 	}
 
-	dlq.Process(ctx, logger)
+	dlq.Process(ctx, now, logger)
 
 	for _, client := range flushedLogsClients {
 		dlq.Add(client.FailedLogs)
 	}
 
-	return dlq.Save(ctx, storageClient, logger)
+	return dlq.Save(ctx, storageClient, now, logger)
 }
 
 func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
@@ -295,7 +296,7 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadog
 
 	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now, versionTag)
 
-	dlqErr := processDeadLetterQueue(ctx, logger, storageClient, logs.NewClient(datadogLogsClient), logsClients)
+	dlqErr := processDeadLetterQueue(ctx, now, logger, storageClient, logs.NewClient(datadogLogsClient), logsClients)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))

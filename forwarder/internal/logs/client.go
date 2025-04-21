@@ -9,6 +9,8 @@ import (
 	"context"
 	"math"
 
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
+
 	// 3p
 	log "github.com/sirupsen/logrus"
 
@@ -55,8 +57,8 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 }
 
 // AddLog adds a log to the buffer for future submission.
-func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err error) {
-	if !log.Validate(logger) {
+func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Entry, log *Log) (err error) {
+	if !log.Validate(now, logger) {
 		return nil
 	}
 	if c.shouldFlush(log) {
@@ -73,8 +75,8 @@ func (c *Client) AddLog(ctx context.Context, logger *log.Entry, log *Log) (err e
 }
 
 // AddFormattedLog adds a datadog formatted log to the buffer for future submission.
-func (c *Client) AddFormattedLog(ctx context.Context, logger *log.Entry, log datadogV2.HTTPLogItem) error {
-	logBytes, valid := ValidateDatadogLog(log, logger)
+func (c *Client) AddFormattedLog(ctx context.Context, now customtime.Now, logger *log.Entry, log datadogV2.HTTPLogItem) error {
+	logBytes, valid := ValidateDatadogLog(log, now, logger)
 	if !valid {
 		return ErrInvalidLog
 	}
