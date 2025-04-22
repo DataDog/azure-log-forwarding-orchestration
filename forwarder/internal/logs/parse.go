@@ -13,6 +13,8 @@ import (
 	"io"
 	"iter"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
+
 	// 3p
 	"github.com/dop251/goja/parser"
 
@@ -159,22 +161,22 @@ func dropCR(data []byte) ([]byte, bool) {
 }
 
 type counter struct {
-	value int
+	value *int
 }
 
 // newCounter creates a new counter.
 func newCounter() *counter {
 	return &counter{
-		value: 0,
+		value: pointer.Get(0),
 	}
 }
 
 func (c *counter) Get() int {
-	return c.value
+	return *c.value
 }
 
 func (c *counter) Add(value int) {
-	c.value += value
+	c.value = pointer.Get(*c.value + value)
 }
 
 // Parse reads logs from a reader and parses them into Log objects.

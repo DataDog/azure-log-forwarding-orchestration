@@ -52,7 +52,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 
 	blobNameResourceId := blob.ResourceId()
 	currLog.blobResourceId = blobNameResourceId
-	currLog.byteSize = originalSize + newlineBytes
+	currLog.byteSize = originalSize
 	currLog.raw = logBytes
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
@@ -62,7 +62,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 
 // RawLength returns the length of the original Azure log content.
 func (l *Log) RawLength() int64 {
-	return l.RawByteSize + newlineBytes
+	return l.RawByteSize
 }
 
 // ScrubbedLength returns the length of the log content after it has been scrubbed for PII.
