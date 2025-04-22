@@ -13,8 +13,6 @@ import (
 	"io"
 	"iter"
 
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
-
 	// 3p
 	"github.com/dop251/goja/parser"
 
@@ -160,10 +158,28 @@ func dropCR(data []byte) ([]byte, bool) {
 	return data, false
 }
 
+type counter struct {
+	value int
+}
+
+// newCounter creates a new counter.
+func newCounter() *counter {
+	return &counter{
+		value: 0,
+	}
+}
+
+func (c *counter) Get() int {
+	return c.value
+}
+
+func (c *counter) Add(value int) {
+	c.value += value
+}
+
 // Parse reads logs from a reader and parses them into Log objects.
 func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], func() int) {
-	singleByteNewlines := pointer.Get(0)
-	doubleByteNewLines := pointer.Get(0)
+	c := newCounter()
 
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
@@ -173,9 +189,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 			// We have a full newline-terminated line.
 			newData, cr := dropCR(data[0:i])
 			if cr {
-				doubleByteNewLines = pointer.Get(1 + *doubleByteNewLines)
+				c.Add(2)
 			} else {
-				singleByteNewlines = pointer.Get(1 + *singleByteNewlines)
+				c.Add(1)
 			}
 			return i + 1, newData, nil
 		}
@@ -183,9 +199,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 		if atEOF {
 			newData, cr := dropCR(data)
 			if cr {
-				doubleByteNewLines = pointer.Get(1 + *doubleByteNewLines)
+				c.Add(2)
 			} else {
-				singleByteNewlines = pointer.Get(1 + *singleByteNewlines)
+				c.Add(1)
 			}
 			return len(data), newData, nil
 		}
@@ -194,7 +210,7 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 	}
 
 	getReturnCharacterBytes := func() int {
-		return *singleByteNewlines + (2 * *doubleByteNewLines)
+		return c.Get()
 	}
 
 	scanner := bufio.NewScanner(reader)
