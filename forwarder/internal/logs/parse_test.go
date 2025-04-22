@@ -134,6 +134,7 @@ func TestParseLogs(t *testing.T) {
 }
 
 func TestParseActiveDirectoryLogs(t *testing.T) {
+	t.Parallel()
 	adResourceId := "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
 	tests := map[string]struct {
 		categoryName     string
@@ -196,6 +197,8 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			// GIVEN
 			data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/activedirectory/%s", workingDir, testData.testFileName))
 			require.NoError(t, err)
