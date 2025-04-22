@@ -928,16 +928,18 @@ func TestRunWithAzurite(t *testing.T) {
 		}
 
 		// Do run A
-		_, err, _ = azuriteRun(t, ctx, azBlobClient, customNow)
+		_, err, blobErrors := azuriteRun(t, ctx, azBlobClient, customNow)
 		require.NoError(t, err)
+		require.Empty(t, blobErrors)
 
 		// Upload the second state
 		_, err = azBlobClient.UploadBuffer(ctx, functionAppContainer, blobName, blobStateB, nil)
 		require.NoError(t, err)
 
 		// Do run B
-		_, err, _ = azuriteRun(t, ctx, azBlobClient, customNow)
+		_, err, blobErrors = azuriteRun(t, ctx, azBlobClient, customNow)
 		require.NoError(t, err)
+		require.Empty(t, blobErrors)
 
 		testcontainers.CleanupContainer(t, azurite)
 		require.NoError(t, err)

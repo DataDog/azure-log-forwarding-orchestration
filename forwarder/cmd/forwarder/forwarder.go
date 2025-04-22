@@ -80,7 +80,8 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 
 	var currLog *logs.Log
 	var err error
-	for parsedLog := range logs.Parse(reader, blob, piiScrubber) {
+	logIter, returnBytes := logs.Parse(reader, blob, piiScrubber)
+	for parsedLog := range logIter {
 		if parsedLog.Err != nil {
 			err = errors.Join(err, parsedLog.Err)
 			break
@@ -91,6 +92,7 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 		processedLogs += 1
 		logsChannel <- currLog
 	}
+	processedRawBytes += int64(returnBytes())
 	return processedRawBytes, processedLogs, err
 }
 
