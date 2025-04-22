@@ -216,6 +216,7 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	}
 
 	err := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, time.Now, versionTag)
+
 	return submittedLogs, err
 }
 
@@ -580,6 +581,9 @@ var (
 
 	//go:embed fixtures/function_app_logs.json
 	functionAppLogData string
+
+	//go:embed fixtures/ad_audit_logs.json
+	adAuditLogData string
 )
 
 func TestCursors(t *testing.T) {
@@ -727,6 +731,78 @@ func TestCursors(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("works with active directory logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		containerName := "insights-logs-auditlogs"
+		blobName := "ad_audit_logs.json"
+
+		containerPage := []*service.ContainerItem{
+			newContainerItem(containerName),
+		}
+
+		n := 5 // Number of times to execute
+
+		var currentLogData []byte
+		now := time.Now()
+
+		lastCursor := cursor.New(nil)
+
+		for i := 0; i < n; i++ {
+			// REPEATED GIVEN
+			currentLogData = append(currentLogData, adAuditLogData...)
+			currentLength := int64(len(currentLogData))
+
+			blobItem := &container.BlobItem{
+				Name: &blobName,
+				Properties: &container.BlobProperties{
+					ContentLength: &currentLength,
+					CreationTime:  &now,
+				},
+			}
+
+			cursorResp := azblob.DownloadStreamResponse{}
+			cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+			deadLetterQueueResp := azblob.DownloadStreamResponse{}
+			deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
+
+			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+				if blobName == cursor.BlobName {
+					lastCursor = cursor.FromBytes(content, log.NewEntry(nullLogger()))
+				}
+				return azblob.UploadBufferResponse{}, nil
+			}
+
+			getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
+				resp := azblob.DownloadStreamResponse{}
+				resp.Body = io.NopCloser(strings.NewReader(string(currentLogData[o.Range.Offset:])))
+				return resp
+			}
+			logResp := func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
+
+			// WHEN
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
+
+			// THEN
+			assert.NoError(t, err)
+
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
+
+			for _, logItem := range submittedLogs {
+				assert.Equal(t, azureService, *logItem.Service)
+				assert.Equal(t, "azure.aadiam", *logItem.Ddsource)
+				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
+			}
+		}
+	})
+
 }
 
 type FaultyRoundTripper struct {

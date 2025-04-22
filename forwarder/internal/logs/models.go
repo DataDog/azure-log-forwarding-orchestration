@@ -133,6 +133,57 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	}
 }
 
+// Active Directory logs can exist in a high variety of formats,
+// so parse a few necessary fields and submit rest as JSON
+type activeDirectoryLog map[string]json.RawMessage
+
+const azureActiveDirectorySource = "azure.aadiam"
+
+func (adl *activeDirectoryLog) Bytes() ([]byte, error) {
+	return json.Marshal(adl)
+}
+
+func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
+	logBytes, err := adl.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var time time.Time
+	err = json.Unmarshal((*adl)["time"], &time)
+	if err != nil {
+		return nil, err
+	}
+
+	var category string
+	err = json.Unmarshal((*adl)["category"], &category)
+	if err != nil {
+		return nil, err
+	}
+
+	var resourceId string
+	err = json.Unmarshal((*adl)["resourceId"], &resourceId)
+	if err != nil {
+		return nil, err
+	}
+
+	tags := append([]string(nil), DefaultTags...)
+	// tags = append(tags, tagsFromResourceId(parsedId)...) altan
+
+	return &Log{
+		Time:       time,
+		Category:   category,
+		ResourceId: resourceId,
+		Service:    azureService,
+		Source:     azureActiveDirectorySource,
+		Content:    logBytes,
+		Container:  blob.Container.Name,
+		Blob:       blob.Name,
+		Level:      "Informational",
+		Tags:       tags,
+	}, nil
+}
+
 type vnetFlowLog struct {
 	Time          time.Time `json:"time"`
 	SystemID      string    `json:"systemId"`

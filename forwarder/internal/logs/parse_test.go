@@ -131,4 +131,32 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, 2, got)
 	})
 
+	t.Run("can parse active directory logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		adResourceId := "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
+		workingDir, err := os.Getwd()
+		require.NoError(t, err)
+
+		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/ad_audit_logs.json", workingDir))
+		require.NoError(t, err)
+
+		reader := bytes.NewReader(data)
+		closer := io.NopCloser(reader)
+
+		var got int
+
+		// WHEN
+		for currLog, currErr := range logs.Parse(closer, newBlob(adResourceId, "insights-logs-auditlogs"), MockScrubber(t, data)) {
+			require.NoError(t, currErr)
+			require.Equal(t, "AuditLogs", currLog.Category)
+			require.Equal(t, adResourceId, currLog.ResourceId)
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, 22, got)
+	})
+
 }

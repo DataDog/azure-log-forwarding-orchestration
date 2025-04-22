@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"slices"
 
 	// 3p
 	"github.com/dop251/goja/parser"
@@ -20,7 +21,7 @@ import (
 )
 
 // ordered list of parsers, the first parser that returns true will be used
-var parsers = []Parser{FlowEventParser{}, FunctionAppParser{}, AzureLogParser{}}
+var parsers = []Parser{FlowEventParser{}, FunctionAppParser{}, ActiveDirectoryParser{}, AzureLogParser{}}
 
 // Parser is an interface for parsing logs.
 type Parser interface {
@@ -104,6 +105,58 @@ func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiS
 // Valid checks if the blob is in a function app container.
 func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 	return blob.Container.Name == functionAppContainer
+}
+
+type ActiveDirectoryParser struct{}
+
+var activeDirectoryContainers = []string{
+	"insights-logs-auditlogs",
+	"insights-logs-signinlogs",
+	"insights-logs-noninteractiveusersigninlogs",
+	"insights-logs-serviceprincipalsigninlogs",
+	"insights-logs-managedidentitysigninlogs",
+	"insights-logs-provisioninglogs", // altan
+	"insights-logs-adfssigninlogs",   // altan
+	"insights-logs-riskyusers",
+	"insights-logs-userriskevents",
+	"insights-logs-networkaccesstrafficlogs",   // altan
+	"insights-logs-riskyserviceprincipals",     // altan
+	"insights-logs-serviceprincipalriskevents", // altan
+	"insights-logs-enrichedoffice365auditlogs", // altan
+	"insights-logs-microsoftgraphactivitylogs",
+	"insights-logs-remotenetworkhealthlogs",             // altan
+	"insights-logs-networkaccessalerts",                 // altan
+	"insights-logs-networkaccessconnectionevents",       // altan
+	"insights-logs-microsoftserviceprincipalsigninlogs", // altan
+}
+
+func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
+	return func(yield func(*Log, error) bool) {
+		for scanner.Scan() {
+			currBytes := scanner.Bytes()
+			originalSize := len(currBytes)
+			scrubbedBytes := piiScrubber.Scrub(currBytes)
+
+			var activeDirectoryLog activeDirectoryLog
+			err := json.Unmarshal(scrubbedBytes, &activeDirectoryLog)
+			if err != nil && !yield(nil, err) {
+				return
+			}
+			currLog, err := activeDirectoryLog.ToLog(blob)
+			currLog.RawByteSize = int64(originalSize)
+			currLog.ScrubbedByteSize = int64(len(scrubbedBytes))
+			if err != nil && !yield(nil, err) {
+				return
+			}
+			if !yield(currLog, nil) {
+				return
+			}
+		}
+	}
+}
+
+func (a ActiveDirectoryParser) Valid(blob storage.Blob) bool {
+	return slices.Contains(activeDirectoryContainers, blob.Container.Name)
 }
 
 type AzureLogParser struct{}
