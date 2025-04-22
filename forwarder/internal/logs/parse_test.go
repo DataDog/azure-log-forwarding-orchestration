@@ -141,7 +141,7 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 		testFileName     string
 		expectedLogCount int
 	}{
-		"can parse active directory logs": {
+		"can parse audit logs": {
 			categoryName:     "AuditLogs",
 			containerName:    "insights-logs-auditlogs",
 			testFileName:     "audit_logs.json",
