@@ -7,6 +7,7 @@ package logs
 import (
 	// stdlib
 	"encoding/json"
+	"slices"
 	"time"
 
 	// 3p
@@ -138,6 +139,10 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 type activeDirectoryLog map[string]json.RawMessage
 
 const azureActiveDirectorySource = "azure.aadiam"
+const riskLogsTimeLayout = "1/2/2006 3:04:05 PM"
+
+// These log categories have a `time` field that is not in RFC3339 format
+var riskLogContainers = []string{"insights-logs-userriskevents", "insights-logs-riskyusers"}
 
 func (adl *activeDirectoryLog) Bytes() ([]byte, error) {
 	return json.Marshal(adl)
@@ -149,10 +154,23 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 		return nil, err
 	}
 
-	var time time.Time
-	err = json.Unmarshal((*adl)["time"], &time)
-	if err != nil {
-		return nil, err
+	var logTime time.Time
+	if slices.Contains(riskLogContainers, blob.Container.Name) {
+		var timeString string
+		err = json.Unmarshal((*adl)["time"], &timeString)
+		if err != nil {
+			return nil, err
+		}
+
+		logTime, err = time.Parse(riskLogsTimeLayout, timeString)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = json.Unmarshal((*adl)["time"], &logTime)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var category string
@@ -171,7 +189,7 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	// tags = append(tags, tagsFromResourceId(parsedId)...) altan
 
 	return &Log{
-		Time:       time,
+		Time:       logTime,
 		Category:   category,
 		ResourceId: resourceId,
 		Service:    azureService,

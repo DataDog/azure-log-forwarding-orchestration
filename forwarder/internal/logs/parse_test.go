@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	// 3p
@@ -130,33 +131,92 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		assert.Equal(t, 2, got)
 	})
+}
 
-	t.Run("can parse active directory logs", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		adResourceId := "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
+func TestParseActiveDirectoryLogs(t *testing.T) {
+	adResourceId := "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
+	tests := map[string]struct {
+		categoryName     string
+		containerName    string
+		testFileName     string
+		expectedLogCount int
+	}{
+		"can parse active directory logs": {
+			categoryName:     "AuditLogs",
+			containerName:    "insights-logs-auditlogs",
+			testFileName:     "audit_logs.json",
+			expectedLogCount: 22,
+		},
+		"can parse managed identity sign in logs": {
+			categoryName:     "ManagedIdentitySignInLogs",
+			containerName:    "insights-logs-managedidentitysigninlogs",
+			testFileName:     "managed_identity_sign_in_logs.json",
+			expectedLogCount: 24,
+		},
+		"can parse microsoft graph activity logs": {
+			categoryName:     "MicrosoftGraphActivityLogs",
+			containerName:    "insights-logs-microsoftgraphactivitylogs",
+			testFileName:     "ms_graph_activity_logs.json",
+			expectedLogCount: 25,
+		},
+		"can parse non interactive user sign in logs": {
+			categoryName:     "NonInteractiveUserSignInLogs",
+			containerName:    "insights-logs-noninteractiveusersigninlogs",
+			testFileName:     "non_interactive_user_sign_in_logs.json",
+			expectedLogCount: 14,
+		},
+		"can parse risky users logs": {
+			categoryName:     "RiskyUsers",
+			containerName:    "insights-logs-riskyusers",
+			testFileName:     "risky_users_logs.json",
+			expectedLogCount: 1,
+		},
+		"can parse service principal sign in logs": {
+			categoryName:     "ServicePrincipalSignInLogs",
+			containerName:    "insights-logs-serviceprincipalsigninlogs",
+			testFileName:     "service_principal_sign_in_logs.json",
+			expectedLogCount: 25,
+		},
+		"can parse sign in logs": {
+			categoryName:     "SignInLogs",
+			containerName:    "insights-logs-signinlogs",
+			testFileName:     "sign_in_logs.json",
+			expectedLogCount: 5,
+		},
+		"can parse user risk event logs": {
+			categoryName:     "UserRiskEvents",
+			containerName:    "insights-logs-userriskevents",
+			testFileName:     "user_risk_event_logs.json",
+			expectedLogCount: 1,
+		},
+	}
 
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/ad_audit_logs.json", workingDir))
-		require.NoError(t, err)
+	workingDir, err := os.Getwd()
+	require.NoError(t, err)
 
-		reader := bytes.NewReader(data)
-		closer := io.NopCloser(reader)
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			// GIVEN
+			data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/activedirectory/%s", workingDir, testData.testFileName))
+			require.NoError(t, err)
 
-		var got int
+			reader := bytes.NewReader(data)
+			closer := io.NopCloser(reader)
 
-		// WHEN
-		for currLog, currErr := range logs.Parse(closer, newBlob(adResourceId, "insights-logs-auditlogs"), MockScrubber(t, data)) {
-			require.NoError(t, currErr)
-			require.Equal(t, "AuditLogs", currLog.Category)
-			require.Equal(t, adResourceId, currLog.ResourceId)
-			require.False(t, currLog.Time.IsZero())
-			got += 1
-		}
+			var numLogsParsed int
 
-		// THEN
-		assert.Equal(t, 22, got)
-	})
+			// WHEN
+			for currLog, currErr := range logs.Parse(closer, newBlob(adResourceId, testData.containerName), MockScrubber(t, data)) {
+				require.NoError(t, currErr)
+				require.Equal(t, testData.categoryName, currLog.Category)
+				require.Equal(t, testData.containerName, currLog.Container)
+				require.True(t, strings.EqualFold(adResourceId, currLog.ResourceId))
+				require.False(t, currLog.Time.IsZero())
+				numLogsParsed += 1
+			}
 
+			// THEN
+			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
+		})
+	}
 }

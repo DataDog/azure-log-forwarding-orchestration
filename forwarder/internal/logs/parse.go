@@ -143,11 +143,13 @@ func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, 
 				return
 			}
 			currLog, err := activeDirectoryLog.ToLog(blob)
-			currLog.RawByteSize = int64(originalSize)
-			currLog.ScrubbedByteSize = int64(len(scrubbedBytes))
 			if err != nil && !yield(nil, err) {
 				return
 			}
+
+			currLog.RawByteSize = int64(originalSize)
+			currLog.ScrubbedByteSize = int64(len(scrubbedBytes))
+
 			if !yield(currLog, nil) {
 				return
 			}
