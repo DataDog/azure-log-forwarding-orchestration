@@ -80,8 +80,13 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 
 	var currLog *logs.Log
 	var err error
-	for parsedLog := range logs.Parse(reader, blob, piiScrubber) {
+	parsedLogsIter, err := logs.Parse(reader, blob, piiScrubber)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
+	}
+	for parsedLog := range parsedLogsIter {
 		if parsedLog.Err != nil {
+			err = fmt.Errorf("error parsing log: %w", parsedLog.Err)
 			break
 		}
 		currLog = parsedLog.ParsedLog
