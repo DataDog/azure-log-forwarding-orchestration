@@ -56,5 +56,5 @@ func (h Hook) Fire(entry *logrus.Entry) error {
 		Service:              pointer.Get(ServiceName),
 		AdditionalProperties: additionalProperties,
 	}
-	return h.client.AddFormattedLog(context.Background(), h.logger, log)
+	return h.client.AddFormattedLog(context.Background(), time.Now, h.logger, log)
 }
