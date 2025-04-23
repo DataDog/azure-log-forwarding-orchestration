@@ -38,7 +38,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, newLineBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data))
+		parsedLogsIter, newlineBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data))
 		for parsedLog := range parsedLogsIter {
 			currLog := parsedLog.ParsedLog
 			require.NoError(t, parsedLog.Err)
@@ -50,7 +50,7 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 21, got)
-		assert.Equal(t, 21, newLineBytes())
+		assert.Equal(t, 21, newlineBytes())
 	})
 
 	t.Run("can parse function app logs", func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, newLineBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data))
+		parsedLogsIter, newlineBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -80,7 +80,7 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 20, got)
-		assert.Equal(t, 20, newLineBytes())
+		assert.Equal(t, 20, newlineBytes())
 	})
 
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
@@ -98,7 +98,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, newLineBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data))
+		parsedLogsIter, newlineBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -110,7 +110,7 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 7, got)
-		assert.Equal(t, 7, newLineBytes())
+		assert.Equal(t, 7, newlineBytes())
 	})
 
 	t.Run("can parse vnet flow logs", func(t *testing.T) {
