@@ -891,9 +891,9 @@ func TestRunWithAzurite(t *testing.T) {
 
 	t.Run("run two stage test against run", func(t *testing.T) {
 		t.Parallel()
-		//if os.Getenv("RUN_AZURITE_TESTS") != "true" {
-		//	t.Skip("Skipping azurite tests as RUN_AZURITE_TESTS is not set to true")
-		//}
+		if os.Getenv("RUN_AZURITE_TESTS") != "true" {
+			t.Skip("Skipping azurite tests as RUN_AZURITE_TESTS is not set to true")
+		}
 		ctx := context.Background()
 		req := testcontainers.ContainerRequest{
 			Image:        "mcr.microsoft.com/azure-storage/azurite",
