@@ -150,7 +150,7 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], error) {
 	scanner := bufio.NewScanner(reader)
 
 	// set buffer size so we can process logs bigger than 65kb
@@ -160,15 +160,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) iter.S
 	// iterate over parsers
 	for _, parser := range parsers {
 		if parser.Valid(blob) {
-			return parser.Parse(scanner, blob, piiScrubber)
+			return parser.Parse(scanner, blob, piiScrubber), nil
 		}
 	}
 
-	return func(yield func(response ParsedLogResponse) bool) {
-		// if no parser is found, yield an error
-		response := ParsedLogResponse{
-			Err: errors.New("no parser found for blob"),
-		}
-		yield(response)
-	}
+	return nil, errors.New("no parser found for blob")
 }

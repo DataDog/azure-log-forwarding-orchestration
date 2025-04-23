@@ -819,6 +819,7 @@ func TestRunMain(t *testing.T) {
 	})
 }
 
+// getAzuriteConnectionString returns the connection string for a given Azurite container.
 func getAzuriteConnectionString(ctx context.Context, container testcontainers.Container) (string, error) {
 	ports, err := container.Ports(ctx)
 	if err != nil {
@@ -895,6 +896,9 @@ func TestRunWithAzurite(t *testing.T) {
 			t.Skip("Skipping azurite tests as RUN_AZURITE_TESTS is not set to true")
 		}
 		ctx := context.Background()
+
+		// use testcontainers to create an azurite container
+		// azurite is a storage account emulator
 		req := testcontainers.ContainerRequest{
 			Image:        "mcr.microsoft.com/azure-storage/azurite",
 			ExposedPorts: []string{"10000/tcp", "10001/tcp", "10002/tcp"},
@@ -913,6 +917,7 @@ func TestRunWithAzurite(t *testing.T) {
 
 		functionAppContainer := "insights-logs-functionapplogs"
 
+		// create azure storage container needed to upload the blobs
 		_, err = azBlobClient.CreateContainer(ctx, functionAppContainer, nil)
 		require.NoError(t, err)
 
