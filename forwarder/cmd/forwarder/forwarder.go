@@ -226,7 +226,11 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	blobErrorEg, _ := errgroup.WithContext(ctx)
 	blobErrorEg.Go(func() error {
 		for blobErr := range blobErrorCh {
-			blobErrors[blobErr.blob.Name] = blobErr.err
+			currErr := blobErr.err
+			if existingErr, ok := blobErrors[blobErr.blob.Name]; ok {
+				currErr = errors.Join(currErr, existingErr)
+			}
+			blobErrors[blobErr.blob.Name] = currErr
 		}
 		return nil
 	})
