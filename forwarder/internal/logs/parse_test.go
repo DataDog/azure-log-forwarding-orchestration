@@ -38,8 +38,8 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogIter, newLineBytes := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data))
-		for parsedLog := range parsedLogIter {
+		parsedLogsIter, newLineBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data))
+		for parsedLog := range parsedLogsIter {
 			currLog := parsedLog.ParsedLog
 			require.NoError(t, parsedLog.Err)
 			require.NotEqual(t, "", currLog.Category)
@@ -68,8 +68,8 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogIter, newLineBytes := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data))
-		for parsedLog := range parsedLogIter {
+		parsedLogsIter, newLineBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data))
+		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
 			require.NotEqual(t, "", currLog.Category)
@@ -98,8 +98,8 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogIter, newLineBytes := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data))
-		for parsedLog := range parsedLogIter {
+		parsedLogsIter, newLineBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data))
+		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
 			require.Equal(t, "WorkflowRuntime", currLog.Category)
@@ -128,8 +128,8 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogIter, newlineBytes := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data))
-		for parsedLog := range parsedLogIter {
+		parsedLogsIter, newlineBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data))
+		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
 			require.Equal(t, "NetworkSecurityGroupFlowEvent", currLog.Category)

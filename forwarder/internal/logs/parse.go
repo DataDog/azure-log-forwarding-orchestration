@@ -180,7 +180,7 @@ func (c *counter) Add(value int) {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], func() int) {
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], func() int, error) {
 	c := newCounter()
 
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
@@ -224,15 +224,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 	// iterate over parsers
 	for _, parser := range parsers {
 		if parser.Valid(blob) {
-			return parser.Parse(scanner, blob, piiScrubber), getReturnCharacterBytes
+			return parser.Parse(scanner, blob, piiScrubber), getReturnCharacterBytes, nil
 		}
 	}
 
-	return func(yield func(response ParsedLogResponse) bool) {
-		// if no parser is found, yield an error
-		response := ParsedLogResponse{
-			Err: errors.New("no parser found for blob"),
-		}
-		yield(response)
-	}, getReturnCharacterBytes
+	return nil, getReturnCharacterBytes, errors.New("no parser found for blob")
 }

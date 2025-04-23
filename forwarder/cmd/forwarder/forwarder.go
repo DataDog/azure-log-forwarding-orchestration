@@ -80,10 +80,14 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 
 	var currLog *logs.Log
 	var err error
-	logIter, returnBytes := logs.Parse(reader, blob, piiScrubber)
-	for parsedLog := range logIter {
+	parsedLogsIter, returnBytes, err := logs.Parse(reader, blob, piiScrubber)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
+	}
+	for parsedLog := range parsedLogsIter {
+
 		if parsedLog.Err != nil {
-			err = errors.Join(err, parsedLog.Err)
+			err = fmt.Errorf("error parsing log: %w", parsedLog.Err)
 			break
 		}
 		currLog = parsedLog.ParsedLog
@@ -224,7 +228,11 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	blobErrorEg, _ := errgroup.WithContext(ctx)
 	blobErrorEg.Go(func() error {
 		for blobErr := range blobErrorCh {
-			blobErrors[blobErr.blob.Name] = blobErr.err
+			currErr := blobErr.err
+			if existingErr, ok := blobErrors[blobErr.blob.Name]; ok {
+				currErr = errors.Join(currErr, existingErr)
+			}
+			blobErrors[blobErr.blob.Name] = currErr
 		}
 		return nil
 	})

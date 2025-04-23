@@ -270,6 +270,7 @@ arm-template-publish-qa:
     refs:
       - main
   script:
+    - sed -i 's|https://ddazurelfo.blob.core.windows.net|https://lfoqa.blob.core.windows.net|g' ./deploy/azuredeploy.bicep
     - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
     - ./ci/scripts/arm-template/upload-qa-env.sh ./azuredeploy.json templates azuredeploy.json
