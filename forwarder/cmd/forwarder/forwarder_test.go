@@ -347,7 +347,7 @@ func TestRun(t *testing.T) {
 		// GIVEN
 		testString := "test"
 		validLog := getLogWithContent(testString, 5*time.Minute)
-		expectedBytesForLog := len(validLog) // + 1 // +1 for newline
+		expectedBytesForLog := len(validLog)
 
 		containerPage := []*service.ContainerItem{
 			newContainerItem("insights-logs-functionapplogs"),
