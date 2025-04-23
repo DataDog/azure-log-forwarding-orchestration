@@ -55,13 +55,6 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 
 	processedRawBytes, _, err := parseLogs(content.Reader, blob, piiScrubber, logsChannel)
 
-	// linux newlines are 1 byte, but windows newlines are 2
-	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
-	// we know we have hit the end and can safely set our cursor to the end of the file.
-	//if processedRawBytes+processedLogs+cursorOffset == blob.ContentLength {
-	//	processedRawBytes = blob.ContentLength - cursorOffset
-	//}
-
 	if processedRawBytes+cursorOffset > blob.ContentLength {
 		// we have processed more bytes than expected
 		// unsafe to save cursor
