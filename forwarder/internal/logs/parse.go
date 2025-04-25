@@ -152,12 +152,12 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 	return true
 }
 
-// dropCR drops a terminal \r from the data.
-func dropCR(data []byte) ([]byte, bool) {
+// dropCR drops a terminal \r from the data slice if it exists and returns number of bytes dropped.
+func dropCR(data []byte) ([]byte, int) {
 	if len(data) > 0 && data[len(data)-1] == '\r' {
-		return data[0 : len(data)-1], true
+		return data[0 : len(data)-1], 1
 	}
-	return data, false
+	return data, 0
 }
 
 type counter struct {
@@ -190,22 +190,14 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 		}
 		if i := bytes.IndexByte(data, '\n'); i >= 0 {
 			// We have a full newline-terminated line.
-			newData, cr := dropCR(data[0:i])
-			if cr {
-				c.Add(2)
-			} else {
-				c.Add(1)
-			}
+			newData, droppedBytes := dropCR(data[0:i])
+			c.Add(1 + droppedBytes)
 			return i + 1, newData, nil
 		}
 		// If we're at EOF, we have a final, non-terminated line. Return it.
 		if atEOF {
-			newData, cr := dropCR(data)
-			if cr {
-				c.Add(2)
-			} else {
-				c.Add(1)
-			}
+			newData, droppedBytes := dropCR(data)
+			c.Add(1 + droppedBytes)
 			return len(data), newData, nil
 		}
 		// Request more data.
