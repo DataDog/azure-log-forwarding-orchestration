@@ -242,6 +242,7 @@ class TestResourcesTask(TaskTestCase):
     async def test_tags(self):
         self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator())
 
         task = await self.run_resources_task({})
 

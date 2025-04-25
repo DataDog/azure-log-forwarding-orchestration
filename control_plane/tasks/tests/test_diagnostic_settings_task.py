@@ -17,6 +17,7 @@ from azure.mgmt.monitor.models import CategoryType
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
+from cache.env import CONTROL_PLANE_ID_SETTING, VERSION_TAG_SETTING
 from cache.resources_cache import INCLUDE_KEY, ResourceCache, ResourceCacheV1
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
@@ -509,3 +510,24 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.log.exception.assert_called_with("Failed to delete diagnostic setting for resource %s", resource_id1)
         self.assertIsNotNone(task.event_cache[sub_id1][resource_id1])
         self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], 2)
+
+    async def test_tags(self):
+        self.env[VERSION_TAG_SETTING] = "v345"
+        self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
+
+        task = await self.run_diagnostic_settings_task(
+            resource_cache={},
+            assignment_cache={},
+            event_cache={},
+        )
+
+        self.assertEqual(task.version_tag, "v345")
+        self.assertCountEqual(
+            task.tags,
+            [
+                "forwarder:lfocontrolplane",
+                "task:diagnostic_settings_task",
+                "control_plane_id:a2b4c5d6",
+                "version:v345",
+            ],
+        )

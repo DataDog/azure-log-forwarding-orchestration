@@ -14,6 +14,8 @@ from cache.common import InvalidCacheError
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    SUBSCRIPTION_ID_SETTING,
     VERSION_TAG_SETTING,
 )
 from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
@@ -36,6 +38,15 @@ class TestDeployerTask(TaskTestCase):
 
     def setUp(self) -> None:
         super().setUp()
+        self.env.update(
+            {
+                RESOURCE_GROUP_SETTING: "test_rg",
+                CONTROL_PLANE_REGION_SETTING: "region1",
+                SUBSCRIPTION_ID_SETTING: "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
+            }
+        )
+        self.patch("get_config_option").side_effect = lambda k: self.env[k]
+        self.patch("environ.get").side_effect = lambda k, default="unset test env var": self.env.get(k, default)
         self.public_client = AsyncMockClient()
         self.patch("ContainerClient").return_value = self.public_client
         self.read_private_cache = self.patch("read_cache")
