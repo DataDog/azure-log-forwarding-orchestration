@@ -597,8 +597,29 @@ var (
 	//go:embed fixtures/function_app_logs.json
 	functionAppLogData string
 
-	//go:embed fixtures/ad_audit_logs.json
+	//go:embed fixtures/activedirectory/audit_logs.json
 	adAuditLogData string
+
+	//go:embed fixtures/activedirectory/managed_identity_sign_in_logs.json
+	adManagedIdentitySignInLogData string
+
+	//go:embed fixtures/activedirectory/ms_graph_activity_logs.json
+	adMicrosoftGraphActivityLogData string
+
+	//go:embed fixtures/activedirectory/non_interactive_user_sign_in_logs.json
+	adNonInteractiveUserSignInLogData string
+
+	//go:embed fixtures/activedirectory/risky_users_logs.json
+	adRiskyUsersLogData string
+
+	//go:embed fixtures/activedirectory/service_principal_sign_in_logs.json
+	adServicePrincipalSignInLogData string
+
+	//go:embed fixtures/activedirectory/sign_in_logs.json
+	adSignInLogData string
+
+	//go:embed fixtures/activedirectory/user_risk_event_logs.json
+	adUserRiskEventLogData string
 )
 
 func TestCursors(t *testing.T) {
@@ -746,12 +767,62 @@ func TestCursors(t *testing.T) {
 			}
 		}
 	})
+}
 
-	t.Run("works with active directory logs", func(t *testing.T) {
-		t.Parallel()
+func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		containerName string
+		testFileName  string
+		testLogData   string
+	}{
+		"works with AD audit logs": {
+			containerName: "insights-logs-auditlogs",
+			testFileName:  "audit_logs.json",
+			testLogData:   adAuditLogData,
+		},
+		"works with AD managed identity sign in logs": {
+			containerName: "insights-logs-managedidentitysigninlogs",
+			testFileName:  "managed_identity_sign_in_logs.json",
+			testLogData:   adManagedIdentitySignInLogData,
+		},
+		"works with AD microsoft graph activity logs": {
+			containerName: "insights-logs-microsoftgraphactivitylogs",
+			testFileName:  "ms_graph_activity_logs.json",
+			testLogData:   adMicrosoftGraphActivityLogData,
+		},
+		"works with AD non interactive user sign in logs": {
+			containerName: "insights-logs-noninteractiveusersigninlogs",
+			testFileName:  "non_interactive_user_sign_in_logs.json",
+			testLogData:   adNonInteractiveUserSignInLogData,
+		},
+		"works with AD risky users logs": {
+			containerName: "insights-logs-riskyusers",
+			testFileName:  "risky_users_logs.json",
+			testLogData:   adRiskyUsersLogData,
+		},
+		"works with AD service principal sign in logs": {
+			containerName: "insights-logs-serviceprincipalsigninlogs",
+			testFileName:  "service_principal_sign_in_logs.json",
+			testLogData:   adServicePrincipalSignInLogData,
+		},
+		"works with AD sign in logs": {
+			containerName: "insights-logs-signinlogs",
+			testFileName:  "sign_in_logs.json",
+			testLogData:   adSignInLogData,
+		},
+		"works with AD user risk event logs": {
+			containerName: "insights-logs-userriskevents",
+			testFileName:  "user_risk_event_logs.json",
+			testLogData:   adUserRiskEventLogData,
+		},
+	}
+
+	for name, test := range tests {
 		// GIVEN
-		containerName := "insights-logs-auditlogs"
-		blobName := "ad_audit_logs.json"
+		containerName := test.containerName
+		blobName := test.testFileName
 
 		containerPage := []*service.ContainerItem{
 			newContainerItem(containerName),
@@ -766,7 +837,7 @@ func TestCursors(t *testing.T) {
 
 		for i := 0; i < n; i++ {
 			// REPEATED GIVEN
-			currentLogData = append(currentLogData, adAuditLogData...)
+			currentLogData = append(currentLogData, test.testLogData...)
 			currentLength := int64(len(currentLogData))
 
 			blobItem := &container.BlobItem{
@@ -808,7 +879,7 @@ func TestCursors(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName))
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName), name)
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, azureService, *logItem.Service)
@@ -816,7 +887,7 @@ func TestCursors(t *testing.T) {
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
-	})
+	}
 }
 
 type FaultyRoundTripper struct {

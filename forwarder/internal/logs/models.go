@@ -138,7 +138,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 }
 
 // Active Directory (AD) logs are made up of numerous log categories,
-// so parse out a few key fields and submit rest as json.RawMessage
+// so parse out a few key fields and submit rest as generic JSON
 type activeDirectoryLog map[string]json.RawMessage
 
 const (
