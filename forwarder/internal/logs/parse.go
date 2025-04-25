@@ -180,6 +180,7 @@ func (c *counter) Add(value int) {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
+// It returns a sequence of ParsedLogResponse and a function to get the number of bytes read and an error if any.
 func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], func() int, error) {
 	c := newCounter()
 
