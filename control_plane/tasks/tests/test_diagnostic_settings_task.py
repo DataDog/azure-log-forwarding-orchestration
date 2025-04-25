@@ -62,9 +62,11 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.send_max_settings_reached_event = self.patch("DiagnosticSettingsTask.send_max_settings_reached_event")
         self.send_max_settings_reached_event.return_value = True
         self.log = self.patch_path("tasks.task.log").getChild.return_value
-        env = patch.dict(environ, {"RESOURCE_GROUP": "lfo", "CONTROL_PLANE_ID": control_plane_id})
+        env_dict = {"RESOURCE_GROUP": "lfo", "CONTROL_PLANE_ID": control_plane_id}
+        env = patch.dict(environ, env_dict)
         env.start()
         self.addCleanup(env.stop)
+        self.env.update(env_dict)
 
     async def run_diagnostic_settings_task(
         self,
