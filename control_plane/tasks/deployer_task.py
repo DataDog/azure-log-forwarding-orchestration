@@ -186,7 +186,7 @@ class DeployerTask(Task):
         app_settings = await self.web_client.web_apps.list_application_settings(self.resource_group, function_app_name)
         version = self.manifest_cache[component]
         app_settings.properties[VERSION_TAG_SETTING] = version
-        self.web_client.web_apps.update_application_settings(self.resource_group, function_app_name, app_settings)
+        await self.web_client.web_apps.update_application_settings(self.resource_group, function_app_name, app_settings)
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def sync_function_app_triggers(self, function_app_name: str) -> None:
