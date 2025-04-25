@@ -12,8 +12,7 @@ import (
 	"errors"
 	"io"
 	"iter"
-
-	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
+	"sync/atomic"
 
 	// 3p
 	"github.com/dop251/goja/parser"
@@ -160,29 +159,29 @@ func dropCR(data []byte) ([]byte, int) {
 	return data, 0
 }
 
-type counter struct {
-	value *int
-}
-
-// newCounter creates a new counter.
-func newCounter() *counter {
-	return &counter{
-		value: pointer.Get(0),
-	}
-}
-
-func (c *counter) Get() int {
-	return *c.value
-}
-
-func (c *counter) Add(value int) {
-	c.value = pointer.Get(*c.value + value)
-}
+//type counter struct {
+//	value *int
+//}
+//
+//// newCounter creates a new counter.
+//func newCounter() *counter {
+//	return &counter{
+//		value: pointer.Get(0),
+//	}
+//}
+//
+//func (c *counter) Get() int {
+//	return *c.value
+//}
+//
+//func (c *counter) Add(value int) {
+//	c.value = pointer.Get(*c.value + value)
+//}
 
 // Parse reads logs from a reader and parses them into Log objects.
 // It returns a sequence of ParsedLogResponse and a function to get the number of newline bytes read and an error if any.
-func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], func() int, error) {
-	c := newCounter()
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], *atomic.Uint64, error) {
+	var counter atomic.Uint64
 
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
@@ -191,22 +190,22 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 		if i := bytes.IndexByte(data, '\n'); i >= 0 {
 			// We have a full newline-terminated line.
 			newData, droppedBytes := dropCR(data[0:i])
-			c.Add(1 + droppedBytes)
+			counter.Add(uint64(1 + droppedBytes))
 			return i + 1, newData, nil
 		}
 		// If we're at EOF, we have a final, non-terminated line. Return it.
 		if atEOF {
 			newData, droppedBytes := dropCR(data)
-			c.Add(1 + droppedBytes)
+			counter.Add(uint64(1 + droppedBytes))
 			return len(data), newData, nil
 		}
 		// Request more data.
 		return 0, nil, nil
 	}
 
-	getReturnCharacterBytes := func() int {
-		return c.Get()
-	}
+	//getReturnCharacterBytes := func() int {
+	//	return c.Get()
+	//}
 
 	scanner := bufio.NewScanner(reader)
 	scanner.Split(scanLines)
@@ -217,9 +216,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 	// iterate over parsers
 	for _, parser := range parsers {
 		if parser.Valid(blob) {
-			return parser.Parse(scanner, blob, piiScrubber), getReturnCharacterBytes, nil
+			return parser.Parse(scanner, blob, piiScrubber), &counter, nil
 		}
 	}
 
-	return nil, getReturnCharacterBytes, errors.New("no parser found for blob")
+	return nil, &counter, errors.New("no parser found for blob")
 }

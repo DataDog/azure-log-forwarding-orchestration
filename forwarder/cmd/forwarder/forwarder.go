@@ -73,7 +73,7 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 
 	var currLog *logs.Log
 	var err error
-	parsedLogsIter, getNewlineBytesFunc, err := logs.Parse(reader, blob, piiScrubber)
+	parsedLogsIter, newlineCounter, err := logs.Parse(reader, blob, piiScrubber)
 	if err != nil {
 		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
 	}
@@ -88,7 +88,7 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 		processedLogs += 1
 		logsChannel <- currLog
 	}
-	processedRawBytes += int64(getNewlineBytesFunc())
+	processedRawBytes += int64(newlineCounter.Load())
 	return processedRawBytes, processedLogs, err
 }
 

@@ -50,7 +50,7 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 21, got)
-		assert.Equal(t, 21, newlineBytes())
+		assert.Equal(t, 21, int(newlineBytes.Load()))
 	})
 
 	t.Run("can parse function app logs", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 20, got)
-		assert.Equal(t, 20, newlineBytes())
+		assert.Equal(t, 20, int(newlineBytes.Load()))
 	})
 
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 7, got)
-		assert.Equal(t, 7, newlineBytes())
+		assert.Equal(t, 7, int(newlineBytes.Load()))
 	})
 
 	t.Run("can parse vnet flow logs", func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		// vnet flow logs have multiple logs per line
 		assert.Equal(t, 2, got)
-		assert.Equal(t, 1, newlineBytes())
+		assert.Equal(t, 1, int(newlineBytes.Load()))
 
 	})
 
