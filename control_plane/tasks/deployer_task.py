@@ -185,6 +185,8 @@ class DeployerTask(Task):
     async def set_function_app_version(self, function_app_name: str, component: ControlPlaneComponent) -> None:
         app_settings = await self.web_client.web_apps.list_application_settings(self.resource_group, function_app_name)
         version = self.manifest_cache[component]
+        if not app_settings.properties:
+            app_settings.properties = {}
         app_settings.properties[VERSION_TAG_SETTING] = version
         await self.web_client.web_apps.update_application_settings(self.resource_group, function_app_name, app_settings)
 
