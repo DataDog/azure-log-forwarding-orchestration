@@ -127,17 +127,19 @@ class TestScalingTask(TaskTestCase):
         ]
         self.log = self.patch_path("tasks.task.log").getChild.return_value
         self.generate_unique_id = self.patch("generate_unique_id")
+        env_dict = {
+            RESOURCE_GROUP_SETTING: RG1,
+            CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
+            CONTROL_PLANE_REGION_SETTING: EAST_US_2,
+            SCALING_PERCENTAGE_SETTING: "0.7",
+        }
         p = patch.dict(
             environ,
-            {
-                RESOURCE_GROUP_SETTING: RG1,
-                CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
-                CONTROL_PLANE_REGION_SETTING: EAST_US_2,
-                SCALING_PERCENTAGE_SETTING: "0.7",
-            },
+            env_dict,
         )
         p.start()
         self.addCleanup(p.stop)
+        self.env.update(env_dict)
         self.generate_unique_id.return_value = NEW_LOG_FORWARDER_ID
 
     @property
