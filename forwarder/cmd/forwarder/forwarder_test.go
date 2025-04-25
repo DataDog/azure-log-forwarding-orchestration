@@ -817,7 +817,6 @@ func TestCursors(t *testing.T) {
 			}
 		}
 	})
-
 }
 
 type FaultyRoundTripper struct {

@@ -139,11 +139,15 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 // so parse a few necessary fields and submit rest as JSON
 type activeDirectoryLog map[string]json.RawMessage
 
-const azureActiveDirectorySource = "azure.aadiam"
-const riskLogsTimeLayout = "1/2/2006 3:04:05 PM"
+const (
+	azureActiveDirectorySource = "azure.aadiam"
+	userRiskEventsLogContainer = "insights-logs-userriskevents"
+	riskyUsersLogContainer     = "insights-logs-riskyusers"
+	usaShortTimestampFormat    = "1/2/2006 3:04:05 PM"
+)
 
-// These log categories have a `time` field that is not in RFC3339 format
-var riskLogContainers = []string{"insights-logs-userriskevents", "insights-logs-riskyusers"}
+// These log containers have a `time` field that is not in standard RFC3339 format
+var usaShortTimestampLogContainers = []string{userRiskEventsLogContainer, riskyUsersLogContainer}
 
 func (adl *activeDirectoryLog) Bytes() ([]byte, error) {
 	return json.Marshal(adl)
@@ -156,14 +160,14 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	}
 
 	var logTime time.Time
-	if slices.Contains(riskLogContainers, blob.Container.Name) {
+	if slices.Contains(usaShortTimestampLogContainers, blob.Container.Name) {
 		var timeString string
 		err = json.Unmarshal((*adl)["time"], &timeString)
 		if err != nil {
 			return nil, err
 		}
 
-		logTime, err = time.Parse(riskLogsTimeLayout, timeString)
+		logTime, err = time.Parse(usaShortTimestampFormat, timeString)
 		if err != nil {
 			return nil, err
 		}

@@ -125,25 +125,27 @@ func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 
 type ActiveDirectoryParser struct{}
 
+// TODO for commented containers: https://datadoghq.atlassian.net/browse/AZINTS-3430
 var activeDirectoryContainers = []string{
 	"insights-logs-auditlogs",
 	"insights-logs-signinlogs",
 	"insights-logs-noninteractiveusersigninlogs",
 	"insights-logs-serviceprincipalsigninlogs",
 	"insights-logs-managedidentitysigninlogs",
-	"insights-logs-provisioninglogs", // altan
-	"insights-logs-adfssigninlogs",   // altan
+	// "insights-logs-provisioninglogs",
+	// "insights-logs-adfssigninlogs",
 	"insights-logs-riskyusers",
 	"insights-logs-userriskevents",
-	"insights-logs-networkaccesstrafficlogs",   // altan
-	"insights-logs-riskyserviceprincipals",     // altan
-	"insights-logs-serviceprincipalriskevents", // altan
-	"insights-logs-enrichedoffice365auditlogs", // altan
+	// "insights-logs-networkaccesstrafficlogs",
+	// "insights-logs-riskyserviceprincipals",
+	// "insights-logs-serviceprincipalriskevents",
+	// "insights-logs-enrichedoffice365auditlogs",
 	"insights-logs-microsoftgraphactivitylogs",
-	"insights-logs-remotenetworkhealthlogs",             // altan
-	"insights-logs-networkaccessalerts",                 // altan
-	"insights-logs-networkaccessconnectionevents",       // altan
-	"insights-logs-microsoftserviceprincipalsigninlogs", // altan
+	// "insights-logs-remotenetworkhealthlogs",
+	// "insights-logs-networkaccessalerts",
+	// "insights-logs-networkaccessconnectionevents",
+	// "insights-logs-microsoftserviceprincipalsigninlogs",
+	// "insights-logs-azureadgraphactivitylogs",
 }
 
 func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
