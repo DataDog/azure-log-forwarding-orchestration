@@ -28,7 +28,14 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 
 # project
 from cache.common import read_cache
-from cache.env import CONTROL_PLANE_ID_SETTING, DD_API_KEY_SETTING, DD_TELEMETRY_SETTING, LOG_LEVEL_SETTING, is_truthy
+from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
+    DD_API_KEY_SETTING,
+    DD_TELEMETRY_SETTING,
+    LOG_LEVEL_SETTING,
+    VERSION_TAG_SETTING,
+    is_truthy,
+)
 from tasks.common import CONTROL_PLANE_METRIC_PREFIX, now
 
 log = getLogger(__name__)
@@ -75,7 +82,13 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.start_time = time()
         self.execution_id = str(uuid4())
         self.control_plane_id = environ.get(CONTROL_PLANE_ID_SETTING, "unknown")
-        self.tags = ["forwarder:lfocontrolplane", f"task:{self.NAME}", f"control_plane_id:{self.control_plane_id}"]
+        self.version_tag = environ.get(VERSION_TAG_SETTING, "unknown")
+        self.tags = [
+            "forwarder:lfocontrolplane",
+            f"task:{self.NAME}",
+            f"control_plane_id:{self.control_plane_id}",
+            f"version:{self.version_tag}",
+        ]
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[LogRecord] = []
