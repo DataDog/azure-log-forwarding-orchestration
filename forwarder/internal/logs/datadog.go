@@ -19,6 +19,7 @@ import (
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 const (
@@ -40,7 +41,7 @@ const (
 )
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
-func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bool) {
+func ValidateDatadogLog(log datadogV2.HTTPLogItem, now customtime.Now, logger *log.Entry) (int64, bool) {
 	logBytes, err := log.MarshalJSON()
 	if err != nil {
 		logger.WithError(err).Warning("Failed to marshal log")
@@ -75,17 +76,17 @@ func ValidateDatadogLog(log datadogV2.HTTPLogItem, logger *log.Entry) (int64, bo
 		return 0, false
 	}
 
-	valid := validateLog(resourceId, int64(len(logBytes)), parsedTime, logger)
+	valid := validateLog(resourceId, int64(len(logBytes)), parsedTime, now, logger)
 	return int64(len(logBytes)), valid
 }
 
 // validateLog checks if a log is valid to send to Datadog given a set of constraints.
-func validateLog(resourceId string, byteSize int64, logTime time.Time, logger *log.Entry) bool {
+func validateLog(resourceId string, byteSize int64, logTime time.Time, now customtime.Now, logger *log.Entry) bool {
 	if byteSize > MaxLogSize {
 		logger.Warningf("Skipping large log at %s from %s with a size of %d", logTime.Format(time.RFC3339), resourceId, byteSize)
 		return false
 	}
-	if logTime.Before(time.Now().Add(-MaxLogAge)) {
+	if logTime.Before(now().Add(-MaxLogAge)) {
 		logger.Warningf("Skipping log older than 18 hours (at %s) for resource: %s", logTime.Format(time.RFC3339), resourceId)
 		return false
 	}

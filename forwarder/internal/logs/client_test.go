@@ -103,7 +103,7 @@ func TestAddLog(t *testing.T) {
 
 		// WHEN
 		for _, l := range payload {
-			errors.Join(client.AddLog(ctx, logger, l), err)
+			errors.Join(client.AddLog(ctx, time.Now, logger, l), err)
 		}
 		errors.Join(client.Flush(ctx), err)
 
@@ -300,7 +300,7 @@ func TestValid(t *testing.T) {
 		logger, buffer := MockLogger()
 
 		// WHEN
-		got := l.Validate(logger)
+		got := l.Validate(time.Now, logger)
 
 		// THEN
 		assert.True(t, got)
@@ -319,7 +319,7 @@ func TestValid(t *testing.T) {
 		logger, buffer := MockLogger()
 
 		// WHEN
-		got := l.Validate(logger)
+		got := l.Validate(time.Now, logger)
 
 		// THEN
 		assert.False(t, got)
@@ -337,7 +337,7 @@ func TestValid(t *testing.T) {
 		logger, buffer := MockLogger()
 
 		// WHEN
-		got := l.Validate(logger)
+		got := l.Validate(time.Now, logger)
 
 		// THEN
 		assert.False(t, got)

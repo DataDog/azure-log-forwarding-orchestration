@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -133,7 +134,7 @@ func TestSaveDLQ(t *testing.T) {
 		require.NoError(t, err)
 
 		// WHEN
-		err = dlq.Save(context.Background(), client, log.NewEntry(log.New()))
+		err = dlq.Save(context.Background(), client, time.Now, log.NewEntry(log.New()))
 
 		// THEN
 		assert.NoError(t, err)

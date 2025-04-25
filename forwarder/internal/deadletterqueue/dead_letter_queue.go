@@ -11,14 +11,17 @@ import (
 	"errors"
 	"fmt"
 
+	// 3p
 	log "github.com/sirupsen/logrus"
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
+	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
 // BlobName is the name of the blob that contains the dead letter queue.
@@ -77,10 +80,10 @@ func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 }
 
 // Save saves the DeadLetterQueue to storage
-func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, logger *log.Entry) error {
+func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, now customtime.Now, logger *log.Entry) error {
 	// prune invalid logs
 	d.queue = collections.Filter(d.client.FailedLogs, func(log datadogV2.HTTPLogItem) bool {
-		_, valid := logs.ValidateDatadogLog(log, logger)
+		_, valid := logs.ValidateDatadogLog(log, now, logger)
 		return valid
 	})
 
@@ -96,10 +99,10 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, logg
 }
 
 // Process processes the DeadLetterQueue by sending the logs to Datadog.
-func (d *DeadLetterQueue) Process(ctx context.Context, logger *log.Entry) {
+func (d *DeadLetterQueue) Process(ctx context.Context, now customtime.Now, logger *log.Entry) {
 	var err error
 	for _, datadogLog := range d.queue {
-		addLogErr := d.client.AddFormattedLog(ctx, logger, datadogLog)
+		addLogErr := d.client.AddFormattedLog(ctx, now, logger, datadogLog)
 		if addLogErr != nil && !errors.Is(addLogErr, logs.ErrInvalidLog) {
 			errors.Join(err, addLogErr)
 		}
