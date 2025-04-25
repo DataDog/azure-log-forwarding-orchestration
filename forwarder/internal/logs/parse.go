@@ -152,6 +152,9 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 }
 
 // dropCR drops a terminal \r from the data slice if it exists and returns number of bytes dropped.
+// This function is copied from bufio
+// and modified to return the number of bytes dropped.
+// see https://github.com/golang/go/blob/bc2124dab14fa292e18df2937037d782f7868635/src/bufio/scan.go#L342-L347
 func dropCR(data []byte) ([]byte, int) {
 	if len(data) > 0 && data[len(data)-1] == '\r' {
 		return data[0 : len(data)-1], 1
@@ -159,30 +162,14 @@ func dropCR(data []byte) ([]byte, int) {
 	return data, 0
 }
 
-//type counter struct {
-//	value *int
-//}
-//
-//// newCounter creates a new counter.
-//func newCounter() *counter {
-//	return &counter{
-//		value: pointer.Get(0),
-//	}
-//}
-//
-//func (c *counter) Get() int {
-//	return *c.value
-//}
-//
-//func (c *counter) Add(value int) {
-//	c.value = pointer.Get(*c.value + value)
-//}
-
 // Parse reads logs from a reader and parses them into Log objects.
 // It returns a sequence of ParsedLogResponse and a function to get the number of newline bytes read and an error if any.
 func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], *atomic.Uint64, error) {
 	var counter atomic.Uint64
 
+	// scanLines is the original ScanLines function from bufio.Scanner
+	// but modified to count the number of newline bytes read.
+	// see https://github.com/golang/go/blob/bc2124dab14fa292e18df2937037d782f7868635/src/bufio/scan.go#L355-L369
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
 			return 0, nil, nil
@@ -202,10 +189,6 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 		// Request more data.
 		return 0, nil, nil
 	}
-
-	//getReturnCharacterBytes := func() int {
-	//	return c.Get()
-	//}
 
 	scanner := bufio.NewScanner(reader)
 	scanner.Split(scanLines)
