@@ -122,11 +122,6 @@ class DeployerTask(Task):
             ]
         )
 
-        # add control plane task versions as tags reported in runtime metrics/logs
-        self.tags.append(f"deployer_version:{self.version_tag}")
-        for component, version in self.manifest_cache.items():
-            self.tags.append(f"{component}_version:{version}")
-
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
         try:
@@ -169,6 +164,7 @@ class DeployerTask(Task):
             zip_data = await self.download_function_app_data(component)
             self.log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
+            await self.set_function_app_version(function_app, component)
             await self.sync_function_app_triggers(function_app)
         except Exception:
             self.log.exception(f"Failed to deploy {component}")
@@ -185,6 +181,13 @@ class DeployerTask(Task):
         if not resp.ok:
             content = (await resp.content.read()).decode()
             raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
+
+    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
+    async def set_function_app_version(self, function_app_name: str, component: ControlPlaneComponent) -> None:
+        app_settings = await self.web_client.web_apps.list_application_settings(self.resource_group, function_app_name)
+        version = self.manifest_cache[component]
+        app_settings.properties[VERSION_TAG_SETTING] = version
+        await self.web_client.web_apps.update_application_settings(self.resource_group, function_app_name, app_settings)
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def sync_function_app_triggers(self, function_app_name: str) -> None:
