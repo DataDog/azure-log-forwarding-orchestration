@@ -147,14 +147,19 @@ class Task(AbstractAsyncContextManager["Task"]):
             for record in self._logs
         ]
         self._logs.clear()
-        dd_metric = MetricSeries(
+        runtime_seconds = MetricSeries(
             metric=CONTROL_PLANE_METRIC_PREFIX + "runtime_seconds",
             points=[MetricPoint(timestamp=int(self.start_time), value=time() - self.start_time)],
             tags=self.tags,
         )
+        task_completed = MetricSeries(
+            metric=CONTROL_PLANE_METRIC_PREFIX + "task_completed",
+            points=[MetricPoint(timestamp=int(self.start_time), value=1)],
+            tags=self.tags,
+        )
         await gather(
             self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=",".join(self.tags)),  # type: ignore
-            self._metrics_client.submit_metrics(MetricPayload(series=[dd_metric])),  # type: ignore
+            self._metrics_client.submit_metrics(MetricPayload(series=[runtime_seconds, task_completed])),  # type: ignore
         )
 
 
