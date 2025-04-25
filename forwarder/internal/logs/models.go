@@ -7,7 +7,9 @@ package logs
 import (
 	// stdlib
 	"encoding/json"
+	"errors"
 	"slices"
+	"strings"
 	"time"
 
 	// 3p
@@ -135,8 +137,8 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 	}
 }
 
-// Active Directory logs can exist in a high variety of formats,
-// so parse a few necessary fields and submit rest as JSON
+// Active Directory (AD) logs are made up of numerous log categories,
+// so parse out a few key fields and submit rest as json.RawMessage
 type activeDirectoryLog map[string]json.RawMessage
 
 const (
@@ -146,7 +148,7 @@ const (
 	usaShortTimestampFormat    = "1/2/2006 3:04:05 PM"
 )
 
-// These log containers have a `time` field that is not in standard RFC3339 format
+// These AD log containers have a `time` field that is not in standard RFC3339 format
 var usaShortTimestampLogContainers = []string{userRiskEventsLogContainer, riskyUsersLogContainer}
 
 func (adl *activeDirectoryLog) Bytes() ([]byte, error) {
@@ -190,8 +192,32 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 		return nil, err
 	}
 
+	tenantIdFromResourceId := func(adResourceId string) (string, error) {
+		// Sample active directory resource ID: /tenants/00000000-0000-0000-0000-000000000000/providers/Microsoft.aadiam
+		// Don't use arm.ParseResourceID here because active directory is not an ARM resource
+
+		trimmed := strings.Trim(adResourceId, "/")
+		parts := strings.Split(trimmed, "/")
+
+		if len(parts) < 2 {
+			return "", errors.New("unable to get tenant ID from AD resource ID")
+		}
+
+		if !strings.EqualFold(parts[0], "tenants") {
+			return "", errors.New("resource ID is not for a tenant-scoped active directory log")
+		}
+
+		return parts[1], nil
+	}
+
 	tags := append([]string(nil), DefaultTags...)
-	// tags = append(tags, tagsFromResourceId(parsedId)...) altan
+	tags = append(tags, "source:"+azureActiveDirectorySource)
+	tenantId, err := tenantIdFromResourceId(resourceId)
+	if err != nil {
+		return nil, err
+	} else {
+		tags = append(tags, "tenant_id:"+tenantId)
+	}
 
 	return &Log{
 		Time:       logTime,

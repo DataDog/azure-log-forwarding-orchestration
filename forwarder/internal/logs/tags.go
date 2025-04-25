@@ -7,6 +7,7 @@ package logs
 import (
 	// stdlib
 	"strings"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 
