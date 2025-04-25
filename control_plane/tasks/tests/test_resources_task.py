@@ -8,6 +8,10 @@ from typing import Any
 from unittest.mock import Mock
 
 # project
+from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
+    VERSION_TAG_SETTING,
+)
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -53,9 +57,10 @@ class TestResourcesTask(TaskTestCase):
 
         self.resource_client.side_effect = create_resource_client
 
-    async def run_resources_task(self, cache: ResourceCache | ResourceCacheV1):
+    async def run_resources_task(self, cache: ResourceCache | ResourceCacheV1) -> ResourcesTask:
         async with ResourcesTask(dumps(cache, default=list)) as task:
             await task.run()
+        return task
 
     @property
     def cache(self) -> ResourceCache:
@@ -232,4 +237,21 @@ class TestResourcesTask(TaskTestCase):
         self.assertEqual(
             self.cache,
             {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}}},
+        )
+
+    async def test_tags(self):
+        self.env[VERSION_TAG_SETTING] = "v345"
+        self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
+
+        task = await self.run_resources_task({})
+
+        self.assertEqual(task.version_tag, "v345")
+        self.assertCountEqual(
+            task.tags,
+            [
+                "forwarder:lfocontrolplane",
+                "task:resources_task",
+                "control_plane_id:a2b4c5d6",
+                "version:v345",
+            ],
         )

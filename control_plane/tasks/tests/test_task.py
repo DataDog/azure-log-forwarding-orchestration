@@ -60,7 +60,9 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown"])
+        self.assertEqual(
+            task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown", "version:unknown"]
+        )
         async with task:
             await task.run()
             self.assertEqual(task._logs, [])
@@ -75,7 +77,9 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown"])
+        self.assertEqual(
+            task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown", "version:unknown"]
+        )
         async with task:
             await task.run()
             self.assertEqual(task._logs, [])
@@ -92,7 +96,9 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertTrue(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:456"])
+        self.assertEqual(
+            task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:456", "version:unknown"]
+        )
         async with task:
             await task.run()
             self.assertEqual(len(task._logs), 1)

@@ -12,6 +12,11 @@ from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
 
 # project
 from cache.common import InvalidCacheError
+from cache.env import (
+    CONTROL_PLANE_REGION_SETTING,
+    RESOURCE_GROUP_SETTING,
+    SUBSCRIPTION_ID_SETTING,
+)
 
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
@@ -41,6 +46,17 @@ class TaskTestCase(AsyncTestCase):
         self.datadog_api_client = self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
         self.datadog_logs_api = self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
         self.datadog_metrics_api = self.patch_path("tasks.task.MetricsApi", return_value=AsyncMock())
+        self.env = {
+            RESOURCE_GROUP_SETTING: "test_rg",
+            CONTROL_PLANE_REGION_SETTING: "region1",
+            SUBSCRIPTION_ID_SETTING: "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
+        }
+        self.patch("get_config_option", create=True).side_effect = lambda k: self.env[k]
+        env_mock = self.patch("environ", create=True)
+        env_mock.get.side_effect = lambda k, default="unset test env var": self.env.get(k, default)
+        self.patch("get_env", create=True).side_effect = lambda k, default="unset test env var": self.env.get(
+            k, default
+        )
 
         with suppress(AttributeError):
             self.write_cache: AsyncMock = self.patch("write_cache")
