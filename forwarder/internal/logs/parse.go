@@ -146,27 +146,34 @@ var activeDirectoryContainers = []string{
 	"insights-logs-microsoftserviceprincipalsigninlogs", // altan
 }
 
-func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq2[*Log, error] {
-	return func(yield func(*Log, error) bool) {
+func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
+	return func(yield func(response ParsedLogResponse) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
 			originalSize := len(currBytes)
 			scrubbedBytes := piiScrubber.Scrub(currBytes)
 
 			var activeDirectoryLog activeDirectoryLog
+			response := ParsedLogResponse{}
 			err := json.Unmarshal(scrubbedBytes, &activeDirectoryLog)
-			if err != nil && !yield(nil, err) {
+			if err != nil {
+				response.Err = err
+				yield(response)
 				return
 			}
 			currLog, err := activeDirectoryLog.ToLog(blob)
-			if err != nil && !yield(nil, err) {
+
+			if err != nil {
+				response.Err = err
+				yield(response)
 				return
 			}
 
 			currLog.RawByteSize = int64(originalSize)
 			currLog.ScrubbedByteSize = int64(len(scrubbedBytes))
 
-			if !yield(currLog, nil) {
+			response.ParsedLog = currLog
+			if !yield(response) {
 				return
 			}
 		}

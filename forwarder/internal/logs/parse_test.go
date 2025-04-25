@@ -217,12 +217,13 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			var numLogsParsed int
 
 			// WHEN
-			for currLog, currErr := range logs.Parse(closer, newBlob(adResourceId, testData.containerName), MockScrubber(t, data)) {
-				require.NoError(t, currErr)
-				require.Equal(t, testData.categoryName, currLog.Category)
-				require.Equal(t, testData.containerName, currLog.Container)
-				require.True(t, strings.EqualFold(adResourceId, currLog.ResourceId))
-				require.False(t, currLog.Time.IsZero())
+			parsedLogsIter, _ := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, data))
+			for parsedLog := range parsedLogsIter {
+				require.NoError(t, parsedLog.Err)
+				require.Equal(t, testData.categoryName, parsedLog.ParsedLog.Category)
+				require.Equal(t, testData.containerName, parsedLog.ParsedLog.Container)
+				require.True(t, strings.EqualFold(adResourceId, parsedLog.ParsedLog.ResourceId))
+				require.False(t, parsedLog.ParsedLog.Time.IsZero())
 				numLogsParsed += 1
 			}
 
