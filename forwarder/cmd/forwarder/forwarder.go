@@ -68,12 +68,11 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 }
 
 func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
-	var processedRawBytes int64
 	var processedLogs int64
 
 	var currLog *logs.Log
 	var err error
-	parsedLogsIter, newlineCounter, err := logs.Parse(reader, blob, piiScrubber)
+	parsedLogsIter, bytesCounter, err := logs.Parse(reader, blob, piiScrubber)
 	if err != nil {
 		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
 	}
@@ -84,12 +83,10 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 		}
 		currLog = parsedLog.ParsedLog
 
-		processedRawBytes += currLog.RawByteSize
 		processedLogs += 1
 		logsChannel <- currLog
 	}
-	processedRawBytes += int64(newlineCounter.Load())
-	return processedRawBytes, processedLogs, err
+	return int64(bytesCounter.Get()), processedLogs, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {

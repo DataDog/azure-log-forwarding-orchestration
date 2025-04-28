@@ -7,12 +7,10 @@ package logs
 import (
 	// stdlib
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"iter"
-	"sync/atomic"
 
 	// 3p
 	"github.com/dop251/goja/parser"
@@ -151,43 +149,38 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 	return true
 }
 
-// dropCR drops a terminal \r from the data slice if it exists and returns number of bytes dropped.
-// This function is copied from bufio
-// and modified to return the number of bytes dropped.
-// see https://github.com/golang/go/blob/bc2124dab14fa292e18df2937037d782f7868635/src/bufio/scan.go#L342-L347
-func dropCR(data []byte) ([]byte, int) {
-	if len(data) > 0 && data[len(data)-1] == '\r' {
-		return data[0 : len(data)-1], 1
+type advanceCounter struct {
+	value int
+}
+
+func (a *advanceCounter) Add(delta int) {
+	a.value += delta
+}
+
+func (a *advanceCounter) Get() int {
+	return a.value
+}
+
+// NewAdvanceCounter creates a new AdvanceCounter.
+func newAdvanceCounter() *advanceCounter {
+	return &advanceCounter{
+		value: 0,
 	}
-	return data, 0
+}
+
+type ValueCounter interface {
+	Get() int
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
 // It returns a sequence of ParsedLogResponse and a function to get the number of newline bytes read and an error if any.
-func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], *atomic.Uint64, error) {
-	var counter atomic.Uint64
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], ValueCounter, error) {
+	aCounter := newAdvanceCounter()
 
-	// scanLines is the original ScanLines function from bufio.Scanner
-	// but modified to count the number of newline bytes read.
-	// see https://github.com/golang/go/blob/bc2124dab14fa292e18df2937037d782f7868635/src/bufio/scan.go#L355-L369
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
-		if atEOF && len(data) == 0 {
-			return 0, nil, nil
-		}
-		if i := bytes.IndexByte(data, '\n'); i >= 0 {
-			// We have a full newline-terminated line.
-			newData, droppedBytes := dropCR(data[0:i])
-			counter.Add(uint64(1 + droppedBytes))
-			return i + 1, newData, nil
-		}
-		// If we're at EOF, we have a final, non-terminated line. Return it.
-		if atEOF {
-			newData, droppedBytes := dropCR(data)
-			counter.Add(uint64(1 + droppedBytes))
-			return len(data), newData, nil
-		}
-		// Request more data.
-		return 0, nil, nil
+		currAdvance, token, err := bufio.ScanLines(data, atEOF)
+		aCounter.Add(currAdvance)
+		return currAdvance, token, err
 	}
 
 	scanner := bufio.NewScanner(reader)
@@ -199,9 +192,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 	// iterate over parsers
 	for _, parser := range parsers {
 		if parser.Valid(blob) {
-			return parser.Parse(scanner, blob, piiScrubber), &counter, nil
+			return parser.Parse(scanner, blob, piiScrubber), aCounter, nil
 		}
 	}
 
-	return nil, &counter, errors.New("no parser found for blob")
+	return nil, aCounter, errors.New("no parser found for blob")
 }
