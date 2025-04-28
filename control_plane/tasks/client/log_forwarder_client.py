@@ -577,31 +577,50 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             f"region:{region}",
             f"version:{version}",
         ]
+        metric_series = [
+            MetricSeries(
+                metric=FORWARDER_METRIC_PREFIX + metric_name,
+                type=MetricIntakeType.UNSPECIFIED,
+                points=[
+                    MetricPoint(
+                        timestamp=int(metric_entry["timestamp"]),
+                        value=get_metric_value(metric_entry, metric_name),
+                    )
+                    for metric_entry in metric_entries
+                ],
+                resources=[
+                    MetricResource(
+                        name=log_forwarder_name,
+                        type="logforwarder",
+                    ),
+                ],
+                tags=tags,
+            )
+            for metric_name in METRIC_NAMES
+        ]
+        metric_series.append(
+            MetricSeries(
+                metric=FORWARDER_METRIC_PREFIX + "run_completed",
+                type=MetricIntakeType.UNSPECIFIED,
+                points=[
+                    MetricPoint(
+                        timestamp=int(metric_entry["timestamp"]),
+                        value=1,
+                    )
+                    for metric_entry in metric_entries
+                ],
+                resources=[
+                    MetricResource(
+                        name=log_forwarder_name,
+                        type="logforwarder",
+                    ),
+                ],
+                tags=tags,
+            )
+        )
         return cast(
             MetricPayload,
-            MetricPayload(
-                series=[
-                    MetricSeries(
-                        metric=FORWARDER_METRIC_PREFIX + metric_name,
-                        type=MetricIntakeType.UNSPECIFIED,
-                        points=[
-                            MetricPoint(
-                                timestamp=int(metric_entry["timestamp"]),
-                                value=get_metric_value(metric_entry, metric_name),
-                            )
-                            for metric_entry in metric_entries
-                        ],
-                        resources=[
-                            MetricResource(
-                                name=log_forwarder_name,
-                                type="logforwarder",
-                            ),
-                        ],
-                        tags=tags,
-                    )
-                    for metric_name in METRIC_NAMES
-                ]
-            ),
+            MetricPayload(series=metric_series),
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:
