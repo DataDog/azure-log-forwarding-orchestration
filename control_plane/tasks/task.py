@@ -160,7 +160,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         if self._logs:
             self._logs.clear()
             awaitables.append(self._logs_client.submit_log(HTTPLog(value=dd_logs), ddtags=",".join(self.tags)))
-        await gather(*awaitables)
+        await gather(*awaitables)  # type: ignore[no-untyped-call]
 
 
 async def task_main(task_class: type[Task], caches: list[str]) -> None:
