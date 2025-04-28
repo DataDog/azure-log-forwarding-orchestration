@@ -956,9 +956,9 @@ func TestRunWithAzurite(t *testing.T) {
 		require.NoError(t, err)
 
 		// Do run B
-		//_, err, blobErrors = azuriteRun(t, ctx, azBlobClient, customNow)
-		//require.NoError(t, err)
-		//require.Empty(t, blobErrors)
+		_, err, blobErrors = azuriteRun(t, ctx, azBlobClient, customNow)
+		require.NoError(t, err)
+		require.Empty(t, blobErrors)
 
 		testcontainers.CleanupContainer(t, azurite)
 		require.NoError(t, err)
