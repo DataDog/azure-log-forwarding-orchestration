@@ -215,9 +215,9 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	tenantId, err := tenantIdFromResourceId(resourceId)
 	if err != nil {
 		return nil, err
-	} else {
-		tags = append(tags, "tenant_id:"+tenantId)
 	}
+
+	tags = append(tags, "tenant_id:"+tenantId)
 
 	return &Log{
 		Time:       logTime,
