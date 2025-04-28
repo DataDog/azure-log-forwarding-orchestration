@@ -163,10 +163,14 @@ class DeployerTask(Task):
             zip_data = await self.download_function_app_data(component)
             self.log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
-            await self.set_function_app_version(function_app, component)
+            await self.set_function_app_version(function_app, self.public_manifest[component])
             await self.sync_function_app_triggers(function_app)
         except Exception:
             self.log.exception(f"Failed to deploy {component}")
+            try:
+                await self.set_function_app_version(function_app, self.manifest_cache[component])
+            except Exception:
+                self.log.exception(f"Failed to rollback version variable for {function_app}")
             return
         self.manifest_cache[component] = self.public_manifest[component]
         self.log.info(f"Finished deploying {component}")
@@ -182,9 +186,8 @@ class DeployerTask(Task):
             raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def set_function_app_version(self, function_app_name: str, component: ControlPlaneComponent) -> None:
+    async def set_function_app_version(self, function_app_name: str, version: str) -> None:
         app_settings = await self.web_client.web_apps.list_application_settings(self.resource_group, function_app_name)
-        version = self.manifest_cache[component]
         if not app_settings.properties:
             app_settings.properties = {}
         app_settings.properties[VERSION_TAG_SETTING] = version
