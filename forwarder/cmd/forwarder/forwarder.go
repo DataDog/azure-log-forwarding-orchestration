@@ -410,17 +410,18 @@ func main() {
 	}
 
 	datadogConfig := datadog.NewConfiguration()
-	servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
-	if len(servers) > 0 {
-		server := servers[0]
-		site := server.Variables["site"]
-		enumValues := site.EnumValues
-		// if enum values does not contain the site, add it
-		if len(enumValues) == 0 || !slices.Contains(enumValues, environment.Get(environment.DdSite)) {
-			enumValues = append(enumValues, environment.Get(environment.DdSite))
+	if environment.Enabled(environment.TelemetryEnabled) {
+		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
+		if len(servers) > 0 {
+			server := servers[0]
+			site := server.Variables["site"]
+			enumValues := site.EnumValues
+			if len(enumValues) == 0 || !slices.Contains(enumValues, environment.Get(environment.DdSite)) {
+				enumValues = append(enumValues, environment.Get(environment.DdSite))
+			}
+			site.EnumValues = enumValues
+			server.Variables["site"] = site
 		}
-		site.EnumValues = enumValues
-		server.Variables["site"] = site
 	}
 
 	err, _ = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
