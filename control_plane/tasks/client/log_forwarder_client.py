@@ -13,7 +13,11 @@ from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
 
 # 3p
 from aiosonic.exceptions import RequestTimeout
-from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
+from azure.core.exceptions import (
+    HttpResponseError,
+    ResourceNotFoundError,
+    ServiceResponseTimeoutError,
+)
 from azure.core.polling import AsyncLROPoller
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
@@ -28,8 +32,8 @@ from azure.mgmt.appcontainers.models import (
     ManagedEnvironment,
     Secret,
 )
-from azure.mgmt.storage.v2023_05_01.aio import StorageManagementClient
-from azure.mgmt.storage.v2023_05_01.models import (
+from azure.mgmt.storage.v2024_01_01.aio import StorageManagementClient
+from azure.mgmt.storage.v2024_01_01.models import (
     BlobContainer,
     DateAfterCreation,
     DateAfterModification,
@@ -48,8 +52,7 @@ from azure.mgmt.storage.v2023_05_01.models import (
     StorageAccountCreateParameters,
     StorageAccountKey,
 )
-from azure.storage.blob.aio import ContainerClient
-from azure.storage.blob.aio._download_async import StorageStreamDownloader
+from azure.storage.blob.aio import ContainerClient, StorageStreamDownloader
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
@@ -80,7 +83,11 @@ from cache.env import (
     get_config_option,
     is_truthy,
 )
-from cache.metric_blob_cache import METRIC_NAMES, MetricBlobEntry, deserialize_blob_metric_entry
+from cache.metric_blob_cache import (
+    METRIC_NAMES,
+    MetricBlobEntry,
+    deserialize_blob_metric_entry,
+)
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
     FORWARDER_METRIC_PREFIX,
@@ -134,7 +141,8 @@ def get_datetime_str(time: datetime) -> str:
 
 
 def get_metric_value(
-    metric_entry: MetricBlobEntry, metric_name: Literal["resource_log_volume", "resource_log_bytes", "runtime_seconds"]
+    metric_entry: MetricBlobEntry,
+    metric_name: Literal["resource_log_volume", "resource_log_bytes", "runtime_seconds"],
 ) -> float:
     value = metric_entry[metric_name]
     if isinstance(value, dict):
@@ -168,7 +176,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
-        self.log_extra = {"subscription_id": self.subscription_id, "resource_group": self.resource_group}
+        self.log_extra = {
+            "subscription_id": self.subscription_id,
+            "resource_group": self.resource_group,
+        }
 
     async def __aenter__(self) -> Self:
         await gather(
@@ -179,7 +190,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         return self
 
     async def __aexit__(
-        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         if self._background_tasks:
             await wait(self._background_tasks)
@@ -193,7 +207,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         def _done_callback(task: AsyncTask[Any]) -> None:
             self._background_tasks.discard(task)
             if e := task.exception():
-                self.log.error("Background task failed with an exception", exc_info=e, extra=self.log_extra)
+                self.log.error(
+                    "Background task failed with an exception",
+                    exc_info=e,
+                    extra=self.log_extra,
+                )
 
         task = create_task(coro)
         self._background_tasks.add(task)
@@ -255,7 +273,12 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def create_log_forwarder_storage_account(
         self, region: str, storage_account_name: str
     ) -> ResourcePoller[StorageAccount]:
-        self.log.info("Creating storage account %s for region %s", storage_account_name, region, extra=self.log_extra)
+        self.log.info(
+            "Creating storage account %s for region %s",
+            storage_account_name,
+            region,
+            extra=self.log_extra,
+        )
         return await self.storage_client.storage_accounts.begin_create(
             self.resource_group,
             storage_account_name,
@@ -318,7 +341,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             Job(
                 location=forwarder_region,
                 environment_id=get_managed_env_id(
-                    self.subscription_id, self.resource_group, forwarder_region, self.control_plane_id
+                    self.subscription_id,
+                    self.resource_group,
+                    forwarder_region,
+                    self.control_plane_id,
                 ),
                 configuration=JobConfiguration(
                     trigger_type="Schedule",
@@ -418,7 +444,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder() -> None:
-            self.log.info("Attempting to delete log forwarder %s", forwarder_id, extra=self.log_extra)
+            self.log.info(
+                "Attempting to delete log forwarder %s",
+                forwarder_id,
+                extra=self.log_extra,
+            )
 
             # start deleting the storage account now, it has no dependencies
             delete_storage_account_task = create_task(
@@ -463,7 +493,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             poller = await ignore_exception_type(
                 ResourceNotFoundError,
                 self.container_apps_client.managed_environments.begin_delete(
-                    self.resource_group, get_managed_env_name(region, self.control_plane_id)
+                    self.resource_group,
+                    get_managed_env_name(region, self.control_plane_id),
                 ),
             )
             if poller:
@@ -495,7 +526,11 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if (metric_entry := deserialize_blob_metric_entry(metric_line, oldest_valid_timestamp))
         ]
         if not forwarder_metrics:
-            self.log.warning("No valid metrics found for forwarder %s", config_id, extra=self.log_extra)
+            self.log.warning(
+                "No valid metrics found for forwarder %s",
+                config_id,
+                extra=self.log_extra,
+            )
         self.submit_background_task(self.submit_log_forwarder_metrics(config_id, forwarder_metrics, region))
         return forwarder_metrics
 
@@ -577,31 +612,28 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             f"region:{region}",
             f"version:{version}",
         ]
-        return cast(
-            MetricPayload,
-            MetricPayload(
-                series=[
-                    MetricSeries(
-                        metric=FORWARDER_METRIC_PREFIX + metric_name,
-                        type=MetricIntakeType.UNSPECIFIED,
-                        points=[
-                            MetricPoint(
-                                timestamp=int(metric_entry["timestamp"]),
-                                value=get_metric_value(metric_entry, metric_name),
-                            )
-                            for metric_entry in metric_entries
-                        ],
-                        resources=[
-                            MetricResource(
-                                name=log_forwarder_name,
-                                type="logforwarder",
-                            ),
-                        ],
-                        tags=tags,
-                    )
-                    for metric_name in METRIC_NAMES
-                ]
-            ),
+        return MetricPayload(
+            series=[
+                MetricSeries(
+                    metric=FORWARDER_METRIC_PREFIX + metric_name,
+                    type=MetricIntakeType.UNSPECIFIED,
+                    points=[
+                        MetricPoint(
+                            timestamp=int(metric_entry["timestamp"]),
+                            value=get_metric_value(metric_entry, metric_name),
+                        )
+                        for metric_entry in metric_entries
+                    ],
+                    resources=[
+                        MetricResource(
+                            name=log_forwarder_name,
+                            type="logforwarder",
+                        ),
+                    ],
+                    tags=tags,
+                )
+                for metric_name in METRIC_NAMES
+            ]
         )
 
     async def list_log_forwarder_ids(self) -> set[str]:
