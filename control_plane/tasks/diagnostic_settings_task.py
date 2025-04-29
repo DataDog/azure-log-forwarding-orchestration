@@ -21,7 +21,7 @@ from azure.mgmt.monitor.v2021_05_01_preview.models import (
 
 # dd
 from datadog_api_client.v1.api.events_api import EventsApi
-from datadog_api_client.v1.models import EventCreateRequest, EventCreateResponse
+from datadog_api_client.v1.models import EventAlertType, EventCreateRequest, EventCreateResponse
 
 # project
 from cache.assignment_cache import ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache
@@ -173,7 +173,7 @@ class DiagnosticSettingsTask(Task):
             title=f"Log forwarding disabled for Azure resource {cast(str, parsed_resource['name']) if parse_success else None}",
             text=f"Log forwarding cannot be enabled for resource '{resource_id}' because it already has the maximum number of diagnostic settings configured. The addition of a DataDog diagnostic setting is necessary for log forwarding.",
             tags=event_tags,
-            alert_type="warning",
+            alert_type=EventAlertType.WARNING,
         )
 
         try:

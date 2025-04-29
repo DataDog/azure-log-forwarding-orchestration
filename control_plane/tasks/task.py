@@ -127,25 +127,27 @@ class Task(AbstractAsyncContextManager["Task"]):
     async def submit_telemetry(self) -> None:
         if not self.telemetry_enabled:
             return
-        dd_logs = [
-            HTTPLogItem(
-                **{
-                    **{k: str(v) for k, v in record.__dict__.items() if k.lower() not in IGNORED_LOG_EXTRAS},
+        dd_logs = HTTPLog(
+            value=[
+                HTTPLogItem(
                     **{
-                        "message": record.getMessage(),
-                        "ddsource": "azure",
-                        "service": "lfo",
-                        "time": record.asctime,
-                        "level": record.levelname,
-                        "execution_id": self.execution_id,
-                        "control_plane_id": self.control_plane_id,
-                        "task": self.NAME,
-                    },
-                    **get_error_telemetry(record.exc_info),
-                }
-            )
-            for record in self._logs
-        ]
+                        **{k: str(v) for k, v in record.__dict__.items() if k.lower() not in IGNORED_LOG_EXTRAS},
+                        **{
+                            "message": record.getMessage(),
+                            "ddsource": "azure",
+                            "service": "lfo",
+                            "time": record.asctime,
+                            "level": record.levelname,
+                            "execution_id": self.execution_id,
+                            "control_plane_id": self.control_plane_id,
+                            "task": self.NAME,
+                        },
+                        **get_error_telemetry(record.exc_info),
+                    }
+                )
+                for record in self._logs
+            ]
+        )
         runtime_seconds = MetricSeries(
             metric=CONTROL_PLANE_METRIC_PREFIX + "runtime_seconds",
             points=[MetricPoint(timestamp=int(self.start_time), value=time() - self.start_time)],
