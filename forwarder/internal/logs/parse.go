@@ -149,37 +149,13 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 	return true
 }
 
-type advanceCounter struct {
-	value int
-}
-
-func (a *advanceCounter) Add(delta int) {
-	a.value += delta
-}
-
-func (a *advanceCounter) Get() int {
-	return a.value
-}
-
-// NewAdvanceCounter creates a new AdvanceCounter.
-func newAdvanceCounter() *advanceCounter {
-	return &advanceCounter{
-		value: 0,
-	}
-}
-
-type ValueCounter interface {
-	Get() int
-}
-
 // Parse reads logs from a reader and parses them into Log objects.
 // It returns a sequence of ParsedLogResponse and a function to get the number of newline bytes read and an error if any.
-func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], ValueCounter, error) {
-	aCounter := newAdvanceCounter()
-
+func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], *int, error) {
+	var totalBytes int
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		currAdvance, token, err := bufio.ScanLines(data, atEOF)
-		aCounter.Add(currAdvance)
+		totalBytes += currAdvance
 		return currAdvance, token, err
 	}
 
@@ -192,9 +168,9 @@ func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.
 	// iterate over parsers
 	for _, parser := range parsers {
 		if parser.Valid(blob) {
-			return parser.Parse(scanner, blob, piiScrubber), aCounter, nil
+			return parser.Parse(scanner, blob, piiScrubber), &totalBytes, nil
 		}
 	}
 
-	return nil, aCounter, errors.New("no parser found for blob")
+	return nil, &totalBytes, errors.New("no parser found for blob")
 }
