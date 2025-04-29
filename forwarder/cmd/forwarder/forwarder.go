@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"time"
 
@@ -408,7 +409,21 @@ func main() {
 		versionTag = "unknown"
 	}
 
-	err, _ = run(ctx, logger, goroutineCount, datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now, versionTag)
+	datadogConfig := datadog.NewConfiguration()
+	servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
+	if len(servers) > 0 {
+		server := servers[0]
+		site := server.Variables["site"]
+		enumValues := site.EnumValues
+		// if enum values does not contain the site, add it
+		if len(enumValues) == 0 || !slices.Contains(enumValues, environment.Get(environment.DdSite)) {
+			enumValues = append(enumValues, environment.Get(environment.DdSite))
+		}
+		site.EnumValues = enumValues
+		server.Variables["site"] = site
+	}
+
+	err, _ = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
 
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error while running: %w", err).Error())
