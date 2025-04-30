@@ -39,6 +39,7 @@ const (
 	// https://docs.datadoghq.com/api/latest/logs/
 	MaxPayloadAmount = 950
 
+	// DatadogStagingSite is the staging site for Datadog.
 	DatadogStagingSite = "datad0g.com"
 )
 
