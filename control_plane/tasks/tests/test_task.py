@@ -104,7 +104,7 @@ class TestTask(TaskTestCase):
             await task.run()
             self.assertEqual(len(task._logs), 1)
             self.assertEqual(task._logs[0].message, "Hello World")
-        task._logs_client.submit_log.assert_awaited_once()  # type: ignore
+        task._logs_client.submit_log.assert_called_once()  # type: ignore
         task._datadog_client.__aenter__.assert_called_once_with()  # type: ignore
         task._datadog_client.__aexit__.assert_called_once_with(None, None, None)  # type: ignore
         self.assertEqual(task._logs, [])
