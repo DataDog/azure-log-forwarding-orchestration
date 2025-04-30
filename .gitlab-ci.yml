@@ -154,7 +154,7 @@ deployer-publish:
 forwarder-tests:
   image: $CI_IMAGE
   stage: test
-  tags: ['arch:amd64']
+  tags: ['docker-in-docker:amd64']
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
