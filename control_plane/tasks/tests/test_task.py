@@ -89,9 +89,6 @@ class TestTask(TaskTestCase):
         task._logs_client.submit_log.assert_not_called()  # type: ignore
         self.assertEqual(task._logs, [])
 
-    # @patch.dict(
-    #     "tasks.task.environ", {"DD_TELEMETRY": "true", "DD_API_KEY": "123", "CONTROL_PLANE_ID": "456"}, clear=True
-    # )
     async def test_task_logging_enabled(self):
         self.env.update({"DD_TELEMETRY": "true", "DD_API_KEY": "123", "CONTROL_PLANE_ID": "456"})
         task = DummyTask()
