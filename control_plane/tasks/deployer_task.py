@@ -190,8 +190,11 @@ class DeployerTask(Task):
         app_settings = await self.web_client.web_apps.list_application_settings(self.resource_group, function_app_name)
         if not app_settings.properties:
             app_settings.properties = {}
-        app_settings.properties[VERSION_TAG_SETTING] = version
-        await self.web_client.web_apps.update_application_settings(self.resource_group, function_app_name, app_settings)
+        if app_settings.properties.get(VERSION_TAG_SETTING) != version:
+            app_settings.properties[VERSION_TAG_SETTING] = version
+            await self.web_client.web_apps.update_application_settings(
+                self.resource_group, function_app_name, app_settings
+            )
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def sync_function_app_triggers(self, function_app_name: str) -> None:
