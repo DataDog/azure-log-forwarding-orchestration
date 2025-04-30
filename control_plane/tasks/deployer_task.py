@@ -167,10 +167,6 @@ class DeployerTask(Task):
             await self.sync_function_app_triggers(function_app)
         except Exception:
             self.log.exception(f"Failed to deploy {component}")
-            try:
-                await self.set_function_app_version(function_app, self.manifest_cache[component])
-            except Exception:
-                self.log.exception(f"Failed to rollback version variable for {function_app}")
             return
         self.manifest_cache[component] = self.public_manifest[component]
         self.log.info(f"Finished deploying {component}")

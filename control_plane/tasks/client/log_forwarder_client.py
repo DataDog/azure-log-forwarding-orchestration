@@ -653,10 +653,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 tags=tags,
             )
         )
-        return cast(
-            MetricPayload,
-            MetricPayload(series=metric_series),
-        )
+        return MetricPayload(series=metric_series)
 
     async def list_log_forwarder_ids(self) -> set[str]:
         jobs, storage_accounts = await gather(
