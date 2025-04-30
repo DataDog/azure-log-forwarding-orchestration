@@ -158,7 +158,7 @@ class Task(AbstractAsyncContextManager["Task"]):
             points=[MetricPoint(timestamp=int(self.start_time), value=1)],
             tags=self.tags,
         )
-        await self._metrics_client.submit_metrics(MetricPayload(series=[runtime_seconds, task_completed]))
+        self._metrics_client.submit_metrics(MetricPayload(series=[runtime_seconds, task_completed]))
         if self._logs:
             self._logs.clear()
             self._logs_client.submit_log(dd_logs, ddtags=",".join(self.tags))
