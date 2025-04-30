@@ -416,8 +416,8 @@ func main() {
 			server := servers[0]
 			site := server.Variables["site"]
 			enumValues := site.EnumValues
-			if len(enumValues) == 0 || !slices.Contains(enumValues, environment.Get(environment.DdSite)) {
-				enumValues = append(enumValues, environment.Get(environment.DdSite))
+			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
+				enumValues = append(enumValues, logs.DatadogStagingSite)
 			}
 			site.EnumValues = enumValues
 			server.Variables["site"] = site

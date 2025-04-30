@@ -38,6 +38,8 @@ const (
 	// MaxPayloadAmount is the maximum number of logs per post to Logs API.
 	// https://docs.datadoghq.com/api/latest/logs/
 	MaxPayloadAmount = 950
+
+	DatadogStagingSite = "datad0g.com"
 )
 
 // ValidateDatadogLog checks if the log is valid to send to Datadog and returns the log size when it is.
