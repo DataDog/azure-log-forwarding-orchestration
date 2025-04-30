@@ -150,7 +150,7 @@ func (a AzureLogParser) Valid(blob storage.Blob) bool {
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
-// It returns a sequence of ParsedLogResponse and a function to get the number of newline bytes read and an error if any.
+// It returns a sequence of ParsedLogResponse and a pointer to number of bytes read and an error if any.
 func Parse(reader io.ReadCloser, blob storage.Blob, piiScrubber Scrubber) (iter.Seq[ParsedLogResponse], *int, error) {
 	var totalBytes int
 	scanLines := func(data []byte, atEOF bool) (advance int, token []byte, err error) {
