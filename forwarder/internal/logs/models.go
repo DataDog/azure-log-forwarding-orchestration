@@ -164,10 +164,11 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	var logTime time.Time
 	if slices.Contains(usaShortTimestampLogContainers, blob.Container.Name) {
 		var timeString string
-		err = json.Unmarshal((*adl)["time"], &timeString)
-		if err != nil {
-			return nil, err
+		value, ok := (*adl)["time"]
+		if !ok {
+			return nil, errors.New("'time' key is missing")
 		}
+		timeString = strings.Trim(string(value), "\"")
 
 		logTime, err = time.Parse(usaShortTimestampFormat, timeString)
 		if err != nil {
@@ -181,16 +182,18 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	}
 
 	var category string
-	err = json.Unmarshal((*adl)["category"], &category)
-	if err != nil {
-		return nil, err
+	value, ok := (*adl)["category"]
+	if !ok {
+		return nil, errors.New("'category' key is missing")
 	}
+	category = strings.Trim(string(value), "\"")
 
 	var resourceId string
-	err = json.Unmarshal((*adl)["resourceId"], &resourceId)
-	if err != nil {
-		return nil, err
+	value, ok = (*adl)["resourceId"]
+	if !ok {
+		return nil, errors.New("'resourceId' key is missing")
 	}
+	resourceId = strings.Trim(string(value), "\"")
 
 	tenantIdFromResourceId := func(adResourceId string) (string, error) {
 		// Sample active directory resource ID: /tenants/00000000-0000-0000-0000-000000000000/providers/Microsoft.aadiam
@@ -204,14 +207,13 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 		}
 
 		if !strings.EqualFold(parts[0], "tenants") {
-			return "", errors.New("resource ID is not for a tenant-scoped active directory log")
+			return "", errors.New("unexpected resource ID - ID is tenant-scoped")
 		}
 
 		return parts[1], nil
 	}
 
-	tags := append([]string(nil), DefaultTags...)
-	tags = append(tags, "source:"+azureActiveDirectorySource)
+	tags := append([]string{"source:" + azureActiveDirectorySource}, DefaultTags...)
 	tenantId, err := tenantIdFromResourceId(resourceId)
 	if err != nil {
 		return nil, err
