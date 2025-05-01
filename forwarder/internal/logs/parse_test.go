@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	// 3p
@@ -144,5 +145,99 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, len(data), *totalBytes)
 
 	})
+}
 
+func TestParseActiveDirectoryLogs(t *testing.T) {
+	t.Parallel()
+	adResourceId := "/tenants/4d3bac44-0230-4732-9e70-cc00736f0a97/providers/Microsoft.aadiam"
+	tests := map[string]struct {
+		categoryName     string
+		containerName    string
+		testFileName     string
+		expectedLogCount int
+	}{
+		"can parse audit logs": {
+			categoryName:     "AuditLogs",
+			containerName:    "insights-logs-auditlogs",
+			testFileName:     "audit_logs.json",
+			expectedLogCount: 22,
+		},
+		"can parse managed identity sign in logs": {
+			categoryName:     "ManagedIdentitySignInLogs",
+			containerName:    "insights-logs-managedidentitysigninlogs",
+			testFileName:     "managed_identity_sign_in_logs.json",
+			expectedLogCount: 24,
+		},
+		"can parse microsoft graph activity logs": {
+			categoryName:     "MicrosoftGraphActivityLogs",
+			containerName:    "insights-logs-microsoftgraphactivitylogs",
+			testFileName:     "ms_graph_activity_logs.json",
+			expectedLogCount: 25,
+		},
+		"can parse non interactive user sign in logs": {
+			categoryName:     "NonInteractiveUserSignInLogs",
+			containerName:    "insights-logs-noninteractiveusersigninlogs",
+			testFileName:     "non_interactive_user_sign_in_logs.json",
+			expectedLogCount: 14,
+		},
+		"can parse risky users logs": {
+			categoryName:     "RiskyUsers",
+			containerName:    "insights-logs-riskyusers",
+			testFileName:     "risky_users_logs.json",
+			expectedLogCount: 1,
+		},
+		"can parse service principal sign in logs": {
+			categoryName:     "ServicePrincipalSignInLogs",
+			containerName:    "insights-logs-serviceprincipalsigninlogs",
+			testFileName:     "service_principal_sign_in_logs.json",
+			expectedLogCount: 25,
+		},
+		"can parse sign in logs": {
+			categoryName:     "SignInLogs",
+			containerName:    "insights-logs-signinlogs",
+			testFileName:     "sign_in_logs.json",
+			expectedLogCount: 5,
+		},
+		"can parse user risk event logs": {
+			categoryName:     "UserRiskEvents",
+			containerName:    "insights-logs-userriskevents",
+			testFileName:     "user_risk_event_logs.json",
+			expectedLogCount: 1,
+		},
+	}
+
+	workingDir, err := os.Getwd()
+	require.NoError(t, err)
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			// GIVEN
+			data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/activedirectory/%s", workingDir, testData.testFileName))
+			require.NoError(t, err)
+
+			reader := bytes.NewReader(data)
+			closer := io.NopCloser(reader)
+
+			var numLogsParsed int
+
+			// WHEN
+			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, data))
+			require.NoError(t, err)
+
+			for parsedLog := range parsedLogsIter {
+				require.NoError(t, parsedLog.Err)
+				require.Equal(t, testData.categoryName, parsedLog.ParsedLog.Category)
+				require.Equal(t, testData.containerName, parsedLog.ParsedLog.Container)
+				require.True(t, strings.EqualFold(adResourceId, parsedLog.ParsedLog.ResourceId))
+				require.False(t, parsedLog.ParsedLog.Time.IsZero())
+				numLogsParsed += 1
+			}
+
+			// THEN
+			assert.Equal(t, len(data), *totalBytes)
+			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
+		})
+	}
 }

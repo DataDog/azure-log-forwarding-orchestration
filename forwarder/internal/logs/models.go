@@ -7,6 +7,9 @@ package logs
 import (
 	// stdlib
 	"encoding/json"
+	"errors"
+	"slices"
+	"strings"
 	"time"
 
 	// 3p
@@ -132,6 +135,104 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		Container:        l.Container,
 		Blob:             l.Blob,
 	}
+}
+
+// Active Directory (AD) logs are made up of numerous log categories,
+// so parse out a few key fields and submit rest as generic JSON
+type activeDirectoryLog map[string]json.RawMessage
+
+const (
+	azureActiveDirectorySource = "azure.aadiam"
+	userRiskEventsLogContainer = "insights-logs-userriskevents"
+	riskyUsersLogContainer     = "insights-logs-riskyusers"
+	usaShortTimestampFormat    = "1/2/2006 3:04:05 PM"
+)
+
+// These AD log containers have a `time` field that is not in standard RFC3339 format
+var usaShortTimestampLogContainers = []string{userRiskEventsLogContainer, riskyUsersLogContainer}
+
+func (adl *activeDirectoryLog) Bytes() ([]byte, error) {
+	return json.Marshal(adl)
+}
+
+func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
+	logBytes, err := adl.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var logTime time.Time
+	if slices.Contains(usaShortTimestampLogContainers, blob.Container.Name) {
+		var timeString string
+		value, ok := (*adl)["time"]
+		if !ok {
+			return nil, errors.New("'time' key is missing")
+		}
+		timeString = strings.Trim(string(value), "\"")
+
+		logTime, err = time.Parse(usaShortTimestampFormat, timeString)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err = json.Unmarshal((*adl)["time"], &logTime)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var category string
+	value, ok := (*adl)["category"]
+	if !ok {
+		return nil, errors.New("'category' key is missing")
+	}
+	category = strings.Trim(string(value), "\"")
+
+	var resourceId string
+	value, ok = (*adl)["resourceId"]
+	if !ok {
+		return nil, errors.New("'resourceId' key is missing")
+	}
+	resourceId = strings.Trim(string(value), "\"")
+
+	tenantIdFromResourceId := func(adResourceId string) (string, error) {
+		// Sample active directory resource ID: /tenants/00000000-0000-0000-0000-000000000000/providers/Microsoft.aadiam
+		// Don't use arm.ParseResourceID here because active directory is not an ARM resource
+
+		trimmed := strings.Trim(adResourceId, "/")
+		parts := strings.Split(trimmed, "/")
+
+		if len(parts) < 2 {
+			return "", errors.New("unable to get tenant ID from AD resource ID")
+		}
+
+		if !strings.EqualFold(parts[0], "tenants") {
+			return "", errors.New("unexpected resource ID - ID is tenant-scoped")
+		}
+
+		return parts[1], nil
+	}
+
+	tags := append([]string{"source:" + azureActiveDirectorySource}, DefaultTags...)
+	tenantId, err := tenantIdFromResourceId(resourceId)
+	if err != nil {
+		return nil, err
+	}
+
+	tags = append(tags, "tenant_id:"+tenantId)
+
+	return &Log{
+		Time:       logTime,
+		Category:   category,
+		ResourceId: resourceId,
+		Service:    azureService,
+		Source:     azureActiveDirectorySource,
+		Content:    logBytes,
+		Container:  blob.Container.Name,
+		Blob:       blob.Name,
+		Level:      "Informational",
+		Tags:       tags,
+	}, nil
 }
 
 type vnetFlowLog struct {

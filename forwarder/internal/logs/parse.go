@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"slices"
 
 	// 3p
 	"github.com/dop251/goja/parser"
@@ -20,7 +21,7 @@ import (
 )
 
 // ordered list of parsers, the first parser that returns true will be used
-var parsers = []Parser{FlowEventParser{}, FunctionAppParser{}, AzureLogParser{}}
+var parsers = []Parser{FlowEventParser{}, FunctionAppParser{}, ActiveDirectoryParser{}, AzureLogParser{}}
 
 // ParsedLogResponse is the response type for parsers
 type ParsedLogResponse struct {
@@ -120,6 +121,69 @@ func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiS
 // Valid checks if the blob is in a function app container.
 func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 	return blob.Container.Name == functionAppContainer
+}
+
+type ActiveDirectoryParser struct{}
+
+// TODO for commented containers: https://datadoghq.atlassian.net/browse/AZINTS-3430
+var activeDirectoryContainers = []string{
+	"insights-logs-auditlogs",
+	"insights-logs-signinlogs",
+	"insights-logs-noninteractiveusersigninlogs",
+	"insights-logs-serviceprincipalsigninlogs",
+	"insights-logs-managedidentitysigninlogs",
+	// "insights-logs-provisioninglogs",
+	// "insights-logs-adfssigninlogs",
+	"insights-logs-riskyusers",
+	"insights-logs-userriskevents",
+	// "insights-logs-networkaccesstrafficlogs",
+	// "insights-logs-riskyserviceprincipals",
+	// "insights-logs-serviceprincipalriskevents",
+	// "insights-logs-enrichedoffice365auditlogs",
+	"insights-logs-microsoftgraphactivitylogs",
+	// "insights-logs-remotenetworkhealthlogs",
+	// "insights-logs-networkaccessalerts",
+	// "insights-logs-networkaccessconnectionevents",
+	// "insights-logs-microsoftserviceprincipalsigninlogs",
+	// "insights-logs-azureadgraphactivitylogs",
+}
+
+func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
+	return func(yield func(response ParsedLogResponse) bool) {
+		for scanner.Scan() {
+			currBytes := scanner.Bytes()
+			originalSize := len(currBytes)
+			scrubbedBytes := piiScrubber.Scrub(currBytes)
+
+			var activeDirectoryLog activeDirectoryLog
+			response := ParsedLogResponse{}
+			err := json.Unmarshal(scrubbedBytes, &activeDirectoryLog)
+			if err != nil {
+				response.Err = err
+				yield(response)
+				return
+			}
+			currLog, err := activeDirectoryLog.ToLog(blob)
+
+			if err != nil {
+				response.Err = err
+				yield(response)
+				return
+			}
+
+			currLog.RawByteSize = int64(originalSize)
+			currLog.ScrubbedByteSize = int64(len(scrubbedBytes))
+
+			response.ParsedLog = currLog
+			if !yield(response) {
+				return
+			}
+		}
+	}
+}
+
+func (a ActiveDirectoryParser) Valid(blob storage.Blob) bool {
+	return slices.Contains(activeDirectoryContainers, blob.Container.Name)
 }
 
 type AzureLogParser struct{}
