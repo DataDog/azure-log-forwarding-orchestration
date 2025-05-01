@@ -133,7 +133,7 @@ deployer-build-tagged:
       - main
   tags: ['arch:amd64']
   script:
-    - docker buildx build --platform=linux/amd64 --build-arg VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --tag $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-publish:
   stage: publish
   rules:
@@ -305,7 +305,7 @@ deployer-build-qa:
   tags: ['arch:amd64']
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - docker buildx build --platform=linux/amd64 --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 -build-arg VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish-qa
