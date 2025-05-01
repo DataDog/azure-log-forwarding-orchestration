@@ -133,6 +133,13 @@ FAKE_METRIC_PAYLOAD = MetricPayload(
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
             tags=METRIC_TAGS,
         ),
+        MetricSeries(
+            metric="azure.lfo.forwarder.run_completed",
+            type=MetricIntakeType.UNSPECIFIED,
+            points=[MetricPoint(timestamp=1723040910, value=1), MetricPoint(timestamp=1723040911, value=1)],
+            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+            tags=METRIC_TAGS,
+        ),
     ],
 )
 

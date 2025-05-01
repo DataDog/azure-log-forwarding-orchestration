@@ -38,14 +38,15 @@ class TestDeployerTask(TaskTestCase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.env = {
-            RESOURCE_GROUP_SETTING: "test_rg",
-            CONTROL_PLANE_REGION_SETTING: "region1",
-            SUBSCRIPTION_ID_SETTING: "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
-        }
+        self.env.update(
+            {
+                RESOURCE_GROUP_SETTING: "test_rg",
+                CONTROL_PLANE_REGION_SETTING: "region1",
+                SUBSCRIPTION_ID_SETTING: "0863329b-6e5c-4b49-bb0e-c87fdab76bb2",
+            }
+        )
         self.patch("get_config_option").side_effect = lambda k: self.env[k]
         self.patch("environ.get").side_effect = lambda k, default="unset test env var": self.env.get(k, default)
-
         self.public_client = AsyncMockClient()
         self.patch("ContainerClient").return_value = self.public_client
         self.read_private_cache = self.patch("read_cache")
@@ -332,9 +333,6 @@ class TestDeployerTask(TaskTestCase):
                 "forwarder:lfocontrolplane",
                 "task:deployer_task",
                 "control_plane_id:a2b4c5d6",
-                "deployer_version:v345",
-                "resources_version:1",
-                "scaling_version:3",
-                "diagnostic_settings_version:4",
+                "version:v345",
             ],
         )

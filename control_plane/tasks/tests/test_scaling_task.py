@@ -37,6 +37,7 @@ from cache.env import (
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
     STORAGE_CONNECTION_SETTING,
+    VERSION_TAG_SETTING,
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache, ResourceMetadata
@@ -126,26 +127,31 @@ class TestScalingTask(TaskTestCase):
         ]
         self.log = self.patch_path("tasks.task.log").getChild.return_value
         self.generate_unique_id = self.patch("generate_unique_id")
+        env_dict = {
+            RESOURCE_GROUP_SETTING: RG1,
+            CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
+            CONTROL_PLANE_REGION_SETTING: EAST_US_2,
+            SCALING_PERCENTAGE_SETTING: "0.7",
+        }
         p = patch.dict(
             environ,
-            {
-                RESOURCE_GROUP_SETTING: RG1,
-                CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
-                CONTROL_PLANE_REGION_SETTING: EAST_US_2,
-                SCALING_PERCENTAGE_SETTING: "0.7",
-            },
+            env_dict,
         )
         p.start()
         self.addCleanup(p.stop)
+        self.env.update(env_dict)
         self.generate_unique_id.return_value = NEW_LOG_FORWARDER_ID
 
     @property
     def cache(self) -> AssignmentCache:
         return self.cache_value(ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache)
 
-    async def run_scaling_task(self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache):
+    async def run_scaling_task(
+        self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache
+    ) -> ScalingTask:
         async with ScalingTask(dumps(resource_cache_state, default=list), dumps(assignment_cache_state)) as task:
             await task.run()
+        return task
 
     async def test_scaling_task_fails_without_valid_resource_cache(self):
         with self.assertRaises(InvalidCacheError):
@@ -1347,6 +1353,26 @@ class TestScalingTask(TaskTestCase):
                 assignment_cache_state={},
             )
         self.write_cache.assert_awaited()
+
+    async def test_tags(self):
+        self.env[VERSION_TAG_SETTING] = "v345"
+        self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
+
+        task = await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state={},
+        )
+
+        self.assertEqual(task.version_tag, "v345")
+        self.assertCountEqual(
+            task.tags,
+            [
+                "forwarder:lfocontrolplane",
+                "task:scaling_task",
+                "control_plane_id:a2b4c5d6",
+                "version:v345",
+            ],
+        )
 
 
 class TestIsConsistentlyOverThreshold(TestCase):

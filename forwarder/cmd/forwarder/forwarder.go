@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"time"
 
@@ -53,14 +54,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	processedRawBytes, processedLogs, err := parseLogs(content.Reader, blob, piiScrubber, logsChannel)
-
-	// linux newlines are 1 byte, but windows newlines are 2
-	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
-	// we know we have hit the end and can safely set our cursor to the end of the file.
-	if processedRawBytes+processedLogs+cursorOffset == blob.ContentLength {
-		processedRawBytes = blob.ContentLength - cursorOffset
-	}
+	processedRawBytes, _, err := parseLogs(content.Reader, blob, piiScrubber, logsChannel)
 
 	if processedRawBytes+cursorOffset > blob.ContentLength {
 		// we have processed more bytes than expected
@@ -75,12 +69,11 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 }
 
 func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
-	var processedRawBytes int64
 	var processedLogs int64
 
 	var currLog *logs.Log
 	var err error
-	parsedLogsIter, err := logs.Parse(reader, blob, piiScrubber)
+	parsedLogsIter, totalBytes, err := logs.Parse(reader, blob, piiScrubber)
 	if err != nil {
 		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
 	}
@@ -91,11 +84,10 @@ func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubbe
 		}
 		currLog = parsedLog.ParsedLog
 
-		processedRawBytes += currLog.RawByteSize
 		processedLogs += 1
 		logsChannel <- currLog
 	}
-	return processedRawBytes, processedLogs, err
+	return int64(*totalBytes), processedLogs, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
@@ -226,11 +218,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	blobErrorEg, _ := errgroup.WithContext(ctx)
 	blobErrorEg.Go(func() error {
 		for blobErr := range blobErrorCh {
-			currErr := blobErr.err
-			if existingErr, ok := blobErrors[blobErr.blob.Name]; ok {
-				currErr = errors.Join(currErr, existingErr)
-			}
-			blobErrors[blobErr.blob.Name] = currErr
+			blobErrors[blobErr.blob.Name] = blobErr.err
 		}
 		return nil
 	})
@@ -408,7 +396,22 @@ func main() {
 		versionTag = "unknown"
 	}
 
-	err, _ = run(ctx, logger, goroutineCount, datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now, versionTag)
+	datadogConfig := datadog.NewConfiguration()
+	if environment.Enabled(environment.TelemetryEnabled) {
+		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
+		if len(servers) > 0 {
+			server := servers[0]
+			site := server.Variables["site"]
+			enumValues := site.EnumValues
+			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
+				enumValues = append(enumValues, logs.DatadogStagingSite)
+			}
+			site.EnumValues = enumValues
+			server.Variables["site"] = site
+		}
+	}
+
+	err, _ = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
 
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error while running: %w", err).Error())
