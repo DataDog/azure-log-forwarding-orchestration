@@ -889,9 +889,12 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 					Body:       io.NopCloser(strings.NewReader("")),
 				}, nil
 			}
+			customNow := func() time.Time {
+				return time.Now()
+			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp)
+			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
 
 			// THEN
 			assert.NoError(t, err)

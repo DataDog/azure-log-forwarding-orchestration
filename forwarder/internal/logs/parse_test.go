@@ -223,7 +223,8 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			var numLogsParsed int
 
 			// WHEN
-			parsedLogsIter, _ := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, data))
+			parsedLogsIter, _, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, data))
+			require.NoError(t, err)
 			for parsedLog := range parsedLogsIter {
 				require.NoError(t, parsedLog.Err)
 				require.Equal(t, testData.categoryName, parsedLog.ParsedLog.Category)
