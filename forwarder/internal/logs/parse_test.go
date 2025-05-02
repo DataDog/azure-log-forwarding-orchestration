@@ -64,14 +64,13 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse aks logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := aksLogData
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(aksLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, aksLogData))
 		for parsedLog := range parsedLogsIter {
 			currLog := parsedLog.ParsedLog
 			require.NoError(t, parsedLog.Err)
@@ -83,20 +82,19 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 21, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(aksLogData), *totalBytes)
 	})
 
 	t.Run("can parse function app logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := functionAppLogData
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(functionAppLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, functionAppLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -108,20 +106,19 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 20, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(functionAppLogData), *totalBytes)
 	})
 
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := workflowRuntimeLogData
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(workflowRuntimeLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, workflowRuntimeLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -133,20 +130,19 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 7, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(workflowRuntimeLogData), *totalBytes)
 	})
 
 	t.Run("can parse vnet flow logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := networkSecurityGroupFlowEventLogData
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(networkSecurityGroupFlowEventLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, networkSecurityGroupFlowEventLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -159,7 +155,7 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		// vnet flow logs have multiple logs per line
 		assert.Equal(t, 2, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(networkSecurityGroupFlowEventLogData), *totalBytes)
 
 	})
 }
@@ -228,14 +224,13 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			t.Parallel()
 
 			// GIVEN
-			data := testData.logData
-			reader := bytes.NewReader(data)
+			reader := bytes.NewReader(testData.logData)
 			closer := io.NopCloser(reader)
 
 			var numLogsParsed int
 
 			// WHEN
-			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, data))
+			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, testData.logData))
 			require.NoError(t, err)
 
 			for parsedLog := range parsedLogsIter {
@@ -248,7 +243,7 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			}
 
 			// THEN
-			assert.Equal(t, len(data), *totalBytes)
+			assert.Equal(t, len(testData.logData), *totalBytes)
 			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
 		})
 	}
