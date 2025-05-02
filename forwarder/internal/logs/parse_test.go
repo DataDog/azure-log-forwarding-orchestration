@@ -7,9 +7,8 @@ package logs_test
 import (
 	// stdlib
 	"bytes"
-	"fmt"
+	_ "embed"
 	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -21,25 +20,57 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 )
 
+var (
+	//go:embed fixtures/activedirectory/audit_logs.json
+	adAuditLogData []byte
+
+	//go:embed fixtures/activedirectory/managed_identity_sign_in_logs.json
+	adManagedIdentitySignInLogData []byte
+
+	//go:embed fixtures/activedirectory/ms_graph_activity_logs.json
+	adMicrosoftGraphActivityLogData []byte
+
+	//go:embed fixtures/activedirectory/non_interactive_user_sign_in_logs.json
+	adNonInteractiveUserSignInLogData []byte
+
+	//go:embed fixtures/activedirectory/risky_users_logs.json
+	adRiskyUsersLogData []byte
+
+	//go:embed fixtures/activedirectory/service_principal_sign_in_logs.json
+	adServicePrincipalSignInLogData []byte
+
+	//go:embed fixtures/activedirectory/sign_in_logs.json
+	adSignInLogData []byte
+
+	//go:embed fixtures/activedirectory/user_risk_event_logs.json
+	adUserRiskEventLogData []byte
+
+	//go:embed fixtures/aks_logs.json
+	aksLogData []byte
+
+	//go:embed fixtures/function_app_logs.json
+	functionAppLogData []byte
+
+	//go:embed fixtures/networksecuritygroupflowevent_logs.json
+	networkSecurityGroupFlowEventLogData []byte
+
+	//go:embed fixtures/workflowruntime_logs.json
+	workflowRuntimeLogData []byte
+)
+
 func TestParseLogs(t *testing.T) {
 	t.Parallel()
 
 	t.Run("can parse aks logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/aks_logs.json", workingDir))
-		require.NoError(t, err)
-
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(aksLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-kube-audit"), MockScrubber(t, aksLogData))
 		for parsedLog := range parsedLogsIter {
 			currLog := parsedLog.ParsedLog
 			require.NoError(t, parsedLog.Err)
@@ -51,25 +82,19 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 21, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(aksLogData), *totalBytes)
 	})
 
 	t.Run("can parse function app logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/function_app_logs.json", workingDir))
-		require.NoError(t, err)
-
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(functionAppLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, functionAppLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -81,25 +106,19 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 20, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(functionAppLogData), *totalBytes)
 	})
 
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/workflowruntime_logs.json", workingDir))
-		require.NoError(t, err)
-
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(workflowRuntimeLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, workflowRuntimeLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -111,25 +130,19 @@ func TestParseLogs(t *testing.T) {
 
 		// THEN
 		assert.Equal(t, 7, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(workflowRuntimeLogData), *totalBytes)
 	})
 
 	t.Run("can parse vnet flow logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/networksecuritygroupflowevent_logs.json", workingDir))
-		require.NoError(t, err)
-
-		reader := bytes.NewReader(data)
+		reader := bytes.NewReader(networkSecurityGroupFlowEventLogData)
 		closer := io.NopCloser(reader)
 
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, data))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, networkSecurityGroupFlowEventLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -142,7 +155,7 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		// vnet flow logs have multiple logs per line
 		assert.Equal(t, 2, got)
-		assert.Equal(t, len(data), *totalBytes)
+		assert.Equal(t, len(networkSecurityGroupFlowEventLogData), *totalBytes)
 
 	})
 }
@@ -153,77 +166,71 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 	tests := map[string]struct {
 		categoryName     string
 		containerName    string
-		testFileName     string
+		logData          []byte
 		expectedLogCount int
 	}{
 		"can parse audit logs": {
 			categoryName:     "AuditLogs",
 			containerName:    "insights-logs-auditlogs",
-			testFileName:     "audit_logs.json",
+			logData:          adAuditLogData,
 			expectedLogCount: 22,
 		},
 		"can parse managed identity sign in logs": {
 			categoryName:     "ManagedIdentitySignInLogs",
 			containerName:    "insights-logs-managedidentitysigninlogs",
-			testFileName:     "managed_identity_sign_in_logs.json",
+			logData:          adManagedIdentitySignInLogData,
 			expectedLogCount: 24,
 		},
 		"can parse microsoft graph activity logs": {
 			categoryName:     "MicrosoftGraphActivityLogs",
 			containerName:    "insights-logs-microsoftgraphactivitylogs",
-			testFileName:     "ms_graph_activity_logs.json",
+			logData:          adMicrosoftGraphActivityLogData,
 			expectedLogCount: 25,
 		},
 		"can parse non interactive user sign in logs": {
 			categoryName:     "NonInteractiveUserSignInLogs",
 			containerName:    "insights-logs-noninteractiveusersigninlogs",
-			testFileName:     "non_interactive_user_sign_in_logs.json",
+			logData:          adNonInteractiveUserSignInLogData,
 			expectedLogCount: 14,
 		},
 		"can parse risky users logs": {
 			categoryName:     "RiskyUsers",
 			containerName:    "insights-logs-riskyusers",
-			testFileName:     "risky_users_logs.json",
+			logData:          adRiskyUsersLogData,
 			expectedLogCount: 1,
 		},
 		"can parse service principal sign in logs": {
 			categoryName:     "ServicePrincipalSignInLogs",
 			containerName:    "insights-logs-serviceprincipalsigninlogs",
-			testFileName:     "service_principal_sign_in_logs.json",
+			logData:          adServicePrincipalSignInLogData,
 			expectedLogCount: 25,
 		},
 		"can parse sign in logs": {
 			categoryName:     "SignInLogs",
 			containerName:    "insights-logs-signinlogs",
-			testFileName:     "sign_in_logs.json",
+			logData:          adSignInLogData,
 			expectedLogCount: 5,
 		},
 		"can parse user risk event logs": {
 			categoryName:     "UserRiskEvents",
 			containerName:    "insights-logs-userriskevents",
-			testFileName:     "user_risk_event_logs.json",
+			logData:          adUserRiskEventLogData,
 			expectedLogCount: 1,
 		},
 	}
-
-	workingDir, err := os.Getwd()
-	require.NoError(t, err)
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			// GIVEN
-			data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/activedirectory/%s", workingDir, testData.testFileName))
-			require.NoError(t, err)
-
-			reader := bytes.NewReader(data)
+			reader := bytes.NewReader(testData.logData)
 			closer := io.NopCloser(reader)
 
 			var numLogsParsed int
 
 			// WHEN
-			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, data))
+			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, testData.logData))
 			require.NoError(t, err)
 
 			for parsedLog := range parsedLogsIter {
@@ -236,7 +243,7 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			}
 
 			// THEN
-			assert.Equal(t, len(data), *totalBytes)
+			assert.Equal(t, len(testData.logData), *totalBytes)
 			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
 		})
 	}
