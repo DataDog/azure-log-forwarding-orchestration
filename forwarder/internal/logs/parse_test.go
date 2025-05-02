@@ -22,40 +22,40 @@ import (
 
 var (
 	//go:embed fixtures/activedirectory/audit_logs.json
-	adAuditLogData string
+	adAuditLogData []byte
 
 	//go:embed fixtures/activedirectory/managed_identity_sign_in_logs.json
-	adManagedIdentitySignInLogData string
+	adManagedIdentitySignInLogData []byte
 
 	//go:embed fixtures/activedirectory/ms_graph_activity_logs.json
-	adMicrosoftGraphActivityLogData string
+	adMicrosoftGraphActivityLogData []byte
 
 	//go:embed fixtures/activedirectory/non_interactive_user_sign_in_logs.json
-	adNonInteractiveUserSignInLogData string
+	adNonInteractiveUserSignInLogData []byte
 
 	//go:embed fixtures/activedirectory/risky_users_logs.json
-	adRiskyUsersLogData string
+	adRiskyUsersLogData []byte
 
 	//go:embed fixtures/activedirectory/service_principal_sign_in_logs.json
-	adServicePrincipalSignInLogData string
+	adServicePrincipalSignInLogData []byte
 
 	//go:embed fixtures/activedirectory/sign_in_logs.json
-	adSignInLogData string
+	adSignInLogData []byte
 
 	//go:embed fixtures/activedirectory/user_risk_event_logs.json
-	adUserRiskEventLogData string
+	adUserRiskEventLogData []byte
 
 	//go:embed fixtures/aks_logs.json
-	aksLogData string
+	aksLogData []byte
 
 	//go:embed fixtures/function_app_logs.json
-	functionAppLogData string
+	functionAppLogData []byte
 
 	//go:embed fixtures/networksecuritygroupflowevent_logs.json
-	networkSecurityGroupFlowEventLogData string
+	networkSecurityGroupFlowEventLogData []byte
 
 	//go:embed fixtures/workflowruntime_logs.json
-	workflowRuntimeLogData string
+	workflowRuntimeLogData []byte
 )
 
 func TestParseLogs(t *testing.T) {
@@ -64,7 +64,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse aks logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := []byte(aksLogData)
+		data := aksLogData
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -89,7 +89,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse function app logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := []byte(functionAppLogData)
+		data := functionAppLogData
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -114,7 +114,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := []byte(workflowRuntimeLogData)
+		data := workflowRuntimeLogData
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -139,7 +139,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse vnet flow logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		data := []byte(networkSecurityGroupFlowEventLogData)
+		data := networkSecurityGroupFlowEventLogData
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -170,7 +170,7 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 	tests := map[string]struct {
 		categoryName     string
 		containerName    string
-		logData          string
+		logData          []byte
 		expectedLogCount int
 	}{
 		"can parse audit logs": {
@@ -228,7 +228,7 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			t.Parallel()
 
 			// GIVEN
-			data := []byte(testData.logData)
+			data := testData.logData
 			reader := bytes.NewReader(data)
 			closer := io.NopCloser(reader)
 
