@@ -7,9 +7,8 @@ package logs_test
 import (
 	// stdlib
 	"bytes"
-	"fmt"
+	_ "embed"
 	"io"
-	"os"
 	"strings"
 	"testing"
 
@@ -21,18 +20,51 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 )
 
+var (
+	//go:embed fixtures/activedirectory/audit_logs.json
+	adAuditLogData string
+
+	//go:embed fixtures/activedirectory/managed_identity_sign_in_logs.json
+	adManagedIdentitySignInLogData string
+
+	//go:embed fixtures/activedirectory/ms_graph_activity_logs.json
+	adMicrosoftGraphActivityLogData string
+
+	//go:embed fixtures/activedirectory/non_interactive_user_sign_in_logs.json
+	adNonInteractiveUserSignInLogData string
+
+	//go:embed fixtures/activedirectory/risky_users_logs.json
+	adRiskyUsersLogData string
+
+	//go:embed fixtures/activedirectory/service_principal_sign_in_logs.json
+	adServicePrincipalSignInLogData string
+
+	//go:embed fixtures/activedirectory/sign_in_logs.json
+	adSignInLogData string
+
+	//go:embed fixtures/activedirectory/user_risk_event_logs.json
+	adUserRiskEventLogData string
+
+	//go:embed fixtures/aks_logs.json
+	aksLogData string
+
+	//go:embed fixtures/function_app_logs.json
+	functionAppLogData string
+
+	//go:embed fixtures/networksecuritygroupflowevent_logs.json
+	networkSecurityGroupFlowEventLogData string
+
+	//go:embed fixtures/workflowruntime_logs.json
+	workflowRuntimeLogData string
+)
+
 func TestParseLogs(t *testing.T) {
 	t.Parallel()
 
 	t.Run("can parse aks logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/aks_logs.json", workingDir))
-		require.NoError(t, err)
-
+		data := []byte(aksLogData)
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -57,12 +89,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse function app logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/function_app_logs.json", workingDir))
-		require.NoError(t, err)
-
+		data := []byte(functionAppLogData)
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -87,12 +114,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/workflowruntime_logs.json", workingDir))
-		require.NoError(t, err)
-
+		data := []byte(workflowRuntimeLogData)
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -117,12 +139,7 @@ func TestParseLogs(t *testing.T) {
 	t.Run("can parse vnet flow logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
-		workingDir, err := os.Getwd()
-		require.NoError(t, err)
-
-		data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/networksecuritygroupflowevent_logs.json", workingDir))
-		require.NoError(t, err)
-
+		data := []byte(networkSecurityGroupFlowEventLogData)
 		reader := bytes.NewReader(data)
 		closer := io.NopCloser(reader)
 
@@ -153,70 +170,65 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 	tests := map[string]struct {
 		categoryName     string
 		containerName    string
-		testFileName     string
+		logData          string
 		expectedLogCount int
 	}{
 		"can parse audit logs": {
 			categoryName:     "AuditLogs",
 			containerName:    "insights-logs-auditlogs",
-			testFileName:     "audit_logs.json",
+			logData:          adAuditLogData,
 			expectedLogCount: 22,
 		},
 		"can parse managed identity sign in logs": {
 			categoryName:     "ManagedIdentitySignInLogs",
 			containerName:    "insights-logs-managedidentitysigninlogs",
-			testFileName:     "managed_identity_sign_in_logs.json",
+			logData:          adManagedIdentitySignInLogData,
 			expectedLogCount: 24,
 		},
 		"can parse microsoft graph activity logs": {
 			categoryName:     "MicrosoftGraphActivityLogs",
 			containerName:    "insights-logs-microsoftgraphactivitylogs",
-			testFileName:     "ms_graph_activity_logs.json",
+			logData:          adMicrosoftGraphActivityLogData,
 			expectedLogCount: 25,
 		},
 		"can parse non interactive user sign in logs": {
 			categoryName:     "NonInteractiveUserSignInLogs",
 			containerName:    "insights-logs-noninteractiveusersigninlogs",
-			testFileName:     "non_interactive_user_sign_in_logs.json",
+			logData:          adNonInteractiveUserSignInLogData,
 			expectedLogCount: 14,
 		},
 		"can parse risky users logs": {
 			categoryName:     "RiskyUsers",
 			containerName:    "insights-logs-riskyusers",
-			testFileName:     "risky_users_logs.json",
+			logData:          adRiskyUsersLogData,
 			expectedLogCount: 1,
 		},
 		"can parse service principal sign in logs": {
 			categoryName:     "ServicePrincipalSignInLogs",
 			containerName:    "insights-logs-serviceprincipalsigninlogs",
-			testFileName:     "service_principal_sign_in_logs.json",
+			logData:          adServicePrincipalSignInLogData,
 			expectedLogCount: 25,
 		},
 		"can parse sign in logs": {
 			categoryName:     "SignInLogs",
 			containerName:    "insights-logs-signinlogs",
-			testFileName:     "sign_in_logs.json",
+			logData:          adSignInLogData,
 			expectedLogCount: 5,
 		},
 		"can parse user risk event logs": {
 			categoryName:     "UserRiskEvents",
 			containerName:    "insights-logs-userriskevents",
-			testFileName:     "user_risk_event_logs.json",
+			logData:          adUserRiskEventLogData,
 			expectedLogCount: 1,
 		},
 	}
-
-	workingDir, err := os.Getwd()
-	require.NoError(t, err)
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			// GIVEN
-			data, err := os.ReadFile(fmt.Sprintf("%s/fixtures/activedirectory/%s", workingDir, testData.testFileName))
-			require.NoError(t, err)
-
+			data := []byte(testData.logData)
 			reader := bytes.NewReader(data)
 			closer := io.NopCloser(reader)
 
