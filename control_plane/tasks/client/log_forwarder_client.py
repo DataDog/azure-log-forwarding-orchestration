@@ -162,7 +162,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
         self.dd_site = get_config_option(DD_SITE_SETTING)
-        self.dd_telemetry = is_truthy(DD_TELEMETRY_SETTING)
+        self.telemetry_enabled = is_truthy(DD_TELEMETRY_SETTING)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
         self.log = log
@@ -385,7 +385,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=CONTROL_PLANE_ID_SETTING, value=self.control_plane_id),
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
             EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_rules_json),
-            EnvironmentVar(name=DD_TELEMETRY_SETTING, value=str(self.dd_telemetry).lower()),
+            EnvironmentVar(name=DD_TELEMETRY_SETTING, value=str(self.telemetry_enabled).lower()),
         ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
@@ -594,7 +594,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def submit_log_forwarder_metrics(
         self, log_forwarder_id: str, metrics: list[MetricBlobEntry], region: str
     ) -> None:
-        if not self.dd_telemetry or not metrics:
+        if not self.telemetry_enabled or not metrics:
             return
 
         response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(
