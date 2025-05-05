@@ -165,7 +165,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.dd_telemetry = is_truthy(DD_TELEMETRY_SETTING)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.control_plane_id = get_config_option(CONTROL_PLANE_ID_SETTING)
-        self.should_submit_metrics = is_truthy(DD_TELEMETRY_SETTING)
         self.log = log
         self.resource_group = resource_group
         self.subscription_id = subscription_id
@@ -595,7 +594,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     async def submit_log_forwarder_metrics(
         self, log_forwarder_id: str, metrics: list[MetricBlobEntry], region: str
     ) -> None:
-        if not self.should_submit_metrics or not metrics:
+        if not self.dd_telemetry or not metrics:
             return
 
         response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(

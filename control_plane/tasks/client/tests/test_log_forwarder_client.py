@@ -620,7 +620,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
 
     async def test_submit_metrics_normal_execution(self):
-        self.client.should_submit_metrics = True
+        self.client.dd_telemetry = True
         self.client.metrics_client.submit_metrics.return_value = {}
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
@@ -628,7 +628,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client.submit_metrics.assert_called_once_with(body=FAKE_METRIC_PAYLOAD)
 
     async def test_submit_metrics_retries(self):
-        self.client.should_submit_metrics = True
+        self.client.dd_telemetry = True
         self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
         self.client.metrics_client.submit_metrics.return_value = {}
         self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
@@ -641,7 +641,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
-        self.client.should_submit_metrics = True
+        self.client.dd_telemetry = True
         self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
@@ -660,7 +660,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(res, [])
 
     async def test_submit_metrics_errors_logged(self):
-        self.client.should_submit_metrics = True
+        self.client.dd_telemetry = True
         self.client.metrics_client.submit_metrics.return_value = {
             "errors": [
                 "oops something went wrong",
