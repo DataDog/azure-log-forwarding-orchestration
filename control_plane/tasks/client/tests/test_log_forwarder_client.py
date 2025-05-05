@@ -238,6 +238,7 @@ class TestLogForwarderClient(AsyncTestCase):
                                         "name": "PII_SCRUBBER_RULES",
                                         "value": r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}',
                                     },
+                                    {"name": "DD_TELEMETRY", "value": "false"},
                                 ],
                                 "resources": {"cpu": 2.0, "memory": "4Gi"},
                             }
@@ -311,6 +312,7 @@ class TestLogForwarderClient(AsyncTestCase):
                                         "name": "PII_SCRUBBER_RULES",
                                         "value": r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}',
                                     },
+                                    {"name": "DD_TELEMETRY", "value": "false"},
                                 ],
                                 "resources": {"cpu": 2.0, "memory": "4Gi"},
                             }
