@@ -102,7 +102,7 @@ func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, now 
 func (d *DeadLetterQueue) Process(ctx context.Context, now customtime.Now, logger *log.Entry) {
 	var err error
 	for _, datadogLog := range d.queue {
-		addLogErr := d.client.AddFormattedLog(ctx, now, logger, datadogLog)
+		addLogErr := d.client.AddRawLog(ctx, now, logger, datadogLog)
 		if addLogErr != nil && !errors.Is(addLogErr, logs.ErrInvalidLog) {
 			errors.Join(err, addLogErr)
 		}
