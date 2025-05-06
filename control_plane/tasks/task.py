@@ -92,7 +92,11 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[LogRecord] = []
-        self._datadog_client = AsyncApiClient(Configuration())
+        configuration = Configuration()
+        if self.telemetry_enabled:
+            configuration.server_index = 2
+            configuration.server_variables["site"] = "datad0g.com"
+        self._datadog_client = AsyncApiClient(configuration)
         self._logs_client = LogsApi(self._datadog_client)
         self._metrics_client = MetricsApi(self._datadog_client)
         if self.telemetry_enabled:

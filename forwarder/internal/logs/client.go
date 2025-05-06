@@ -73,12 +73,14 @@ func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Ent
 	return nil
 }
 
-// AddFormattedLog adds a datadog formatted log to the buffer for future submission.
-func (c *Client) AddFormattedLog(ctx context.Context, now customtime.Now, logger *log.Entry, log datadogV2.HTTPLogItem) error {
-	logBytes, valid := ValidateDatadogLog(log, now, logger)
-	if !valid {
-		return ErrInvalidLog
+// AddRawLog adds a datadog log to the buffer for future submission.
+func (c *Client) AddRawLog(ctx context.Context, now customtime.Now, logger *log.Entry, log datadogV2.HTTPLogItem) error {
+	rawBytes, err := log.MarshalJSON()
+	if err != nil {
+		logger.WithError(err).Warning("Failed to marshal log")
+		return err
 	}
+	logBytes := int64(len(rawBytes))
 	if c.shouldFlushBytes(logBytes) {
 		if err := c.Flush(ctx); err != nil {
 			return err

@@ -341,9 +341,11 @@ func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfi
 func main() {
 	var err error
 
+	ctx := datadog.NewDefaultContext(context.Background())
+
 	// Set Datadog API Key
-	ctx := context.WithValue(
-		context.Background(),
+	ctx = context.WithValue(
+		ctx,
 		datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {
@@ -397,7 +399,9 @@ func main() {
 	}
 
 	datadogConfig := datadog.NewConfiguration()
+
 	if environment.Enabled(environment.TelemetryEnabled) {
+		// enable submission to staging
 		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
 		if len(servers) > 0 {
 			server := servers[0]
