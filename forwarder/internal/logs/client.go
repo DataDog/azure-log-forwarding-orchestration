@@ -90,6 +90,25 @@ func (c *Client) AddFormattedLog(ctx context.Context, now customtime.Now, logger
 	return nil
 }
 
+// AddRawLog adds a datadog log to the buffer for future submission.
+func (c *Client) AddRawLog(ctx context.Context, now customtime.Now, logger *log.Entry, log datadogV2.HTTPLogItem) error {
+	rawBytes, err := log.MarshalJSON()
+	if err != nil {
+		logger.WithError(err).Warning("Failed to marshal log")
+		return err
+	}
+	logBytes := int64(len(rawBytes))
+	if c.shouldFlushBytes(logBytes) {
+		if err := c.Flush(ctx); err != nil {
+			return err
+		}
+	}
+
+	c.logsBuffer = append(c.logsBuffer, log)
+	c.currentSize += logBytes
+	return nil
+}
+
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
 	if len(c.logsBuffer) > 0 {
