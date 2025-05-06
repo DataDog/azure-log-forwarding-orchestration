@@ -102,15 +102,11 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[LogRecord] = []
         configuration = Configuration()
-        host_settings = configuration.get_host_settings()
         if self.telemetry_enabled:
-            _add_datadog_staging(host_settings)
-        configuration.get_host_settings = lambda: host_settings
+            configuration.server_index = 2
+            configuration.server_variables["site"] = "datad0g.com"
         self._datadog_client = AsyncApiClient(configuration)
         self._logs_client = LogsApi(self._datadog_client)
-        if self.telemetry_enabled:
-            logs_servers = self._logs_client._submit_log_endpoint.settings.get("servers")
-            _add_datadog_staging(logs_servers)
         self._metrics_client = MetricsApi(self._datadog_client)
         if self.telemetry_enabled:
             log.info("Telemetry enabled, will submit logs for %s", self.NAME)
