@@ -72,7 +72,7 @@ class ListHandler(Handler):
         self.log_list.append(record)
 
 
-def _add_datadog_staging(settings: list[dict[str, Any]]) -> None:
+def _add_datadog_staging(settings: list[dict[str, Any]] | None) -> None:
     """takes a list of settings and adds datad0g.com to the list of supported sites"""
     if not settings or not isinstance(settings, list):
         return
