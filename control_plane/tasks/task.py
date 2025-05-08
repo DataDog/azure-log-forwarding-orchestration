@@ -74,7 +74,7 @@ class ListHandler(Handler):
 
 def _add_datadog_staging(settings: list[dict[str, Any]]) -> None:
     """takes a list of settings and adds datad0g.com to the list of supported sites"""
-    if not settings:
+    if not settings or not isinstance(settings, list):
         return
     supported_sites = settings[0].get("variables", {}).get("site", {}).get("enum_values", [])
     if len(supported_sites) > 1:
