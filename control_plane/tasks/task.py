@@ -12,7 +12,7 @@ from os import environ
 from time import time
 from traceback import format_exception
 from types import TracebackType
-from typing import Self
+from typing import Any, Self
 from uuid import uuid4
 
 # 3p
@@ -72,6 +72,15 @@ class ListHandler(Handler):
         self.log_list.append(record)
 
 
+def _add_datadog_staging(settings: list[dict[str, Any]] | None) -> None:
+    """takes a list of settings and adds datad0g.com to the list of supported sites"""
+    if not settings or not isinstance(settings, list):
+        return
+    supported_sites = settings[0].get("variables", {}).get("site", {}).get("enum_values", [])
+    if len(supported_sites) > 1:
+        supported_sites.append("datad0g.com")
+
+
 class Task(AbstractAsyncContextManager["Task"]):
     NAME: str
 
@@ -93,13 +102,25 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[LogRecord] = []
         configuration = Configuration()
+
         if self.telemetry_enabled:
             configuration.server_index = 2
             configuration.server_variables["site"] = "datad0g.com"
+
+            host_settings = configuration.get_host_settings()
+            _add_datadog_staging(host_settings)
+            configuration.get_host_settings = lambda: host_settings
+
         self._datadog_client = AsyncApiClient(configuration)
         self._logs_client = LogsApi(self._datadog_client)
         self._metrics_client = MetricsApi(self._datadog_client)
         if self.telemetry_enabled:
+            logs_servers = self._logs_client._submit_log_endpoint.settings.get("servers")
+            _add_datadog_staging(logs_servers)
+
+            metrics_servers = self._metrics_client._submit_metrics_endpoint.settings.get("servers")
+            _add_datadog_staging(metrics_servers)
+
             log.info("Telemetry enabled, will submit logs for %s", self.NAME)
             self.log.addHandler(ListHandler(self._logs))
 
