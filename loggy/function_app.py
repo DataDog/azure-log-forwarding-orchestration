@@ -9,18 +9,21 @@ import uuid
 app = func.FunctionApp()
 
 
-@app.function_name(name="TimerTrigger")
-@app.timer_trigger(schedule="0 */5 * * * *", arg_name="timer", run_on_startup=True)
-def timer(timer: func.TimerRequest):
+def _get_message() -> str:
+    """Generate a message with a unique request ID."""
     curr_id = str(uuid.uuid4())
     message = f"Request ID: {curr_id} Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
     logging.info(message)
+    return message
+
+
+@app.function_name(name="TimerTrigger")
+@app.timer_trigger(schedule="0 */5 * * * *", arg_name="timer", run_on_startup=True)
+def timer(timer: func.TimerRequest):
+    _get_message()
 
 
 @app.function_name(name="HttpTrigger")
 @app.route(route="HttpTrigger")
 def http(req: func.HttpRequest) -> str:
-    curr_id = str(uuid.uuid4())
-    message = f"Request ID: {curr_id} Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
-    logging.info(message)
-    return message
+    return _get_message()
