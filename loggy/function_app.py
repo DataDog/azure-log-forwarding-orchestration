@@ -11,7 +11,16 @@ app = func.FunctionApp()
 
 @app.function_name(name="TimerTrigger")
 @app.timer_trigger(schedule="0 */5 * * * *", arg_name="timer", run_on_startup=True)
-def main(timer: func.TimerRequest):
+def timer(timer: func.TimerRequest):
     curr_id = str(uuid.uuid4())
     message = f"Request ID: {curr_id} Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
     logging.info(message)
+
+
+@app.function_name(name="HttpTrigger")
+@app.route(route="HttpTrigger")
+def http(req: func.HttpRequest) -> str:
+    curr_id = str(uuid.uuid4())
+    message = f"Request ID: {curr_id} Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua."
+    logging.info(message)
+    return message
