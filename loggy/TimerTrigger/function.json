@@ -1,0 +1,10 @@
+{
+  "scriptFile": "function_app.py",
+  "bindings": [
+    {
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "0 */5 * * * *"
+    }
+  ]
+}
