@@ -53,7 +53,6 @@ from azure.mgmt.storage.v2024_01_01.models import (
     StorageAccountKey,
 )
 from azure.storage.blob.aio import ContainerClient, StorageStreamDownloader
-from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
 from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
@@ -158,6 +157,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         subscription_id: str,
         resource_group: str,
         pii_rules_json: str,
+        metrics_client: MetricsApi,
     ) -> None:
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
@@ -171,8 +171,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.pii_rules_json = pii_rules_json
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
-        self._datadog_client = AsyncApiClient(Configuration(request_timeout=CLIENT_MAX_SECONDS))
-        self.metrics_client = MetricsApi(self._datadog_client)
+        self.metrics_client = metrics_client
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
@@ -185,7 +184,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         await gather(
             self.container_apps_client.__aenter__(),
             self.storage_client.__aenter__(),
-            self._datadog_client.__aenter__(),
         )
         return self
 
@@ -200,7 +198,6 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         await gather(
             self.container_apps_client.__aexit__(exc_type, exc_val, exc_tb),
             self.storage_client.__aexit__(exc_type, exc_val, exc_tb),
-            self._datadog_client.__aexit__(exc_type, exc_val, exc_tb),
         )
 
     def submit_background_task(self, coro: Coroutine[Any, Any, Any]) -> None:

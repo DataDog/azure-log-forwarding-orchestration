@@ -31,6 +31,7 @@ from cache.common import read_cache
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     DD_API_KEY_SETTING,
+    DD_SITE_SETTING,
     DD_TELEMETRY_SETTING,
     LOG_LEVEL_SETTING,
     VERSION_TAG_SETTING,
@@ -103,7 +104,9 @@ class Task(AbstractAsyncContextManager["Task"]):
         self._logs: list[LogRecord] = []
         configuration = Configuration()
 
-        if self.telemetry_enabled:
+        target_staging = self.telemetry_enabled and "datad0g.com" in environ.get(DD_SITE_SETTING, "")
+
+        if target_staging:
             configuration.server_index = 2
             configuration.server_variables["site"] = "datad0g.com"
 
@@ -114,13 +117,14 @@ class Task(AbstractAsyncContextManager["Task"]):
         self._datadog_client = AsyncApiClient(configuration)
         self._logs_client = LogsApi(self._datadog_client)
         self._metrics_client = MetricsApi(self._datadog_client)
-        if self.telemetry_enabled:
+        if target_staging:
             logs_servers = self._logs_client._submit_log_endpoint.settings.get("servers")
             _add_datadog_staging(logs_servers)
 
             metrics_servers = self._metrics_client._submit_metrics_endpoint.settings.get("servers")
             _add_datadog_staging(metrics_servers)
 
+        if self.telemetry_enabled:
             log.info("Telemetry enabled, will submit logs for %s", self.NAME)
             self.log.addHandler(ListHandler(self._logs))
 
