@@ -172,7 +172,7 @@ class ScalingTask(Task):
         regions_to_remove = provisioned_regions - regions_with_resources
         regions_to_check_scaling = regions_with_resources & regions_with_forwarders
         async with LogForwarderClient(
-            self.log, self.credential, subscription_id, self.resource_group, self.pii_rules_json
+            self.log, self.credential, subscription_id, self.resource_group, self.pii_rules_json, self._metrics_client
         ) as client:
             await gather(
                 *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),

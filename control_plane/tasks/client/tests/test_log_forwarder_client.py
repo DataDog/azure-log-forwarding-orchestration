@@ -150,6 +150,7 @@ class TestLogForwarderClient(AsyncTestCase):
         p.start()
         self.addCleanup(p.stop)
         self.log = mock()
+        self.metrics_client = Mock()
         self.client: MockedLogForwarderClient = cast(
             MockedLogForwarderClient,
             LogForwarderClient(
@@ -158,6 +159,7 @@ class TestLogForwarderClient(AsyncTestCase):
                 subscription_id=SUB_ID1,
                 resource_group=RESOURCE_GROUP_NAME,
                 pii_rules_json=PII_RULES_JSON,
+                metrics_client=self.metrics_client,
             ),
         )
         await self.client.__aexit__(None, None, None)
@@ -330,13 +332,7 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(
-            self.log,
-            Mock(),
-            "sub1",
-            "rg1",
-            PII_RULES_JSON,
-        ) as client:
+        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1", PII_RULES_JSON, Mock()) as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
