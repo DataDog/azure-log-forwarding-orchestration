@@ -31,6 +31,7 @@ from cache.common import read_cache
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     DD_API_KEY_SETTING,
+    DD_SITE_SETTING,
     DD_TELEMETRY_SETTING,
     LOG_LEVEL_SETTING,
     VERSION_TAG_SETTING,
@@ -104,8 +105,9 @@ class Task(AbstractAsyncContextManager["Task"]):
         configuration = Configuration()
 
         if self.telemetry_enabled:
-            configuration.server_index = 2
-            configuration.server_variables["site"] = "datad0g.com"
+            if "datad0g.com" in environ.get(DD_SITE_SETTING, ""):
+                configuration.server_index = 2
+                configuration.server_variables["site"] = "datad0g.com"
 
             host_settings = configuration.get_host_settings()
             _add_datadog_staging(host_settings)
