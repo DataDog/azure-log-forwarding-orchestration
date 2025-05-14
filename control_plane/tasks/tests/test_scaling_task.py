@@ -37,7 +37,6 @@ from cache.env import (
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
     STORAGE_CONNECTION_SETTING,
-    VERSION_TAG_SETTING,
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache, ResourceMetadata
@@ -1355,7 +1354,6 @@ class TestScalingTask(TaskTestCase):
         self.write_cache.assert_awaited()
 
     async def test_tags(self):
-        self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
 
         task = await self.run_scaling_task(

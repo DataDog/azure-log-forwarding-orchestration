@@ -10,7 +10,6 @@ from unittest.mock import Mock
 # project
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
-    VERSION_TAG_SETTING,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
@@ -240,7 +239,6 @@ class TestResourcesTask(TaskTestCase):
         )
 
     async def test_tags(self):
-        self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
         self.sub_client.subscriptions.list = Mock(return_value=async_generator())
 

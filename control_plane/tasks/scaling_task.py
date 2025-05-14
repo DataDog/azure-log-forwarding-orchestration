@@ -39,6 +39,7 @@ from cache.env import (
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from cache.user_config import convert_pii_rules_to_json
+from tasks.client.datadog_api_client import StatusCode
 from tasks.client.log_forwarder_client import LogForwarderClient
 from tasks.common import average, chunks, generate_unique_id, log_errors
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
@@ -126,8 +127,15 @@ def prune_assignment_cache(resource_cache: ResourceCache, assignment_cache: Assi
 class ScalingTask(Task):
     NAME = SCALING_TASK_NAME
 
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str, wait_on_envs: bool = False) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        resource_cache_state: str,
+        assignment_cache_state: str,
+        wait_on_envs: bool = False,
+        execution_id: str = "",
+        is_initial_run: bool = False,
+    ) -> None:
+        super().__init__(is_initial_run=is_initial_run, execution_id=execution_id)
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.scaling_percentage = parse_config_option(SCALING_PERCENTAGE_SETTING, float, DEFAULT_SCALING_PERCENTAGE)
         self.control_plane_region = get_config_option(CONTROL_PLANE_REGION_SETTING)
@@ -155,8 +163,15 @@ class ScalingTask(Task):
 
     async def run(self) -> None:
         self.log.info("Running for %s subscriptions: %s", len(self.resource_cache), list(self.resource_cache.keys()))
+        if self._is_initial_run:
+            message_suffix = ""
+            if self._is_initial_run and not self.wait_on_envs:
+                message_suffix = " for the second time."
+            await self.submit_status_update("task_complete", StatusCode.OK, f"Scaling task started{message_suffix}")
         all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
+        if self._is_initial_run:
+            await self.submit_status_update("task_complete", StatusCode.OK, "Scaling task completed")
 
     async def process_subscription(self, subscription_id: str) -> None:
         regions_with_forwarders = {

@@ -36,6 +36,7 @@ from cache.diagnostic_settings_cache import (
 )
 from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
 from cache.resources_cache import INCLUDE_KEY, RESOURCE_CACHE_BLOB, deserialize_resource_cache
+from tasks.client.datadog_api_client import StatusCode
 from tasks.common import (
     get_event_hub_name,
     get_event_hub_namespace,
@@ -88,8 +89,15 @@ def get_diagnostic_setting(
 class DiagnosticSettingsTask(Task):
     NAME = DIAGNOSTIC_SETTINGS_TASK_NAME
 
-    def __init__(self, resource_cache_state: str, assignment_cache_state: str, event_cache_state: str) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        resource_cache_state: str,
+        assignment_cache_state: str,
+        event_cache_state: str,
+        execution_id: str = "",
+        is_initial_run: bool = False,
+    ) -> None:
+        super().__init__(is_initial_run=is_initial_run, execution_id=execution_id)
 
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.diagnostic_settings_name = (
@@ -117,7 +125,11 @@ class DiagnosticSettingsTask(Task):
 
     async def run(self) -> None:
         self.log.info("Processing %s subscriptions", len(self.assignment_cache))
+        if self._is_initial_run:
+            await self.submit_status_update("task_start", StatusCode.OK, "Diagnostic settings task started")
         await gather(*map(self.process_subscription, self.assignment_cache))
+        if self._is_initial_run:
+            await self.submit_status_update("task_complete", StatusCode.OK, "Diagnostic settings task completed")
 
     async def process_subscription(self, sub_id: str) -> None:
         self.log.info("Processing subscription %s", sub_id)

@@ -16,7 +16,6 @@ from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
     SUBSCRIPTION_ID_SETTING,
-    VERSION_TAG_SETTING,
 )
 from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
@@ -308,7 +307,6 @@ class TestDeployerTask(TaskTestCase):
         )
 
     async def test_deployer_tags(self):
-        self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
         public_cache: ManifestCache = {
             "resources": "1",

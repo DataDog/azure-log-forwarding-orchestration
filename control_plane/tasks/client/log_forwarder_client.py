@@ -32,8 +32,8 @@ from azure.mgmt.appcontainers.models import (
     ManagedEnvironment,
     Secret,
 )
-from azure.mgmt.storage.v2024_01_01.aio import StorageManagementClient
-from azure.mgmt.storage.v2024_01_01.models import (
+from azure.mgmt.storage.aio import StorageManagementClient
+from azure.mgmt.storage.models import (
     BlobContainer,
     DateAfterCreation,
     DateAfterModification,
