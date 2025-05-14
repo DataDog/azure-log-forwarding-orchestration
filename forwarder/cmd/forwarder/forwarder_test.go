@@ -185,7 +185,7 @@ func getDatadogConfig(getDatadogLogResp func(req *http.Request) (*http.Response,
 	return datadogConfig, submittedLogsChan
 }
 
-func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error), getDatadogLogResp func(req *http.Request) (*http.Response, error), customNow customtime.Now) ([]datadogV2.HTTPLogItem, error) {
+func mockedRun(t *testing.T, ctx context.Context, containers []*service.ContainerItem, blobs []*container.BlobItem, getDownloadResp func(*azblob.DownloadStreamOptions) azblob.DownloadStreamResponse, cursorResp azblob.DownloadStreamResponse, deadletterqueueResp azblob.DownloadStreamResponse, uploadFunc func(context.Context, string, string, []byte, *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error), getDatadogLogResp func(req *http.Request) (*http.Response, error), customNow customtime.Now) ([]datadogV2.HTTPLogItem, error) {
 	ctrl := gomock.NewController(t)
 	mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
 
@@ -198,18 +198,43 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager).Times(len(containers))
 
 	mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
-		if blobName == cursor.BlobName {
-			return cursorResp, nil
+		// Check for timed out context
+		if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
+			return azblob.DownloadStreamResponse{}, ctx.Err()
 		}
-		if blobName == deadletterqueue.BlobName {
-			return deadletterqueueResp, nil
+
+		select {
+		case <-ctx.Done():
+			// Timeout occurred
+			return azblob.DownloadStreamResponse{}, ctx.Err()
+		default:
+			if blobName == cursor.BlobName {
+				return cursorResp, nil
+			}
+			if blobName == deadletterqueue.BlobName {
+				return deadletterqueueResp, nil
+			}
+			if strings.Contains(blobName, "metrics_") {
+				resp := azblob.DownloadStreamResponse{}
+				resp.Body = io.NopCloser(strings.NewReader(""))
+				return resp, nil
+			}
+			// Use channel so test can abort long-running downloads
+			respCh := make(chan azblob.DownloadStreamResponse, 1)
+
+			go func() {
+				resp := getDownloadResp(o)
+				respCh <- resp
+			}()
+
+			// Wait for either the download to complete or context to be canceled
+			select {
+			case resp := <-respCh:
+				return resp, nil
+			case <-ctx.Done():
+				return azblob.DownloadStreamResponse{}, ctx.Err()
+			}
 		}
-		if strings.Contains(blobName, "metrics_") {
-			resp := azblob.DownloadStreamResponse{}
-			resp.Body = io.NopCloser(strings.NewReader(""))
-			return resp, nil
-		}
-		return getDownloadResp(o), nil
 	})
 
 	mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(uploadFunc).AnyTimes()
@@ -218,8 +243,6 @@ func mockedRun(t *testing.T, containers []*service.ContainerItem, blobs []*conta
 	mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
 
 	mockPiiScrubber := newMockPiiScrubber(ctrl)
-
-	ctx := context.Background()
 
 	datadogConfig, logsChan := getDatadogConfig(getDatadogLogResp)
 	submittedLogs := make([]datadogV2.HTTPLogItem, 0)
@@ -309,7 +332,7 @@ func TestRun(t *testing.T) {
 		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+		submittedLogs, err := mockedRun(t, context.Background(), containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
 
 		// THEN
 		assert.NoError(t, err)
@@ -394,7 +417,7 @@ func TestRun(t *testing.T) {
 		}
 
 		// WHEN
-		submittedLogs, err := mockedRun(t, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+		submittedLogs, err := mockedRun(t, context.Background(), containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
 
 		// THEN
 		assert.NoError(t, err)
@@ -420,6 +443,92 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, "azure.web", *logItem.Ddsource)
 			assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 		}
+	})
+
+	t.Run("forwarder timeout is properly enforced", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testString := "test"
+		validLog := getLogWithContent(testString, 5*time.Minute)
+		expectedBytesForLog := len(validLog)
+
+		containerName := "insights-logs-functionapplogs"
+		containerPage := []*service.ContainerItem{
+			newContainerItem(containerName),
+		}
+		blobPage := []*container.BlobItem{
+			newBlobItem("timeout-test", int64(expectedBytesForLog), time.Now()),
+		}
+
+		slowDownloadDuration := 10 * time.Second
+		forwarderTimeout := 50 * time.Millisecond
+
+		getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
+			time.Sleep(slowDownloadDuration)
+			return azblob.DownloadStreamResponse{
+				DownloadResponse: blob.DownloadResponse{
+					Body: io.NopCloser(strings.NewReader(string(validLog))),
+				},
+			}
+		}
+
+		cursorResp := azblob.DownloadStreamResponse{
+			DownloadResponse: blob.DownloadResponse{
+				Body: io.NopCloser(strings.NewReader("{}")),
+			},
+		}
+
+		deadLetterQueueResp := azblob.DownloadStreamResponse{
+			DownloadResponse: blob.DownloadResponse{
+				Body: io.NopCloser(strings.NewReader("[]")),
+			},
+		}
+
+		var isCursorSaved bool
+		var isMetricSaved bool
+		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+			if strings.Contains(blobName, cursor.BlobName) {
+				isCursorSaved = true
+			}
+			if strings.Contains(blobName, "metrics_") {
+				isMetricSaved = true
+			}
+
+			return azblob.UploadBufferResponse{}, nil
+		}
+
+		logResp := func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		}
+
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), forwarderTimeout)
+		defer cancel()
+
+		startTime := time.Now()
+
+		customNow := func() time.Time {
+			return time.Now()
+		}
+
+		// WHEN
+		_, err := mockedRun(t, timeoutCtx, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+
+		elapsed := time.Since(startTime)
+
+		// THEN
+		require.Error(t, err, "Expected a timeout error")
+		assert.Contains(t, err.Error(), "context deadline exceeded", "Expected deadline exceeded error")
+
+		// Test should complete shortly after timeout
+		maxExpectedDuration := forwarderTimeout + 500*time.Millisecond
+		assert.True(t, elapsed < maxExpectedDuration, "Test took %v, which is longer than expected %v", elapsed, maxExpectedDuration)
+
+		// Cursors and metrics should still be saved even after timeout
+		assert.True(t, isCursorSaved, "Cursor should be saved even after timeout")
+		assert.True(t, isMetricSaved, "Metrics should be saved even after timeout")
 	})
 }
 
@@ -695,7 +804,7 @@ func TestCursors(t *testing.T) {
 			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc, logResp, customNow)
+			submittedLogs, err := mockedRun(t, context.Background(), containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQeueResp, uploadFunc, logResp, customNow)
 
 			// THEN
 			assert.NoError(t, err)
@@ -770,7 +879,7 @@ func TestCursors(t *testing.T) {
 			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+			submittedLogs, err := mockedRun(t, context.Background(), containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
 
 			// THEN
 			assert.NoError(t, err)
@@ -894,7 +1003,7 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 			}
 
 			// WHEN
-			submittedLogs, err := mockedRun(t, containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+			submittedLogs, err := mockedRun(t, context.Background(), containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
 
 			// THEN
 			assert.NoError(t, err)
