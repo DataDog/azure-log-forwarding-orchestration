@@ -68,9 +68,9 @@ func (c *Cursors) JSONBytes() ([]byte, error) {
 func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
 	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
 		// Always save cursors - use a new context if error/timeout occurred already
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cursorSaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		ctx = timeoutCtx
+		ctx = cursorSaveCtx
 	}
 
 	data, err := c.JSONBytes()

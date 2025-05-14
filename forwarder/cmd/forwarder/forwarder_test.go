@@ -199,13 +199,13 @@ func mockedRun(t *testing.T, ctx context.Context, containers []*service.Containe
 
 	mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
 		// Check for timed out context
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
 			return azblob.DownloadStreamResponse{}, ctx.Err()
 		}
 
 		select {
 		case <-ctx.Done():
-			// Time out occurred
+			// Timeout occurred
 			return azblob.DownloadStreamResponse{}, ctx.Err()
 		default:
 			if blobName == cursor.BlobName {
@@ -219,7 +219,7 @@ func mockedRun(t *testing.T, ctx context.Context, containers []*service.Containe
 				resp.Body = io.NopCloser(strings.NewReader(""))
 				return resp, nil
 			}
-			// Create a channel to allow our test to abort long-running downloads
+			// Use channel so test can abort long-running downloads
 			respCh := make(chan azblob.DownloadStreamResponse, 1)
 
 			go func() {
@@ -461,7 +461,7 @@ func TestRun(t *testing.T) {
 		}
 
 		slowDownloadDuration := 10 * time.Second
-		forwarderDuration := 10 * time.Millisecond
+		forwarderTimeout := 50 * time.Millisecond
 
 		getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
 			time.Sleep(slowDownloadDuration)
@@ -504,8 +504,7 @@ func TestRun(t *testing.T) {
 			}, nil
 		}
 
-		// This context with short timeout should trigger the context cancellation behavior in our test
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), forwarderDuration)
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), forwarderTimeout)
 		defer cancel()
 
 		startTime := time.Now()
@@ -523,11 +522,11 @@ func TestRun(t *testing.T) {
 		require.Error(t, err, "Expected a timeout error")
 		assert.Contains(t, err.Error(), "context deadline exceeded", "Expected deadline exceeded error")
 
-		// Verify that the test is completing shortly after timeout
-		maxExpectedDuration := 2 * time.Second
+		// Test should complete shortly after timeout
+		maxExpectedDuration := forwarderTimeout + 500*time.Millisecond
 		assert.True(t, elapsed < maxExpectedDuration, "Test took %v, which is longer than expected %v", elapsed, maxExpectedDuration)
 
-		// Verify critical operations were still performed despite timeout
+		// Cursors and metrics should still be saved even after timeout
 		assert.True(t, isCursorSaved, "Cursor should be saved even after timeout")
 		assert.True(t, isMetricSaved, "Metrics should be saved even after timeout")
 	})

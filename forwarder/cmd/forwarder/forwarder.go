@@ -142,10 +142,10 @@ func getLogBytes(ctx context.Context, resourceBytesCh <-chan resourceBytes) map[
 
 func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, resourceBytes map[string]int64, startTime time.Time, versionTag string) (int, error) {
 	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
-		// We should always write metrics even if error/timeout occurred already. Use new context if so.
-		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// Always write metrics even if timeout occurred - use new context if so
+		writeMetricCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		ctx = timeoutCtx
+		ctx = writeMetricCtx
 	}
 
 	metricBlob := metrics.MetricEntry{
