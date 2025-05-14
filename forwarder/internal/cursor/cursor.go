@@ -66,19 +66,18 @@ func (c *Cursors) JSONBytes() ([]byte, error) {
 
 // Save saves the cursors to storage
 func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
-	cursorSaveCtx := ctx
 	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
 		// Always save cursors - use a new context if error/timeout occurred already
 		timeoutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cursorSaveCtx = timeoutCtx
+		ctx = timeoutCtx
 	}
 
 	data, err := c.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("error marshalling cursors: %w", err)
 	}
-	err = client.UploadBlob(cursorSaveCtx, storage.ForwarderContainer, BlobName, data)
+	err = client.UploadBlob(ctx, storage.ForwarderContainer, BlobName, data)
 	if err != nil {
 		return fmt.Errorf("uploading cursors failed: %w", err)
 	}
