@@ -25,7 +25,7 @@ def create_submit_status_payload(
     message: str,
     execution_id: str,
     version: str,
-    control_plane_id: str,
+    control_plane_id: str | None,
 ):
     return {
         "id": execution_id,
