@@ -86,7 +86,7 @@ def _add_datadog_staging(settings: list[dict[str, Any]] | None) -> None:
 class Task(AbstractAsyncContextManager["Task"]):
     NAME: str
 
-    def __init__(self, execution_id: str = "", is_initial_run: bool = False) -> None:
+    def __init__(self, execution_id: str | None = "", is_initial_run: bool = False) -> None:
         self.credential = DefaultAzureCredential()
 
         # Telemetry Logic

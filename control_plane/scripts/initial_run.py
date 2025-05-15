@@ -51,22 +51,22 @@ async def run_tasks() -> None:
         await datadog_client.submit_status_update(
             "initial_run.begin", StatusCode.OK, "Starting initial run", execution_id, VERSION, control_plane_id
         )
-        async with ResourcesTask("", is_inital_run=True, execution_id=execution_id) as resources_task:
+        async with ResourcesTask("", is_initial_run=True, execution_id=execution_id) as resources_task:
             await resources_task.submit_status_update("task_start", StatusCode.OK, "Starting resources task")
             await resources_task.run()
             resource_cache = dumps(resources_task.resource_cache, default=list)
         async with ScalingTask(
-            resource_cache, "", wait_on_envs=True, is_inital_run=True, execution_id=execution_id
+            resource_cache, "", wait_on_envs=True, is_initial_run=True, execution_id=execution_id
         ) as scaling_task:
             await scaling_task.run()
             assignment_cache = dumps(scaling_task.assignment_cache)
         async with ScalingTask(
-            resource_cache, assignment_cache, is_inital_run=True, execution_id=execution_id
+            resource_cache, assignment_cache, is_initial_run=True, execution_id=execution_id
         ) as scaling_task:
             await scaling_task.run()
             assignment_cache = dumps(scaling_task.assignment_cache)
         async with DiagnosticSettingsTask(
-            resource_cache, assignment_cache, "", is_inital_run=True, execution_id=execution_id
+            resource_cache, assignment_cache, "", is_initial_run=True, execution_id=execution_id
         ) as diagnostic_settings_task:
             await diagnostic_settings_task.run()
         await datadog_client.submit_status_update(
