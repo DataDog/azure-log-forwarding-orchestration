@@ -16,13 +16,13 @@ if [ ! -f "$VERSION_FILE" ]; then
     exit 1
 fi
 
-# Replace "unknown" with the provided version
-sed -i '' "s/VERSION = \"unknown\"/VERSION = \"$VERSION\"/" "$VERSION_FILE"
+# Replace the provided version with "unknown"
+sed -i '' "s/VERSION = \"$VERSION\"/VERSION = \"unknown\"/" "$VERSION_FILE"
 
 # Verify the change
-if grep -q "VERSION = \"$VERSION\"" "$VERSION_FILE"; then
-    echo "Successfully updated version to $VERSION"
+if grep -q "VERSION = \"unknown\"" "$VERSION_FILE"; then
+    echo "Successfully reset version to unknown"
 else
-    echo "Error: Failed to update version"
+    echo "Error: Failed to reset version"
     exit 1
 fi
