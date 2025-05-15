@@ -40,7 +40,7 @@ def create_submit_status_payload(
 
 
 class DatadogClient:
-    def __init__(self, dd_site: str, api_key: str):
+    def __init__(self, dd_site: str | None, api_key: str | None):
         self.dd_site = dd_site
         self.api_key = api_key
         self.session = None
@@ -69,7 +69,7 @@ class DatadogClient:
             version=version,
             control_plane_id=control_plane_id,
         )
-        async with self.session.post(url, json={"data": payload}, headers=self._get_headers()) as response:
+        async with self.session.post(url, json={"data": payload}, headers=self._get_headers()) as response:  # type: ignore
             return response.status
 
     async def __aenter__(self) -> Self:
@@ -80,4 +80,4 @@ class DatadogClient:
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc_value: BaseException | None, traceback: TracebackType | None
     ) -> None:
-        await self.session.__aexit__(exc_type, exc_value, traceback)
+        await self.session.__aexit__(exc_type, exc_value, traceback)  # type: ignore
