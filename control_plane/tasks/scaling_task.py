@@ -208,8 +208,14 @@ class ScalingTask(Task):
         try:
             config_type = await client.create_log_forwarder(region, config_id)
             return LogForwarder(config_id, config_type)
-        except Exception:
+        except Exception as e:
             self.log.exception("Failed to create log forwarder %s, cleaning up", config_id)
+            if self._is_initial_run:
+                await self.submit_status_update(
+                    "create_log_forwarder",
+                    StatusCode.RESOURCE_CREATION_ERROR,
+                    f"Failed to create log forwarder {config_id}. Reason: {e}",
+                )
             success = await client.delete_log_forwarder(config_id, raise_error=False)
             if not success:
                 self.log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
@@ -219,8 +225,14 @@ class ScalingTask(Task):
         """Creates a log forwarder env for the given region. If the creation fails, the env is (attempted to be) deleted"""
         try:
             await client.create_log_forwarder_managed_environment(region, wait=self.wait_on_envs)
-        except Exception:
+        except Exception as e:
             self.log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
+            if self._is_initial_run:
+                await self.submit_status_update(
+                    "create_log_forwarder_env",
+                    StatusCode.RESOURCE_CREATION_ERROR,
+                    f"Failed to create log forwarder env in {region}. Reason: {e}",
+                )
             success = await client.delete_log_forwarder_env(region, raise_error=False)
             if not success:
                 self.log.error(

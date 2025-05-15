@@ -223,6 +223,12 @@ class DiagnosticSettingsTask(Task):
                 self.log.warning("Resource type for %s unsupported, skipping", resource_id)
                 return
             self.log.exception("Failed to get diagnostic settings for resource %s", resource_id)
+            if self._is_initial_run:
+                await self.submit_status_update(
+                    "process_resource",
+                    StatusCode.AZURE_RESPONSE_ERROR,
+                    f"Failed to get diagnostic settings for resource {resource_id}",
+                )
             return
 
         current_setting = next(
@@ -328,9 +334,22 @@ class DiagnosticSettingsTask(Task):
                 )
                 return False
 
+            if self._is_initial_run:
+                await self.submit_status_update(
+                    "create_or_update_diagnostic_setting",
+                    StatusCode.AZURE_RESPONSE_ERROR,
+                    f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
+                )
+
             self.log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
             return False
-        except Exception:
+        except Exception as e:
+            if self._is_initial_run:
+                await self.submit_status_update(
+                    "create_or_update_diagnostic_setting",
+                    StatusCode.UNKNOWN_ERROR,
+                    f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
+                )
             self.log.exception("Unexpected error when trying to add diagnostic setting for resource %s", resource_id)
             return False
 
