@@ -49,6 +49,7 @@ from tasks.scaling_task import (
     resources_to_move_by_load,
 )
 from tasks.tests.common import AsyncMockClient, AzureModelMatcher, TaskTestCase, mock
+from tasks.version import VERSION
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -1361,14 +1362,13 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state={},
         )
 
-        self.assertEqual(task.version_tag, "v345")
         self.assertCountEqual(
             task.tags,
             [
                 "forwarder:lfocontrolplane",
                 "task:scaling_task",
                 "control_plane_id:a2b4c5d6",
-                "version:v345",
+                f"version:{VERSION}",
             ],
         )
 

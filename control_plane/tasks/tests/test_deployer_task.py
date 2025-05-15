@@ -20,6 +20,7 @@ from cache.env import (
 from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
+from tasks.version import VERSION
 
 ALL_FUNCTIONS = [
     "resources-task-0863329b4b49",
@@ -324,13 +325,12 @@ class TestDeployerTask(TaskTestCase):
 
         task = await self.run_deployer_task()
 
-        self.assertEqual(task.version_tag, "v345")
         self.assertCountEqual(
             task.tags,
             [
                 "forwarder:lfocontrolplane",
                 "task:deployer_task",
                 "control_plane_id:a2b4c5d6",
-                "version:v345",
+                f"version:{VERSION}",
             ],
         )
