@@ -27,6 +27,7 @@ from tasks.diagnostic_settings_task import (
     DiagnosticSettingsTask,
 )
 from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator, mock
+from tasks.version import VERSION
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"
@@ -522,13 +523,12 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             event_cache={},
         )
 
-        self.assertEqual(task.version_tag, "v345")
         self.assertCountEqual(
             task.tags,
             [
                 "forwarder:lfocontrolplane",
                 "task:diagnostic_settings_task",
                 "control_plane_id:a2b4c5d6",
-                "version:v345",
+                f"version:{VERSION}",
             ],
         )

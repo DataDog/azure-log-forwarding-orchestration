@@ -49,7 +49,7 @@ class DatadogClient:
     def __init__(self, dd_site: str, api_key: str):
         self.dd_site = dd_site
         self.api_key = api_key
-        self.session = aiohttp.ClientSession()
+        self.session = None
 
     def _get_url(self, endpoint: str) -> str:
         return f"https://api.{self.dd_site}/{endpoint}"
@@ -79,6 +79,7 @@ class DatadogClient:
             return response.status
 
     async def __aenter__(self) -> Self:
+        self.session = aiohttp.ClientSession()
         await self.session.__aenter__()
         return self
 
