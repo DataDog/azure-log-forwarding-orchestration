@@ -58,7 +58,7 @@ class DatadogClient:
         message: str,
         execution_id: str,
         version: str,
-        control_plane_id: str,
+        control_plane_id: str | None,
     ) -> int:
         url = self._get_url("api/unstable/integration/azure/logforwarding/status")
         payload = create_submit_status_payload(

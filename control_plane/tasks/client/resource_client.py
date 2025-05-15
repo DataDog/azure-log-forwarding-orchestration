@@ -26,7 +26,7 @@ from azure.mgmt.resource.resources.v2021_01_01.aio import ResourceManagementClie
 from azure.mgmt.resource.resources.v2021_01_01.models import GenericResourceExpanded
 from azure.mgmt.sql.aio import SqlManagementClient
 from azure.mgmt.synapse.aio import SynapseManagementClient
-from azure.mgmt.web.aio import WebSiteManagementClient
+from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
 from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
