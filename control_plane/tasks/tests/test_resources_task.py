@@ -10,7 +10,6 @@ from unittest.mock import Mock
 # project
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
-    VERSION_TAG_SETTING,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
@@ -21,6 +20,7 @@ from cache.resources_cache import (
 )
 from tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException, async_generator, mock
+from tasks.version import VERSION
 
 sub_id1 = "a062baee-fdd3-4784-beb4-d817f591422c"
 sub_id2 = "77602a31-36b2-4417-a27c-9071107ca3e6"
@@ -240,19 +240,17 @@ class TestResourcesTask(TaskTestCase):
         )
 
     async def test_tags(self):
-        self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
         self.sub_client.subscriptions.list = Mock(return_value=async_generator())
 
         task = await self.run_resources_task({})
 
-        self.assertEqual(task.version_tag, "v345")
         self.assertCountEqual(
             task.tags,
             [
                 "forwarder:lfocontrolplane",
                 "task:resources_task",
                 "control_plane_id:a2b4c5d6",
-                "version:v345",
+                f"version:{VERSION}",
             ],
         )

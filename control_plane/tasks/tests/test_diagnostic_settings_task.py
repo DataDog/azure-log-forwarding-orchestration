@@ -17,7 +17,7 @@ from azure.mgmt.monitor.models import CategoryType
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
 from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
-from cache.env import CONTROL_PLANE_ID_SETTING, VERSION_TAG_SETTING
+from cache.env import CONTROL_PLANE_ID_SETTING
 from cache.resources_cache import INCLUDE_KEY, ResourceCache, ResourceCacheV1
 from cache.tests import TEST_EVENT_HUB_NAME
 from tasks.diagnostic_settings_task import (
@@ -27,6 +27,7 @@ from tasks.diagnostic_settings_task import (
     DiagnosticSettingsTask,
 )
 from tasks.tests.common import AzureModelMatcher, TaskTestCase, async_generator, mock
+from tasks.version import VERSION
 
 sub_id1: Final = "sub1"
 region1: Final = "region1"
@@ -514,7 +515,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         self.assertEqual(task.event_cache[sub_id1][resource_id1][DIAGNOSTIC_SETTINGS_COUNT], 2)
 
     async def test_tags(self):
-        self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
 
         task = await self.run_diagnostic_settings_task(
@@ -523,13 +523,12 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             event_cache={},
         )
 
-        self.assertEqual(task.version_tag, "v345")
         self.assertCountEqual(
             task.tags,
             [
                 "forwarder:lfocontrolplane",
                 "task:diagnostic_settings_task",
                 "control_plane_id:a2b4c5d6",
-                "version:v345",
+                f"version:{VERSION}",
             ],
         )

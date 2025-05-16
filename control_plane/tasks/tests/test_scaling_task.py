@@ -37,7 +37,6 @@ from cache.env import (
     RESOURCE_GROUP_SETTING,
     SCALING_PERCENTAGE_SETTING,
     STORAGE_CONNECTION_SETTING,
-    VERSION_TAG_SETTING,
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache, ResourceMetadata
@@ -50,6 +49,7 @@ from tasks.scaling_task import (
     resources_to_move_by_load,
 )
 from tasks.tests.common import AsyncMockClient, AzureModelMatcher, TaskTestCase, mock
+from tasks.version import VERSION
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -1355,7 +1355,6 @@ class TestScalingTask(TaskTestCase):
         self.write_cache.assert_awaited()
 
     async def test_tags(self):
-        self.env[VERSION_TAG_SETTING] = "v345"
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
 
         task = await self.run_scaling_task(
@@ -1363,14 +1362,13 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state={},
         )
 
-        self.assertEqual(task.version_tag, "v345")
         self.assertCountEqual(
             task.tags,
             [
                 "forwarder:lfocontrolplane",
                 "task:scaling_task",
                 "control_plane_id:a2b4c5d6",
-                "version:v345",
+                f"version:{VERSION}",
             ],
         )
 

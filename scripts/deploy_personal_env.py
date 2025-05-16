@@ -181,7 +181,9 @@ if not SKIP_DOCKER:
 
 
 # build current version of tasks
+run(f"{lfo_dir}/ci/scripts/control_plane/set_version.sh {commit_sha}", cwd=lfo_dir)
 run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
+run(f"{lfo_dir}/ci/scripts/control_plane/unset_version.sh {commit_sha}", cwd=lfo_dir)
 
 # upload current version of tasks to storage account
 run(
