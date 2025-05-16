@@ -8,7 +8,7 @@ from types import TracebackType
 from typing import Self
 
 # 3p
-import aiohttp
+from aiohttp import ClientSession
 
 
 class StatusCode(Enum):
@@ -77,7 +77,7 @@ class DatadogClient:
             return response.status
 
     async def __aenter__(self) -> Self:
-        self.session = aiohttp.ClientSession()
+        self.session = ClientSession()
         await self.session.__aenter__()
         return self
 
