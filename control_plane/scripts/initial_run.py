@@ -28,14 +28,15 @@ from tasks.resources_task import ResourcesTask
 from tasks.scaling_task import ScalingTask
 from tasks.version import VERSION
 
-SUB_ID = get_config_option(SUBSCRIPTION_ID_SETTING)
-RESOURCE_GROUP = get_config_option(RESOURCE_GROUP_SETTING)
-CONTROL_PLANE_ID = get_config_option(CONTROL_PLANE_ID_SETTING)
-
 
 async def start_deployer() -> None:
-    async with DefaultAzureCredential() as cred, ContainerAppsAPIClient(cred, SUB_ID) as client:
-        await client.jobs.begin_start(RESOURCE_GROUP, f"deployer-task-{CONTROL_PLANE_ID}")
+    async with (
+        DefaultAzureCredential() as cred,
+        ContainerAppsAPIClient(cred, get_config_option(SUBSCRIPTION_ID_SETTING)) as client,
+    ):
+        await client.jobs.begin_start(
+            get_config_option(RESOURCE_GROUP_SETTING), f"deployer-task-{get_config_option(CONTROL_PLANE_ID_SETTING)}"
+        )
 
 
 async def is_initial_deploy() -> bool:
@@ -84,4 +85,8 @@ async def main() -> None:
         await start_deployer()
 
 
-run(main())
+if __name__ == "__main__":
+    # Set up logging
+    basicConfig(level=INFO)
+    # Run the main function
+    run(main())
