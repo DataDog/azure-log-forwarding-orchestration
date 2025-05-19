@@ -14,6 +14,7 @@ from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 
 # project
+from cache.common import read_cache
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     DD_API_KEY_SETTING,
@@ -24,7 +25,7 @@ from cache.env import (
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
 from tasks.diagnostic_settings_task import DiagnosticSettingsTask
-from tasks.resources_task import ResourcesTask
+from tasks.resources_task import RESOURCE_CACHE_BLOB, ResourcesTask
 from tasks.scaling_task import ScalingTask
 from tasks.version import VERSION
 
@@ -40,8 +41,7 @@ async def start_deployer() -> None:
 
 
 async def is_initial_deploy() -> bool:
-    return True
-    # return await read_cache(RESOURCE_CACHE_BLOB) == ""
+    return await read_cache(RESOURCE_CACHE_BLOB) == ""
 
 
 async def run_tasks() -> None:
