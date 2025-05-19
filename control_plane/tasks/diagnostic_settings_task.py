@@ -337,7 +337,7 @@ class DiagnosticSettingsTask(Task):
             if self._is_initial_run:
                 await self.submit_status_update(
                     "create_or_update_diagnostic_setting",
-                    StatusCode.AZURE_RESPONSE_ERROR,
+                    StatusCode.RESOURCE_CREATION_ERROR,
                     f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
                 )
 
