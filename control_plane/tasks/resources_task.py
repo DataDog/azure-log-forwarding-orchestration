@@ -50,7 +50,7 @@ class ResourcesTask(Task):
 
     async def run(self) -> None:
         if self._is_initial_run:
-            await self.submit_status_update("task_start", StatusCode.OK, "Resources task completed")
+            await self.submit_status_update("task_start", StatusCode.OK, "Resources task started")
 
         if self.schema_upgrade:
             self.log.warning("Detected resource cache schema upgrade, flushing cache")

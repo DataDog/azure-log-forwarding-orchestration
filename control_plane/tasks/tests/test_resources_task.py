@@ -6,6 +6,7 @@
 from json import dumps
 from typing import Any
 from unittest.mock import Mock
+from uuid import uuid4
 
 # project
 from cache.env import (
@@ -18,6 +19,7 @@ from cache.resources_cache import (
     ResourceMetadata,
     _deserialize_v2_resource_cache,
 )
+from tasks.client.datadog_api_client import StatusCode
 from tasks.resources_task import RESOURCES_TASK_NAME, ResourcesTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, UnexpectedException, async_generator, mock
 from tasks.version import VERSION
@@ -44,6 +46,8 @@ class TestResourcesTask(TaskTestCase):
         super().setUp()
         self.sub_client = AsyncMockClient()
         self.patch("SubscriptionClient").return_value = self.sub_client
+        self.datadog_client = AsyncMockClient()
+        self.patch_path("tasks.task.DatadogClient").return_value = self.datadog_client
         self.resource_client = self.patch("ResourceClient")
         self.resource_client_mapping: ResourceCache = {}
         self.log = self.patch_path("tasks.task.log").getChild.return_value
@@ -57,8 +61,12 @@ class TestResourcesTask(TaskTestCase):
 
         self.resource_client.side_effect = create_resource_client
 
-    async def run_resources_task(self, cache: ResourceCache | ResourceCacheV1) -> ResourcesTask:
-        async with ResourcesTask(dumps(cache, default=list)) as task:
+    async def run_resources_task(
+        self, cache: ResourceCache | ResourceCacheV1, execution_id: str = "", is_initial_run: bool = False
+    ) -> ResourcesTask:
+        async with ResourcesTask(
+            dumps(cache, default=list), is_initial_run=is_initial_run, execution_id=execution_id
+        ) as task:
             await task.run()
         return task
 
@@ -253,4 +261,25 @@ class TestResourcesTask(TaskTestCase):
                 "control_plane_id:a2b4c5d6",
                 f"version:{VERSION}",
             ],
+        )
+
+    async def test_initial_run_golden_patch(self):
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
+        self.resource_client_mapping = {
+            sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}},
+            sub_id2: {SUPPORTED_REGION_2: {"res3": included_metadata}},
+        }
+        status_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = status_client
+
+        uuid = str(uuid4())
+
+        await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
+
+        # task.log.info.assert_called_once_with("Found %s subscriptions", 2)
+        status_client.assert_any_call(
+            "resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"
+        )
+        status_client.assert_any_call(
+            "resources_task.task_complete", StatusCode.OK, "Resources task completed", uuid, "unknown", "unknown"
         )
