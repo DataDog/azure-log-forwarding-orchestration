@@ -263,7 +263,7 @@ class TestResourcesTask(TaskTestCase):
             ],
         )
 
-    async def test_initial_run_golden_patch(self):
+    async def test_initial_run_golden_path(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
         self.resource_client_mapping = {
             sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}},

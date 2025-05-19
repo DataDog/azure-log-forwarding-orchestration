@@ -167,7 +167,7 @@ class ScalingTask(Task):
             message_suffix = ""
             if self._is_initial_run and not self.wait_on_envs:
                 message_suffix = " for the second time."
-            await self.submit_status_update("task_complete", StatusCode.OK, f"Scaling task started{message_suffix}")
+            await self.submit_status_update("task_start", StatusCode.OK, f"Scaling task started{message_suffix}")
         all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
         await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
         if self._is_initial_run:
