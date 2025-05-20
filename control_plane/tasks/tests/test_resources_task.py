@@ -276,7 +276,6 @@ class TestResourcesTask(TaskTestCase):
 
         await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
 
-        # task.log.info.assert_called_once_with("Found %s subscriptions", 2)
         status_client.assert_any_call(
             "resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"
         )
