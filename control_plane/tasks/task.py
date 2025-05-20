@@ -200,6 +200,8 @@ class Task(AbstractAsyncContextManager["Task"]):
             await self._logs_client.submit_log(dd_logs, ddtags=",".join(self.tags))  # type: ignore
 
     async def submit_status_update(self, step: str, status: StatusCode, message: str) -> None:
+        if not self._is_initial_run:
+            return
         await self._datadog_api_client.submit_status_update(
             f"{self.NAME}.{step}", status, message, self.execution_id, VERSION, self.control_plane_id
         )

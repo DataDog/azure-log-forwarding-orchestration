@@ -49,8 +49,7 @@ class ResourcesTask(Task):
         self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
 
     async def run(self) -> None:
-        if self._is_initial_run:
-            await self.submit_status_update("task_start", StatusCode.OK, "Resources task started")
+        await self.submit_status_update("task_start", StatusCode.OK, "Resources task started")
 
         if self.schema_upgrade:
             self.log.warning("Detected resource cache schema upgrade, flushing cache")
@@ -74,8 +73,7 @@ class ResourcesTask(Task):
             )
 
         await gather(*map(self.process_subscription, subscriptions))
-        if self._is_initial_run:
-            await self.submit_status_update("task_complete", StatusCode.OK, "Resources task completed")
+        await self.submit_status_update("task_complete", StatusCode.OK, "Resources task completed")
 
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)

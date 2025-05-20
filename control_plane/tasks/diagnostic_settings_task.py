@@ -125,11 +125,9 @@ class DiagnosticSettingsTask(Task):
 
     async def run(self) -> None:
         self.log.info("Processing %s subscriptions", len(self.assignment_cache))
-        if self._is_initial_run:
-            await self.submit_status_update("task_start", StatusCode.OK, "Diagnostic settings task started")
+        await self.submit_status_update("task_start", StatusCode.OK, "Diagnostic settings task started")
         await gather(*map(self.process_subscription, self.assignment_cache))
-        if self._is_initial_run:
-            await self.submit_status_update("task_complete", StatusCode.OK, "Diagnostic settings task completed")
+        await self.submit_status_update("task_complete", StatusCode.OK, "Diagnostic settings task completed")
 
     async def process_subscription(self, sub_id: str) -> None:
         self.log.info("Processing subscription %s", sub_id)
@@ -223,12 +221,11 @@ class DiagnosticSettingsTask(Task):
                 self.log.warning("Resource type for %s unsupported, skipping", resource_id)
                 return
             self.log.exception("Failed to get diagnostic settings for resource %s", resource_id)
-            if self._is_initial_run:
-                await self.submit_status_update(
-                    "process_resource",
-                    StatusCode.AZURE_RESPONSE_ERROR,
-                    f"Failed to get diagnostic settings for resource {resource_id}",
-                )
+            await self.submit_status_update(
+                "process_resource",
+                StatusCode.AZURE_RESPONSE_ERROR,
+                f"Failed to get diagnostic settings for resource {resource_id}",
+            )
             return
 
         current_setting = next(
@@ -334,22 +331,20 @@ class DiagnosticSettingsTask(Task):
                 )
                 return False
 
-            if self._is_initial_run:
-                await self.submit_status_update(
-                    "create_or_update_diagnostic_setting",
-                    StatusCode.RESOURCE_CREATION_ERROR,
-                    f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
-                )
+            await self.submit_status_update(
+                "create_or_update_diagnostic_setting",
+                StatusCode.RESOURCE_CREATION_ERROR,
+                f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
+            )
 
             self.log.error("Failed to add diagnostic setting for resource %s -- %s", resource_id, e.error)
             return False
         except Exception as e:
-            if self._is_initial_run:
-                await self.submit_status_update(
-                    "create_or_update_diagnostic_setting",
-                    StatusCode.UNKNOWN_ERROR,
-                    f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
-                )
+            await self.submit_status_update(
+                "create_or_update_diagnostic_setting",
+                StatusCode.UNKNOWN_ERROR,
+                f"Failed to create or update diagnostic setting for resource {resource_id} Reason: {e}",
+            )
             self.log.exception("Unexpected error when trying to add diagnostic setting for resource %s", resource_id)
             return False
 
