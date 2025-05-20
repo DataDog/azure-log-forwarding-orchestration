@@ -8,6 +8,7 @@ import (
 	// stdlib
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"testing"
@@ -120,5 +121,87 @@ func TestSaveCursors(t *testing.T) {
 
 		// THEN
 		assert.NoError(t, err)
+	})
+
+	t.Run("saves cursors to azure even if a timeout already occurred in the forwarder", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testContainerName := "test"
+		testBlobName := "test"
+		testValue := int64(300)
+		cursors := cursor.New(nil)
+		cursors.Set(testContainerName, testBlobName, testValue)
+		response := azblob.UploadBufferResponse{}
+		createContainerResponse := azblob.CreateContainerResponse{}
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, nil)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, cursor.BlobName, gomock.Any(), gomock.Any()).Return(response, nil)
+
+		client := storage.NewClient(mockClient)
+
+		timedOutCtx, cancel := context.WithTimeout(context.Background(), 0)
+		defer cancel()
+
+		// WHEN
+		err := cursors.Save(timedOutCtx, client)
+
+		// THEN
+		assert.NoError(t, err)
+	})
+
+	t.Run("Save() returns an error if UploadBuffer() fails", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testContainerName := "test"
+		testBlobName := "test"
+		testValue := int64(300)
+
+		cursors := cursor.New(nil)
+		cursors.Set(testContainerName, testBlobName, testValue)
+		response := azblob.UploadBufferResponse{}
+		createContainerResponse := azblob.CreateContainerResponse{}
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		errorMessage := "test error - blob upload failed"
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, nil)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, cursor.BlobName, gomock.Any(), gomock.Any()).Return(response, errors.New(errorMessage))
+
+		client := storage.NewClient(mockClient)
+
+		// WHEN
+		err := cursors.Save(context.Background(), client)
+
+		// THEN
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, errorMessage)
+	})
+
+	t.Run("Save() returns an error if CreateContainer() fails", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testContainerName := "test"
+		testBlobName := "test"
+		testValue := int64(300)
+
+		cursors := cursor.New(nil)
+		cursors.Set(testContainerName, testBlobName, testValue)
+		createContainerResponse := azblob.CreateContainerResponse{}
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		errorMessage := "test error - container creation failed"
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, errors.New(errorMessage))
+
+		client := storage.NewClient(mockClient)
+
+		// WHEN
+		err := cursors.Save(context.Background(), client)
+
+		// THEN
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, errorMessage)
 	})
 }

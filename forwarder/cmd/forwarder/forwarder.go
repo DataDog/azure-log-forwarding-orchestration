@@ -34,6 +34,10 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
+const (
+	ForwarderMaxRuntime = 45 * time.Second
+)
+
 // resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
 type resourceBytes struct {
 	resourceId string
@@ -102,27 +106,48 @@ func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.No
 	return err
 }
 
-func getLogVolume(resourceIdCh <-chan string) map[string]int64 {
+func getLogVolume(ctx context.Context, resourceIdCh <-chan string) map[string]int64 {
 	var resourceVolumes = make(map[string]int64)
-	for volume := range resourceIdCh {
-		resourceVolumes[volume]++
+	for {
+		select {
+		case volume, ok := <-resourceIdCh:
+			if !ok {
+				return resourceVolumes
+			}
+			resourceVolumes[volume]++
+		case <-ctx.Done():
+			return resourceVolumes
+		}
 	}
-	return resourceVolumes
 }
 
-func getLogBytes(resourceBytesCh <-chan resourceBytes) map[string]int64 {
+func getLogBytes(ctx context.Context, resourceBytesCh <-chan resourceBytes) map[string]int64 {
 	var resourceBytesMap = make(map[string]int64)
-	for bytes := range resourceBytesCh {
-		if _, ok := resourceBytesMap[bytes.resourceId]; !ok {
-			resourceBytesMap[bytes.resourceId] = bytes.bytes
-			continue
+	for {
+		select {
+		case bytes, ok := <-resourceBytesCh:
+			if !ok {
+				return resourceBytesMap
+			}
+			if _, ok := resourceBytesMap[bytes.resourceId]; !ok {
+				resourceBytesMap[bytes.resourceId] = bytes.bytes
+				continue
+			}
+			resourceBytesMap[bytes.resourceId] += bytes.bytes
+		case <-ctx.Done():
+			return resourceBytesMap
 		}
-		resourceBytesMap[bytes.resourceId] += bytes.bytes
 	}
-	return resourceBytesMap
 }
 
 func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, resourceBytes map[string]int64, startTime time.Time, versionTag string) (int, error) {
+	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
+		// Always write metrics even if timeout occurred - use new context if so
+		writeMetricCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = writeMetricCtx
+	}
+
 	metricBlob := metrics.MetricEntry{
 		Timestamp:          time.Now().Unix(),
 		RuntimeSeconds:     time.Since(startTime).Seconds(),
@@ -177,16 +202,16 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	resourceBytesCh := make(chan resourceBytes, channelSize)
 
 	// Spawn log volume processing goroutine
-	logVolumeEg, _ := errgroup.WithContext(ctx)
+	logVolumeEg, logVolumeCtx := errgroup.WithContext(ctx)
 	logVolumeEg.Go(func() error {
-		resourceVolumes = getLogVolume(resourceIdCh)
+		resourceVolumes = getLogVolume(logVolumeCtx, resourceIdCh)
 		return nil
 	})
 
 	// Spawn log bytes processing goroutine
-	logBytesEg, _ := errgroup.WithContext(ctx)
+	logBytesEg, logBytesCtx := errgroup.WithContext(ctx)
 	logBytesEg.Go(func() error {
-		resourceBytesMap = getLogBytes(resourceBytesCh)
+		resourceBytesMap = getLogBytes(logBytesCtx, resourceBytesCh)
 		return nil
 	})
 
@@ -364,6 +389,9 @@ func main() {
 		map[string]string{
 			"site": ddSite,
 		})
+
+	ctx, cancel := context.WithTimeout(ctx, ForwarderMaxRuntime)
+	defer cancel()
 
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.New()
