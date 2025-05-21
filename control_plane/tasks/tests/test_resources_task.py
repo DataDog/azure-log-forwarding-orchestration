@@ -56,11 +56,11 @@ class TestResourcesTask(TaskTestCase):
         self.log = self.patch_path("tasks.task.log").getChild.return_value
 
         self.resource_mock_client = AsyncMockClient()
+        self.resource_mock_client.log = self.log
 
         def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str):
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             self.resource_mock_client.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
-            self.resource_mock_client.log = self.log
             return self.resource_mock_client
 
         self.resource_client.side_effect = create_resource_client
