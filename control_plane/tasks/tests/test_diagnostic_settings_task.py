@@ -7,7 +7,7 @@ from collections.abc import AsyncIterable
 from json import dumps
 from os import environ
 from typing import Final
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, call, patch
 from uuid import uuid4
 
 # 3p
@@ -579,22 +579,27 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             ),
         )
 
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_start",
-            StatusCode.OK,
-            "Diagnostic settings task started",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_complete",
-            StatusCode.OK,
-            "Diagnostic settings task completed",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
+        expected_calls = [
+            call(
+                "diagnostic_settings_task.task_start",
+                StatusCode.OK,
+                "Diagnostic settings task started",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.task_complete",
+                StatusCode.OK,
+                "Diagnostic settings task completed",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
     async def test_task_initial_run_failure_to_get_settings(self):
         test_string = "meow"
@@ -619,30 +624,35 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             is_initial_run=True,
         )
 
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_start",
-            StatusCode.OK,
-            "Diagnostic settings task started",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.process_resource",
-            StatusCode.AZURE_RESPONSE_ERROR,
-            f"Failed to get diagnostic settings for resource {resource_id1}",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_complete",
-            StatusCode.OK,
-            "Diagnostic settings task completed",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
+        expected_calls = [
+            call(
+                "diagnostic_settings_task.task_start",
+                StatusCode.OK,
+                "Diagnostic settings task started",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.process_resource",
+                StatusCode.AZURE_RESPONSE_ERROR,
+                f"Failed to get diagnostic settings for resource {resource_id1}",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.task_complete",
+                StatusCode.OK,
+                "Diagnostic settings task completed",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
     async def test_task_initial_run_failure_to_create_setting_with_http_error(self):
         test_string = "meow"
@@ -672,30 +682,35 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             is_initial_run=True,
         )
 
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_start",
-            StatusCode.OK,
-            "Diagnostic settings task started",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.create_or_update_diagnostic_setting",
-            StatusCode.RESOURCE_CREATION_ERROR,
-            f"Failed to create or update diagnostic setting for resource {resource_id1} Reason: {test_string}",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_complete",
-            StatusCode.OK,
-            "Diagnostic settings task completed",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
+        expected_calls = [
+            call(
+                "diagnostic_settings_task.task_start",
+                StatusCode.OK,
+                "Diagnostic settings task started",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.create_or_update_diagnostic_setting",
+                StatusCode.RESOURCE_CREATION_ERROR,
+                f"Failed to create or update diagnostic setting for resource {resource_id1} Reason: {test_string}",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.task_complete",
+                StatusCode.OK,
+                "Diagnostic settings task completed",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
     async def test_task_initial_run_failure_to_create_setting_with_unknown_error(self):
         test_string = "meow"
@@ -725,27 +740,32 @@ class TestDiagnosticSettingsTask(TaskTestCase):
             is_initial_run=True,
         )
 
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_start",
-            StatusCode.OK,
-            "Diagnostic settings task started",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.create_or_update_diagnostic_setting",
-            StatusCode.UNKNOWN_ERROR,
-            f"Failed to create or update diagnostic setting for resource {resource_id1} Reason: {test_string}",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
-        self.status_client.assert_any_call(
-            "diagnostic_settings_task.task_complete",
-            StatusCode.OK,
-            "Diagnostic settings task completed",
-            self.uuid,
-            "unknown",
-            control_plane_id,
-        )
+        expected_calls = [
+            call(
+                "diagnostic_settings_task.task_start",
+                StatusCode.OK,
+                "Diagnostic settings task started",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.create_or_update_diagnostic_setting",
+                StatusCode.UNKNOWN_ERROR,
+                f"Failed to create or update diagnostic setting for resource {resource_id1} Reason: {test_string}",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+            call(
+                "diagnostic_settings_task.task_complete",
+                StatusCode.OK,
+                "Diagnostic settings task completed",
+                self.uuid,
+                "unknown",
+                control_plane_id,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
