@@ -5,7 +5,7 @@
 # stdlib
 from json import dumps
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 from uuid import uuid4
 
 # project
@@ -276,9 +276,10 @@ class TestResourcesTask(TaskTestCase):
 
         await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
 
-        status_client.assert_any_call(
-            "resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"
-        )
-        status_client.assert_any_call(
-            "resources_task.task_complete", StatusCode.OK, "Resources task completed", uuid, "unknown", "unknown"
-        )
+        expected_calls = [
+            call("resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"),
+            call("resources_task.task_complete", StatusCode.OK, "Resources task completed", uuid, "unknown", "unknown"),
+        ]
+
+        status_client.assert_has_calls(expected_calls)
+        self.assertEqual(status_client.call_count, len(expected_calls))

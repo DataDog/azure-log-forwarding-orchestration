@@ -1398,17 +1398,23 @@ class TestScalingTask(TaskTestCase):
             is_initial_run=True,
             wait_on_envs=True,
         )
-        self.status_client.assert_any_call(
-            "scaling_task.task_start", StatusCode.OK, "Scaling task started", self.uuid, "unknown", CONTROL_PLANE_ID
-        )
-        self.status_client.assert_any_call(
-            "scaling_task.task_complete",
-            StatusCode.OK,
-            "Scaling task completed",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start", StatusCode.OK, "Scaling task started", self.uuid, "unknown", CONTROL_PLANE_ID
+            ),
+            call(
+                "scaling_task.task_complete",
+                StatusCode.OK,
+                "Scaling task completed",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
     async def test_initial_run_golden_path_second_run(self):
         await self.run_scaling_task(
@@ -1418,22 +1424,28 @@ class TestScalingTask(TaskTestCase):
             is_initial_run=True,
             wait_on_envs=False,
         )
-        self.status_client.assert_any_call(
-            "scaling_task.task_start",
-            StatusCode.OK,
-            "Scaling task started for the second time.",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
-        self.status_client.assert_any_call(
-            "scaling_task.task_complete",
-            StatusCode.OK,
-            "Scaling task completed",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start",
+                StatusCode.OK,
+                "Scaling task started for the second time.",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+            call(
+                "scaling_task.task_complete",
+                StatusCode.OK,
+                "Scaling task completed",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
     async def test_initial_run_forwarders_fail_to_create_forwarder(self):
         test_string = "meow"
@@ -1455,22 +1467,32 @@ class TestScalingTask(TaskTestCase):
                 is_initial_run=True,
                 wait_on_envs=False,
             )
-        self.status_client.assert_any_call(
-            "scaling_task.task_start",
-            StatusCode.OK,
-            "Scaling task started for the second time.",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
-        self.status_client.assert_any_call(
-            "scaling_task.create_log_forwarder",
-            StatusCode.RESOURCE_CREATION_ERROR,
-            f"Failed to create log forwarder {NEW_LOG_FORWARDER_ID}. Reason: {test_string}",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start",
+                StatusCode.OK,
+                "Scaling task started for the second time.",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        for _ in range(3):  # 3 in number of retries
+            expected_calls.append(
+                call(
+                    "scaling_task.create_log_forwarder",
+                    StatusCode.RESOURCE_CREATION_ERROR,
+                    f"Failed to create log forwarder {NEW_LOG_FORWARDER_ID}. Reason: {test_string}",
+                    self.uuid,
+                    "unknown",
+                    CONTROL_PLANE_ID,
+                )
+            )
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
     async def test_initial_run_forwarders_fail_to_create_forwarder_env(self):
         test_string = "meow"
@@ -1493,25 +1515,36 @@ class TestScalingTask(TaskTestCase):
             is_initial_run=True,
             wait_on_envs=True,
         )
-        self.status_client.assert_any_call(
-            "scaling_task.task_start", StatusCode.OK, "Scaling task started", self.uuid, "unknown", CONTROL_PLANE_ID
-        )
-        self.status_client.assert_any_call(
-            "scaling_task.create_log_forwarder_env",
-            StatusCode.RESOURCE_CREATION_ERROR,
-            f"Failed to create log forwarder env in {EAST_US}. Reason: {test_string}",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
-        self.status_client.assert_any_call(
-            "scaling_task.task_complete",
-            StatusCode.OK,
-            "Scaling task completed",
-            self.uuid,
-            "unknown",
-            CONTROL_PLANE_ID,
-        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start",
+                StatusCode.OK,
+                "Scaling task started",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+            call(
+                "scaling_task.create_log_forwarder_env",
+                StatusCode.RESOURCE_CREATION_ERROR,
+                f"Failed to create log forwarder env in {EAST_US}. Reason: {test_string}",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+            call(
+                "scaling_task.task_complete",
+                StatusCode.OK,
+                "Scaling task completed",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
 
 class TestIsConsistentlyOverThreshold(TestCase):
