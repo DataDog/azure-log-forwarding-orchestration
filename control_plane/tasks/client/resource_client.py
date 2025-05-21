@@ -230,7 +230,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
     async def get_resources_per_region(self) -> RegionToResourcesDict:
         resources_per_region: RegionToResourcesDict = {}
 
-        resources = await safe_collect(self.resources_client.resources.list(RESOURCE_QUERY_FILTER), self.log)
+        resources = [i async for i in self.resources_client.resources.list(RESOURCE_QUERY_FILTER)]
         valid_resources = [
             r
             for r in resources

@@ -9,6 +9,7 @@ from os import getenv
 from typing import cast
 
 # 3p
+from azure.core.exceptions import HttpResponseError
 from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
@@ -57,9 +58,16 @@ class ResourcesTask(Task):
             self.schema_upgrade = False
 
         async with SubscriptionClient(self.credential) as subscription_client:
-            subscriptions = [
-                cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
-            ]
+            try:
+                subscriptions = [
+                    cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
+                ]
+            except HttpResponseError as e:
+                self.log.error("Failed to list subscriptions")
+                await self.submit_status_update(
+                    "subscriptions_list", StatusCode.AZURE_RESPONSE_ERROR, f"Failed to list subscriptions. Reason: {e}"
+                )
+                return
 
         self.log.info("Found %s subscriptions", len(subscriptions))
 
@@ -78,7 +86,16 @@ class ResourcesTask(Task):
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
         async with ResourceClient(self.log, self.credential, self.tag_filter_list, subscription_id) as client:
-            self.resource_cache[subscription_id] = await client.get_resources_per_region()
+            try:
+                self.resource_cache[subscription_id] = await client.get_resources_per_region()
+            except HttpResponseError as e:
+                self.log.error("Failed to list resources for subscription %s", subscription_id)
+                await self.submit_status_update(
+                    "resources_list",
+                    StatusCode.AZURE_RESPONSE_ERROR,
+                    f"Failed to list resources for subscription {subscription_id}. Reason: {e}",
+                )
+                return
 
     async def write_caches(self, is_schema_upgrade: bool = False) -> None:
         if is_schema_upgrade:

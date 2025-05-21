@@ -8,6 +8,9 @@ from typing import Any
 from unittest.mock import Mock, call
 from uuid import uuid4
 
+# 3p
+from azure.core.exceptions import HttpResponseError
+
 # project
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
@@ -52,12 +55,13 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client_mapping: ResourceCache = {}
         self.log = self.patch_path("tasks.task.log").getChild.return_value
 
+        self.resource_mock_client = AsyncMockClient()
+
         def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str):
-            c = AsyncMockClient()
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
-            c.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
-            c.log = self.log
-            return c
+            self.resource_mock_client.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
+            self.resource_mock_client.log = self.log
+            return self.resource_mock_client
 
         self.resource_client.side_effect = create_resource_client
 
@@ -278,6 +282,78 @@ class TestResourcesTask(TaskTestCase):
 
         expected_calls = [
             call("resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"),
+            call("resources_task.task_complete", StatusCode.OK, "Resources task completed", uuid, "unknown", "unknown"),
+        ]
+
+        status_client.assert_has_calls(expected_calls)
+        self.assertEqual(status_client.call_count, len(expected_calls))
+
+    async def test_subscriptions_list_errors(self):
+        test_string = "meow"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(HttpResponseError(test_string)))
+        self.resource_client_mapping = {
+            sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}},
+            sub_id2: {SUPPORTED_REGION_2: {"res3": included_metadata}},
+        }
+        status_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = status_client
+
+        uuid = str(uuid4())
+
+        await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
+
+        expected_calls = [
+            call("resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"),
+            call(
+                "resources_task.subscriptions_list",
+                StatusCode.AZURE_RESPONSE_ERROR,
+                f"Failed to list subscriptions. Reason: {test_string}",
+                uuid,
+                "unknown",
+                "unknown",
+            ),
+        ]
+
+        status_client.assert_has_calls(expected_calls)
+        self.assertEqual(status_client.call_count, len(expected_calls))
+
+    async def test_resources_list_errors(self):
+        test_string = "meow"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))
+        self.resource_client_mapping = {
+            sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}},
+            sub_id2: {SUPPORTED_REGION_2: {"res3": included_metadata}},
+        }
+
+        def get_resources_per_region(*args, **kwargs):
+            raise HttpResponseError(test_string)
+
+        self.resource_mock_client.get_resources_per_region = get_resources_per_region
+        status_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = status_client
+
+        uuid = str(uuid4())
+
+        await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
+
+        expected_calls = [
+            call("resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"),
+            call(
+                "resources_task.resources_list",
+                StatusCode.AZURE_RESPONSE_ERROR,
+                f"Failed to list resources for subscription {sub_id1}. Reason: {test_string}",
+                uuid,
+                "unknown",
+                "unknown",
+            ),
+            call(
+                "resources_task.resources_list",
+                StatusCode.AZURE_RESPONSE_ERROR,
+                f"Failed to list resources for subscription {sub_id2}. Reason: {test_string}",
+                uuid,
+                "unknown",
+                "unknown",
+            ),
             call("resources_task.task_complete", StatusCode.OK, "Resources task completed", uuid, "unknown", "unknown"),
         ]
 
