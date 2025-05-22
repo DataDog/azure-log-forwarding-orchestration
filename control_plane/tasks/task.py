@@ -34,10 +34,11 @@ from cache.env import (
     DD_SITE_SETTING,
     DD_TELEMETRY_SETTING,
     LOG_LEVEL_SETTING,
-    VERSION_TAG_SETTING,
     is_truthy,
 )
+from tasks.client.datadog_api_client import DatadogClient, StatusCode
 from tasks.common import CONTROL_PLANE_METRIC_PREFIX, now
+from tasks.version import VERSION
 
 log = getLogger(__name__)
 
@@ -85,19 +86,18 @@ def _add_datadog_staging(settings: list[dict[str, Any]] | None) -> None:
 class Task(AbstractAsyncContextManager["Task"]):
     NAME: str
 
-    def __init__(self) -> None:
+    def __init__(self, execution_id: str | None = "", is_initial_run: bool = False) -> None:
         self.credential = DefaultAzureCredential()
 
         # Telemetry Logic
         self.start_time = time()
-        self.execution_id = str(uuid4())
+        self.execution_id = execution_id if execution_id else str(uuid4())
         self.control_plane_id = environ.get(CONTROL_PLANE_ID_SETTING, "unknown")
-        self.version_tag = environ.get(VERSION_TAG_SETTING, "unknown")
         self.tags = [
             "forwarder:lfocontrolplane",
             f"task:{self.NAME}",
             f"control_plane_id:{self.control_plane_id}",
-            f"version:{self.version_tag}",
+            f"version:{VERSION}",
         ]
         self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
@@ -117,6 +117,8 @@ class Task(AbstractAsyncContextManager["Task"]):
         self._datadog_client = AsyncApiClient(configuration)
         self._logs_client = LogsApi(self._datadog_client)
         self._metrics_client = MetricsApi(self._datadog_client)
+
+        self._datadog_api_client = DatadogClient(environ.get(DD_SITE_SETTING), environ.get(DD_API_KEY_SETTING))
         if target_staging:
             logs_servers = self._logs_client._submit_log_endpoint.settings.get("servers")
             _add_datadog_staging(logs_servers)
@@ -128,11 +130,15 @@ class Task(AbstractAsyncContextManager["Task"]):
             log.info("Telemetry enabled, will submit logs for %s", self.NAME)
             self.log.addHandler(ListHandler(self._logs))
 
+        self._is_initial_run = is_initial_run
+
     @abstractmethod
     async def run(self) -> None: ...
 
     async def __aenter__(self) -> Self:
-        await gather(self.credential.__aenter__(), self._datadog_client.__aenter__())
+        await gather(
+            self.credential.__aenter__(), self._datadog_client.__aenter__(), self._datadog_api_client.__aenter__()
+        )
         return self
 
     async def __aexit__(
@@ -149,6 +155,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         finally:
             await self.credential.__aexit__(exc_type, exc_value, traceback)
             await self._datadog_client.__aexit__(exc_type, exc_value, traceback)
+            await self._datadog_api_client.__aexit__(exc_type, exc_value, traceback)
 
     @abstractmethod
     async def write_caches(self) -> None: ...
@@ -192,8 +199,15 @@ class Task(AbstractAsyncContextManager["Task"]):
             self._logs.clear()
             await self._logs_client.submit_log(dd_logs, ddtags=",".join(self.tags))  # type: ignore
 
+    async def submit_status_update(self, step: str, status: StatusCode, message: str) -> None:
+        if not self._is_initial_run:
+            return
+        await self._datadog_api_client.submit_status_update(
+            f"{self.NAME}.{step}", status, message, self.execution_id, VERSION, self.control_plane_id
+        )
 
-async def task_main(task_class: type[Task], caches: list[str]) -> None:
+
+async def task_main(task_class: type[Task], caches: list[str], is_initial_run: bool = False) -> None:
     level = environ.get(LOG_LEVEL_SETTING, "INFO").upper()
     if level not in {"ERROR", "WARN", "WARNING", "INFO", "DEBUG"}:
         level = "INFO"
@@ -201,6 +215,6 @@ async def task_main(task_class: type[Task], caches: list[str]) -> None:
     log.setLevel(level)
     log.info("Started %s at %s (log level %s)", task_class.NAME, now(), level)
     cache_states = await gather(*map(read_cache, caches))
-    async with task_class(*cache_states) as task:
+    async with task_class(*cache_states, is_initial_run=is_initial_run) as task:
         await task.run()
     log.info("%s finished at %s", task_class.NAME, now())
