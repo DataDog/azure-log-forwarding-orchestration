@@ -52,7 +52,10 @@ DELETION_METRIC_PERIOD_MINUTES = 15
 METRIC_COLLECTION_PERIOD_MINUTES = DELETION_METRIC_PERIOD_MINUTES  # longer of the two periods^
 DEFAULT_SCALING_PERCENTAGE = 0.8
 
-SCALE_UP_EXECUTION_SECONDS = 45
+# max forwarder execution time before it times out is 45 seconds
+# use a lower time to ensure we have time to scale up
+SCALE_UP_EXECUTION_SECONDS = 40
+
 SCALE_DOWN_EXECUTION_SECONDS = 3
 
 MAX_FORWARDERS_PER_REGION = 15
