@@ -21,7 +21,11 @@ if [ ! -f "$VERSION_FILE" ]; then
 fi
 
 # Replace the provided version with "unknown"
-sed -i '' "s/VERSION = \"$VERSION\"/VERSION = \"unknown\"/" "$VERSION_FILE"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/VERSION = \"$VERSION\"/VERSION = \"unknown\"/" "$VERSION_FILE"
+else
+    sed -i "s/VERSION = \"$VERSION\"/VERSION = \"unknown\"/" "$VERSION_FILE"
+fi
 
 # Verify the change
 if grep -q "VERSION = \"unknown\"" "$VERSION_FILE"; then
