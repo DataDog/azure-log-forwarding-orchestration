@@ -21,6 +21,16 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
+var supportedTimeLayouts []string
+
+func init() {
+	// Add the supported time layouts for parsing Azure logs
+	supportedTimeLayouts = []string{
+		time.RFC3339,          // ISO 8601 format,
+		"01/02/2006 15:04:05", // USA short timestamp format
+	}
+}
+
 // Log represents a log to send to Datadog.
 type Log struct {
 	Content          []byte
@@ -50,7 +60,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 			return nil, err
 		}
 	} else {
-		currLog = &azureLog{Time: time.Now()}
+		currLog = &azureLog{}
 	}
 
 	blobNameResourceId := blob.ResourceId()
@@ -60,7 +70,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
 
-	return currLog.ToLog(scrubber), nil
+	return currLog.ToLog(scrubber)
 }
 
 // RawLength returns the length of the original Azure log content.
@@ -88,8 +98,8 @@ type azureLog struct {
 	ResourceIdUpper string `json:"ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
 	blobResourceId string
-	Time           time.Time `json:"time"`
-	Level          string    `json:"level,omitempty"`
+	TimeString     string `json:"time"`
+	Level          string `json:"level,omitempty"`
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
@@ -101,7 +111,7 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 	return nil
 }
 
-func (l *azureLog) ToLog(scrubber Scrubber) *Log {
+func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	tags := append([]string(nil), DefaultTags...)
 
 	var logSource string
@@ -118,6 +128,25 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		l.Level = "Informational"
 	}
 
+	var parsedTime time.Time
+	var timeParsingErrors error
+
+	for layout := range supportedTimeLayouts {
+		var currErr error
+		parsedTime, currErr = time.Parse(supportedTimeLayouts[layout], l.TimeString)
+		if currErr == nil {
+			break // Successfully parsed the time
+		}
+		timeParsingErrors = errors.Join(timeParsingErrors, currErr)
+	}
+
+	if parsedTime.IsZero() {
+		if timeParsingErrors != nil {
+			return nil, errors.New("failed to parse time: " + timeParsingErrors.Error())
+		}
+		return nil, errors.New("time is zero after parsing")
+	}
+
 	scrubbedLog := scrubber.Scrub(l.raw)
 	scrubbedByteSize := len(scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
 
@@ -129,12 +158,12 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		ResourceId:       resourceId,
 		Service:          azureService,
 		Source:           logSource,
-		Time:             l.Time,
+		Time:             parsedTime,
 		Level:            l.Level,
 		Tags:             tags,
 		Container:        l.Container,
 		Blob:             l.Blob,
-	}
+	}, nil
 }
 
 // Active Directory (AD) logs are made up of numerous log categories,
