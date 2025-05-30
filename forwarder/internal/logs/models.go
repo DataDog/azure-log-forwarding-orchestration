@@ -147,6 +147,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	var timeParsingErrors error
 
 	if l.TimeString == "" {
+		// No time string found in the log, use current time
 		parsedTime = time.Now().UTC()
 	} else {
 		parsedTime, timeParsingErrors = parseTime(l.TimeString)
