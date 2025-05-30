@@ -131,17 +131,24 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	var parsedTime time.Time
 	var timeParsingErrors error
 
-	for layout := range supportedTimeLayouts {
-		var currErr error
-		parsedTime, currErr = time.Parse(supportedTimeLayouts[layout], l.TimeString)
-		if currErr == nil {
-			break // Successfully parsed the time
+	if l.TimeString == "" {
+		parsedTime = time.Now().UTC()
+	} else {
+		for layout := range supportedTimeLayouts {
+			var currErr error
+			parsedTime, currErr = time.Parse(supportedTimeLayouts[layout], l.TimeString)
+			if currErr == nil {
+				break // Successfully parsed the time
+			}
+			timeParsingErrors = errors.Join(timeParsingErrors, currErr)
 		}
-		timeParsingErrors = errors.Join(timeParsingErrors, currErr)
 	}
 
-	if parsedTime.IsZero() {
-		parsedTime = time.Now().UTC() // Fallback to current time if parsing fails
+	if parsedTime.IsZero() && l.TimeString != "" {
+		if timeParsingErrors != nil {
+			return nil, errors.New("unable to parse time: " + timeParsingErrors.Error())
+		}
+		return nil, errors.New("time is zero but we had no parsing errors, this is unexpected")
 	}
 
 	scrubbedLog := scrubber.Scrub(l.raw)
