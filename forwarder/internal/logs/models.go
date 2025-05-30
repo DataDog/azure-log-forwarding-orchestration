@@ -38,6 +38,7 @@ func parseTime(timeString string) (parsedTime time.Time, timeParsingErrors error
 		var currErr error
 		parsedTime, currErr = time.Parse(layout, timeString)
 		if currErr == nil {
+			timeParsingErrors = nil
 			break // Successfully parsed the time
 		}
 		timeParsingErrors = errors.Join(timeParsingErrors, currErr)
