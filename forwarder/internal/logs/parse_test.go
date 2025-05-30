@@ -51,6 +51,9 @@ var (
 	//go:embed fixtures/function_app_logs.json
 	functionAppLogData []byte
 
+	//go:embed fixtures/function_app_logs_with_usa_short_timestamp.json
+	usaShortTimestampLogData []byte
+
 	//go:embed fixtures/networksecuritygroupflowevent_logs.json
 	networkSecurityGroupFlowEventLogData []byte
 
@@ -107,6 +110,30 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		assert.Equal(t, 20, got)
 		assert.Equal(t, len(functionAppLogData), *totalBytes)
+	})
+
+	t.Run("can parse function app logs with short timestamps", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		reader := bytes.NewReader(usaShortTimestampLogData)
+		closer := io.NopCloser(reader)
+
+		var got int
+
+		// WHEN
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, functionAppLogData))
+		for parsedLog := range parsedLogsIter {
+			require.NoError(t, parsedLog.Err)
+			currLog := parsedLog.ParsedLog
+			require.NotEqual(t, "", currLog.Category)
+			require.NotEqual(t, resourceId, currLog.ResourceId)
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, 5, got)
+		assert.Equal(t, len(usaShortTimestampLogData), *totalBytes)
 	})
 
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
