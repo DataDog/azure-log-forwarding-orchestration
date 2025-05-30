@@ -34,6 +34,7 @@ func init() {
 }
 
 func parseTime(timeString string) (parsedTime time.Time, timeParsingErrors error) {
+	timeString = strings.TrimSpace(timeString) // Trim leading and trailing whitespace
 	for _, layout := range supportedTimeLayouts {
 		var currErr error
 		parsedTime, currErr = time.Parse(layout, timeString)
