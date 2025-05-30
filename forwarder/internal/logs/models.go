@@ -134,9 +134,9 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	if l.TimeString == "" {
 		parsedTime = time.Now().UTC()
 	} else {
-		for layout := range supportedTimeLayouts {
+		for _, layout := range supportedTimeLayouts {
 			var currErr error
-			parsedTime, currErr = time.Parse(supportedTimeLayouts[layout], l.TimeString)
+			parsedTime, currErr = time.Parse(layout, l.TimeString)
 			if currErr == nil {
 				break // Successfully parsed the time
 			}
