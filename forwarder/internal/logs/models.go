@@ -29,7 +29,20 @@ func init() {
 	supportedTimeLayouts = []string{
 		time.RFC3339,          // ISO 8601 format,
 		"01/02/2006 15:04:05", // USA short timestamp format
+		"1/2/2006 3:04:05 PM", // USA short timestamp format with AM/PM
 	}
+}
+
+func parseTime(timeString string) (parsedTime time.Time, timeParsingErrors error) {
+	for _, layout := range supportedTimeLayouts {
+		var currErr error
+		parsedTime, currErr = time.Parse(layout, timeString)
+		if currErr == nil {
+			break // Successfully parsed the time
+		}
+		timeParsingErrors = errors.Join(timeParsingErrors, currErr)
+	}
+	return
 }
 
 // Log represents a log to send to Datadog.
@@ -135,17 +148,9 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	if l.TimeString == "" {
 		parsedTime = time.Now().UTC()
 	} else {
-		for _, layout := range supportedTimeLayouts {
-			var currErr error
-			parsedTime, currErr = time.Parse(layout, l.TimeString)
-			if currErr == nil {
-				break // Successfully parsed the time
-			}
-			timeParsingErrors = errors.Join(timeParsingErrors, currErr)
-		}
+		parsedTime, timeParsingErrors = parseTime(l.TimeString)
 	}
-
-	if parsedTime.IsZero() && l.TimeString != "" {
+	if (parsedTime.IsZero()) && l.TimeString != "" {
 		if timeParsingErrors != nil {
 			return nil, fmt.Errorf("unable to parse time: %w", timeParsingErrors)
 		}
@@ -179,7 +184,6 @@ const (
 	azureActiveDirectorySource = "azure.aadiam"
 	userRiskEventsLogContainer = "insights-logs-userriskevents"
 	riskyUsersLogContainer     = "insights-logs-riskyusers"
-	usaShortTimestampFormat    = "1/2/2006 3:04:05 PM"
 )
 
 // These AD log containers have a `time` field that is not in standard RFC3339 format
@@ -204,7 +208,7 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 		}
 		timeString = strings.Trim(string(value), "\"")
 
-		logTime, err = time.Parse(usaShortTimestampFormat, timeString)
+		logTime, err = parseTime(timeString)
 		if err != nil {
 			return nil, err
 		}
