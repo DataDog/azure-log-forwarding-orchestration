@@ -141,10 +141,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	}
 
 	if parsedTime.IsZero() {
-		if timeParsingErrors != nil {
-			return nil, errors.New("failed to parse time: " + timeParsingErrors.Error())
-		}
-		return nil, errors.New("time is zero after parsing")
+		parsedTime = time.Now().UTC() // Fallback to current time if parsing fails
 	}
 
 	scrubbedLog := scrubber.Scrub(l.raw)
