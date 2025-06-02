@@ -45,6 +45,7 @@ type Blob struct {
 	Name          string
 	ContentLength int64
 	CreationTime  time.Time
+	LastModified  time.Time
 }
 
 // IsCurrent returns true if the blob was created within the look back period
@@ -78,6 +79,10 @@ func NewBlob(container Container, item *container.BlobItem) Blob {
 		}
 		if item.Properties.CreationTime != nil {
 			newBlob.CreationTime = *item.Properties.CreationTime
+		}
+
+		if item.Properties.LastModified != nil {
+			newBlob.LastModified = *item.Properties.LastModified
 		}
 	}
 

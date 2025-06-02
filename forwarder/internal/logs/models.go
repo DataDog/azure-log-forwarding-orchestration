@@ -31,10 +31,10 @@ var (
 
 func parseTime(timeString string) (time.Time, error) {
 	timeString = strings.TrimSpace(timeString) // Trim leading and trailing whitespace
-	timeString = strings.Trim(timeString, "\"")
+	timeString = strings.Trim(timeString, `"`)
 
 	if timeString == "" {
-		return time.Now(), nil
+		return time.Time{}, nil
 	}
 
 	var errs []error
@@ -68,7 +68,7 @@ type Log struct {
 
 // NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize int64) (*Log, error) {
-	currLog := azureLog{}
+	var currLog azureLog
 
 	if blob.IsJson() {
 		err := json.Unmarshal(logBytes, &currLog)
@@ -78,6 +78,11 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 			}
 			return nil, err
 		}
+	}
+
+	if currLog.Time.AsTime().IsZero() {
+		// If the time field is not set, use the blob's last modified time
+		currLog.Time = AzureLogTime(blob.LastModified)
 	}
 
 	blobNameResourceId := blob.ResourceId()
