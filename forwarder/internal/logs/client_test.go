@@ -87,8 +87,8 @@ func TestAddLog(t *testing.T) {
 		logBytes := []byte(logString)
 		for range 12 {
 			currLog, err := logs.NewLog(logBytes, newBlob(resourceId, functionAppContainer), MockScrubber(t, logBytes), int64(len(logBytes)))
-			currLog.Time = time.Now().Add(-5 * time.Minute)
 			require.NoError(t, err)
+			currLog.Time = time.Now().Add(-5 * time.Minute)
 			payload = append(payload, currLog)
 		}
 
@@ -227,7 +227,7 @@ func TestNewLog(t *testing.T) {
 		log, err := logs.NewLog(invalidResourceIdLog, newBlob(resourceId, "something normal"), MockScrubber(t, invalidResourceIdLog), int64(len(invalidResourceIdLog)))
 
 		// THEN
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.Equal(t, strings.ToLower(resourceId), strings.ToLower(log.ResourceId))
 	})
 

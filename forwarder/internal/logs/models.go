@@ -21,6 +21,35 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
+var (
+	supportedTimeLayouts = []string{
+		time.RFC3339,          // ISO 8601 format with timezone offset
+		"01/02/2006 15:04:05", // USA short timestamp format
+		"1/2/2006 3:04:05 PM", // USA short timestamp format with AM/PM
+	}
+)
+
+func parseTime(timeString string) (time.Time, error) {
+	timeString = strings.TrimSpace(timeString) // Trim leading and trailing whitespace
+	timeString = strings.Trim(timeString, `"`)
+
+	if timeString == "" {
+		return time.Time{}, nil
+	}
+
+	var errs []error
+	for _, layout := range supportedTimeLayouts {
+		parsed, err := time.Parse(layout, timeString)
+		if err == nil {
+			return parsed, nil
+		}
+
+		errs = append(errs, err)
+	}
+
+	return time.Time{}, errors.Join(errs...)
+}
+
 // Log represents a log to send to Datadog.
 type Log struct {
 	Content          []byte
@@ -39,7 +68,7 @@ type Log struct {
 
 // NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize int64) (*Log, error) {
-	var currLog *azureLog
+	var currLog azureLog
 
 	if blob.IsJson() {
 		err := json.Unmarshal(logBytes, &currLog)
@@ -49,8 +78,11 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 			}
 			return nil, err
 		}
-	} else {
-		currLog = &azureLog{Time: time.Now()}
+	}
+
+	if currLog.Time.AsTime().IsZero() {
+		// If the time field is not set, use the blob's last modified time
+		currLog.Time = AzureLogTime(blob.LastModified)
 	}
 
 	blobNameResourceId := blob.ResourceId()
@@ -60,7 +92,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
 
-	return currLog.ToLog(scrubber), nil
+	return currLog.ToLog(scrubber)
 }
 
 // RawLength returns the length of the original Azure log content.
@@ -78,6 +110,22 @@ func (l *Log) Validate(now customtime.Now, logger *log.Entry) bool {
 	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, now, logger)
 }
 
+type AzureLogTime time.Time
+
+func (t *AzureLogTime) UnmarshalJSON(data []byte) error {
+	parsedTime, err := parseTime(string(data))
+	if err != nil {
+		return err
+	}
+
+	*t = AzureLogTime(parsedTime)
+	return nil
+}
+
+func (t AzureLogTime) AsTime() time.Time {
+	return time.Time(t)
+}
+
 type azureLog struct {
 	raw             []byte
 	byteSize        int64
@@ -88,8 +136,8 @@ type azureLog struct {
 	ResourceIdUpper string `json:"ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
 	blobResourceId string
-	Time           time.Time `json:"time"`
-	Level          string    `json:"level,omitempty"`
+	Time           AzureLogTime `json:"time"`
+	Level          string       `json:"level,omitempty"`
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
@@ -101,7 +149,7 @@ func (l *azureLog) ResourceId() *arm.ResourceID {
 	return nil
 }
 
-func (l *azureLog) ToLog(scrubber Scrubber) *Log {
+func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	tags := append([]string(nil), DefaultTags...)
 
 	var logSource string
@@ -129,12 +177,12 @@ func (l *azureLog) ToLog(scrubber Scrubber) *Log {
 		ResourceId:       resourceId,
 		Service:          azureService,
 		Source:           logSource,
-		Time:             l.Time,
+		Time:             l.Time.AsTime(),
 		Level:            l.Level,
 		Tags:             tags,
 		Container:        l.Container,
 		Blob:             l.Blob,
-	}
+	}, nil
 }
 
 // Active Directory (AD) logs are made up of numerous log categories,
@@ -145,7 +193,6 @@ const (
 	azureActiveDirectorySource = "azure.aadiam"
 	userRiskEventsLogContainer = "insights-logs-userriskevents"
 	riskyUsersLogContainer     = "insights-logs-riskyusers"
-	usaShortTimestampFormat    = "1/2/2006 3:04:05 PM"
 )
 
 // These AD log containers have a `time` field that is not in standard RFC3339 format
@@ -170,7 +217,7 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 		}
 		timeString = strings.Trim(string(value), "\"")
 
-		logTime, err = time.Parse(usaShortTimestampFormat, timeString)
+		logTime, err = parseTime(timeString)
 		if err != nil {
 			return nil, err
 		}
