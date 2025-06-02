@@ -155,11 +155,9 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 	} else {
 		parsedTime, timeParsingErrors = parseTime(l.TimeString)
 	}
-	if (parsedTime.IsZero()) && l.TimeString != "" {
-		if timeParsingErrors != nil {
-			return nil, fmt.Errorf("unable to parse time: %w", timeParsingErrors)
-		}
-		return nil, errors.New("time is zero but we had no parsing errors, this is unexpected")
+
+	if timeParsingErrors != nil {
+		return nil, fmt.Errorf("unable to parse time: %w", timeParsingErrors)
 	}
 
 	scrubbedLog := scrubber.Scrub(l.raw)
