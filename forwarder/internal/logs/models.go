@@ -33,18 +33,20 @@ func init() {
 	}
 }
 
-func parseTime(timeString string) (parsedTime time.Time, timeParsingErrors error) {
+func parseTime(timeString string) (time.Time, error) {
 	timeString = strings.TrimSpace(timeString) // Trim leading and trailing whitespace
+
+	var errs []error
 	for _, layout := range supportedTimeLayouts {
-		var currErr error
-		parsedTime, currErr = time.Parse(layout, timeString)
-		if currErr == nil {
-			timeParsingErrors = nil
-			break // Successfully parsed the time
+		parsed, err := time.Parse(layout, timeString)
+		if err == nil {
+			return parsed, nil
 		}
-		timeParsingErrors = errors.Join(timeParsingErrors, currErr)
+
+		errs = append(errs, err)
 	}
-	return
+
+	return time.Time{}, errors.Join(errs...)
 }
 
 // Log represents a log to send to Datadog.
