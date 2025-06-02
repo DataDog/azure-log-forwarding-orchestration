@@ -8,7 +8,6 @@ import (
 	// stdlib
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -22,19 +21,21 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
-var supportedTimeLayouts []string
-
-func init() {
-	// Add the supported time layouts for parsing Azure logs
+var (
 	supportedTimeLayouts = []string{
-		time.RFC3339,          // ISO 8601 format,
+		time.RFC3339,          // ISO 8601 format with timezone offset
 		"01/02/2006 15:04:05", // USA short timestamp format
 		"1/2/2006 3:04:05 PM", // USA short timestamp format with AM/PM
 	}
-}
+)
 
 func parseTime(timeString string) (time.Time, error) {
 	timeString = strings.TrimSpace(timeString) // Trim leading and trailing whitespace
+	timeString = strings.Trim(timeString, "\"")
+
+	if timeString == "" {
+		return time.Now(), nil
+	}
 
 	var errs []error
 	for _, layout := range supportedTimeLayouts {
@@ -67,7 +68,7 @@ type Log struct {
 
 // NewLog creates a new Log from the given log bytes.
 func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize int64) (*Log, error) {
-	var currLog *azureLog
+	currLog := azureLog{}
 
 	if blob.IsJson() {
 		err := json.Unmarshal(logBytes, &currLog)
@@ -77,8 +78,6 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 			}
 			return nil, err
 		}
-	} else {
-		currLog = &azureLog{}
 	}
 
 	blobNameResourceId := blob.ResourceId()
@@ -106,6 +105,22 @@ func (l *Log) Validate(now customtime.Now, logger *log.Entry) bool {
 	return validateLog(l.ResourceId, l.ScrubbedByteSize, l.Time, now, logger)
 }
 
+type AzureLogTime time.Time
+
+func (t *AzureLogTime) UnmarshalJSON(data []byte) error {
+	parsedTime, err := parseTime(string(data))
+	if err != nil {
+		return err
+	}
+
+	*t = AzureLogTime(parsedTime)
+	return nil
+}
+
+func (t AzureLogTime) AsTime() time.Time {
+	return time.Time(t)
+}
+
 type azureLog struct {
 	raw             []byte
 	byteSize        int64
@@ -116,8 +131,8 @@ type azureLog struct {
 	ResourceIdUpper string `json:"ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
 	blobResourceId string
-	TimeString     string `json:"time"`
-	Level          string `json:"level,omitempty"`
+	Time           AzureLogTime `json:"time"`
+	Level          string       `json:"level,omitempty"`
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
@@ -146,20 +161,6 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 		l.Level = "Informational"
 	}
 
-	var parsedTime time.Time
-	var timeParsingErrors error
-
-	if l.TimeString == "" {
-		// No time string found in the log, use current time
-		parsedTime = time.Now().UTC()
-	} else {
-		parsedTime, timeParsingErrors = parseTime(l.TimeString)
-	}
-
-	if timeParsingErrors != nil {
-		return nil, fmt.Errorf("unable to parse time: %w", timeParsingErrors)
-	}
-
 	scrubbedLog := scrubber.Scrub(l.raw)
 	scrubbedByteSize := len(scrubbedLog) + newlineBytes // need to account for scrubed and raw log size so cursors remain accurate
 
@@ -171,7 +172,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 		ResourceId:       resourceId,
 		Service:          azureService,
 		Source:           logSource,
-		Time:             parsedTime,
+		Time:             l.Time.AsTime(),
 		Level:            l.Level,
 		Tags:             tags,
 		Container:        l.Container,
