@@ -64,7 +64,6 @@ High-performance log processing engines optimized for throughput:
 ### **Integration Layer**
 - **Azure-Native**: Uses Azure Container Apps, Storage Accounts, and Managed Identity
 - **Datadog Integration**: Optimized for Datadog's ingestion APIs with proper batching and compression
-- **Monitoring**: Built-in metrics and telemetry for observability
 
 ## Quick Start
 
@@ -82,7 +81,7 @@ Deploy just the forwarder component for specific use cases:
 1. Discover all log-generating resources in your subscription(s)
 2. Configure diagnostic settings to route logs to storage
 3. Deploy and scale forwarders based on log volume
-4. Begin forwarding logs to Datadog with full observability
+4. Begin forwarding logs to Datadog
 
 ## Enterprise Features
 
@@ -115,7 +114,6 @@ Deploy just the forwarder component for specific use cases:
 
 ### **🔧 DevOps Teams**
 - **Infrastructure as Code**: Complete ARM/Bicep templates for reproducible deployments
-- **GitOps Integration**: Configuration management through version-controlled YAML
 - **Automated Operations**: Self-healing system with minimal operational overhead
 
 ## Technical Specifications
