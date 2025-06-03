@@ -5,9 +5,9 @@
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2FcreateUiDefinition.json)
 
-## Why Azure Automated Log Forwarding for Azure?
+## Why Automated Log Forwarding for Azure?
 
-**Stop wrestling with Azure log complexity.** Azure Automated Log Forwarding for Azure is the industry's first fully automated, enterprise-scale log forwarding orchestration system that discovers, configures, and forwards **all** your Azure logs without manual intervention.
+**Stop wrestling with Azure log complexity.** Automated Log Forwarding for Azure is the industry's first fully automated, enterprise-scale log forwarding orchestration system that discovers, configures, and forwards **all** your Azure logs without manual intervention.
 
 ### 🎯 **Built for Enterprise Scale**
 - **Automatic Resource Discovery**: Finds and configures log forwarding for 100% of Azure resources across unlimited subscriptions
@@ -29,7 +29,7 @@
 
 ## Architecture
 
-Azure Automated Log Forwarding for Azure uses a sophisticated three-tier architecture designed for enterprise reliability and performance:
+Automated Log Forwarding for Azure uses a sophisticated three-tier architecture designed for enterprise reliability and performance:
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
@@ -164,7 +164,7 @@ Automated Log Forwarding for Azure is built with extensibility in mind:
 ---
 
 **Ready to transform your Azure logging strategy?**
-
+ƒ
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2FcreateUiDefinition.json)
 
 *Built with ❤️ by the Azure Integrations team at Datadog*
