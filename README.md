@@ -162,7 +162,6 @@ Automated Log Forwarding for Azure is built with extensibility in mind:
 ---
 
 **Ready to transform your Azure logging strategy?**
-ƒ
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2FcreateUiDefinition.json)
 
 *Built with ❤️ by the Azure Integrations team at Datadog*
