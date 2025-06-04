@@ -74,6 +74,7 @@ class DatadogClient:
             control_plane_id=control_plane_id,
         )
         async with self.session.post(url, json={"data": payload}, headers=self._get_headers()) as response:  # type: ignore
+            response.raise_for_status()
             return response.status
 
     async def __aenter__(self) -> Self:

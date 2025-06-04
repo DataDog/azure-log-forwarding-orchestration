@@ -242,9 +242,9 @@ forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
@@ -252,9 +252,9 @@ publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish-qa
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
@@ -266,9 +266,9 @@ arm-template-publish-qa:
   image: $CI_IMAGE
   stage: publish-qa
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   script:
     - sed -i 's|https://ddazurelfo.blob.core.windows.net|https://lfoqa.blob.core.windows.net|g' ./deploy/azuredeploy.bicep
     - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
@@ -288,9 +288,9 @@ deploy-qa-env:
   image: $CI_IMAGE
   stage: publish-qa
   tags: ['arch:amd64']
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   dependencies:
     - publish-tasks-qa
     - arm-template-publish-qa
@@ -299,9 +299,9 @@ deploy-qa-env:
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
-  only:
-    refs:
-      - main
+  #  only:
+  #    refs:
+  #      - main
   tags: ['arch:amd64']
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
