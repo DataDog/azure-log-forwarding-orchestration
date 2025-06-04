@@ -82,10 +82,7 @@ async def run_tasks() -> None:
 
 async def main() -> None:
     try:
-        if await is_initial_deploy():
-            await run_tasks()
-        else:
-            print("This is a re-deploy, starting deployer instead")
+        await run_tasks()
     finally:
         await start_deployer()
 

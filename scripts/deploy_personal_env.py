@@ -199,12 +199,15 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         + f"https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
     )
     api_key = environ["DD_API_KEY"]
+    app_key = environ["DD_APP_KEY"]
+
     params = {
         "monitoredSubscriptions": dumps([subscription_id]),
         "controlPlaneLocation": LOCATION,
         "controlPlaneSubscriptionId": subscription_id,
         "controlPlaneResourceGroupName": resource_group_name,
         "datadogApiKey": api_key,
+        "datadogApplicationKey": app_key,
         "datadogTelemetry": "true",
         "piiScrubberRules": environ.get("PII_SCRUBBER_RULES", ""),
         "resourceTagFilters": environ.get("RESOURCE_TAG_FILTERS", ""),
