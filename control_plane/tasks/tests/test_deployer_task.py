@@ -68,7 +68,7 @@ class TestDeployerTask(TaskTestCase):
         )
 
     async def run_deployer_task(self) -> DeployerTask:
-        async with DeployerTask() as task:
+        async with DeployerTask(is_initial_run=False) as task:
             await task.run()
         return task
 
