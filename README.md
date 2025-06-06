@@ -1,9 +1,6 @@
 # Automated Log Forwarding for Azure
 
-> **Fully automated Azure log forwarding**
->
 > *Zero-maintenance log forwarding from Azure to Datadog with intelligent scaling*
-
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2FcreateUiDefinition.json)
 
