@@ -1,7 +1,9 @@
 # Automated Log Forwarding for Azure
 
-> **🚀 Enterprise-grade, fully automated Azure log ingestion at hyperscale**
-> *Zero-configuration log forwarding from Azure to Datadog with intelligent scaling, PII protection, and 99.9% reliability*
+> **Fully automated Azure log forwarding**
+>
+> *Zero-maintenance log forwarding from Azure to Datadog with intelligent scaling*
+
 
 [![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2Fazuredeploy.json/createUIDefinitionUri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2FcreateUiDefinition.json)
 
@@ -10,7 +12,7 @@
 **Stop wrestling with Azure log complexity.** Automated Log Forwarding for Azure is the industry's first fully automated, enterprise-scale log forwarding orchestration system that discovers, configures, and forwards **all** your Azure logs without manual intervention.
 
 ### 🎯 **Built for Enterprise Scale**
-- **Automatic Resource Discovery**: Finds and configures log forwarding for 100% of Azure resources across unlimited subscriptions
+- **Automatic Resource Discovery**: Finds and configures log forwarding for your Azure resources
 - **Intelligent Auto-Scaling**: Dynamically provisions forwarders based on actual log volume - scale from zero to millions of logs/second
 - **Zero Configuration**: Deploy once, forward forever - no per-resource setup required
 - **Enterprise Reliability**: Built-in dead letter queues, cursor-based state management, and automatic retry logic
@@ -18,11 +20,8 @@
 ### 🛡️ **Security & Compliance First**
 - **PII Scrubbing**: Configurable data privacy protection removes sensitive information before forwarding
 - **Azure-Native Security**: Leverages Azure RBAC, Managed Identity, and encryption at rest
-- **Audit Trail**: Complete tracking and logging of all processed data
-- **Compliance Ready**: Designed for SOC 2, GDPR, and enterprise compliance requirements
 
-### ⚡ **Performance at Hyperscale**
-- **Sub-second Latency**: Streaming architecture with optimized blob processing
+### ⚡ **Performance at Scale**
 - **Multi-Region**: Deploys forwarders close to data sources for minimal latency
 - **Efficient Batching**: Optimized for Datadog API limits with intelligent compression
 - **Resource Optimization**: Pay only for what you use with serverless Container Apps
@@ -33,19 +32,22 @@ Automated Log Forwarding for Azure uses a sophisticated three-tier architecture 
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Control Plane │────│    Forwarders    │────│     Datadog     │
-│   (Orchestrator)│    │  (Log Processors)│    │   (Destination) │
+│  Control Plane  │────│    Forwarders    │────│     Datadog     │
+│  (Orchestrator) │    │ (Log Processors) │    │   (Destination) │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
-        │                        │                        │
-        │                        │                        │
-   ┌────▼────┐              ┌────▼────┐              ┌────▼────┐
-   │Resource │              │ Azure   │              │ Logs    │
-   │Discovery│              │ Blob    │              │ API     │
-   │Scaling  │              │ Storage │              │         │
-   │Diagnostic│              │ Stream  │              │         │
-   │Settings │              │Processing│              │         │
-   └─────────┘              └─────────┘              └─────────┘
+         │                       │                       │
+         │                       │                       │
+   ┌─────▼─────┐            ┌────▼───────┐          ┌────▼────┐
+   │ Resource  │            │ Azure      │          │ Datadog │
+   │ Discovery │            │ Blob       │          │ Logs    │
+   │           │            │ Storage    │          │ API     │
+   │ Scaling   │            │ Processing │          └─────────┘
+   │           │            └────────────┘
+   │ Diagnostic│
+   │ Settings  │
+   └───────────┘
 ```
+
 
 ### **Control Plane** (Python)
 Intelligent orchestration engine that manages the entire system lifecycle:
@@ -53,6 +55,7 @@ Intelligent orchestration engine that manages the entire system lifecycle:
 - **Smart Scaling**: Provisions/deprovisions forwarders based on real-time log volume metrics
 - **Configuration Management**: Automatically configures Azure diagnostic settings
 - **Health Monitoring**: Monitors system health and triggers automatic remediation
+- **Selective Targeting**: Configurable filters for specific resource types or tags
 
 ### **Forwarders** (Go)
 High-performance log processing engines optimized for throughput:
@@ -83,38 +86,7 @@ Deploy just the forwarder component for specific use cases:
 3. Deploy and scale forwarders based on log volume
 4. Begin forwarding logs to Datadog
 
-## Enterprise Features
-
-### 🔍 **Intelligent Resource Discovery**
-- **Cross-Subscription**: Automatically discovers resources across multiple Azure subscriptions
-- **Real-Time Updates**: Continuously monitors for new resources and configuration changes
-- **Selective Targeting**: Configurable filters for specific resource types or tags
-
-### 📈 **Adaptive Scaling**
-- **Volume-Based Scaling**: Automatically scales forwarders up/down based on actual log volume
-- **Regional Distribution**: Deploys forwarders in optimal regions for minimal latency
-- **Cost Optimization**: Zero-cost scaling when no logs are being generated
-
-### 🔒 **Data Privacy & Security**
-- **Configurable PII Scrubbing**: YAML-based rules for removing sensitive data patterns
-- **Encryption**: All data encrypted in transit and at rest
-- **Access Control**: Fine-grained RBAC permissions for secure operations
-
-## Use Cases
-
-### **🏢 Large Enterprises**
-- **Multi-Cloud Strategy**: Centralize Azure logs alongside other cloud providers in Datadog
-- **Compliance & Governance**: Automated audit trails and data governance for regulated industries
-- **Cost Management**: Optimize log forwarding costs with intelligent scaling and filtering
-
-### **🚀 High-Growth Startups**
-- **Zero Maintenance**: Set-and-forget log forwarding that grows with your infrastructure
-- **Developer Productivity**: Eliminate manual log configuration across development teams
-- **Rapid Scaling**: Handle exponential growth in log volume without operational overhead
-
-### **🔧 DevOps Teams**
-- **Infrastructure as Code**: Complete ARM/Bicep templates for reproducible deployments
-- **Automated Operations**: Self-healing system with minimal operational overhead
+Please see our [official documentation](https://docs.datadoghq.com/logs/guide/azure-automated-log-forwarding/) for a more detailed getting started guide.
 
 ## Technical Specifications
 
@@ -150,14 +122,7 @@ Automated Log Forwarding for Azure is built with extensibility in mind:
 |---------------------|-----------|
 | ❌ Manual configuration per resource | ✅ Automatic discovery and configuration |
 | ❌ Fixed scaling, over-provisioning | ✅ Dynamic scaling based on actual usage |
-| ❌ No data privacy controls | ✅ Built-in PII scrubbing and compliance |
 | ❌ Complex maintenance and updates | ✅ Self-managing with automatic updates |
-
-## Enterprise Support & Community
-
-- **🎫 Enterprise Support**: Dedicated support for enterprise customers
-- **🤝 Community**: Active community of Azure and observability engineers
-- **🚀 Roadmap**: Regular updates with new Azure service integrations
 
 ---
 
