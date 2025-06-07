@@ -69,6 +69,7 @@ build-tasks:
     refs:
       - main
   script:
+    - ci/scripts/control_plane/set_version.sh "v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}"
     - ci/scripts/control_plane/build_tasks.sh
   artifacts:
     paths:

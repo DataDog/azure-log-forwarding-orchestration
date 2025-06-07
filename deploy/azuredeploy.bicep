@@ -9,6 +9,9 @@ param controlPlaneResourceGroupName string
 @secure()
 @description('Datadog API Key')
 param datadogApiKey string
+@secure()
+@description('Datadog APP Key')
+param datadogApplicationKey string
 @description('Datadog Site')
 param datadogSite string
 @description('Comma separated list of tags to filter resources by')
@@ -69,6 +72,7 @@ module controlPlane './control_plane.bicep' = {
     controlPlaneSubscriptionId: controlPlaneSubscriptionId
     monitoredSubscriptions: monitoredSubscriptions
     datadogApiKey: datadogApiKey
+    datadogApplicationKey: datadogApplicationKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
     resourceTagFilters: resourceTagFilters
