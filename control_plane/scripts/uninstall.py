@@ -431,11 +431,15 @@ def az(cmd: str) -> str:
 def list_users_subscriptions(sub_id=None) -> dict:
     if sub_id is None:
         log.info("Fetching details for all subscriptions accessible by current user... ")
-        print_progress(0, 1)
-        subs_json = json.loads(az("account list --output json"))
-        print_progress(1, 1)
-        print(f"Found {len(subs_json)} subscription(s)")
-        return {sub["id"]: sub["name"] for sub in subs_json}
+        # print_progress(0, 1)
+        # subs_json = json.loads(az("account list --output json"))
+        # print_progress(1, 1)
+        # print(f"Found {len(subs_json)} subscription(s)")
+        # return {sub["id"]: sub["name"] for sub in subs_json}
+        return {
+            "0b62a232-b8db-4380-9da6-640f7272ed6d": "azure-integrations-testing",
+            "34464906-34fe-401e-a420-79bd0ce2a1da": "log-forwarding-testing",
+        }
 
     log.info(f"Fetching details for subscription {sub_id}... ")
     subs_json = None
@@ -724,12 +728,8 @@ def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[
 def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_groups_in_sub: list[str]) -> list[str]:
     """For given subscription, prompt the user to choose which resource group (or all) to delete if there's multiple. Returns a list of resource groups to delete"""
 
-    if len(resource_groups_in_sub) == 1:
-        log.info(f"Found single resource group with log forwarding artifact: '{resource_groups_in_sub[0]}'")
-        return resource_groups_in_sub
-
     log.info(
-        f"Found multiple resource groups with log forwarding artifacts in '{sub_name}' ({sub_id}): {indented_log_of(resource_groups_in_sub)}"
+        f"Found resource group(s) with log forwarding control plane in '{sub_name}' ({sub_id}): {indented_log_of(resource_groups_in_sub)}"
     )
 
     return choose_resource_groups_to_delete(resource_groups_in_sub)
@@ -829,6 +829,7 @@ def parse_args():
     args = parser.parse_args()
 
     global DRY_RUN_SETTING, SKIP_PROMPTS_SETTING
+    args.dry_run = True  #  altan
     if args.dry_run:
         DRY_RUN_SETTING = True
         log.info("Dry run enabled, no changes will be made")
