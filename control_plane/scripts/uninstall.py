@@ -533,6 +533,14 @@ def find_all_control_planes(
     return sub_to_rg, rg_to_lfo_id
 
 
+def sub_has_rg(sub_id: str, rg_name: str) -> bool:
+    """Returns True if the given subscription has the given resource group, False otherwise"""
+    try:
+        return az(f"group exists --name {rg_name} --subscription {sub_id}").strip().casefold() == "true"
+    except subprocess.CalledProcessError:
+        return False
+
+
 def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> list[dict[str, str]]:
     """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
 
@@ -548,6 +556,14 @@ def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) ->
     print(f"Found {len(role_assignment_json)} role assignment(s)")
 
     return role_assignment_json
+
+
+def delete_resource_group(sub_id: str, resource_group: str):
+    if DRY_RUN_SETTING:
+        return
+
+    # --no-wait will initiate delete and immediately return
+    az(f"group delete --subscription {sub_id} --name {resource_group} --yes --no-wait")
 
 
 def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str, str]]):
@@ -634,8 +650,7 @@ def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
 
         log.info(rg_deletion_log)
 
-        # --no-wait will initiate delete and immediately return
-        az(f"group delete --subscription {sub_id} --name {resource_group} --yes --no-wait")
+        delete_resource_group(sub_id, resource_group)
 
 
 def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
@@ -724,12 +739,8 @@ def choose_resource_groups_to_delete(resource_groups_in_sub: list[str]) -> list[
 def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_groups_in_sub: list[str]) -> list[str]:
     """For given subscription, prompt the user to choose which resource group (or all) to delete if there's multiple. Returns a list of resource groups to delete"""
 
-    if len(resource_groups_in_sub) == 1:
-        log.info(f"Found single resource group with log forwarding artifact: '{resource_groups_in_sub[0]}'")
-        return resource_groups_in_sub
-
     log.info(
-        f"Found multiple resource groups with log forwarding artifacts in '{sub_name}' ({sub_id}): {indented_log_of(resource_groups_in_sub)}"
+        f"Found resource group(s) with log forwarding control plane in '{sub_name}' ({sub_id}): {indented_log_of(resource_groups_in_sub)}"
     )
 
     return choose_resource_groups_to_delete(resource_groups_in_sub)
@@ -759,7 +770,13 @@ def mark_rg_deletions_per_sub(
         sub_name = sub_id_to_name[sub_id]
         rgs_to_delete = identify_resource_groups_to_delete(sub_id, sub_name, rg_list)
         if any(rgs_to_delete):
-            sub_id_to_rg_deletions[sub_id] = rgs_to_delete
+            sub_id_to_rg_deletions.setdefault(sub_id, []).extend(rgs_to_delete)
+
+        # Check if other subs have the resource group that the user chose to delete, mark them for deletion if so
+        for sub_id, _ in sub_id_to_rgs.items():
+            for rg in rgs_to_delete:
+                if sub_has_rg(sub_id, rg) and rg not in sub_id_to_rg_deletions.get(sub_id, []):
+                    sub_id_to_rg_deletions.setdefault(sub_id, []).append(rg)
 
     return sub_id_to_rg_deletions
 
@@ -897,6 +914,11 @@ def main():
         delete_roles_diag_settings(sub_id, sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
 
     wait_for_resource_group_deletion(sub_to_rg_deletions)
+
+    # Execute a second delete because Azure sometimes deletes all the resources within, but not the group itself
+    for sub_id, rg_list in sub_to_rg_deletions.items():
+        for resource_group in rg_list:
+            delete_resource_group(sub_id, resource_group)
 
     log.info("Uninstall done! Exiting.")
 
