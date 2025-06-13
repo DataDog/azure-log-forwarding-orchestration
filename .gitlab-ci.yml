@@ -154,7 +154,7 @@ deployer-publish:
 forwarder-tests:
   image: $CI_IMAGE
   stage: test
-  tags: ['arch:amd64']
+  tags: ['docker-in-docker:amd64']
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
@@ -214,6 +214,16 @@ forwarder-format:
     - cd forwarder
     - go fmt ./...
     - git diff --exit-code
+copyright-headers:
+  image: $CI_IMAGE
+  stage: test
+  tags: ['arch:amd64']
+  dependencies:
+    - control-plane-formatting
+    - forwarder-vet
+  script:
+    - ci/scripts/licensing/add_copyright_header.py
+    - git diff --exit-code
 # ------------- CODE COV -------------
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
@@ -260,6 +270,7 @@ arm-template-publish-qa:
     refs:
       - main
   script:
+    - sed -i 's|https://ddazurelfo.blob.core.windows.net|https://lfoqa.blob.core.windows.net|g' ./deploy/azuredeploy.bicep
     - az bicep build --file ./deploy/azuredeploy.bicep --outfile ./azuredeploy.json
     - ./ci/scripts/arm-template/upload-qa-env.sh ./deploy/createUiDefinition.json templates createUiDefinition.json
     - ./ci/scripts/arm-template/upload-qa-env.sh ./azuredeploy.json templates azuredeploy.json
@@ -294,7 +305,7 @@ deployer-build-qa:
   tags: ['arch:amd64']
   script:
     - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - docker buildx build --platform=linux/amd64 --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --build-arg VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
 uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish-qa

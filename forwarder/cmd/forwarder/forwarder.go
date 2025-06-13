@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+// This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 package main
 
 import (
@@ -7,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"time"
 
@@ -29,6 +34,10 @@ import (
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
 
+const (
+	ForwarderMaxRuntime = 45 * time.Second
+)
+
 // resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
 type resourceBytes struct {
 	resourceId string
@@ -49,14 +58,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	processedRawBytes, processedLogs, err := parseLogs(content.Reader, blob, piiScrubber, logsChannel)
-
-	// linux newlines are 1 byte, but windows newlines are 2
-	// if adding another byte per line equals the content length, we have processed a file written by a windows machine.
-	// we know we have hit the end and can safely set our cursor to the end of the file.
-	if processedRawBytes+processedLogs+cursorOffset == blob.ContentLength {
-		processedRawBytes = blob.ContentLength - cursorOffset
-	}
+	processedRawBytes, _, err := parseLogs(content.Reader, blob, piiScrubber, logsChannel)
 
 	if processedRawBytes+cursorOffset > blob.ContentLength {
 		// we have processed more bytes than expected
@@ -71,27 +73,31 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 }
 
 func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
-	var processedRawBytes int64
 	var processedLogs int64
 
 	var currLog *logs.Log
 	var err error
-	for currLog, err = range logs.Parse(reader, blob, piiScrubber) {
-		if err != nil {
+	parsedLogsIter, totalBytes, err := logs.Parse(reader, blob, piiScrubber)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
+	}
+	for parsedLog := range parsedLogsIter {
+		if parsedLog.Err != nil {
+			err = fmt.Errorf("error parsing log: %w", parsedLog.Err)
 			break
 		}
+		currLog = parsedLog.ParsedLog
 
-		processedRawBytes += currLog.RawByteSize
 		processedLogs += 1
 		logsChannel <- currLog
 	}
-	return processedRawBytes, processedLogs, err
+	return int64(*totalBytes), processedLogs, err
 }
 
-func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
+func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	for logItem := range logsCh {
 		resourceIdCh <- logItem.ResourceId
-		currErr := logsClient.AddLog(ctx, logger, logItem)
+		currErr := logsClient.AddLog(ctx, now, logger, logItem)
 		err = errors.Join(err, currErr)
 		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}
 	}
@@ -100,27 +106,48 @@ func processLogs(ctx context.Context, logsClient *logs.Client, logger *log.Entry
 	return err
 }
 
-func getLogVolume(resourceIdCh <-chan string) map[string]int64 {
+func getLogVolume(ctx context.Context, resourceIdCh <-chan string) map[string]int64 {
 	var resourceVolumes = make(map[string]int64)
-	for volume := range resourceIdCh {
-		resourceVolumes[volume]++
+	for {
+		select {
+		case volume, ok := <-resourceIdCh:
+			if !ok {
+				return resourceVolumes
+			}
+			resourceVolumes[volume]++
+		case <-ctx.Done():
+			return resourceVolumes
+		}
 	}
-	return resourceVolumes
 }
 
-func getLogBytes(resourceBytesCh <-chan resourceBytes) map[string]int64 {
+func getLogBytes(ctx context.Context, resourceBytesCh <-chan resourceBytes) map[string]int64 {
 	var resourceBytesMap = make(map[string]int64)
-	for bytes := range resourceBytesCh {
-		if _, ok := resourceBytesMap[bytes.resourceId]; !ok {
-			resourceBytesMap[bytes.resourceId] = bytes.bytes
-			continue
+	for {
+		select {
+		case bytes, ok := <-resourceBytesCh:
+			if !ok {
+				return resourceBytesMap
+			}
+			if _, ok := resourceBytesMap[bytes.resourceId]; !ok {
+				resourceBytesMap[bytes.resourceId] = bytes.bytes
+				continue
+			}
+			resourceBytesMap[bytes.resourceId] += bytes.bytes
+		case <-ctx.Done():
+			return resourceBytesMap
 		}
-		resourceBytesMap[bytes.resourceId] += bytes.bytes
 	}
-	return resourceBytesMap
 }
 
 func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVolumes map[string]int64, resourceBytes map[string]int64, startTime time.Time, versionTag string) (int, error) {
+	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
+		// Always write metrics even if timeout occurred - use new context if so
+		writeMetricCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = writeMetricCtx
+	}
+
 	metricBlob := metrics.MetricEntry{
 		Timestamp:          time.Now().Unix(),
 		RuntimeSeconds:     time.Since(startTime).Seconds(),
@@ -146,8 +173,10 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	return logCount, nil
 }
 
-func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (err error) {
+func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (error, map[string]error) {
 	start := now()
+
+	var err error
 
 	defer func() {
 		for _, logsClient := range logsClients {
@@ -162,7 +191,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	// Download cursors
 	cursors, err := cursor.Load(ctx, storageClient, logger)
 	if err != nil {
-		return err
+		return err, nil
 	}
 
 	channelSize := len(logsClients)
@@ -173,16 +202,16 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	resourceBytesCh := make(chan resourceBytes, channelSize)
 
 	// Spawn log volume processing goroutine
-	logVolumeEg, _ := errgroup.WithContext(ctx)
+	logVolumeEg, logVolumeCtx := errgroup.WithContext(ctx)
 	logVolumeEg.Go(func() error {
-		resourceVolumes = getLogVolume(resourceIdCh)
+		resourceVolumes = getLogVolume(logVolumeCtx, resourceIdCh)
 		return nil
 	})
 
 	// Spawn log bytes processing goroutine
-	logBytesEg, _ := errgroup.WithContext(ctx)
+	logBytesEg, logBytesCtx := errgroup.WithContext(ctx)
 	logBytesEg.Go(func() error {
-		resourceBytesMap = getLogBytes(resourceBytesCh)
+		resourceBytesMap = getLogBytes(logBytesCtx, resourceBytesCh)
 		return nil
 	})
 
@@ -191,7 +220,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	for _, logsClient := range logsClients {
 		logsEg.Go(func() error {
 			// TODO (AZINTS-3044): Limit failure modes where we return nil and drop data
-			processLogsErr := processLogs(logsCtx, logsClient, logger, logCh, resourceIdCh, resourceBytesCh)
+			processLogsErr := processLogs(logsCtx, logsClient, now, logger, logCh, resourceIdCh, resourceBytesCh)
 			if processLogsErr != nil {
 				logger.Warning(fmt.Errorf("error processing logs: %w", processLogsErr))
 			}
@@ -202,8 +231,24 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	// Get all the containers
 	containers := storageClient.GetLogContainers(ctx, logger)
 
-	// Get all the blobs
 	currNow := now()
+	type blobError struct {
+		blob storage.Blob
+		err  error
+	}
+	blobErrorCh := make(chan blobError)
+
+	// Spawn error processing goroutine
+	blobErrors := make(map[string]error)
+	blobErrorEg, _ := errgroup.WithContext(ctx)
+	blobErrorEg.Go(func() error {
+		for blobErr := range blobErrorCh {
+			blobErrors[blobErr.blob.Name] = blobErr.err
+		}
+		return nil
+	})
+
+	// Get all the blobs
 	downloadEg, downloadCtx := errgroup.WithContext(ctx)
 	downloadEg.SetLimit(channelSize)
 	for c := range containers {
@@ -220,6 +265,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 			downloadEg.Go(func() error {
 				downloadErr := getLogs(downloadCtx, storageClient, cursors, blob, piiScrubber, logCh)
 				if downloadErr != nil {
+					blobErrorCh <- blobError{blob: blob, err: downloadErr}
 					logger.Warning(fmt.Errorf("error processing blob %s from container %s: %w", blob.Name, c.Name, downloadErr))
 				}
 				return nil
@@ -235,6 +281,8 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	err = errors.Join(err, logVolumeEg.Wait())
 	close(resourceBytesCh)
 	err = errors.Join(err, logBytesEg.Wait())
+	close(blobErrorCh)
+	err = errors.Join(err, blobErrorEg.Wait())
 
 	// Save cursors
 	cursorErr := cursors.Save(ctx, storageClient)
@@ -245,25 +293,25 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	err = errors.Join(err, metricErr)
 
 	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
-	return err
+	return err, blobErrors
 }
 
-func processDeadLetterQueue(ctx context.Context, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
+func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
 	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
 	if err != nil {
 		return err
 	}
 
-	dlq.Process(ctx, logger)
+	dlq.Process(ctx, now, logger)
 
 	for _, client := range flushedLogsClients {
 		dlq.Add(client.FailedLogs)
 	}
 
-	return dlq.Save(ctx, storageClient, logger)
+	return dlq.Save(ctx, storageClient, now, logger)
 }
 
-func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (error, map[string]error) {
 	start := time.Now()
 
 	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
@@ -289,9 +337,9 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadog
 		logsClients = append(logsClients, logs.NewClient(datadogLogsClient))
 	}
 
-	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now, versionTag)
+	processErr, blobErrors := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now, versionTag)
 
-	dlqErr := processDeadLetterQueue(ctx, logger, storageClient, logs.NewClient(datadogLogsClient), logsClients)
+	dlqErr := processDeadLetterQueue(ctx, now, logger, storageClient, logs.NewClient(datadogLogsClient), logsClients)
 
 	logger.Info(fmt.Sprintf("Run time: %v", time.Since(start).String()))
 	logger.Info(fmt.Sprintf("Final time: %v", (time.Now()).String()))
@@ -301,7 +349,7 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadog
 		flushErr = hookClient.Flush(ctx)
 	}
 
-	return errors.Join(processErr, dlqErr, flushErr)
+	return errors.Join(processErr, dlqErr, flushErr), blobErrors
 }
 
 func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfig, error) {
@@ -318,9 +366,11 @@ func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfi
 func main() {
 	var err error
 
+	ctx := datadog.NewDefaultContext(context.Background())
+
 	// Set Datadog API Key
-	ctx := context.WithValue(
-		context.Background(),
+	ctx = context.WithValue(
+		ctx,
 		datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {
@@ -340,6 +390,9 @@ func main() {
 			"site": ddSite,
 		})
 
+	ctx, cancel := context.WithTimeout(ctx, ForwarderMaxRuntime)
+	defer cancel()
+
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.New()
 
@@ -347,7 +400,7 @@ func main() {
 	if goroutineString == "" {
 		goroutineString = "10"
 	}
-	goroutineCount, err := strconv.ParseInt(goroutineString, 10, 64)
+	goroutineCount, err := strconv.Atoi(goroutineString)
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error parsing %s: %w", environment.NumGoroutines, err).Error())
 	}
@@ -373,7 +426,24 @@ func main() {
 		versionTag = "unknown"
 	}
 
-	err = run(ctx, logger, int(goroutineCount), datadog.NewConfiguration(), azBlobClient, piiScrubber, time.Now, versionTag)
+	datadogConfig := datadog.NewConfiguration()
+
+	if environment.Enabled(environment.TelemetryEnabled) {
+		// enable submission to staging
+		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
+		if len(servers) > 0 {
+			server := servers[0]
+			site := server.Variables["site"]
+			enumValues := site.EnumValues
+			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
+				enumValues = append(enumValues, logs.DatadogStagingSite)
+			}
+			site.EnumValues = enumValues
+			server.Variables["site"] = site
+		}
+	}
+
+	err, _ = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
 
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error while running: %w", err).Error())

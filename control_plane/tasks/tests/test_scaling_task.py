@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -7,6 +11,7 @@ from string import ascii_lowercase
 from typing import Any, cast
 from unittest import TestCase
 from unittest.mock import ANY, Mock, call, patch
+from uuid import uuid4
 
 # 3rd party
 from azure.mgmt.appcontainers.models import EnvironmentVar, Secret
@@ -36,6 +41,7 @@ from cache.env import (
 )
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache, ResourceMetadata
+from tasks.client.datadog_api_client import StatusCode
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_METRIC_PERIOD_MINUTES,
@@ -45,6 +51,7 @@ from tasks.scaling_task import (
     resources_to_move_by_load,
 )
 from tasks.tests.common import AsyncMockClient, AzureModelMatcher, TaskTestCase, mock
+from tasks.version import VERSION
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
 EAST_US = "eastus"
@@ -98,6 +105,11 @@ class TestScalingTask(TaskTestCase):
 
     async def asyncSetUp(self) -> None:
         super().setUp()
+        self.datadog_client = AsyncMockClient()
+        self.status_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = self.status_client
+        self.patch_path("tasks.task.DatadogClient").return_value = self.datadog_client
+        self.uuid = str(uuid4())
         self.client = AsyncMockClient()
         self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
@@ -122,26 +134,42 @@ class TestScalingTask(TaskTestCase):
         ]
         self.log = self.patch_path("tasks.task.log").getChild.return_value
         self.generate_unique_id = self.patch("generate_unique_id")
+        env_dict = {
+            RESOURCE_GROUP_SETTING: RG1,
+            CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
+            CONTROL_PLANE_REGION_SETTING: EAST_US_2,
+            SCALING_PERCENTAGE_SETTING: "0.7",
+        }
         p = patch.dict(
             environ,
-            {
-                RESOURCE_GROUP_SETTING: RG1,
-                CONTROL_PLANE_ID_SETTING: CONTROL_PLANE_ID,
-                CONTROL_PLANE_REGION_SETTING: EAST_US_2,
-                SCALING_PERCENTAGE_SETTING: "0.7",
-            },
+            env_dict,
         )
         p.start()
         self.addCleanup(p.stop)
+        self.env.update(env_dict)
         self.generate_unique_id.return_value = NEW_LOG_FORWARDER_ID
 
     @property
     def cache(self) -> AssignmentCache:
         return self.cache_value(ASSIGNMENT_CACHE_BLOB, deserialize_assignment_cache)
 
-    async def run_scaling_task(self, resource_cache_state: ResourceCache, assignment_cache_state: AssignmentCache):
-        async with ScalingTask(dumps(resource_cache_state, default=list), dumps(assignment_cache_state)) as task:
+    async def run_scaling_task(
+        self,
+        resource_cache_state: ResourceCache,
+        assignment_cache_state: AssignmentCache,
+        execution_id: str = "",
+        is_initial_run: bool = False,
+        wait_on_envs: bool = False,
+    ) -> ScalingTask:
+        async with ScalingTask(
+            dumps(resource_cache_state, default=list),
+            dumps(assignment_cache_state),
+            execution_id=execution_id,
+            is_initial_run=is_initial_run,
+            wait_on_envs=wait_on_envs,
+        ) as task:
             await task.run()
+        return task
 
     async def test_scaling_task_fails_without_valid_resource_cache(self):
         with self.assertRaises(InvalidCacheError):
@@ -1343,6 +1371,180 @@ class TestScalingTask(TaskTestCase):
                 assignment_cache_state={},
             )
         self.write_cache.assert_awaited()
+
+    async def test_tags(self):
+        self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
+
+        task = await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state={},
+        )
+
+        self.assertCountEqual(
+            task.tags,
+            [
+                "forwarder:lfocontrolplane",
+                "task:scaling_task",
+                "control_plane_id:a2b4c5d6",
+                f"version:{VERSION}",
+            ],
+        )
+
+    async def test_initial_run_golden_path_first_run(self):
+        await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state={},
+            execution_id=self.uuid,
+            is_initial_run=True,
+            wait_on_envs=True,
+        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start", StatusCode.OK, "Scaling task started", self.uuid, "unknown", CONTROL_PLANE_ID
+            ),
+            call(
+                "scaling_task.task_complete",
+                StatusCode.OK,
+                "Scaling task completed",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
+
+    async def test_initial_run_golden_path_second_run(self):
+        await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state={},
+            execution_id=self.uuid,
+            is_initial_run=True,
+            wait_on_envs=False,
+        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start",
+                StatusCode.OK,
+                "Scaling task started for the second time.",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+            call(
+                "scaling_task.task_complete",
+                StatusCode.OK,
+                "Scaling task completed",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
+
+    async def test_initial_run_forwarders_fail_to_create_forwarder(self):
+        test_string = "meow"
+
+        def create_log_forwarder_side_effect(arg1, arg2):
+            raise ValueError(test_string)
+
+        self.client.create_log_forwarder.side_effect = create_log_forwarder_side_effect
+
+        resource_cache: ResourceCache = {
+            SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}
+        }
+
+        with self.assertRaises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state=resource_cache,
+                assignment_cache_state={},
+                execution_id=self.uuid,
+                is_initial_run=True,
+                wait_on_envs=False,
+            )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start",
+                StatusCode.OK,
+                "Scaling task started for the second time.",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        for _ in range(3):  # 3 in number of retries
+            expected_calls.append(
+                call(
+                    "scaling_task.create_log_forwarder",
+                    StatusCode.RESOURCE_CREATION_ERROR,
+                    f"Failed to create log forwarder {NEW_LOG_FORWARDER_ID}. Reason: {test_string}",
+                    self.uuid,
+                    "unknown",
+                    CONTROL_PLANE_ID,
+                )
+            )
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
+
+    async def test_initial_run_forwarders_fail_to_create_forwarder_env(self):
+        test_string = "meow"
+
+        def create_log_forwarder_env_side_effect(region, wait=None):
+            raise ValueError(test_string)
+
+        self.client.create_log_forwarder_managed_environment.side_effect = create_log_forwarder_env_side_effect
+
+        self.client.get_log_forwarder_managed_environment.return_value = False
+
+        resource_cache: ResourceCache = {
+            SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}
+        }
+
+        await self.run_scaling_task(
+            resource_cache_state=resource_cache,
+            assignment_cache_state={},
+            execution_id=self.uuid,
+            is_initial_run=True,
+            wait_on_envs=True,
+        )
+
+        expected_calls = [
+            call(
+                "scaling_task.task_start",
+                StatusCode.OK,
+                "Scaling task started",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+            call(
+                "scaling_task.create_log_forwarder_env",
+                StatusCode.RESOURCE_CREATION_ERROR,
+                f"Failed to create log forwarder env in {EAST_US}. Reason: {test_string}",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+            call(
+                "scaling_task.task_complete",
+                StatusCode.OK,
+                "Scaling task completed",
+                self.uuid,
+                "unknown",
+                CONTROL_PLANE_ID,
+            ),
+        ]
+
+        self.status_client.assert_has_calls(expected_calls)
+        self.assertEqual(self.status_client.call_count, len(expected_calls))
 
 
 class TestIsConsistentlyOverThreshold(TestCase):

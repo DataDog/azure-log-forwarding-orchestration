@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from asyncio import sleep
 from json import dumps
@@ -129,6 +133,13 @@ FAKE_METRIC_PAYLOAD = MetricPayload(
             resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
             tags=METRIC_TAGS,
         ),
+        MetricSeries(
+            metric="azure.lfo.forwarder.run_completed",
+            type=MetricIntakeType.UNSPECIFIED,
+            points=[MetricPoint(timestamp=1723040910, value=1), MetricPoint(timestamp=1723040911, value=1)],
+            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
+            tags=METRIC_TAGS,
+        ),
     ],
 )
 
@@ -139,6 +150,7 @@ class TestLogForwarderClient(AsyncTestCase):
         p.start()
         self.addCleanup(p.stop)
         self.log = mock()
+        self.metrics_client = Mock()
         self.client: MockedLogForwarderClient = cast(
             MockedLogForwarderClient,
             LogForwarderClient(
@@ -147,6 +159,7 @@ class TestLogForwarderClient(AsyncTestCase):
                 subscription_id=SUB_ID1,
                 resource_group=RESOURCE_GROUP_NAME,
                 pii_rules_json=PII_RULES_JSON,
+                metrics_client=self.metrics_client,
             ),
         )
         await self.client.__aexit__(None, None, None)
@@ -227,6 +240,7 @@ class TestLogForwarderClient(AsyncTestCase):
                                         "name": "PII_SCRUBBER_RULES",
                                         "value": r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}',
                                     },
+                                    {"name": "DD_TELEMETRY", "value": "false"},
                                 ],
                                 "resources": {"cpu": 2.0, "memory": "4Gi"},
                             }
@@ -300,6 +314,7 @@ class TestLogForwarderClient(AsyncTestCase):
                                         "name": "PII_SCRUBBER_RULES",
                                         "value": r'{"redact_ip": {"pattern": "[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}", "replacement": "x.x.x.x"}}',
                                     },
+                                    {"name": "DD_TELEMETRY", "value": "false"},
                                 ],
                                 "resources": {"cpu": 2.0, "memory": "4Gi"},
                             }
@@ -317,13 +332,7 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(
-            self.log,
-            Mock(),
-            "sub1",
-            "rg1",
-            PII_RULES_JSON,
-        ) as client:
+        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1", PII_RULES_JSON, Mock()) as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
@@ -607,7 +616,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
 
     async def test_submit_metrics_normal_execution(self):
-        self.client.should_submit_metrics = True
+        self.client.telemetry_enabled = True
         self.client.metrics_client.submit_metrics.return_value = {}
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
@@ -615,7 +624,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client.submit_metrics.assert_called_once_with(body=FAKE_METRIC_PAYLOAD)
 
     async def test_submit_metrics_retries(self):
-        self.client.should_submit_metrics = True
+        self.client.telemetry_enabled = True
         self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
         self.client.metrics_client.submit_metrics.return_value = {}
         self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
@@ -628,7 +637,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
-        self.client.should_submit_metrics = True
+        self.client.telemetry_enabled = True
         self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
@@ -647,7 +656,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(res, [])
 
     async def test_submit_metrics_errors_logged(self):
-        self.client.should_submit_metrics = True
+        self.client.telemetry_enabled = True
         self.client.metrics_client.submit_metrics.return_value = {
             "errors": [
                 "oops something went wrong",

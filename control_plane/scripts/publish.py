@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # usage: publish.py <public_storage_account_url> [connection_string]
 
 # stdlib
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
+from itertools import chain
 from json import dumps
 from logging import INFO, WARNING, basicConfig, getLogger
 
@@ -34,7 +39,7 @@ getLogger("azure").setLevel(WARNING)
 
 log.info("Reading artifacts from dist/")
 files: dict[str, bytes] = {}
-for filename in ALL_ZIPS + ["initial_run.sh"]:
+for filename in chain(ALL_ZIPS, ["initial_run.sh"]):
     with open(f"dist/{filename}", "rb") as f:
         files[filename] = f.read()
 
@@ -43,7 +48,6 @@ hashes: ManifestCache = {
     "resources": sha256(files[RESOURCES_TASK_ZIP]).hexdigest(),
     "scaling": sha256(files[SCALING_TASK_ZIP]).hexdigest(),
     "diagnostic_settings": sha256(files[DIAGNOSTIC_SETTINGS_TASK_ZIP]).hexdigest(),
-    "forwarder": "",  # TODO(AZINTS-2780)
 }
 
 log.info(

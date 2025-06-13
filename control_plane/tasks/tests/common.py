@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from collections.abc import AsyncIterable, Callable
 from contextlib import suppress
@@ -37,6 +41,11 @@ class TaskTestCase(AsyncTestCase):
         self.datadog_api_client = self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
         self.datadog_logs_api = self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
         self.datadog_metrics_api = self.patch_path("tasks.task.MetricsApi", return_value=AsyncMock())
+        self.env = {}
+        task_env_mock = self.patch_path("tasks.task.environ", create=True)
+        task_env_mock.get.side_effect = lambda k, default="unset test env var": self.env.get(k, default)
+        env_env_mock = self.patch_path("cache.env.environ", create=True)
+        env_env_mock.get.side_effect = lambda k, default="unset test env var": self.env.get(k, default)
 
         with suppress(AttributeError):
             self.write_cache: AsyncMock = self.patch("write_cache")

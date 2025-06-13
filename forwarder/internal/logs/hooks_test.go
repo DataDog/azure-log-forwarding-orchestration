@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+// This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 package logs_test
 
 import (
@@ -29,7 +33,7 @@ func TestHook(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		var submittedLogs []datadogV2.HTTPLogItem
 		mockDDClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
-		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (interface{}, *http.Response, error) {
+		mockDDClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).MaxTimes(2).DoAndReturn(func(ctx context.Context, body []datadogV2.HTTPLogItem, o ...datadogV2.SubmitLogOptionalParameters) (any, *http.Response, error) {
 			submittedLogs = append(submittedLogs, body...)
 			return nil, nil, nil
 		})

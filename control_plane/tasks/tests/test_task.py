@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from logging import INFO, basicConfig
 from unittest import TestCase
@@ -56,7 +60,9 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown"])
+        self.assertEqual(
+            task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown", "version:unknown"]
+        )
         async with task:
             await task.run()
             self.assertEqual(task._logs, [])
@@ -71,7 +77,9 @@ class TestTask(TaskTestCase):
         task = DummyTask()
         self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown"])
+        self.assertEqual(
+            task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown", "version:unknown"]
+        )
         async with task:
             await task.run()
             self.assertEqual(task._logs, [])
@@ -81,19 +89,19 @@ class TestTask(TaskTestCase):
         task._logs_client.submit_log.assert_not_called()  # type: ignore
         self.assertEqual(task._logs, [])
 
-    @patch.dict(
-        "tasks.task.environ", {"DD_TELEMETRY": "true", "DD_API_KEY": "123", "CONTROL_PLANE_ID": "456"}, clear=True
-    )
     async def test_task_logging_enabled(self):
+        self.env.update({"DD_TELEMETRY": "true", "DD_API_KEY": "123", "CONTROL_PLANE_ID": "456"})
         task = DummyTask()
         self.assertTrue(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
-        self.assertEqual(task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:456"])
+        self.assertEqual(
+            task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:456", "version:unknown"]
+        )
         async with task:
             await task.run()
             self.assertEqual(len(task._logs), 1)
             self.assertEqual(task._logs[0].message, "Hello World")
-        task._logs_client.submit_log.assert_awaited_once()  # type: ignore
+        task._logs_client.submit_log.assert_called_once()  # type: ignore
         task._datadog_client.__aenter__.assert_called_once_with()  # type: ignore
         task._datadog_client.__aexit__.assert_called_once_with(None, None, None)  # type: ignore
         self.assertEqual(task._logs, [])

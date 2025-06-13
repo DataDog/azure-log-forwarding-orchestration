@@ -38,10 +38,10 @@ func (m *MockScrubber) EXPECT() *MockScrubberMockRecorder {
 }
 
 // Scrub mocks base method.
-func (m *MockScrubber) Scrub(logBytes *[]byte) *[]byte {
+func (m *MockScrubber) Scrub(logBytes []byte) []byte {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Scrub", logBytes)
-	ret0, _ := ret[0].(*[]byte)
+	ret0, _ := ret[0].([]byte)
 	return ret0
 }
 

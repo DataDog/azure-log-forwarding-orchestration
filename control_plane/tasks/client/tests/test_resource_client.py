@@ -1,3 +1,7 @@
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from unittest import IsolatedAsyncioTestCase, TestCase
 from unittest.mock import AsyncMock, patch
@@ -407,6 +411,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def test_sub_resources_failed_doesnt_fail(self):
+        expected_error = ResourceNotFoundError("meow")
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
                 mock(
@@ -417,7 +422,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     type="Microsoft.Sql/servers",
                     tags=None,
                 ),
-                ResourceNotFoundError(),
+                expected_error,
             )
         )
         self.mock_clients["SqlManagementClient"].databases.list_by_server = mock(

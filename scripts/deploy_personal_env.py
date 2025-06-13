@@ -1,4 +1,8 @@
 #!/usr/bin/env python
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 # stdlib
 from hashlib import md5
 from json import dumps, loads
@@ -177,7 +181,9 @@ if not SKIP_DOCKER:
 
 
 # build current version of tasks
+run(f"{lfo_dir}/ci/scripts/control_plane/set_version.sh {commit_sha}", cwd=lfo_dir)
 run(f"{lfo_dir}/ci/scripts/control_plane/build_tasks.sh", cwd=lfo_dir)
+run(f"{lfo_dir}/ci/scripts/control_plane/unset_version.sh {commit_sha}", cwd=lfo_dir)
 
 # upload current version of tasks to storage account
 run(

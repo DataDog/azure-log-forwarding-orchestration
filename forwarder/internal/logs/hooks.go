@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+// This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 package logs
 
 import (
@@ -41,7 +45,7 @@ func (h Hook) Levels() []logrus.Level {
 
 // Fire sends the log entry to Datadog.
 func (h Hook) Fire(entry *logrus.Entry) error {
-	additionalProperties := map[string]string{
+	additionalProperties := map[string]any{
 		"time":  entry.Time.Format(time.RFC3339),
 		"level": entry.Level.String(),
 	}
@@ -52,5 +56,5 @@ func (h Hook) Fire(entry *logrus.Entry) error {
 		Service:              pointer.Get(ServiceName),
 		AdditionalProperties: additionalProperties,
 	}
-	return h.client.AddFormattedLog(context.Background(), h.logger, log)
+	return h.client.AddRawLog(context.Background(), time.Now, h.logger, log)
 }

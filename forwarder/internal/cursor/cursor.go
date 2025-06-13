@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+// This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 package cursor
 
 import (
@@ -7,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	// 3p
 	log "github.com/sirupsen/logrus"
@@ -61,6 +66,13 @@ func (c *Cursors) JSONBytes() ([]byte, error) {
 
 // Save saves the cursors to storage
 func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
+	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
+		// Always save cursors - use a new context if error/timeout occurred already
+		cursorSaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = cursorSaveCtx
+	}
+
 	data, err := c.JSONBytes()
 	if err != nil {
 		return fmt.Errorf("error marshalling cursors: %w", err)

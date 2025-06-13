@@ -2,6 +2,16 @@
 !.vscode
 .vscode/launch.json
 
+# User-specific JetBrains files
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+
+# Cursor files
+.cursor/mcp.json
+
 bin
 obj
 csx
@@ -57,6 +67,9 @@ venv.bak/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# go vendor
+forwarder/vendor
 
 # Azurite artifacts
 __blobstorage__

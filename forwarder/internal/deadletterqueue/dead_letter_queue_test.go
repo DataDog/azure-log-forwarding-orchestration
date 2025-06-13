@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+// This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 package deadletterqueue_test
 
 import (
@@ -7,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -129,7 +134,7 @@ func TestSaveDLQ(t *testing.T) {
 		require.NoError(t, err)
 
 		// WHEN
-		err = dlq.Save(context.Background(), client, log.NewEntry(log.New()))
+		err = dlq.Save(context.Background(), client, time.Now, log.NewEntry(log.New()))
 
 		// THEN
 		assert.NoError(t, err)
