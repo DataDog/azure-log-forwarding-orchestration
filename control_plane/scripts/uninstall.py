@@ -11,10 +11,10 @@
 #   -h, --help            show this help message and exit
 #   -d, --dry-run         Run the script in dry-run mode. No changes will be made to the Azure environment
 #   -s SUBSCRIPTION, --subscription SUBSCRIPTION
-#                         Specify subscription ID to uninstall artifacts from. If not provided, all subscriptions will be searched
+#                         Specify subscription ID to uninstall artifacts from. If provided, only this subscription will be searched for artifacts
 #   -y, --yes             Skip all user prompts. This will delete all detected installations without confirmation
 #   -cp CONTROL_PLANE, --control-plane CONTROL_PLANE
-#                         Specify control plane ID to search for. If specified, all accessible subscriptions will be searched for artifacts related to this control plane ID.
+#                         Specify control plane ID to search for. If specified, only this control plane ID will be searched for artifacts
 
 import argparse
 import json
