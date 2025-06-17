@@ -453,7 +453,7 @@ def get_unused_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, lis
     return unused_role_assignments
 
 
-def list_users_subscriptions(sub_id=None) -> dict[str, str]:
+def list_users_subscriptions(sub_id: str | None = None) -> dict[str, str]:
     if sub_id is None:
         log.info("Fetching details for all subscriptions accessible by current user... ")
         print_progress(0, 1)
