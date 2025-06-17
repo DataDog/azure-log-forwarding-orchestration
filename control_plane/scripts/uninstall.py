@@ -251,7 +251,7 @@ def first_key_of(d: dict[str, Any]) -> str:
     return next(iter(d))
 
 
-def space_separated(iter: Iterable) -> str:
+def space_separated(iter: Iterable[str]) -> str:
     return " ".join(iter)
 
 
@@ -428,7 +428,33 @@ def az(cmd: str) -> str:
     raise SystemExit(1)  # unreachable
 
 
-def list_users_subscriptions(sub_id=None) -> dict:
+def get_unused_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, list[dict[str, str]]]:
+    """Returns a list of unused role assignments (principalName == '') for each subscription."""
+
+    log.info("Searching for unused role assignments... ")
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+        futures = [
+            tpe.submit(
+                az,
+                f"role assignment list --all --include-inherited --include-groups --query \"[?principalName=='' && description != null && starts_with(description, 'ddlfo')]\" --subscription {sub_id} --output json",
+            )
+            for sub_id in sub_id_to_name
+        ]
+        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+
+    unused_role_assignments = {}
+    for future, sub_id in zip(futures, sub_id_to_name):
+        if e := future.exception():
+            log.error(f"Skipping unused role assignments in {sub_id_to_name[sub_id]} ({sub_id}) due to an error: {e}")
+            continue
+        result = future.result()
+        if result:
+            unused_role_assignments[sub_id] = json.loads(result)
+
+    return unused_role_assignments
+
+
+def list_users_subscriptions(sub_id=None) -> dict[str, str]:
     if sub_id is None:
         log.info("Fetching details for all subscriptions accessible by current user... ")
         print_progress(0, 1)
@@ -886,9 +912,12 @@ def main():
     sub_id_to_name = list_users_subscriptions(args.subscription)
     sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
+    unused_role_assignments = get_unused_role_assignments(sub_id_to_name)
 
-    if not any(sub_to_rg_deletions.values()):
-        log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
+    if not any(sub_to_rg_deletions.values()) and not any(unused_role_assignments.values()):
+        log.info(
+            "Could not find any resource groups or unused role assignments to delete as part of uninstall process. Exiting."
+        )
         raise SystemExit(0)
 
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
@@ -896,6 +925,11 @@ def main():
     sub_role_assignment_deletions = mark_role_assignment_deletions(
         sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
     )
+    all_sub_role_assignment_deletions = {
+        sub_id: sub_role_assignment_deletions.get(sub_id, []) + unused_role_assignments.get(sub_id, [])
+        for sub_id in sub_id_to_name
+    }
+
     sub_diagnostic_setting_deletions = mark_diagnostic_setting_deletions(
         sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
     )
@@ -903,7 +937,7 @@ def main():
     confirm_uninstall(
         sub_to_rg_deletions,
         sub_id_to_name,
-        sub_role_assignment_deletions,
+        all_sub_role_assignment_deletions,
         sub_diagnostic_setting_deletions,
     )
 
@@ -911,7 +945,7 @@ def main():
         sub_name = sub_id_to_name[sub_id]
         log.info(f"{SEPARATOR}Deleting artifacts in {sub_name} ({sub_id})")
         start_resource_group_delete(sub_id, rg_list)
-        delete_roles_diag_settings(sub_id, sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
+        delete_roles_diag_settings(sub_id, all_sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
 
     wait_for_resource_group_deletion(sub_to_rg_deletions)
 
