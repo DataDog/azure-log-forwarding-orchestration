@@ -372,16 +372,16 @@ def uninstall_summary(
     header = "Deleting the following artifacts"
     deletion_summary = f"{SEPARATOR}{dry_run_of(header) if DRY_RUN_SETTING else header}:\n"
 
-    for sub_id, rg_list in sub_to_rg_deletions.items():
-        deletion_summary += f"From subscription {sub_id_to_name[sub_id]} ({sub_id}):\n"
-
-        role_assignments = role_assignment_deletions[sub_id]
-        deletion_summary += role_assignment_summary(role_assignments)
-
-        resource_ds_map = sub_diagnostic_setting_deletions[sub_id]
-        deletion_summary += diagnostic_setting_summary(resource_ds_map)
-
-        deletion_summary += resource_group_summary(rg_list)
+    for sub_id, sub_name in sub_id_to_name.items():
+        sub_role_assignments = role_assignment_deletions.get(sub_id, [])
+        sub_diagnostic_settings = sub_diagnostic_setting_deletions.get(sub_id, {})
+        sub_resource_groups = sub_to_rg_deletions.get(sub_id, [])
+        if not sub_role_assignments and not sub_diagnostic_settings and not sub_resource_groups:
+            continue
+        deletion_summary += f"From subscription {sub_name} ({sub_id}):\n"
+        deletion_summary += role_assignment_summary(sub_role_assignments)
+        deletion_summary += diagnostic_setting_summary(sub_diagnostic_settings)
+        deletion_summary += resource_group_summary(sub_resource_groups)
 
     return deletion_summary
 
@@ -444,9 +444,8 @@ def get_unused_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, lis
 
     unused_role_assignments = {}
     for future, sub_id in zip(futures, sub_id_to_name):
-        if e := future.exception():
-            log.error(f"Skipping unused role assignments in {sub_id_to_name[sub_id]} ({sub_id}) due to an error: {e}")
-            continue
+        if future.exception():
+            continue  # Skip if there was an error fetching role assignments for this subscription, likely a similar error from collecting resource groups
         result = future.result()
         if result:
             unused_role_assignments[sub_id] = json.loads(result)
@@ -645,7 +644,6 @@ def delete_diagnostic_setting(sub_id: str, resource_id: str, ds_name: str):
 
 
 def delete_roles_diag_settings(
-    sub_id: str,
     sub_role_assignment_deletions: dict[str, list[dict[str, str]]],
     sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
 ):
@@ -941,11 +939,12 @@ def main():
         sub_diagnostic_setting_deletions,
     )
 
-    for sub_id, rg_list in sub_to_rg_deletions.items():
-        sub_name = sub_id_to_name[sub_id]
-        log.info(f"{SEPARATOR}Deleting artifacts in {sub_name} ({sub_id})")
-        start_resource_group_delete(sub_id, rg_list)
-        delete_roles_diag_settings(sub_id, all_sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
+    for sub_id, resource_groups in sub_to_rg_deletions.items():
+        log.info(f"{SEPARATOR}Deleting artifacts in {sub_id_to_name[sub_id]} ({sub_id})")
+        start_resource_group_delete(sub_id, resource_groups)
+
+    log.info(SEPARATOR + "Deleting role assignments and diagnostic settings... ")
+    delete_roles_diag_settings(all_sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
 
     wait_for_resource_group_deletion(sub_to_rg_deletions)
 
