@@ -348,9 +348,9 @@ def role_assignment_summary(role_assignments: list[Any]) -> str:
     return summary
 
 
-def diagnostic_setting_summary(resource_ds_map: dict[str, list[str]]) -> str:
+def diagnostic_setting_summary(resource_id_to_diag_setting: dict[str, list[str]]) -> str:
     ds_resource_count = defaultdict(int)
-    for _, ds_list in resource_ds_map.items():
+    for _, ds_list in resource_id_to_diag_setting.items():
         for ds_name in ds_list:
             ds_resource_count[ds_name] += 1
 
@@ -372,8 +372,8 @@ def resource_group_summary(resource_groups: list[str]) -> str:
 def uninstall_summary(
     sub_to_rg_deletions: dict[str, list[str]],
     sub_id_to_name: dict[str, str],
-    role_assignment_deletions: dict[str, list[Any]],
-    sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
+    sub_to_role_assignment_deletions: dict[str, list[dict[str, str]]],
+    sub_to_resource_id_to_diag_setting_deletions: dict[str, dict[str, list[str]]],
 ) -> str:
     header = "Deleting the following artifacts"
     deletion_summary = f"{SEPARATOR}{dry_run_of(header) if DRY_RUN_SETTING else header}:\n"
@@ -381,18 +381,18 @@ def uninstall_summary(
     for sub_id, name in sub_id_to_name.items():
         if (
             sub_id in sub_to_rg_deletions
-            or sub_id in role_assignment_deletions
-            or sub_id in sub_diagnostic_setting_deletions
+            or sub_id in sub_to_role_assignment_deletions
+            or sub_id in sub_to_resource_id_to_diag_setting_deletions
         ):
             deletion_summary += f"From subscription {name} ({sub_id}):\n"
 
-            if sub_id in role_assignment_deletions:
-                role_assignments = role_assignment_deletions[sub_id]
+            if sub_id in sub_to_role_assignment_deletions:
+                role_assignments = sub_to_role_assignment_deletions[sub_id]
                 deletion_summary += role_assignment_summary(role_assignments)
 
-            if sub_id in sub_diagnostic_setting_deletions:
-                resource_ds_map = sub_diagnostic_setting_deletions[sub_id]
-                deletion_summary += diagnostic_setting_summary(resource_ds_map)
+            if sub_id in sub_to_resource_id_to_diag_setting_deletions:
+                resource_id_to_diag_setting = sub_to_resource_id_to_diag_setting_deletions[sub_id]
+                deletion_summary += diagnostic_setting_summary(resource_id_to_diag_setting)
 
             if sub_id in sub_to_rg_deletions:
                 deletion_summary += resource_group_summary(sub_to_rg_deletions[sub_id])
@@ -531,7 +531,7 @@ def find_all_control_planes(
 
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
         futures = [tpe.submit(find_sub_control_planes, sub_id, sub_name) for sub_id, sub_name in sub_id_to_name.items()]
-        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
     sub_to_rg = defaultdict(list)
     rg_to_lfo_id = defaultdict(list)
@@ -569,7 +569,7 @@ def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) ->
         )
     )
 
-    if len(role_assignment_json) > 0:
+    if role_assignment_json:
         log.info(f"Found {len(role_assignment_json)} role assignment(s) in {sub_name} ({sub_id})")
 
     return role_assignment_json
@@ -615,7 +615,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
             )
             for resource_id in resource_ids
         ]
-        progress_spinner(resource_count, lambda: sum(not f.running() for f in ds_futures))
+        progress_spinner(resource_count, lambda: sum(f.done() for f in ds_futures))
 
     for resource_id, ds_future in zip(resource_ids, ds_futures):
         ds_names = json.loads(ds_future.result())
@@ -646,7 +646,7 @@ def do_role_assignment_delete(sub_role_assignment_deletions: dict[str, list[dict
         for sub_id, role_assignments_json in sub_role_assignment_deletions.items():
             if role_assignments_json:
                 futures.append(tpe.submit(delete_role_assignments, sub_id, role_assignments_json))
-        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
 
 def do_diagnostic_setting_delete(sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]]):
@@ -663,7 +663,7 @@ def do_diagnostic_setting_delete(sub_diagnostic_setting_deletions: dict[str, dic
                 for ds_name in ds_names:
                     futures.append(tpe.submit(delete_diagnostic_setting, sub_id, resource_id, ds_name))
 
-        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
 
 def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
@@ -714,15 +714,15 @@ def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
 def confirm_uninstall(
     sub_to_rg_deletions: dict[str, list[str]],
     sub_id_to_name: dict[str, str],
-    role_assignment_deletions: dict[str, list[dict[str, str]]],
-    sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
+    sub_to_role_assignment_deletions: dict[str, list[dict[str, str]]],
+    sub_to_resource_id_to_diag_setting_deletions: dict[str, dict[str, list[str]]],
 ):
     """Displays summary of what will be deleted and prompts user for confirmation. Returns true if user confirms, false otherwise"""
     summary = uninstall_summary(
         sub_to_rg_deletions,
         sub_id_to_name,
-        role_assignment_deletions,
-        sub_diagnostic_setting_deletions,
+        sub_to_role_assignment_deletions,
+        sub_to_resource_id_to_diag_setting_deletions,
     )
     log.warning(summary)
 
@@ -932,14 +932,16 @@ def main():
         raise SystemExit(0)
 
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
-    sub_role_assignment_deletions = mark_role_assignment_deletions(sub_id_to_name, control_plane_id_deletions)
-    sub_diagnostic_setting_deletions = mark_diagnostic_setting_deletions(sub_id_to_name, control_plane_id_deletions)
+    sub_to_role_assignment_deletions = mark_role_assignment_deletions(sub_id_to_name, control_plane_id_deletions)
+    sub_to_resource_id_to_diag_setting_deletions = mark_diagnostic_setting_deletions(
+        sub_id_to_name, control_plane_id_deletions
+    )
 
     confirm_uninstall(
         sub_to_rg_deletions,
         sub_id_to_name,
-        sub_role_assignment_deletions,
-        sub_diagnostic_setting_deletions,
+        sub_to_role_assignment_deletions,
+        sub_to_resource_id_to_diag_setting_deletions,
     )
 
     for sub_id, rg_list in sub_to_rg_deletions.items():
@@ -947,8 +949,8 @@ def main():
         log.info(f"Deleting artifacts in {sub_name} ({sub_id})")
         start_resource_group_delete(sub_id, rg_list)
 
-    do_role_assignment_delete(sub_role_assignment_deletions)
-    do_diagnostic_setting_delete(sub_diagnostic_setting_deletions)
+    do_role_assignment_delete(sub_to_role_assignment_deletions)
+    do_diagnostic_setting_delete(sub_to_resource_id_to_diag_setting_deletions)
 
     if sub_to_rg_deletions:
         wait_for_resource_group_deletion(sub_to_rg_deletions)
