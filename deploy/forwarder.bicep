@@ -2,7 +2,6 @@
 // Automated log forwarding setup and scaling will not be set up.
 targetScope = 'resourceGroup'
 
-
 @description('Name of the Container App Managed Environment for the Forwarder')
 @minLength(2)
 @maxLength(60)
@@ -45,6 +44,7 @@ param datadogApiKey string
   'datadoghq.com'
   'datadoghq.eu'
   'ap1.datadoghq.com'
+  'ap2.datadoghq.com'
   'us3.datadoghq.com'
   'us5.datadoghq.com'
   'ddog-gov.com'
