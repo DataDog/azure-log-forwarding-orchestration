@@ -3,17 +3,18 @@
 
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
+# usage: uninstall.py [-h] [-d] [-s SUBSCRIPTION] [-y] [-cp CONTROL_PLANE]
 
-# usage: uninstall.py [-h] [-d] [-s SUBSCRIPTION] [-y]
-#
-# Uninstall Datadog Log Forwarding Orchestration from an Azure environment
-#
-# optional arguments:
+# Uninstall Datadog Azure Log Forwarding Orchestration from an Azure environment
+
+# options:
 #   -h, --help            show this help message and exit
 #   -d, --dry-run         Run the script in dry-run mode. No changes will be made to the Azure environment
 #   -s SUBSCRIPTION, --subscription SUBSCRIPTION
-#                         Specify subscription ID to uninstall artifacts from. If not provided, all subscriptions will be searched
+#                         Specify subscription ID to uninstall artifacts from. If provided, only this subscription will be searched for artifacts
 #   -y, --yes             Skip all user prompts. This will delete all detected installations without confirmation
+#   -cp CONTROL_PLANE, --control-plane CONTROL_PLANE
+#                         Specify control plane ID to search for. If specified, only this control plane ID will be searched for artifacts
 
 import argparse
 import json
@@ -34,6 +35,7 @@ log = getLogger("uninstaller")
 # ===== User settings ===== #
 DRY_RUN_SETTING = False
 SKIP_PROMPTS_SETTING = False
+CLI_CONTROL_PLANE_ID = None
 
 # ===== Constants ===== #
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
@@ -234,13 +236,17 @@ ALLOWED_RESOURCE_TYPES: Final = [
 ]
 ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
 PROGRESS_BAR_LENGTH: Final = 40
-MAX_RETRIES = 6
+MAX_RETRIES = 7
 RESOURCE_GROUP_DELETION_POLLING_DELAY = 5  # seconds
-THREAD_POOL_SIZE = 100  # https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#migrating-to-regional-throttling-and-token-bucket-algorithm
+
+# https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#migrating-to-regional-throttling-and-token-bucket-algorithm
+THREAD_POOL_SIZE = 100
+DIAGNOSTIC_SETTING_THREAD_POOL_SIZE = 30  # diagnostic settings require operations per resource - limit threads here because the Azure Cloud Shell VM may OOM
 
 # ===== Errors ===== #
 REFRESH_TOKEN_EXPIRED_ERROR = "AADSTS700082"
 AZURE_THROTTLING_ERROR = "TooManyRequests"
+RESOURCE_COLLECTION_THROTTLING_ERROR = "ResourceCollectionRequestsThrottled"
 AUTHORIZATION_ERROR = "AuthorizationFailed"
 
 
@@ -342,9 +348,9 @@ def role_assignment_summary(role_assignments: list[Any]) -> str:
     return summary
 
 
-def diagnostic_setting_summary(resource_ds_map: dict[str, list[str]]) -> str:
+def diagnostic_setting_summary(resource_id_to_diag_setting: dict[str, list[str]]) -> str:
     ds_resource_count = defaultdict(int)
-    for _, ds_list in resource_ds_map.items():
+    for _, ds_list in resource_id_to_diag_setting.items():
         for ds_name in ds_list:
             ds_resource_count[ds_name] += 1
 
@@ -366,22 +372,30 @@ def resource_group_summary(resource_groups: list[str]) -> str:
 def uninstall_summary(
     sub_to_rg_deletions: dict[str, list[str]],
     sub_id_to_name: dict[str, str],
-    role_assignment_deletions: dict[str, list[Any]],
-    sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
+    sub_to_role_assignment_deletions: dict[str, list[dict[str, str]]],
+    sub_to_resource_id_to_diag_setting_deletions: dict[str, dict[str, list[str]]],
 ) -> str:
     header = "Deleting the following artifacts"
     deletion_summary = f"{SEPARATOR}{dry_run_of(header) if DRY_RUN_SETTING else header}:\n"
 
-    for sub_id, rg_list in sub_to_rg_deletions.items():
-        deletion_summary += f"From subscription {sub_id_to_name[sub_id]} ({sub_id}):\n"
+    for sub_id, name in sub_id_to_name.items():
+        if (
+            sub_id in sub_to_rg_deletions
+            or sub_id in sub_to_role_assignment_deletions
+            or sub_id in sub_to_resource_id_to_diag_setting_deletions
+        ):
+            deletion_summary += f"From subscription {name} ({sub_id}):\n"
 
-        role_assignments = role_assignment_deletions[sub_id]
-        deletion_summary += role_assignment_summary(role_assignments)
+            if sub_id in sub_to_role_assignment_deletions:
+                role_assignments = sub_to_role_assignment_deletions[sub_id]
+                deletion_summary += role_assignment_summary(role_assignments)
 
-        resource_ds_map = sub_diagnostic_setting_deletions[sub_id]
-        deletion_summary += diagnostic_setting_summary(resource_ds_map)
+            if sub_id in sub_to_resource_id_to_diag_setting_deletions:
+                resource_id_to_diag_setting = sub_to_resource_id_to_diag_setting_deletions[sub_id]
+                deletion_summary += diagnostic_setting_summary(resource_id_to_diag_setting)
 
-        deletion_summary += resource_group_summary(rg_list)
+            if sub_id in sub_to_rg_deletions:
+                deletion_summary += resource_group_summary(sub_to_rg_deletions[sub_id])
 
     return deletion_summary
 
@@ -407,7 +421,7 @@ def az(cmd: str) -> str:
             )
             if resource_group_deletion_complete:
                 return "0"  # handle expected error for polling RG deletion progress - return 0 to indicate there's no resources left
-            if AZURE_THROTTLING_ERROR in stderr:
+            if AZURE_THROTTLING_ERROR in stderr or RESOURCE_COLLECTION_THROTTLING_ERROR in stderr:
                 if attempt < MAX_RETRIES - 1:
                     log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
                     sleep(delay)
@@ -483,8 +497,10 @@ def num_resources_in_group(sub_id: str, resource_group: str) -> int:
 def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     """Queries for LFO control planes in single subscription, returns mapping of resource group name to control plane storage account name"""
 
-    log.debug("Searching for Datadog log forwarding instance in subscription '%s' (%s)... ", sub_name, sub_id)
-    cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
+    if CLI_CONTROL_PLANE_ID:
+        cmd = f"storage account list --subscription {sub_id} --query \"[?name == '{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}{CLI_CONTROL_PLANE_ID}'].{{resourceGroup:resourceGroup, name:name}}\" --output json"
+    else:
+        cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
 
     try:
         storage_accounts_json = json.loads(az(cmd))
@@ -511,9 +527,11 @@ def find_all_control_planes(
     Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to control plane ID mapping
     """
 
+    log.info("Searching for Datadog log forwarding control planes... ")
+
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
         futures = [tpe.submit(find_sub_control_planes, sub_id, sub_name) for sub_id, sub_name in sub_id_to_name.items()]
-        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
     sub_to_rg = defaultdict(list)
     rg_to_lfo_id = defaultdict(list)
@@ -544,8 +562,6 @@ def sub_has_rg(sub_id: str, rg_name: str) -> bool:
 def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> list[dict[str, str]]:
     """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
 
-    log.info(f"Looking for Datadog role assignments in {sub_name} ({sub_id})... ")
-
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
     role_assignment_json = json.loads(
         az(
@@ -553,7 +569,8 @@ def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) ->
         )
     )
 
-    print(f"Found {len(role_assignment_json)} role assignment(s)")
+    if role_assignment_json:
+        log.info(f"Found {len(role_assignment_json)} role assignment(s) in {sub_name} ({sub_id})")
 
     return role_assignment_json
 
@@ -588,10 +605,9 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
     if not resource_ids:
         return resource_ds_map
 
-    log.info(f"Looking for Datadog log forwarding diagnostic settings in {sub_name} ({sub_id})... ")
     ds_count = 0
     diagnostic_settings_filter = " || ".join(f"name == '{DIAGNOSTIC_SETTING_PREFIX}{id}'" for id in control_plane_ids)
-    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+    with ThreadPoolExecutor(DIAGNOSTIC_SETTING_THREAD_POOL_SIZE) as tpe:
         ds_futures = [
             tpe.submit(
                 az,
@@ -599,7 +615,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
             )
             for resource_id in resource_ids
         ]
-        progress_spinner(resource_count, lambda: sum(not f.running() for f in ds_futures))
+        progress_spinner(resource_count, lambda: sum(f.done() for f in ds_futures))
 
     for resource_id, ds_future in zip(resource_ids, ds_futures):
         ds_names = json.loads(ds_future.result())
@@ -618,12 +634,11 @@ def delete_diagnostic_setting(sub_id: str, resource_id: str, ds_name: str):
     az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
 
 
-def delete_roles_diag_settings(
-    sub_id: str,
-    sub_role_assignment_deletions: dict[str, list[dict[str, str]]],
-    sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
-):
-    delete_log = "Deleting role assignments and diagnostic settings"
+def do_role_assignment_delete(sub_role_assignment_deletions: dict[str, list[dict[str, str]]]):
+    if not sub_role_assignment_deletions:
+        return
+
+    delete_log = "Deleting role assignments..."
     log.info(dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log)
 
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
@@ -631,12 +646,24 @@ def delete_roles_diag_settings(
         for sub_id, role_assignments_json in sub_role_assignment_deletions.items():
             if role_assignments_json:
                 futures.append(tpe.submit(delete_role_assignments, sub_id, role_assignments_json))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
+
+
+def do_diagnostic_setting_delete(sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]]):
+    if not sub_diagnostic_setting_deletions:
+        return
+
+    delete_log = "Deleting diagnostic settings..."
+    log.info(dry_run_of(delete_log) if DRY_RUN_SETTING else delete_log)
+
+    with ThreadPoolExecutor(DIAGNOSTIC_SETTING_THREAD_POOL_SIZE) as tpe:
+        futures: list[Future[None]] = []
         for sub_id, resource_ds_map in sub_diagnostic_setting_deletions.items():
             for resource_id, ds_names in resource_ds_map.items():
                 for ds_name in ds_names:
                     futures.append(tpe.submit(delete_diagnostic_setting, sub_id, resource_id, ds_name))
 
-        progress_spinner(len(futures), lambda: sum(not f.running() for f in futures))
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
 
 def start_resource_group_delete(sub_id: str, resource_group_list: list[str]):
@@ -687,15 +714,15 @@ def wait_for_resource_group_deletion(sub_to_rg_deletions: dict[str, list[str]]):
 def confirm_uninstall(
     sub_to_rg_deletions: dict[str, list[str]],
     sub_id_to_name: dict[str, str],
-    role_assignment_deletions: dict[str, list[dict[str, str]]],
-    sub_diagnostic_setting_deletions: dict[str, dict[str, list[str]]],
+    sub_to_role_assignment_deletions: dict[str, list[dict[str, str]]],
+    sub_to_resource_id_to_diag_setting_deletions: dict[str, dict[str, list[str]]],
 ):
     """Displays summary of what will be deleted and prompts user for confirmation. Returns true if user confirms, false otherwise"""
     summary = uninstall_summary(
         sub_to_rg_deletions,
         sub_id_to_name,
-        role_assignment_deletions,
-        sub_diagnostic_setting_deletions,
+        sub_to_role_assignment_deletions,
+        sub_to_resource_id_to_diag_setting_deletions,
     )
     log.warning(summary)
 
@@ -786,19 +813,22 @@ def mark_control_plane_deletions(
 ) -> set[str]:
     """Based on the resource groups the user selected previously, return the control plane IDs to target for deletion"""
 
+    if CLI_CONTROL_PLANE_ID:
+        # User specified the control plane ID to search for
+        return {CLI_CONTROL_PLANE_ID}
+
     return {
         lfo_id for rg_deletions in sub_to_rg_deletions.values() for rg in rg_deletions for lfo_id in rg_to_lfo_id[rg]
     }
 
 
 def mark_role_assignment_deletions(
-    sub_to_rg_deletions: dict[str, list[str]],
-    sub_id_to_name: dict,
+    sub_id_to_name: dict[str, str],
     control_plane_id_deletions: set[str],
 ) -> dict[str, list[dict[str, str]]]:
     role_assignment_deletions = defaultdict(list)
-    for sub_id in sub_to_rg_deletions:
-        sub_name = sub_id_to_name[sub_id]
+    log.info("Searching for Datadog role assignments in subscriptions... ")
+    for sub_id, sub_name in sub_id_to_name.items():
         role_assignment_json = find_role_assignments(sub_id, sub_name, control_plane_id_deletions)
         if role_assignment_json:
             role_assignment_deletions[sub_id] = role_assignment_json
@@ -807,13 +837,12 @@ def mark_role_assignment_deletions(
 
 
 def mark_diagnostic_setting_deletions(
-    sub_to_rg_deletions: dict[str, list[str]],
-    sub_id_to_name: dict,
+    sub_id_to_name: dict[str, str],
     control_plane_id_deletions: set[str],
 ) -> dict[str, dict[str, list[str]]]:
     sub_diagnostic_setting_deletions = defaultdict(dict)
-    for sub_id in sub_to_rg_deletions:
-        sub_name = sub_id_to_name[sub_id]
+    log.info("Searching for Datadog diagnostic settings in subscriptions... ")
+    for sub_id, sub_name in sub_id_to_name.items():
         resource_ds_map = find_diagnostic_settings(sub_id, sub_name, control_plane_id_deletions)
         if resource_ds_map:
             sub_diagnostic_setting_deletions[sub_id] = resource_ds_map
@@ -835,7 +864,7 @@ def parse_args():
         "-s",
         "--subscription",
         type=str,
-        help="Specify subscription ID to uninstall artifacts from. If not provided, all subscriptions will be searched",
+        help="Specify subscription ID to uninstall artifacts from. If provided, only this subscription will be searched for artifacts",
     )
     parser.add_argument(
         "-y",
@@ -843,9 +872,15 @@ def parse_args():
         action="store_true",
         help="Skip all user prompts. This will delete all detected installations without confirmation",
     )
+    parser.add_argument(
+        "-cp",
+        "--control-plane",
+        type=str,
+        help="Specify control plane ID to search for. If specified, only this control plane ID will be searched for artifacts",
+    )
     args = parser.parse_args()
 
-    global DRY_RUN_SETTING, SKIP_PROMPTS_SETTING
+    global DRY_RUN_SETTING, SKIP_PROMPTS_SETTING, CLI_CONTROL_PLANE_ID
     if args.dry_run:
         DRY_RUN_SETTING = True
         log.info("Dry run enabled, no changes will be made")
@@ -861,6 +896,11 @@ def parse_args():
     if args.yes:
         SKIP_PROMPTS_SETTING = True
         log.warning("Skipping all user prompts. Script will execute without user confirmation")
+
+    if args.control_plane:
+        CLI_CONTROL_PLANE_ID = args.control_plane
+        log.info(f"Searching specifically for control plane {CLI_CONTROL_PLANE_ID}")
+
     return args
 
 
@@ -887,33 +927,33 @@ def main():
     sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
     sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
 
-    if not any(sub_to_rg_deletions.values()):
+    if not any(sub_to_rg_deletions.values()) and not CLI_CONTROL_PLANE_ID:
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
 
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
-
-    sub_role_assignment_deletions = mark_role_assignment_deletions(
-        sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
-    )
-    sub_diagnostic_setting_deletions = mark_diagnostic_setting_deletions(
-        sub_to_rg_deletions, sub_id_to_name, control_plane_id_deletions
+    sub_to_role_assignment_deletions = mark_role_assignment_deletions(sub_id_to_name, control_plane_id_deletions)
+    sub_to_resource_id_to_diag_setting_deletions = mark_diagnostic_setting_deletions(
+        sub_id_to_name, control_plane_id_deletions
     )
 
     confirm_uninstall(
         sub_to_rg_deletions,
         sub_id_to_name,
-        sub_role_assignment_deletions,
-        sub_diagnostic_setting_deletions,
+        sub_to_role_assignment_deletions,
+        sub_to_resource_id_to_diag_setting_deletions,
     )
 
     for sub_id, rg_list in sub_to_rg_deletions.items():
         sub_name = sub_id_to_name[sub_id]
-        log.info(f"{SEPARATOR}Deleting artifacts in {sub_name} ({sub_id})")
+        log.info(f"Deleting artifacts in {sub_name} ({sub_id})")
         start_resource_group_delete(sub_id, rg_list)
-        delete_roles_diag_settings(sub_id, sub_role_assignment_deletions, sub_diagnostic_setting_deletions)
 
-    wait_for_resource_group_deletion(sub_to_rg_deletions)
+    do_role_assignment_delete(sub_to_role_assignment_deletions)
+    do_diagnostic_setting_delete(sub_to_resource_id_to_diag_setting_deletions)
+
+    if sub_to_rg_deletions:
+        wait_for_resource_group_deletion(sub_to_rg_deletions)
 
     # Execute a second delete because Azure sometimes deletes all the resources within, but not the group itself
     for sub_id, rg_list in sub_to_rg_deletions.items():
