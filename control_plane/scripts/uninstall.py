@@ -524,7 +524,8 @@ def find_all_control_planes(
 ) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """
     Queries for all LFO control planes that the user has access to.
-    Returns 2 dictionaries - a subcription ID to resource group mapping and a resource group to control plane ID mapping
+    Returns 2 dictionaries - a subcription ID to control plane resource group mapping and
+    a control plane resource group to control plane ID mapping
     """
 
     log.info("Searching for Datadog log forwarding control planes... ")
@@ -776,7 +777,11 @@ def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_grou
 def mark_rg_deletions_per_sub(
     sub_id_to_name: dict[str, str], sub_id_to_rgs: dict[str, list[str]]
 ) -> dict[str, list[str]]:
-    """Returns mapping of subscription ID to resource groups within it to delete. May prompt user for input if multiple control planes are found in a sub"""
+    """
+    Returns mapping of subscription ID to resource groups within it to delete.
+    Prompts user for input if multiple control plane resource groups are found in a sub.
+    Tries to find forwarder container app env resource groups to delete based on control plane resource group name.
+    """
 
     sub_id_to_rg_deletions = {}
     if not sub_id_to_rgs:
@@ -822,6 +827,17 @@ def mark_control_plane_deletions(
         lfo_id for rg_deletions in sub_to_rg_deletions.values() for rg in rg_deletions for lfo_id in rg_to_lfo_id[rg]
     }
 
+def mark_forwarder_env_rg_deletions(
+    sub_id_to_name: dict[str, str],
+    control_plane_id_deletions: set[str],
+) -> dict[str, list[str]]:
+    """
+    Returns mapping of subscription ID to forwarder container app env resource groups within it to delete.
+    """
+    sub_to_forwarder_env_rg_deletions = {}
+    for sub_id, sub_name in sub_id_to_name.items():
+        forwarder_env_rg_deletions = find_forwarder_env_rg_deletions(sub_id, sub_name, control_plane_id_deletions)
+        if forwarder_env_rg_deletions:
 
 def mark_role_assignment_deletions(
     sub_id_to_name: dict[str, str],
@@ -925,15 +941,15 @@ def main():
     args = parse_args()
 
     sub_id_to_name = list_users_subscriptions(args.subscription)
-    sub_id_to_rgs, rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
-    sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_rgs)
+    sub_id_to_control_plane_rgs, control_plane_rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
+    sub_to_rg_deletions = mark_rg_deletions_per_sub(sub_id_to_name, sub_id_to_control_plane_rgs)
 
     if not any(sub_to_rg_deletions.values()) and not CLI_CONTROL_PLANE_ID:
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
 
-    control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
-    # forwarder_env_rg_deletions = mark_forwarder_env_rg_deletions(sub_id_to_name, control_plane_id_deletions)
+    control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, control_plane_rg_to_lfo_id)
+    forwarder_env_rg_deletions = mark_forwarder_env_rg_deletions(sub_id_to_name, control_plane_id_deletions)
     sub_to_role_assignment_deletions = mark_role_assignment_deletions(sub_id_to_name, control_plane_id_deletions)
     sub_to_resource_id_to_diag_setting_deletions = mark_diagnostic_setting_deletions(
         sub_id_to_name, control_plane_id_deletions
