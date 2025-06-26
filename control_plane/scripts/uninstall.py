@@ -533,22 +533,22 @@ def find_all_control_planes(
         futures = [tpe.submit(find_sub_control_planes, sub_id, sub_name) for sub_id, sub_name in sub_id_to_name.items()]
         progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
-    sub_to_rg = defaultdict(list)
-    rg_to_lfo_id = defaultdict(list)
+    sub_to_control_plane_rg = defaultdict(list)
+    control_plane_rg_to_lfo_id = defaultdict(list)
     for control_planes_future, sub_id in zip(futures, sub_id_to_name):
         if e := control_planes_future.exception():
             log.error(f"Unexpected error searching for control planes in {sub_id_to_name[sub_id]} ({sub_id}): {e}")
             continue
 
-        control_planes = control_planes_future.result()
+        control_plane_rg_to_storage_acct_name = control_planes_future.result()
 
-        for resource_group_name, storage_account_name in control_planes.items():
-            sub_to_rg[sub_id].append(resource_group_name)
-            rg_to_lfo_id[resource_group_name].append(
+        for resource_group_name, storage_account_name in control_plane_rg_to_storage_acct_name.items():
+            sub_to_control_plane_rg[sub_id].append(resource_group_name)
+            control_plane_rg_to_lfo_id[resource_group_name].append(
                 storage_account_name.removeprefix(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX)
             )
 
-    return sub_to_rg, rg_to_lfo_id
+    return sub_to_control_plane_rg, control_plane_rg_to_lfo_id
 
 
 def sub_has_rg(sub_id: str, rg_name: str) -> bool:
@@ -776,7 +776,7 @@ def identify_resource_groups_to_delete(sub_id: str, sub_name: str, resource_grou
 def mark_rg_deletions_per_sub(
     sub_id_to_name: dict[str, str], sub_id_to_rgs: dict[str, list[str]]
 ) -> dict[str, list[str]]:
-    """Returns mapping of subscription ID to resource groups within it to delete. May prompt user for input if multiple resource groups are found in a sub"""
+    """Returns mapping of subscription ID to resource groups within it to delete. May prompt user for input if multiple control planes are found in a sub"""
 
     sub_id_to_rg_deletions = {}
     if not sub_id_to_rgs:
@@ -799,7 +799,8 @@ def mark_rg_deletions_per_sub(
         if any(rgs_to_delete):
             sub_id_to_rg_deletions.setdefault(sub_id, []).extend(rgs_to_delete)
 
-        # Check if other subs have the resource group that the user chose to delete, mark them for deletion if so
+        # Check if other subs have the resource group that the user chose to delete, mark them for deletion if so.
+        # If the control plane resource group still exists, this loop will also mark forwarder env resource groups for deletion.
         for sub_id, _ in sub_id_to_rgs.items():
             for rg in rgs_to_delete:
                 if sub_has_rg(sub_id, rg) and rg not in sub_id_to_rg_deletions.get(sub_id, []):
@@ -932,6 +933,7 @@ def main():
         raise SystemExit(0)
 
     control_plane_id_deletions = mark_control_plane_deletions(sub_to_rg_deletions, rg_to_lfo_id)
+    # forwarder_env_rg_deletions = mark_forwarder_env_rg_deletions(sub_id_to_name, control_plane_id_deletions)
     sub_to_role_assignment_deletions = mark_role_assignment_deletions(sub_id_to_name, control_plane_id_deletions)
     sub_to_resource_id_to_diag_setting_deletions = mark_diagnostic_setting_deletions(
         sub_id_to_name, control_plane_id_deletions
