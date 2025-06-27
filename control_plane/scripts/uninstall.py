@@ -35,7 +35,8 @@ log = getLogger("uninstaller")
 # ===== User settings ===== #
 DRY_RUN_SETTING = False
 SKIP_PROMPTS_SETTING = False
-CLI_CONTROL_PLANE_ID = None
+CONTROL_PLANE_ID_SETTING = None
+SUBSCRIPTION_ID_SETTING = None
 
 # ===== Constants ===== #
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
@@ -254,6 +255,7 @@ AUTHORIZATION_ERROR = "AuthorizationFailed"
 
 # ===== Utility ===== #
 SubIdToResourceGroupsDict: TypeAlias = dict[str, list[str]]
+ResourceGroupToLfoIdsDict: TypeAlias = dict[str, list[str]]
 SubIdToRoleAssignmentsDict: TypeAlias = dict[str, list[dict[str, str]]]
 SubIdToResourceIdToDiagSettingsDict: TypeAlias = dict[str, dict[str, list[str]]]
 
@@ -449,32 +451,13 @@ def az(cmd: str) -> str:
     raise SystemExit(1)  # unreachable
 
 
-def list_users_subscriptions(sub_id=None) -> dict:
-    if sub_id is None:
-        log.info("Fetching details for all subscriptions accessible by current user... ")
-        print_progress(0, 1)
-        subs_json = json.loads(az("account list --output json"))
-        print_progress(1, 1)
-        print(f"Found {len(subs_json)} subscription(s)")
-        return {sub["id"]: sub["name"] for sub in subs_json}
-
-    log.info(f"Fetching details for subscription {sub_id}... ")
-    subs_json = None
+def list_users_subscriptions() -> dict:
+    log.info("Fetching details for all subscriptions accessible by current user... ")
     print_progress(0, 1)
-
-    try:
-        subs_json = json.loads(az(f"account show --name {sub_id} --output json"))
-    except subprocess.CalledProcessError as e:
-        print_progress(1, 1)
-        if f"Subscription '{sub_id}' not found" in str(e.stderr):
-            log.error(f"Subscription '{sub_id}' not found, exiting")
-
-        log.error(f"Error fetching subscription details: {e.stderr}")
-        raise SystemExit(1) from e
-
+    subs_json = json.loads(az("account list --output json"))
     print_progress(1, 1)
-    print(f"Found {subs_json['name']} ({subs_json['id']})")
-    return {subs_json["id"]: subs_json["name"]}
+    print(f"Found {len(subs_json)} subscription(s)")
+    return {sub["id"]: sub["name"] for sub in subs_json}
 
 
 def list_resources(sub_id: str, sub_name: str) -> set:
@@ -507,8 +490,8 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
     Returns mapping of control plane resource group name to control plane storage account name
     """
 
-    if CLI_CONTROL_PLANE_ID:
-        cmd = f"storage account list --subscription {sub_id} --query \"[?name == '{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}{CLI_CONTROL_PLANE_ID}'].{{resourceGroup:resourceGroup, name:name}}\" --output json"
+    if CONTROL_PLANE_ID_SETTING:
+        cmd = f"storage account list --subscription {sub_id} --query \"[?name == '{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}{CONTROL_PLANE_ID_SETTING}'].{{resourceGroup:resourceGroup, name:name}}\" --output json"
     else:
         cmd = f"storage account list --subscription {sub_id} --query \"[?starts_with(name,'{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}')].{{resourceGroup:resourceGroup, name:name}}\" --output json"
 
@@ -517,7 +500,6 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
         control_plane_rg_to_storage_acct_name = {
             account["resourceGroup"]: account["name"] for account in storage_accounts_json
         }
-        log.debug("Found %s log forwarding control plane(s)", len(control_plane_rg_to_storage_acct_name))
         return control_plane_rg_to_storage_acct_name
     except RefreshTokenError as e:
         log.warning(
@@ -533,24 +515,25 @@ def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
 
 def find_all_control_planes(
     sub_id_to_name: dict[str, str],
-) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+) -> tuple[SubIdToResourceGroupsDict, ResourceGroupToLfoIdsDict]:
     """
-    Queries for all LFO control planes that the user has access to.
-    Returns 2 dictionaries - a subcription ID to control plane resource group mapping and
-    a control plane resource group to control plane ID mapping
+    Queries for all LFO control planes within a set of subscriptions.
+    Returns 2 dictionaries:
+        - A subscription ID to control plane resource group mapping
+        - A control plane resource group to control plane ID mapping
     """
 
-    log.info("Searching for Datadog log forwarding control planes... ")
+    subs_to_search = filter_subs_to_search(sub_id_to_name, "control planes")
 
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
-        futures = [tpe.submit(find_sub_control_planes, sub_id, sub_name) for sub_id, sub_name in sub_id_to_name.items()]
+        futures = [tpe.submit(find_sub_control_planes, sub_id, sub_name) for sub_id, sub_name in subs_to_search.items()]
         progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
 
     sub_to_control_plane_rg = defaultdict(list)
     control_plane_rg_to_lfo_id = defaultdict(list)
-    for control_planes_future, sub_id in zip(futures, sub_id_to_name):
+    for control_planes_future, sub_id in zip(futures, subs_to_search):
         if e := control_planes_future.exception():
-            log.error(f"Unexpected error searching for control planes in {sub_id_to_name[sub_id]} ({sub_id}): {e}")
+            log.error(f"Unexpected error searching for control planes in {subs_to_search[sub_id]} ({sub_id}): {e}")
             continue
 
         control_plane_rg_to_storage_acct_name = control_planes_future.result()
@@ -574,14 +557,14 @@ def find_all_forwarder_envs(
         2) Log forwarder resource group to LFO ID mapping
     """
 
-    log.info("Searching for log forwarders... ")
+    subs_to_search = filter_subs_to_search(sub_id_to_name, "log forwarders")
 
     sub_id_to_forwarder_rg: SubIdToResourceGroupsDict = defaultdict(list)
     forwarder_rgs_to_lfo_id: SubIdToResourceGroupsDict = defaultdict(list)
-    for sub_id in sub_id_to_name:
+    for sub_id in subs_to_search:
         cmd = f"resource list --subscription {sub_id} --resource-type {CONTAINER_APP_ENV_RESOURCE_TYPE} --query \"[?starts_with(name,'{FORWARDER_ENVIRONMENT_PREFIX}')].{{name:name,resourceGroup:resourceGroup}}\" --output json"
-        if CLI_CONTROL_PLANE_ID:
-            cmd = f"resource list --subscription {sub_id} --resource-type {CONTAINER_APP_ENV_RESOURCE_TYPE} --query \"[?starts_with(name,'{FORWARDER_ENVIRONMENT_PREFIX}{CLI_CONTROL_PLANE_ID}')].{{name:name,resourceGroup:resourceGroup}}\" --output json"
+        if CONTROL_PLANE_ID_SETTING:
+            cmd = f"resource list --subscription {sub_id} --resource-type {CONTAINER_APP_ENV_RESOURCE_TYPE} --query \"[?starts_with(name,'{FORWARDER_ENVIRONMENT_PREFIX}{CONTROL_PLANE_ID_SETTING}')].{{name:name,resourceGroup:resourceGroup}}\" --output json"
 
         forwarder_envs = json.loads(az(cmd))
         for forwarder_env in forwarder_envs:
@@ -593,6 +576,24 @@ def find_all_forwarder_envs(
                 forwarder_rgs_to_lfo_id[forwarder_rg].append(forwarder_id)
 
     return sub_id_to_forwarder_rg, forwarder_rgs_to_lfo_id
+
+
+def filter_subs_to_search(sub_id_to_name: dict[str, str], log_context: str) -> dict[str, str]:
+    """Returns a subset of subscription ID to name dict based on whether the user supplied the subscription ID parameter"""
+    if not SUBSCRIPTION_ID_SETTING:
+        log.info(f"Searching for Datadog {log_context}... ")
+        return sub_id_to_name
+
+    subs_to_search = sub_id_to_name
+
+    if SUBSCRIPTION_ID_SETTING not in sub_id_to_name:
+        log.error(f"User-given subscription ID '{SUBSCRIPTION_ID_SETTING}' not found, exiting")
+        raise SystemExit(1)
+
+    subs_to_search = {SUBSCRIPTION_ID_SETTING: sub_id_to_name[SUBSCRIPTION_ID_SETTING]}
+    log.info(f"Searching for Datadog {log_context} in subscription '{SUBSCRIPTION_ID_SETTING}'")
+
+    return subs_to_search
 
 
 def sub_has_rg(sub_id: str, rg_name: str) -> bool:
@@ -889,9 +890,9 @@ def mark_lfo_id_deletions(
 ) -> set[str]:
     """Based on the control plane resource groups the user selected to delete, return the control plane IDs to target for deletion"""
 
-    if CLI_CONTROL_PLANE_ID:
+    if CONTROL_PLANE_ID_SETTING:
         # User specified the control plane ID to search for
-        return {CLI_CONTROL_PLANE_ID}
+        return {CONTROL_PLANE_ID_SETTING}
 
     return {
         lfo_id for rg_deletions in sub_to_rg_deletions.values() for rg in rg_deletions for lfo_id in rg_to_lfo_ids[rg]
@@ -938,7 +939,7 @@ def parse_args():
         "-s",
         "--subscription",
         type=str,
-        help="Specify subscription ID to search for log forwarding artifacts. This can save time because that every subscription won't be searched.",
+        help="Specify subscription ID to search for log forwarding artifacts. This can save time if you know the subscription where log forwarding was installed.",
     )
     parser.add_argument(
         "-y",
@@ -954,7 +955,7 @@ def parse_args():
     )
     args = parser.parse_args()
 
-    global DRY_RUN_SETTING, SKIP_PROMPTS_SETTING, CLI_CONTROL_PLANE_ID
+    global DRY_RUN_SETTING, SKIP_PROMPTS_SETTING, CONTROL_PLANE_ID_SETTING, SUBSCRIPTION_ID_SETTING
     if args.dry_run:
         DRY_RUN_SETTING = True
         log.info("Dry run enabled, no changes will be made")
@@ -972,8 +973,12 @@ def parse_args():
         log.warning("Skipping all user prompts. Script will execute without user confirmation")
 
     if args.control_plane:
-        CLI_CONTROL_PLANE_ID = args.control_plane
-        log.info(f"Searching for log forwarding artifacts related to ID '{CLI_CONTROL_PLANE_ID}'")
+        CONTROL_PLANE_ID_SETTING = args.control_plane
+        log.info(f"Will search for log forwarding artifacts related to ID '{CONTROL_PLANE_ID_SETTING}'")
+
+    if args.subscription:
+        SUBSCRIPTION_ID_SETTING = args.subscription
+        log.info(f"Will begin search within subscription '{SUBSCRIPTION_ID_SETTING}'")
 
     return args
 
@@ -981,11 +986,11 @@ def parse_args():
 def main():
     """
     Overview:
-    1) Fetch subscriptions accessible by current user. If user specified a subscription ID as param, only search that one.
+    1) Fetch subscriptions accessible by current user. If user specified a subscription ID as param, filter down the 2a and 2b subscriptiopn searches.
     2a) For each subscription, search for LFO control planes. If found:
         - Map the subscription to control plane resource group
         - Map the control plane resource group to LFO ID
-    2b) If a control plane was not found, search for log forwarder resource groups. If found:
+    2b) If a control plane was not found, search for log forwarder resource groups in each subscription. If found:
         - Map the subscription to log forwarder resource group
         - Map the log forwarder resource group to LFO ID
     3) For each subscription, determine which LFO resource groups need to be deleted. User will be prompted to confirm which resource group(s) to delete.
@@ -997,19 +1002,19 @@ def main():
     8) Confirm the artifacts are deleted successfully.
     """
 
-    args = parse_args()
+    parse_args()
 
-    sub_id_to_name = list_users_subscriptions(args.subscription)
+    sub_id_to_name = list_users_subscriptions()
 
     sub_to_resource_groups_to_delete: SubIdToResourceGroupsDict = defaultdict(list)
     rg_to_lfo_ids: SubIdToResourceGroupsDict = defaultdict(list)
 
     sub_id_to_control_plane_rgs, control_plane_rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
-    control_plane_found = False
+
+    control_plane_found = len(control_plane_rg_to_lfo_id) > 0
     log_forwarders_found = False
 
-    if control_plane_rg_to_lfo_id:
-        control_plane_found = True
+    if control_plane_found:
         log.info("Found Datadog log forwarding control plane(s)")
         # If we found a control plane, build deletion plan based on that
         sub_to_resource_groups_to_delete = sub_id_to_control_plane_rgs
@@ -1018,8 +1023,9 @@ def main():
         # No control plane found. Look for forwarder app environments instead - build deletion plan off those if found
         log.info("Did not find any control planes, searching for log forwarders...")
         sub_id_to_forwarder_rgs, forwarder_rgs_to_lfo_id = find_all_forwarder_envs(sub_id_to_name)
-        if forwarder_rgs_to_lfo_id:
-            log_forwarders_found = True
+        log_forwarders_found = len(forwarder_rgs_to_lfo_id) > 0
+
+        if log_forwarders_found:
             sub_to_resource_groups_to_delete = sub_id_to_forwarder_rgs
             rg_to_lfo_ids = forwarder_rgs_to_lfo_id
 
@@ -1030,7 +1036,7 @@ def main():
 
     sub_to_rg_deletions = mark_rg_deletions(sub_id_to_name, sub_to_resource_groups_to_delete, control_plane_found)
 
-    if not any(sub_to_rg_deletions.values()) and not CLI_CONTROL_PLANE_ID:
+    if not any(sub_to_rg_deletions.values()) and not CONTROL_PLANE_ID_SETTING:
         log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
         raise SystemExit(0)
 
