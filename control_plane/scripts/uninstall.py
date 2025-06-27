@@ -569,7 +569,7 @@ def find_all_forwarder_envs(
         forwarder_envs = json.loads(az(cmd))
         for forwarder_env in forwarder_envs:
             forwarder_rg = forwarder_env["resourceGroup"]
-            forwarder_id = forwarder_env["name"].removeprefix(FORWARDER_ENVIRONMENT_PREFIX)
+            forwarder_id = forwarder_env["name"].removeprefix(FORWARDER_ENVIRONMENT_PREFIX).split("-")[0]
             if forwarder_rg not in sub_id_to_forwarder_rg[sub_id]:
                 sub_id_to_forwarder_rg[sub_id].append(forwarder_rg)
             if forwarder_id not in forwarder_rgs_to_lfo_id[forwarder_rg]:
@@ -771,7 +771,7 @@ def confirm_uninstall(
 ):
     """
     Displays summary of what will be deleted and prompts user for confirmation.
-    Returns true if user confirms, exits program otherwise
+    Returns if user confirms, exits program otherwise
     """
     summary = uninstall_summary(
         sub_id_to_name,
