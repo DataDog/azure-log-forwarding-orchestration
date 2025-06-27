@@ -843,7 +843,6 @@ def mark_rg_deletions(
         log.info("Did not find any Datadog log forwarding artifacts to delete")
         return sub_id_to_rg_deletions
 
-    log.info("Found log forwarding artifacts in subscriptions")
     for sub_id, rg_list in sub_id_to_rgs.items():
         sub_name = sub_id_to_name[sub_id]
         rgs_to_delete = identify_rgs_to_delete(sub_id, sub_name, rg_list)
@@ -982,13 +981,15 @@ def parse_args():
 def main():
     """
     Overview:
-    1) Fetch subscriptions accessible by current user or the single specified one.
-    2) For each subscription, search for LFO control planes. If found:
+    1) Fetch subscriptions accessible by current user. If user specified a subscription ID as param, only search that one.
+    2a) For each subscription, search for LFO control planes. If found:
         - Map the subscription to control plane resource group
-        - Map the resource group to storage account mapping
-    3) For each subscription, determine which LFO resource groups need to be deleted
-        - If there is only one resource group, mark it for deletion
-        - If there are multiple, user input may be required to disambiguate
+        - Map the control plane resource group to LFO ID
+    2b) If a control plane was not found, search for log forwarder resource groups. If found:
+        - Map the subscription to log forwarder resource group
+        - Map the log forwarder resource group to LFO ID
+    3) For each subscription, determine which LFO resource groups need to be deleted. User will be prompted to confirm which resource group(s) to delete.
+        - If the user specified a control plane ID, only resource groups associated to that ID will be displayed.
     4) Based on the resource groups marked for deletion, note the corresponding control plane IDs
     5) Based on control plane IDs, find corresponding role assignments and diagnostic settings
     6) Display summary of what will be deleted to user. May prompt for confirmation.
@@ -1009,13 +1010,13 @@ def main():
 
     if control_plane_rg_to_lfo_id:
         control_plane_found = True
-        log.info("Found control plane(s) to delete")
+        log.info("Found Datadog log forwarding control plane(s)")
         # If we found a control plane, build deletion plan based on that
         sub_to_resource_groups_to_delete = sub_id_to_control_plane_rgs
         rg_to_lfo_ids = control_plane_rg_to_lfo_id
     else:
         # No control plane found. Look for forwarder app environments instead - build deletion plan off those if found
-        log.info("Did not find any control planes")
+        log.info("Did not find any control planes, searching for log forwarders...")
         sub_id_to_forwarder_rgs, forwarder_rgs_to_lfo_id = find_all_forwarder_envs(sub_id_to_name)
         if forwarder_rgs_to_lfo_id:
             log_forwarders_found = True
