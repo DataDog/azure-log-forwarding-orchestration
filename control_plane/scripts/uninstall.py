@@ -252,21 +252,21 @@ AZURE_THROTTLING_ERROR = "TooManyRequests"
 RESOURCE_COLLECTION_THROTTLING_ERROR = "ResourceCollectionRequestsThrottled"
 AUTHORIZATION_ERROR = "AuthorizationFailed"
 
-
-# ===== Utility ===== #
+# ===== Type Aliases ===== #
 SubIdToResourceGroupsDict: TypeAlias = dict[str, list[str]]
 ResourceGroupToLfoIdsDict: TypeAlias = dict[str, list[str]]
 SubIdToRoleAssignmentsDict: TypeAlias = dict[str, list[dict[str, str]]]
 SubIdToResourceIdToDiagSettingsDict: TypeAlias = dict[str, dict[str, list[str]]]
 
 
+# ===== Utility ===== #
 def first_key_of(d: dict[str, Any]) -> str:
     if not d:
         raise ValueError("Empty dictionary")
     return next(iter(d))
 
 
-def space_separated(iter: Iterable) -> str:
+def space_separated(iter: Iterable[str]) -> str:
     return " ".join(iter)
 
 
@@ -352,7 +352,8 @@ def role_assignment_summary(role_assignments: list[Any]) -> str:
     for role_assignment in role_assignments:
         definition_name = role_assignment["roleDefinitionName"]
         principal_id = role_assignment["principalId"]
-        summary += f"\t\t- {definition_name} for principal {principal_id}\n"
+        is_unknown = role_assignment["principalName"] == ""
+        summary += f"\t\t- {definition_name} for principal {principal_id}{' (Unknown)' if is_unknown else ''}\n"
 
     return summary
 
@@ -393,7 +394,7 @@ def uninstall_summary(
             or sub_id in sub_to_role_assignment_deletions
             or sub_id in sub_to_resource_id_to_diag_setting_deletions
         ):
-            deletion_summary += f"From subscription {name} ({sub_id}):\n"
+            deletion_summary += f"From subscription '{name}' ({sub_id}):\n"
 
             if sub_id in sub_to_role_assignment_deletions:
                 role_assignments = sub_to_role_assignment_deletions[sub_id]
@@ -588,7 +589,7 @@ def filter_subs_to_search(sub_id_to_name: dict[str, str], log_context: str) -> d
 
     if SUBSCRIPTION_ID_SETTING not in sub_id_to_name:
         log.error(f"User-given subscription ID '{SUBSCRIPTION_ID_SETTING}' not found, exiting")
-        raise SystemExit(1)
+        raise SystemExit(0)
 
     subs_to_search = {SUBSCRIPTION_ID_SETTING: sub_id_to_name[SUBSCRIPTION_ID_SETTING]}
     log.info(f"Searching for Datadog {log_context} in subscription '{SUBSCRIPTION_ID_SETTING}'")
@@ -604,20 +605,55 @@ def sub_has_rg(sub_id: str, rg_name: str) -> bool:
         return False
 
 
+ROLE_ASSIGNMENT_QUERY_SELECT: Final = (
+    "id: id, roleDefinitionName: roleDefinitionName, principalId: principalId, principalName: principalName"
+)
+
+
 def find_role_assignments(sub_id: str, sub_name: str, control_plane_ids: set) -> list[dict[str, str]]:
     """Returns JSON array of role assignments (properties = id, roleDefinitionName, principalId)"""
 
     description_filter = " || ".join(f"description == 'ddlfo{id}'" for id in control_plane_ids)
     role_assignment_json = json.loads(
         az(
-            f'role assignment list --all --subscription {sub_id} --query "[?description != null && ({description_filter})].{{id: id, roleDefinitionName: roleDefinitionName, principalId: principalId}}" --output json'
+            f'role assignment list --all --subscription {sub_id} --query "[?description != null && ({description_filter})].{{{ROLE_ASSIGNMENT_QUERY_SELECT}}}" --output json'
         )
     )
 
     if role_assignment_json:
-        log.info(f"Found {len(role_assignment_json)} role assignment(s) in {sub_name} ({sub_id})")
+        log.info(f"Found {len(role_assignment_json)} role assignment(s) in '{sub_name}' ({sub_id})")
 
     return role_assignment_json
+
+
+def find_unknown_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, list[dict[str, str]]]:
+    """Returns a dictionary of subscription ID to list of 'Unknown' role assignments leftover from previous LFO installations."""
+
+    unknown_role_assignments_filter = "[?principalName=='' && description != null && starts_with(description, 'ddlfo')]"
+
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+        futures = [
+            tpe.submit(
+                az,
+                f'role assignment list --all --subscription {sub_id} --include-inherited --include-groups --query "{unknown_role_assignments_filter}.{{{ROLE_ASSIGNMENT_QUERY_SELECT}}}" --output json',
+            )
+            for sub_id in sub_id_to_name
+        ]
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
+
+    unknown_role_assignments = {}
+    for future, sub_id in zip(futures, sub_id_to_name):
+        if future.exception():
+            continue  # Skip if there was an error fetching role assignments for this subscription
+        result = future.result()
+        unknown_role_assigment_json = json.loads(result)
+        if unknown_role_assigment_json:
+            log.info(
+                f"Found {len(unknown_role_assigment_json)} 'Unknown' role assignment(s) in '{sub_id_to_name[sub_id]}' ({sub_id})"
+            )
+            unknown_role_assignments[sub_id] = unknown_role_assigment_json
+
+    return unknown_role_assignments
 
 
 def delete_resource_group(sub_id: str, resource_group: str):
@@ -903,11 +939,21 @@ def mark_role_assignment_deletions(
     sub_id_to_name: dict[str, str], lfo_id_deletions: set[str]
 ) -> SubIdToRoleAssignmentsDict:
     role_assignment_deletions = defaultdict(list)
-    log.info("Searching for Datadog role assignments in subscriptions... ")
-    for sub_id, sub_name in sub_id_to_name.items():
-        role_assignment_json = find_role_assignments(sub_id, sub_name, lfo_id_deletions)
-        if role_assignment_json:
-            role_assignment_deletions[sub_id] = role_assignment_json
+
+    if lfo_id_deletions:
+        log.info("Searching for Datadog role assignments in subscriptions... ")
+        for sub_id, sub_name in sub_id_to_name.items():
+            role_assignment_json = find_role_assignments(sub_id, sub_name, lfo_id_deletions)
+            if role_assignment_json:
+                role_assignment_deletions[sub_id] = role_assignment_json
+    else:
+        log.info("Skipping active role assignment search since no LFO IDs were found")
+
+    log.info("Searching for 'Unknown' role assignments that could be leftover from previous installations... ")
+    unknown_role_assignments = find_unknown_role_assignments(sub_id_to_name)
+    for sub_id, unknown_role_assignment_json in unknown_role_assignments.items():
+        if unknown_role_assignment_json:
+            role_assignment_deletions[sub_id].extend(unknown_role_assignment_json)
 
     return role_assignment_deletions
 
@@ -1008,19 +1054,21 @@ def main():
 
     sub_to_resource_groups_to_delete: SubIdToResourceGroupsDict = defaultdict(list)
     rg_to_lfo_ids: SubIdToResourceGroupsDict = defaultdict(list)
+    control_plane_found = False
+    log_forwarders_found = False
 
     sub_id_to_control_plane_rgs, control_plane_rg_to_lfo_id = find_all_control_planes(sub_id_to_name)
 
     control_plane_found = len(control_plane_rg_to_lfo_id) > 0
-    log_forwarders_found = False
 
     if control_plane_found:
         log.info("Found Datadog log forwarding control plane(s)")
-        # If we found a control plane, build deletion plan based on that
+        # If we found a control plane, build resource group deletions plan based on that.
+        # We will delete forwarders based on the control plane reesource group name
         sub_to_resource_groups_to_delete = sub_id_to_control_plane_rgs
         rg_to_lfo_ids = control_plane_rg_to_lfo_id
     else:
-        # No control plane found. Look for forwarder app environments instead - build deletion plan off those if found
+        # No control plane found. Search for forwarder app environments to delete
         log.info("Did not find any control planes, searching for log forwarders...")
         sub_id_to_forwarder_rgs, forwarder_rgs_to_lfo_id = find_all_forwarder_envs(sub_id_to_name)
         log_forwarders_found = len(forwarder_rgs_to_lfo_id) > 0
@@ -1029,15 +1077,21 @@ def main():
             sub_to_resource_groups_to_delete = sub_id_to_forwarder_rgs
             rg_to_lfo_ids = forwarder_rgs_to_lfo_id
 
-    if not control_plane_found and not log_forwarders_found:
-        # delete unknown role assignments (maybe just always do this anyway)
-        # you need to specify a control plane ID. Here are instructions for getting it
+    if not control_plane_found and not log_forwarders_found and not CONTROL_PLANE_ID_SETTING:
+        log.info("Could not find any Datadog control plane resource groups or log forwarder resource groups to delete.")
+        log.info("'Unknown' role assignments may be leftover from prior installs, searching for them...")
+        unknown_role_assignments = find_unknown_role_assignments(sub_id_to_name)
+        if unknown_role_assignments:
+            log.info("Found 'Unknown' role assignments, deleting them...")
+            do_role_assignment_delete(unknown_role_assignments)
+        else:
+            log.info("No 'Unknown' role assignments found, exiting.")
         raise SystemExit(0)
 
     sub_to_rg_deletions = mark_rg_deletions(sub_id_to_name, sub_to_resource_groups_to_delete, control_plane_found)
 
     if not any(sub_to_rg_deletions.values()) and not CONTROL_PLANE_ID_SETTING:
-        log.info("Could not find any resource groups to delete as part of uninstall process. Exiting.")
+        log.info("Could not find any resource groups to delete.")
         raise SystemExit(0)
 
     lfo_id_deletions = mark_lfo_id_deletions(sub_to_rg_deletions, rg_to_lfo_ids)
