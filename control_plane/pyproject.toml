@@ -12,6 +12,7 @@ dependencies = [
     "jsonschema==4.23.0",
     "datadog-serverless-compat==0.5.0",
     "ddtrace==3.9.4",
+    "datadog==0.51.0",
 ]
 
 [project.optional-dependencies]

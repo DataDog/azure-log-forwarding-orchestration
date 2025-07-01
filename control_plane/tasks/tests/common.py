@@ -40,7 +40,7 @@ class TaskTestCase(AsyncTestCase):
         self.credential.side_effect = AsyncMock
         self.datadog_api_client = self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
         self.datadog_logs_api = self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
-        self.datadog_metrics_api = self.patch_path("tasks.task.MetricsApi", return_value=AsyncMock())
+        self.statsd = self.patch_path("tasks.task.statsd")
         self.env = {}
         task_env_mock = self.patch_path("tasks.task.environ", create=True)
         task_env_mock.get.side_effect = lambda k, default="unset test env var": self.env.get(k, default)
