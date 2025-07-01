@@ -634,6 +634,9 @@ def find_role_assignments(sub_id_to_name: dict[str, str], control_plane_ids: set
     sub_to_role_assignments_json = {}
     for future, sub_id in zip(futures, sub_id_to_name):
         if future.exception():
+            log.error(
+                f"Unexpected error searching for role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {future.exception()}"
+            )
             continue
         role_assignment = future.result()
         role_assigment_json = json.loads(role_assignment)
@@ -662,6 +665,9 @@ def find_unknown_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, l
     unknown_role_assignments = {}
     for future, sub_id in zip(futures, sub_id_to_name):
         if future.exception():
+            log.error(
+                f"Unexpected error searching for 'Unknown' role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {future.exception()}"
+            )
             continue
         unknown_role_assignment = future.result()
         unknown_role_assignment_json = json.loads(unknown_role_assignment)
