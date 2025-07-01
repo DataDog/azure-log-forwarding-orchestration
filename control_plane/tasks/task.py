@@ -100,7 +100,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         self._logs: list[LogRecord] = []
         configuration = Configuration()
 
-        target_staging = TELEMETRY_ENABLED and "datad0g.com" in environ.get(DD_SITE_SETTING, "")
+        target_staging = TELEMETRY_ENABLED and environ.get(DD_SITE_SETTING) == "datad0g.com"
 
         if target_staging:
             configuration.server_index = 2
