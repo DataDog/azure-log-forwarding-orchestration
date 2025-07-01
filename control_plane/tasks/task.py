@@ -17,12 +17,14 @@ from uuid import uuid4
 
 # 3p
 from azure.identity.aio import DefaultAzureCredential
-from datadog.dogstatsd.base import statsd
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.logs_api import LogsApi
 from datadog_api_client.v2.api.metrics_api import MetricsApi
 from datadog_api_client.v2.model.http_log import HTTPLog
 from datadog_api_client.v2.model.http_log_item import HTTPLogItem
+from datadog_api_client.v2.model.metric_payload import MetricPayload
+from datadog_api_client.v2.model.metric_point import MetricPoint
+from datadog_api_client.v2.model.metric_series import MetricSeries
 
 # project
 from cache.common import read_cache
@@ -180,15 +182,17 @@ class Task(AbstractAsyncContextManager["Task"]):
                 for record in self._logs
             ]
         )
-        statsd.gauge_with_timestamp(
-            CONTROL_PLANE_METRIC_PREFIX + "task_completed", 1, int(self.start_time), tags=self.tags
-        )
-        statsd.gauge_with_timestamp(
-            CONTROL_PLANE_METRIC_PREFIX + "runtime_seconds",
-            time() - self.start_time,
-            int(self.start_time),
+        runtime_seconds = MetricSeries(
+            metric=CONTROL_PLANE_METRIC_PREFIX + "runtime_seconds",
+            points=[MetricPoint(timestamp=int(self.start_time), value=time() - self.start_time)],
             tags=self.tags,
         )
+        task_completed = MetricSeries(
+            metric=CONTROL_PLANE_METRIC_PREFIX + "task_completed",
+            points=[MetricPoint(timestamp=int(self.start_time), value=1)],
+            tags=self.tags,
+        )
+        await self._metrics_client.submit_metrics(MetricPayload(series=[runtime_seconds, task_completed]))  # type: ignore
         if self._logs:
             self._logs.clear()
             await self._logs_client.submit_log(dd_logs, ddtags=",".join(self.tags))  # type: ignore

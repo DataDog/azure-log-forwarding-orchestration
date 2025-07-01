@@ -8,6 +8,7 @@ from unittest import TestCase
 from unittest.mock import patch
 
 # project
+import tasks.task as task_module
 from tasks.task import Task, get_error_telemetry
 from tasks.tests.common import TaskTestCase
 
@@ -54,11 +55,11 @@ class TestTask(TaskTestCase):
         await super().asyncSetUp()
         self.cred = self.patch_path("tasks.task.DefaultAzureCredential").return_value
         basicConfig(level=INFO)
+        task_module.TELEMETRY_ENABLED = False
 
     @patch.dict("tasks.task.environ", {"DD_TELEMETRY": "false", "DD_API_KEY": "123"}, clear=True)
     async def test_task_logging_disabled(self):
         task = DummyTask()
-        self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
         self.assertEqual(
             task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown", "version:unknown"]
@@ -75,7 +76,6 @@ class TestTask(TaskTestCase):
     @patch.dict("tasks.task.environ", {}, clear=True)
     async def test_task_logging_not_specified_is_disabled(self):
         task = DummyTask()
-        self.assertFalse(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
         self.assertEqual(
             task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:unknown", "version:unknown"]
@@ -91,8 +91,8 @@ class TestTask(TaskTestCase):
 
     async def test_task_logging_enabled(self):
         self.env.update({"DD_TELEMETRY": "true", "DD_API_KEY": "123", "CONTROL_PLANE_ID": "456"})
+        task_module.TELEMETRY_ENABLED = True
         task = DummyTask()
-        self.assertTrue(task.telemetry_enabled)
         self.assertEqual(task._logs, [])
         self.assertEqual(
             task.tags, ["forwarder:lfocontrolplane", "task:dummy_task", "control_plane_id:456", "version:unknown"]

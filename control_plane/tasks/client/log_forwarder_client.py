@@ -53,7 +53,13 @@ from azure.mgmt.storage.v2024_01_01.models import (
     StorageAccountKey,
 )
 from azure.storage.blob.aio import ContainerClient, StorageStreamDownloader
-from datadog.dogstatsd.base import statsd
+from datadog_api_client.v2.api.metrics_api import MetricsApi
+from datadog_api_client.v2.model.intake_payload_accepted import IntakePayloadAccepted
+from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
+from datadog_api_client.v2.model.metric_payload import MetricPayload
+from datadog_api_client.v2.model.metric_point import MetricPoint
+from datadog_api_client.v2.model.metric_resource import MetricResource
+from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryCallState, RetryError, retry, stop_after_attempt
 
 # project
@@ -76,8 +82,7 @@ from cache.env import (
     get_config_option,
 )
 from cache.metric_blob_cache import (
-    COUNT_METRIC_NAMES,
-    GAUGE_METRIC_NAMES,
+    METRIC_NAMES,
     MetricBlobEntry,
     deserialize_blob_metric_entry,
 )
@@ -152,6 +157,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         subscription_id: str,
         resource_group: str,
         pii_rules_json: str,
+        metrics_client: MetricsApi,
     ) -> None:
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
@@ -164,6 +170,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.pii_rules_json = pii_rules_json
         self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
         self.storage_client = StorageManagementClient(credential, subscription_id)
+        self.metrics_client = metrics_client
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
@@ -585,30 +592,65 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
     ) -> None:
         if not TELEMETRY_ENABLED or not metrics:
             return
+
+        response: IntakePayloadAccepted = await self.metrics_client.submit_metrics(
+            body=self.create_metric_payload(metrics, log_forwarder_id, region)
+        )  # type: ignore
+        for error in response.get("errors", []):
+            self.log.error(error, extra=self.log_extra)
+
+    def create_metric_payload(
+        self, metric_entries: list[MetricBlobEntry], log_forwarder_id: str, region: str
+    ) -> MetricPayload:
+        log_forwarder_name = get_container_app_name(log_forwarder_id)
+        version = metric_entries[0].get("version", "unknown") if metric_entries else "unknown"
         tags = [
             f"control_plane_id:{self.control_plane_id}",
             f"region:{region}",
-            f"logforwarder:{get_container_app_name(log_forwarder_id)}",
-            "version:" + metrics[0].get("version", "unknown"),
+            f"version:{version}",
         ]
-        for metric_entry in metrics:
-            for metric_name in GAUGE_METRIC_NAMES:
-                statsd.gauge_with_timestamp(
-                    FORWARDER_METRIC_PREFIX + metric_name,
-                    get_metric_value(metric_entry, metric_name),
-                    int(metric_entry["timestamp"]),
-                    tags=tags,
-                )
-            for metric_name in COUNT_METRIC_NAMES:
-                statsd.count_with_timestamp(
-                    FORWARDER_METRIC_PREFIX + metric_name,
-                    get_metric_value(metric_entry, metric_name),
-                    int(metric_entry["timestamp"]),
-                    tags=tags,
-                )
-            statsd.count_with_timestamp(
-                FORWARDER_METRIC_PREFIX + "run_completed", 1, int(metric_entry["timestamp"]), tags=tags
+        metric_series = [
+            MetricSeries(
+                metric=FORWARDER_METRIC_PREFIX + metric_name,
+                type=MetricIntakeType.UNSPECIFIED,
+                points=[
+                    MetricPoint(
+                        timestamp=int(metric_entry["timestamp"]),
+                        value=get_metric_value(metric_entry, metric_name),
+                    )
+                    for metric_entry in metric_entries
+                ],
+                resources=[
+                    MetricResource(
+                        name=log_forwarder_name,
+                        type="logforwarder",
+                    ),
+                ],
+                tags=tags,
             )
+            for metric_name in METRIC_NAMES
+        ]
+        metric_series.append(
+            MetricSeries(
+                metric=FORWARDER_METRIC_PREFIX + "run_completed",
+                type=MetricIntakeType.UNSPECIFIED,
+                points=[
+                    MetricPoint(
+                        timestamp=int(metric_entry["timestamp"]),
+                        value=1,
+                    )
+                    for metric_entry in metric_entries
+                ],
+                resources=[
+                    MetricResource(
+                        name=log_forwarder_name,
+                        type="logforwarder",
+                    ),
+                ],
+                tags=tags,
+            )
+        )
+        return MetricPayload(series=metric_series)
 
     async def list_log_forwarder_ids(self) -> set[str]:
         jobs, storage_accounts = await gather(

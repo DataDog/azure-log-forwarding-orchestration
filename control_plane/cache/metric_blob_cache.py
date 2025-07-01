@@ -24,8 +24,7 @@ class MetricBlobEntry(TypedDict, total=True):
     "The version tag of the forwarder"
 
 
-COUNT_METRIC_NAMES = ("resource_log_volume", "resource_log_bytes")
-GAUGE_METRIC_NAMES = ("runtime_seconds",)
+METRIC_NAMES = ("resource_log_volume", "resource_log_bytes", "runtime_seconds")
 
 METRIC_BLOB_SCHEMA: dict[str, Any] = {
     "type": "object",
