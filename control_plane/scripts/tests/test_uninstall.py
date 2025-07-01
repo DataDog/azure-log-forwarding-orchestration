@@ -17,21 +17,34 @@ import uninstall
 SUB_ID_1 = "sub-1"
 SUB_ID_2 = "sub-2"
 SUB_ID_3 = "sub-3"
+SUB_NAME_1 = "Development Subscription"
+SUB_NAME_2 = "Production Subscription"
+SUB_NAME_3 = "Test Subscription"
+CONTROL_PLANE_ID_1 = "f444ca0ac478"
+CONTROL_PLANE_ID_2 = "d361rf3bew23"
+CONTROL_PLANE_ID_3 = "4d6h2vyu5p78"
+CONTROL_PLANE_RESOURCE_GROUP_1 = "dd-lfo-control-plane-rg"
+CONTROL_PLANE_RESOURCE_GROUP_2 = "dd-lfo-control-plane-rg-2"
+CONTROL_PLANE_RESOURCE_GROUP_3 = "dd-lfo-control-plane-rg-3"
+FORWARDER_NAME_1 = f"dd-log-forwarder-env-{CONTROL_PLANE_ID_1}-eastus"
+FORWARDER_NAME_2 = f"dd-log-forwarder-env-{CONTROL_PLANE_ID_2}-westus"
+FORWARDER_RESOURCE_GROUP_1 = "forwarder-rg"
+FORWARDER_RESOURCE_GROUP_2 = "forwarder-rg-2"
 
 MOCK_SUBSCRIPTIONS = [
-    {"id": SUB_ID_1, "name": "Development Subscription"},
-    {"id": SUB_ID_2, "name": "Production Subscription"},
-    {"id": SUB_ID_3, "name": "Test Subscription"},
+    {"id": SUB_ID_1, "name": SUB_NAME_1},
+    {"id": SUB_ID_2, "name": SUB_NAME_2},
+    {"id": SUB_ID_3, "name": SUB_NAME_3},
 ]
 
 MOCK_CONTROL_PLANE_STORAGE_ACCOUNTS = [
-    {"resourceGroup": "dd-lfo-control-plane-rg", "name": "lfostoragef444ca0ac478"},
-    {"resourceGroup": "dd-lfo-control-plane-rg-2", "name": "lfostoraged361rf3bew23"},
+    {"resourceGroup": CONTROL_PLANE_RESOURCE_GROUP_1, "name": f"lfostorage{CONTROL_PLANE_ID_1}"},
+    {"resourceGroup": CONTROL_PLANE_RESOURCE_GROUP_2, "name": f"lfostorage{CONTROL_PLANE_ID_2}"},
 ]
 
 MOCK_FORWARDER_ENVIRONMENTS = [
-    {"name": "dd-log-forwarder-env-f444ca0ac478-eastus", "resourceGroup": "dd-lfo-forwarder-rg"},
-    {"name": "dd-log-forwarder-env-d361rf3bew23-westus", "resourceGroup": "dd-lfo-forwarder-rg-2"},
+    {"name": FORWARDER_NAME_1, "resourceGroup": FORWARDER_RESOURCE_GROUP_1},
+    {"name": FORWARDER_NAME_2, "resourceGroup": FORWARDER_RESOURCE_GROUP_2},
 ]
 
 MOCK_ROLE_ASSIGNMENTS = [
@@ -49,12 +62,22 @@ MOCK_ROLE_ASSIGNMENTS = [
     },
 ]
 
+MOCK_UNKNOWN_ROLE_ASSIGNMENT = {
+    "id": "/subscriptions/sub-1/providers/Microsoft.Authorization/roleAssignments/unknown-role-1",
+    "roleDefinitionName": "Monitoring Contributor",
+    "principalId": "unknown-principal-1",
+    "principalName": "",  # Empty principalName indicates "Unknown" role assignbment
+}
+
 MOCK_RESOURCE_IDS = [
-    "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Storage/storageAccounts/storage1",
-    "/subscriptions/sub-1/resourceGroups/rg-2/providers/Microsoft.Compute/virtualMachines/vm1",
+    "/subscriptions/sub-1/resourceGroups/test-rg-1/providers/Microsoft.Storage/storageAccounts/storage1",
+    "/subscriptions/sub-1/resourceGroups/test-rg-2/providers/Microsoft.Compute/virtualMachines/vm1",
 ]
 
-MOCK_DIAGNOSTIC_SETTINGS = {"datadog_log_forwarding_f444ca0ac478", "datadog_log_forwarding_d361rf3bew23"}
+MOCK_DIAGNOSTIC_SETTINGS = {
+    f"datadog_log_forwarding_{CONTROL_PLANE_ID_1}",
+    f"datadog_log_forwarding_{CONTROL_PLANE_ID_2}",
+}
 
 
 class TestUninstallScript(TestCase):
@@ -86,15 +109,14 @@ class TestUninstallScript(TestCase):
     # ===== Subscription Tests ===== #
 
     def test_list_users_subscriptions_success(self):
-        """Test successful fetching of user subscriptions"""
         self.az_mock.return_value = json.dumps(MOCK_SUBSCRIPTIONS)
 
         result = uninstall.list_users_subscriptions()
 
         expected = {
-            SUB_ID_1: "Development Subscription",
-            SUB_ID_2: "Production Subscription",
-            SUB_ID_3: "Test Subscription",
+            SUB_ID_1: SUB_NAME_1,
+            SUB_ID_2: SUB_NAME_2,
+            SUB_ID_3: SUB_NAME_3,
         }
         self.assertEqual(result, expected)
         self.az_mock.assert_called_once_with("account list --output json")
@@ -105,33 +127,33 @@ class TestUninstallScript(TestCase):
         """Test finding control planes in a subscription"""
         self.az_mock.return_value = json.dumps(MOCK_CONTROL_PLANE_STORAGE_ACCOUNTS)
 
-        result = uninstall.find_sub_control_planes(SUB_ID_1, "Test Subscription")
+        result = uninstall.find_sub_control_planes(SUB_ID_1, SUB_NAME_1)
 
         expected = {
-            "dd-lfo-control-plane-rg": "lfostoragef444ca0ac478",
-            "dd-lfo-control-plane-rg-2": "lfostoraged361rf3bew23",
+            CONTROL_PLANE_RESOURCE_GROUP_1: f"lfostorage{CONTROL_PLANE_ID_1}",
+            CONTROL_PLANE_RESOURCE_GROUP_2: f"lfostorage{CONTROL_PLANE_ID_2}",
         }
         self.assertEqual(result, expected)
 
     def test_find_sub_control_planes_with_specific_id(self):
         """Test finding specific control plane by ID"""
-        uninstall.CONTROL_PLANE_ID_SETTING = "f444ca0ac478"
+        uninstall.CONTROL_PLANE_ID_SETTING = CONTROL_PLANE_ID_1
         self.az_mock.return_value = json.dumps([MOCK_CONTROL_PLANE_STORAGE_ACCOUNTS[0]])
 
-        result = uninstall.find_sub_control_planes(SUB_ID_1, "Test Subscription")
+        result = uninstall.find_sub_control_planes(SUB_ID_1, SUB_NAME_1)
 
-        expected = {"dd-lfo-control-plane-rg": "lfostoragef444ca0ac478"}
+        expected = {CONTROL_PLANE_RESOURCE_GROUP_1: f"lfostorage{CONTROL_PLANE_ID_1}"}
         self.assertEqual(result, expected)
 
         # Verify the command includes the specific control plane ID
         call_args = self.az_mock.call_args[0][0]
-        self.assertIn("lfostoragef444ca0ac478", call_args)
+        self.assertIn(f"lfostorage{CONTROL_PLANE_ID_1}", call_args)
 
     def test_find_sub_control_planes_auth_error(self):
         """Test handling authentication errors gracefully"""
         self.az_mock.side_effect = uninstall.AuthError("Authorization failed")
 
-        result = uninstall.find_sub_control_planes(SUB_ID_1, "Test Subscription")
+        result = uninstall.find_sub_control_planes(SUB_ID_1, SUB_NAME_1)
 
         self.assertEqual(result, {})
 
@@ -139,7 +161,7 @@ class TestUninstallScript(TestCase):
         """Test handling token refresh errors gracefully"""
         self.az_mock.side_effect = uninstall.RefreshTokenError("Token expired")
 
-        result = uninstall.find_sub_control_planes(SUB_ID_1, "Test Subscription")
+        result = uninstall.find_sub_control_planes(SUB_ID_1, SUB_NAME_1)
 
         self.assertEqual(result, {})
 
@@ -148,26 +170,26 @@ class TestUninstallScript(TestCase):
         """Test finding control planes across multiple subscriptions"""
         # Mock the individual subscription results
         mock_find_sub.side_effect = [
-            {"dd-lfo-control-plane-rg": "lfostoragef444ca0ac478"},  # sub-1
-            {},  # sub-2 (no control planes)
-            {"dd-lfo-control-plane-rg-2": "lfostoraged361rf3bew23"},  # sub-3
+            {CONTROL_PLANE_RESOURCE_GROUP_1: f"lfostorage{CONTROL_PLANE_ID_1}"},
+            {},  # no control planes
+            {CONTROL_PLANE_RESOURCE_GROUP_2: f"lfostorage{CONTROL_PLANE_ID_2}"},
         ]
 
         sub_id_to_name = {
-            SUB_ID_1: "Dev Subscription",
-            SUB_ID_2: "Prod Subscription",
-            SUB_ID_3: "Test Subscription",
+            SUB_ID_1: SUB_NAME_1,
+            SUB_ID_2: SUB_NAME_2,
+            SUB_ID_3: SUB_NAME_3,
         }
 
         sub_to_rg, rg_to_lfo_id = uninstall.find_all_control_planes(sub_id_to_name)
 
         expected_sub_to_rg = {
-            SUB_ID_1: {"dd-lfo-control-plane-rg"},
-            SUB_ID_3: {"dd-lfo-control-plane-rg-2"},
+            SUB_ID_1: {CONTROL_PLANE_RESOURCE_GROUP_1},
+            SUB_ID_3: {CONTROL_PLANE_RESOURCE_GROUP_2},
         }
         expected_rg_to_lfo_id = {
-            "dd-lfo-control-plane-rg": {"f444ca0ac478"},
-            "dd-lfo-control-plane-rg-2": {"d361rf3bew23"},
+            CONTROL_PLANE_RESOURCE_GROUP_1: {CONTROL_PLANE_ID_1},
+            CONTROL_PLANE_RESOURCE_GROUP_2: {CONTROL_PLANE_ID_2},
         }
 
         self.assertEqual(dict(sub_to_rg), expected_sub_to_rg)
@@ -207,14 +229,14 @@ class TestUninstallScript(TestCase):
         """Test finding forwarder environments"""
         self.az_mock.return_value = json.dumps(MOCK_FORWARDER_ENVIRONMENTS)
 
-        sub_id_to_name = {SUB_ID_1: "Test Subscription"}
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
 
         sub_to_rg, rg_to_lfo_id = uninstall.find_all_forwarder_envs(sub_id_to_name)
 
-        expected_sub_to_rg = {SUB_ID_1: {"dd-lfo-forwarder-rg", "dd-lfo-forwarder-rg-2"}}
+        expected_sub_to_rg = {SUB_ID_1: {FORWARDER_RESOURCE_GROUP_1, FORWARDER_RESOURCE_GROUP_2}}
         expected_rg_to_lfo_id = {
-            "dd-lfo-forwarder-rg": {"f444ca0ac478"},
-            "dd-lfo-forwarder-rg-2": {"d361rf3bew23"},
+            FORWARDER_RESOURCE_GROUP_1: {CONTROL_PLANE_ID_1},
+            FORWARDER_RESOURCE_GROUP_2: {CONTROL_PLANE_ID_2},
         }
 
         self.assertEqual(dict(sub_to_rg), expected_sub_to_rg)
@@ -226,8 +248,8 @@ class TestUninstallScript(TestCase):
         """Test finding role assignments with control plane IDs"""
         self.az_mock.return_value = json.dumps(MOCK_ROLE_ASSIGNMENTS)
 
-        sub_id_to_name = {SUB_ID_1: "Test Sub"}
-        control_plane_ids = {"f444ca0ac478", "d361rf3bew23"}
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
+        control_plane_ids = {CONTROL_PLANE_ID_1, CONTROL_PLANE_ID_2}
         result = uninstall.find_role_assignments(sub_id_to_name, control_plane_ids)
 
         expected = {SUB_ID_1: MOCK_ROLE_ASSIGNMENTS}
@@ -235,23 +257,33 @@ class TestUninstallScript(TestCase):
 
         # Verify the query includes the control plane IDs
         call_args = self.az_mock.call_args[0][0]
-        self.assertIn("ddlfof444ca0ac478", call_args)
-        self.assertIn("ddlfod361rf3bew23", call_args)
+        self.assertIn(f"ddlfo{CONTROL_PLANE_ID_1}", call_args)
+        self.assertIn(f"ddlfo{CONTROL_PLANE_ID_2}", call_args)
 
     @mock_patch("uninstall.find_role_assignments")
     @mock_patch("uninstall.find_unknown_role_assignments")
     def test_mark_role_assignment_deletions(self, mock_find_unknown, mock_find_role):
         """Test marking role assignments for deletion"""
-        mock_find_role.return_value = {SUB_ID_1: MOCK_ROLE_ASSIGNMENTS, SUB_ID_2: MOCK_ROLE_ASSIGNMENTS}
-        mock_find_unknown.return_value = {}  # No unknown role assignments
+        mock_find_role.return_value = {SUB_ID_1: MOCK_ROLE_ASSIGNMENTS.copy(), SUB_ID_2: MOCK_ROLE_ASSIGNMENTS.copy()}
 
-        sub_id_to_name = {SUB_ID_1: "Test Sub", SUB_ID_2: "Another Sub"}
-        lfo_id_deletions = {"f444ca0ac478"}
+        mock_find_unknown.return_value = {SUB_ID_1: [MOCK_UNKNOWN_ROLE_ASSIGNMENT]}
+
+        sub_id_to_name = {sub["id"]: sub["name"] for sub in MOCK_SUBSCRIPTIONS}
+        lfo_id_deletions = {CONTROL_PLANE_ID_1}
 
         result = uninstall.mark_role_assignment_deletions(sub_id_to_name, lfo_id_deletions)
 
-        expected = {SUB_ID_1: MOCK_ROLE_ASSIGNMENTS, SUB_ID_2: MOCK_ROLE_ASSIGNMENTS}
+        expected_sub1 = MOCK_ROLE_ASSIGNMENTS.copy()
+        expected_sub1.extend([MOCK_UNKNOWN_ROLE_ASSIGNMENT])
+
+        expected = {
+            SUB_ID_1: expected_sub1,
+            SUB_ID_2: MOCK_ROLE_ASSIGNMENTS,
+        }
         self.assertEqual(dict(result), expected)
+
+        mock_find_role.assert_called_once_with(sub_id_to_name, lfo_id_deletions)
+        mock_find_unknown.assert_called_once_with(sub_id_to_name)
 
     # ===== Diagnostic Settings Tests ===== #
 
@@ -261,8 +293,8 @@ class TestUninstallScript(TestCase):
         mock_list_resources.return_value = set(MOCK_RESOURCE_IDS)
         self.az_mock.return_value = json.dumps(list(MOCK_DIAGNOSTIC_SETTINGS))
 
-        control_plane_ids = {"f444ca0ac478", "d361rf3bew23"}
-        result = uninstall.find_diagnostic_settings(SUB_ID_1, "Test Sub", control_plane_ids)
+        control_plane_ids = {CONTROL_PLANE_ID_1, CONTROL_PLANE_ID_2}
+        result = uninstall.find_diagnostic_settings(SUB_ID_1, SUB_NAME_1, control_plane_ids)
 
         expected = {
             MOCK_RESOURCE_IDS[0]: MOCK_DIAGNOSTIC_SETTINGS,
@@ -276,8 +308,8 @@ class TestUninstallScript(TestCase):
         mock_diagnostic_map = {"/resource/1": {"diag-1", "diag-2"}, "/resource/2": {"diag-3"}}
         mock_find_diag.return_value = mock_diagnostic_map
 
-        sub_id_to_name = {SUB_ID_1: "Test Sub"}
-        lfo_id_deletions = {"f444ca0ac478"}
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
+        lfo_id_deletions = {CONTROL_PLANE_ID_1}
 
         result = uninstall.mark_diagnostic_setting_deletions(sub_id_to_name, lfo_id_deletions)
 
@@ -288,25 +320,32 @@ class TestUninstallScript(TestCase):
 
     def test_mark_lfo_id_deletions_with_control_plane_setting(self):
         """Test marking LFO IDs for deletion when control plane ID is set"""
-        uninstall.CONTROL_PLANE_ID_SETTING = "f444ca0ac478"
+        uninstall.CONTROL_PLANE_ID_SETTING = CONTROL_PLANE_ID_1
 
-        sub_to_rg_deletions = {SUB_ID_1: {"rg-1"}}
-        rg_to_lfo_ids = {"rg-1": {"f444ca0ac478", "d361rf3bew23"}}
+        sub_to_rg_deletions = {SUB_ID_1: {CONTROL_PLANE_RESOURCE_GROUP_1}}
+        rg_to_lfo_ids = {CONTROL_PLANE_RESOURCE_GROUP_1: {CONTROL_PLANE_ID_1, CONTROL_PLANE_ID_2}}
 
         result = uninstall.mark_lfo_id_deletions(sub_to_rg_deletions, rg_to_lfo_ids)
 
-        self.assertEqual(result, {"f444ca0ac478"})
+        self.assertEqual(result, {CONTROL_PLANE_ID_1})
 
     def test_mark_lfo_id_deletions_from_resource_groups(self):
         """Test marking LFO IDs for deletion based on resource groups"""
         uninstall.CONTROL_PLANE_ID_SETTING = None
 
-        sub_to_rg_deletions = {SUB_ID_1: {"rg-1", "rg-2"}, SUB_ID_2: {"rg-3"}}
-        rg_to_lfo_ids = {"rg-1": {"f444ca0ac478"}, "rg-2": {"d361rf3bew23"}, "rg-3": {"cp789"}}
+        sub_to_rg_deletions = {
+            SUB_ID_1: {CONTROL_PLANE_RESOURCE_GROUP_1, CONTROL_PLANE_RESOURCE_GROUP_2},
+            SUB_ID_2: {CONTROL_PLANE_RESOURCE_GROUP_3},
+        }
+        rg_to_lfo_ids = {
+            CONTROL_PLANE_RESOURCE_GROUP_1: {CONTROL_PLANE_ID_1},
+            CONTROL_PLANE_RESOURCE_GROUP_2: {CONTROL_PLANE_ID_2},
+            CONTROL_PLANE_RESOURCE_GROUP_3: {CONTROL_PLANE_ID_3},
+        }
 
         result = uninstall.mark_lfo_id_deletions(sub_to_rg_deletions, rg_to_lfo_ids)
 
-        expected = {"f444ca0ac478", "d361rf3bew23", "cp789"}
+        expected = {CONTROL_PLANE_ID_1, CONTROL_PLANE_ID_2, CONTROL_PLANE_ID_3}
         self.assertEqual(result, expected)
 
     # ===== Resource Group Tests ===== #
@@ -340,7 +379,7 @@ class TestUninstallScript(TestCase):
         """Test listing resources in a subscription"""
         self.az_mock.return_value = json.dumps(MOCK_RESOURCE_IDS)
 
-        result = uninstall.list_resources(SUB_ID_1, "Test Sub")
+        result = uninstall.list_resources(SUB_ID_1, SUB_NAME_1)
 
         self.assertEqual(result, set(MOCK_RESOURCE_IDS))
 
@@ -350,7 +389,7 @@ class TestUninstallScript(TestCase):
         """Test resource group deletion in dry run mode"""
         uninstall.DRY_RUN_SETTING = True
 
-        uninstall.delete_resource_group(SUB_ID_1, "test-rg")
+        uninstall.delete_resource_group(SUB_ID_1, CONTROL_PLANE_RESOURCE_GROUP_1)
 
         self.az_mock.assert_not_called()
 
@@ -358,9 +397,9 @@ class TestUninstallScript(TestCase):
         """Test actual resource group deletion"""
         uninstall.DRY_RUN_SETTING = False
 
-        uninstall.delete_resource_group(SUB_ID_1, "test-rg")
+        uninstall.delete_resource_group(SUB_ID_1, CONTROL_PLANE_RESOURCE_GROUP_1)
 
-        expected_cmd = "group delete --subscription sub-1 --name test-rg --yes --no-wait"
+        expected_cmd = f"group delete --subscription {SUB_ID_1} --name {CONTROL_PLANE_RESOURCE_GROUP_1} --yes --no-wait"
         self.az_mock.assert_called_once_with(expected_cmd)
 
     def test_delete_role_assignments_dry_run(self):
@@ -383,9 +422,9 @@ class TestUninstallScript(TestCase):
 
         # Verify it contains the expected components (order of IDs may vary due to set usage)
         self.assertIn("role assignment delete --ids", actual_cmd)
-        self.assertIn("/subscriptions/sub-1/providers/Microsoft.Authorization/roleAssignments/role-1", actual_cmd)
-        self.assertIn("/subscriptions/sub-1/providers/Microsoft.Authorization/roleAssignments/role-2", actual_cmd)
-        self.assertIn("--subscription sub-1 --include-inherited --yes", actual_cmd)
+        self.assertIn(f"/subscriptions/{SUB_ID_1}/providers/Microsoft.Authorization/roleAssignments/role-1", actual_cmd)
+        self.assertIn(f"/subscriptions/{SUB_ID_1}/providers/Microsoft.Authorization/roleAssignments/role-2", actual_cmd)
+        self.assertIn(f"--subscription {SUB_ID_1} --include-inherited --yes", actual_cmd)
 
     def test_delete_diagnostic_setting_dry_run(self):
         """Test diagnostic setting deletion in dry run mode"""
@@ -402,7 +441,7 @@ class TestUninstallScript(TestCase):
         uninstall.delete_diagnostic_setting(SUB_ID_1, "/resource/1", "diag-setting-1")
 
         expected_cmd = (
-            "monitor diagnostic-settings delete --name diag-setting-1 --resource /resource/1 --subscription sub-1"
+            f"monitor diagnostic-settings delete --name diag-setting-1 --resource /resource/1 --subscription {SUB_ID_1}"
         )
         self.az_mock.assert_called_once_with(expected_cmd)
 
@@ -412,7 +451,11 @@ class TestUninstallScript(TestCase):
         """Test choosing all resource groups for deletion"""
         self.input_mock.return_value = "*"
 
-        resource_groups = {"rg-1", "rg-2", "rg-3"}
+        resource_groups = {
+            CONTROL_PLANE_RESOURCE_GROUP_1,
+            CONTROL_PLANE_RESOURCE_GROUP_2,
+            CONTROL_PLANE_RESOURCE_GROUP_3,
+        }
         result = uninstall.choose_rgs_to_delete(resource_groups)
 
         self.assertEqual(result, resource_groups)
@@ -421,25 +464,37 @@ class TestUninstallScript(TestCase):
         """Test choosing no resource groups for deletion"""
         self.input_mock.return_value = "-"
 
-        resource_groups = {"rg-1", "rg-2", "rg-3"}
+        resource_groups = {
+            CONTROL_PLANE_RESOURCE_GROUP_1,
+            CONTROL_PLANE_RESOURCE_GROUP_2,
+            CONTROL_PLANE_RESOURCE_GROUP_3,
+        }
         result = uninstall.choose_rgs_to_delete(resource_groups)
 
         self.assertEqual(result, set())
 
     def test_choose_rgs_to_delete_specific(self):
         """Test choosing specific resource group for deletion"""
-        self.input_mock.return_value = "rg-2"
+        self.input_mock.return_value = CONTROL_PLANE_RESOURCE_GROUP_2
 
-        resource_groups = {"rg-1", "rg-2", "rg-3"}
+        resource_groups = {
+            CONTROL_PLANE_RESOURCE_GROUP_1,
+            CONTROL_PLANE_RESOURCE_GROUP_2,
+            CONTROL_PLANE_RESOURCE_GROUP_3,
+        }
         result = uninstall.choose_rgs_to_delete(resource_groups)
 
-        self.assertEqual(result, {"rg-2"})
+        self.assertEqual(result, {CONTROL_PLANE_RESOURCE_GROUP_2})
 
     def test_choose_rgs_to_delete_skip_prompts(self):
         """Test choosing resource groups when prompts are skipped"""
         uninstall.SKIP_PROMPTS_SETTING = True
 
-        resource_groups = {"rg-1", "rg-2", "rg-3"}
+        resource_groups = {
+            CONTROL_PLANE_RESOURCE_GROUP_1,
+            CONTROL_PLANE_RESOURCE_GROUP_2,
+            CONTROL_PLANE_RESOURCE_GROUP_3,
+        }
         result = uninstall.choose_rgs_to_delete(resource_groups)
 
         self.assertEqual(result, resource_groups)
@@ -463,9 +518,3 @@ class TestUninstallScript(TestCase):
 
         with self.assertRaises(ValueError):
             uninstall.first_key_of({})
-
-
-if __name__ == "__main__":
-    import unittest
-
-    unittest.main()
