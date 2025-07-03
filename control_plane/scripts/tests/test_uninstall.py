@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import patch as mock_patch
 
+# Needed to import the uninstall script
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # project
