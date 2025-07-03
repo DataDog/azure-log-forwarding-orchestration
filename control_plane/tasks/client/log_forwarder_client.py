@@ -589,26 +589,25 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             f"control_plane_id:{self.control_plane_id}",
             f"region:{region}",
             f"logforwarder:{get_container_app_name(log_forwarder_id)}",
-            "version:" + metrics[0].get("version", "unknown"),
+            f"version:{metrics[0].get('version', 'unknown')}",
         ]
         for metric_entry in metrics:
+            timestamp = int(metric_entry["timestamp"])
             for metric_name in GAUGE_METRIC_NAMES:
                 statsd.gauge_with_timestamp(
                     FORWARDER_METRIC_PREFIX + metric_name,
                     get_metric_value(metric_entry, metric_name),
-                    int(metric_entry["timestamp"]),
+                    timestamp,
                     tags=tags,
                 )
             for metric_name in COUNT_METRIC_NAMES:
                 statsd.count_with_timestamp(
                     FORWARDER_METRIC_PREFIX + metric_name,
                     get_metric_value(metric_entry, metric_name),
-                    int(metric_entry["timestamp"]),
+                    timestamp,
                     tags=tags,
                 )
-            statsd.count_with_timestamp(
-                FORWARDER_METRIC_PREFIX + "run_completed", 1, int(metric_entry["timestamp"]), tags=tags
-            )
+            statsd.count_with_timestamp(FORWARDER_METRIC_PREFIX + "run_completed", 1, timestamp, tags=tags)
 
     async def list_log_forwarder_ids(self) -> set[str]:
         jobs, storage_accounts = await gather(
