@@ -20,6 +20,7 @@ from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError
 
 # project
+import tasks.client.log_forwarder_client as client_module
 from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import (
     MAX_ATTEMPS,
@@ -150,6 +151,7 @@ class TestLogForwarderClient(AsyncTestCase):
         p.start()
         self.addCleanup(p.stop)
         self.log = mock()
+        client_module.TELEMETRY_ENABLED = False
         self.metrics_client = Mock()
         self.client: MockedLogForwarderClient = cast(
             MockedLogForwarderClient,
@@ -616,7 +618,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
 
     async def test_submit_metrics_normal_execution(self):
-        self.client.telemetry_enabled = True
+        client_module.TELEMETRY_ENABLED = True
         self.client.metrics_client.submit_metrics.return_value = {}
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
@@ -624,7 +626,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.metrics_client.submit_metrics.assert_called_once_with(body=FAKE_METRIC_PAYLOAD)
 
     async def test_submit_metrics_retries(self):
-        self.client.telemetry_enabled = True
+        client_module.TELEMETRY_ENABLED = True
         self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
         self.client.metrics_client.submit_metrics.return_value = {}
         self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
@@ -637,7 +639,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
 
     async def test_submit_metrics_nonretryable_exception(self):
-        self.client.telemetry_enabled = True
+        client_module.TELEMETRY_ENABLED = True
         self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
         with self.assertRaises(FakeHttpError):
             async with self.client as client:
@@ -656,7 +658,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.assertEqual(res, [])
 
     async def test_submit_metrics_errors_logged(self):
-        self.client.telemetry_enabled = True
+        client_module.TELEMETRY_ENABLED = True
         self.client.metrics_client.submit_metrics.return_value = {
             "errors": [
                 "oops something went wrong",

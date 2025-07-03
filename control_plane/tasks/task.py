@@ -32,12 +32,11 @@ from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     DD_API_KEY_SETTING,
     DD_SITE_SETTING,
-    DD_TELEMETRY_SETTING,
     LOG_LEVEL_SETTING,
-    is_truthy,
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
 from tasks.common import CONTROL_PLANE_METRIC_PREFIX, now
+from tasks.telemetry import TELEMETRY_ENABLED
 from tasks.version import VERSION
 
 log = getLogger(__name__)
@@ -99,12 +98,11 @@ class Task(AbstractAsyncContextManager["Task"]):
             f"control_plane_id:{self.control_plane_id}",
             f"version:{VERSION}",
         ]
-        self.telemetry_enabled = bool(is_truthy(DD_TELEMETRY_SETTING) and environ.get(DD_API_KEY_SETTING))
         self.log = log.getChild(self.__class__.__name__)
         self._logs: list[LogRecord] = []
         configuration = Configuration()
 
-        target_staging = self.telemetry_enabled and "datad0g.com" in environ.get(DD_SITE_SETTING, "")
+        target_staging = TELEMETRY_ENABLED and environ.get(DD_SITE_SETTING) == "datad0g.com"
 
         if target_staging:
             configuration.server_index = 2
@@ -126,7 +124,7 @@ class Task(AbstractAsyncContextManager["Task"]):
             metrics_servers = self._metrics_client._submit_metrics_endpoint.settings.get("servers")
             _add_datadog_staging(metrics_servers)
 
-        if self.telemetry_enabled:
+        if TELEMETRY_ENABLED:
             log.info("Telemetry enabled, will submit logs for %s", self.NAME)
             self.log.addHandler(ListHandler(self._logs))
 
@@ -161,7 +159,7 @@ class Task(AbstractAsyncContextManager["Task"]):
     async def write_caches(self) -> None: ...
 
     async def submit_telemetry(self) -> None:
-        if not self.telemetry_enabled:
+        if not TELEMETRY_ENABLED:
             return
         dd_logs = HTTPLog(
             value=[
