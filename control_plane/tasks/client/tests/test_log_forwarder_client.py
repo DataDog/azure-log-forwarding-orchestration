@@ -7,16 +7,10 @@ from asyncio import sleep
 from json import dumps
 from os import environ
 from typing import cast
-from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, patch
+from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, call, patch
 
 # 3p
-from aiosonic.exceptions import RequestTimeout
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
-from datadog_api_client.v2.model.metric_intake_type import MetricIntakeType
-from datadog_api_client.v2.model.metric_payload import MetricPayload
-from datadog_api_client.v2.model.metric_point import MetricPoint
-from datadog_api_client.v2.model.metric_resource import MetricResource
-from datadog_api_client.v2.model.metric_series import MetricSeries
 from tenacity import RetryError
 
 # project
@@ -89,7 +83,6 @@ class MockedLogForwarderClient(LogForwarderClient):
     container_apps_client: AsyncMock
     storage_client: AsyncMock
     _datadog_client: AsyncMock
-    metrics_client: AsyncMock
 
 
 FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
@@ -111,39 +104,6 @@ FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
 
 METRIC_TAGS = ["control_plane_id:e90ecb54476d", "region:eastus", "version:74a5f6a"]
 
-FAKE_METRIC_PAYLOAD = MetricPayload(
-    series=[
-        MetricSeries(
-            metric="azure.lfo.forwarder.resource_log_volume",
-            type=MetricIntakeType.UNSPECIFIED,
-            points=[MetricPoint(timestamp=1723040910, value=10), MetricPoint(timestamp=1723040911, value=11)],
-            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
-            tags=METRIC_TAGS,
-        ),
-        MetricSeries(
-            metric="azure.lfo.forwarder.resource_log_bytes",
-            type=MetricIntakeType.UNSPECIFIED,
-            points=[MetricPoint(timestamp=1723040910, value=1000), MetricPoint(timestamp=1723040911, value=1101)],
-            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
-            tags=METRIC_TAGS,
-        ),
-        MetricSeries(
-            metric="azure.lfo.forwarder.runtime_seconds",
-            type=MetricIntakeType.UNSPECIFIED,
-            points=[MetricPoint(timestamp=1723040910, value=2.80), MetricPoint(timestamp=1723040911, value=2.81)],
-            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
-            tags=METRIC_TAGS,
-        ),
-        MetricSeries(
-            metric="azure.lfo.forwarder.run_completed",
-            type=MetricIntakeType.UNSPECIFIED,
-            points=[MetricPoint(timestamp=1723040910, value=1), MetricPoint(timestamp=1723040911, value=1)],
-            resources=[MetricResource(name="dd-log-forwarder-test", type="logforwarder")],
-            tags=METRIC_TAGS,
-        ),
-    ],
-)
-
 
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
@@ -153,6 +113,7 @@ class TestLogForwarderClient(AsyncTestCase):
         self.log = mock()
         client_module.TELEMETRY_ENABLED = False
         self.metrics_client = Mock()
+        self.statsd = self.patch_path("tasks.client.log_forwarder_client.statsd")
         self.client: MockedLogForwarderClient = cast(
             MockedLogForwarderClient,
             LogForwarderClient(
@@ -161,14 +122,12 @@ class TestLogForwarderClient(AsyncTestCase):
                 subscription_id=SUB_ID1,
                 resource_group=RESOURCE_GROUP_NAME,
                 pii_rules_json=PII_RULES_JSON,
-                metrics_client=self.metrics_client,
             ),
         )
         await self.client.__aexit__(None, None, None)
         self.client.container_apps_client = AsyncMockClient()
         self.client.storage_client = AsyncMockClient()
         self.client._datadog_client = AsyncMockClient()
-        self.client.metrics_client = AsyncMock()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
 
@@ -334,7 +293,7 @@ class TestLogForwarderClient(AsyncTestCase):
             await sleep(0.05)
             m()
 
-        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1", PII_RULES_JSON, Mock()) as client:
+        async with LogForwarderClient(self.log, Mock(), "sub1", "rg1", PII_RULES_JSON) as client:
             for _ in range(3):
                 client.submit_background_task(background_task())
             failing_task_error = Exception("test")
@@ -619,33 +578,105 @@ class TestLogForwarderClient(AsyncTestCase):
 
     async def test_submit_metrics_normal_execution(self):
         client_module.TELEMETRY_ENABLED = True
-        self.client.metrics_client.submit_metrics.return_value = {}
+
         async with self.client as client:
             await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
-
-        self.client.metrics_client.submit_metrics.assert_called_once_with(body=FAKE_METRIC_PAYLOAD)
-
-    async def test_submit_metrics_retries(self):
-        client_module.TELEMETRY_ENABLED = True
-        self.client.metrics_client.submit_metrics.side_effect = [RequestTimeout(), RequestTimeout(), DEFAULT]
-        self.client.metrics_client.submit_metrics.return_value = {}
-        self.client.metrics_client.submit_metrics.side_effect = RequestTimeout()
-        with self.assertRaises(RetryError) as ctx:
-            async with self.client as client:
-                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
-        self.client.metrics_client.submit_metrics.assert_called_with(body=FAKE_METRIC_PAYLOAD)
-        self.assertEqual(self.client.metrics_client.submit_metrics.call_count, MAX_ATTEMPS)
-
-        self.assertIsInstance(ctx.exception.last_attempt.exception(), RequestTimeout)
-
-    async def test_submit_metrics_nonretryable_exception(self):
-        client_module.TELEMETRY_ENABLED = True
-        self.client.metrics_client.submit_metrics.side_effect = FakeHttpError(404)
-        with self.assertRaises(FakeHttpError):
-            async with self.client as client:
-                await client.submit_log_forwarder_metrics("test", FAKE_METRIC_BLOBS, EAST_US)
-        self.client.metrics_client.submit_metrics.assert_called_with(body=FAKE_METRIC_PAYLOAD)
-        self.assertEqual(self.client.metrics_client.submit_metrics.call_count, 1)
+        self.statsd.gauge_with_timestamp.assert_has_calls(
+            [
+                call(
+                    "azure.lfo.forwarder.runtime_seconds",
+                    2.8,
+                    1723040910,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+                call(
+                    "azure.lfo.forwarder.runtime_seconds",
+                    2.81,
+                    1723040911,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+            ]
+        )
+        self.statsd.count_with_timestamp.assert_has_calls(
+            [
+                call(
+                    "azure.lfo.forwarder.resource_log_volume",
+                    10,
+                    1723040910,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+                call(
+                    "azure.lfo.forwarder.resource_log_bytes",
+                    1000,
+                    1723040910,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+                call(
+                    "azure.lfo.forwarder.run_completed",
+                    1,
+                    1723040910,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+                call(
+                    "azure.lfo.forwarder.resource_log_volume",
+                    11,
+                    1723040911,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+                call(
+                    "azure.lfo.forwarder.resource_log_bytes",
+                    1101,
+                    1723040911,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+                call(
+                    "azure.lfo.forwarder.run_completed",
+                    1,
+                    1723040911,
+                    tags=[
+                        "control_plane_id:e90ecb54476d",
+                        "region:eastus",
+                        "logforwarder:dd-log-forwarder-test",
+                        "version:74a5f6a",
+                    ],
+                ),
+            ]
+        )
 
     async def test_old_log_forwarder_metrics_are_ignored(self):
         metrics = generate_metrics(100, {"resource1": 4, "resource2": 6}, offset_mins=16)
@@ -656,32 +687,6 @@ class TestLogForwarderClient(AsyncTestCase):
 
         self.client.get_blob_metrics_lines.assert_called_once_with(CONFIG_ID1, EAST_US)
         self.assertEqual(res, [])
-
-    async def test_submit_metrics_errors_logged(self):
-        client_module.TELEMETRY_ENABLED = True
-        self.client.metrics_client.submit_metrics.return_value = {
-            "errors": [
-                "oops something went wrong",
-            ]
-        }
-        async with self.client as client:
-            await client.submit_log_forwarder_metrics(
-                "test",
-                [
-                    {
-                        "runtime_seconds": 2.80,
-                        "resource_log_volume": {},
-                        "timestamp": 1723040910,
-                        "resource_log_bytes": {},
-                    }
-                ],
-                EAST_US,
-            )
-
-        self.log.error.assert_called_once_with(
-            "oops something went wrong",
-            extra={"subscription_id": "decc348e-ca9e-4925-b351-ae56b0d9f811", "resource_group": "test_lfo"},
-        )
 
     async def test_log_forwarder_container_created(self):
         async with self.client as client:

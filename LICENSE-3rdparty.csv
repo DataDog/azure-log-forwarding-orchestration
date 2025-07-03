@@ -41,6 +41,7 @@ check,https://github.com/go-check/check/tree/v1,BSD 2-Clause,Copyright (c) 2010-
 cffi,https://pypi.org/project/cffi/,MIT,Copyright (c) Individual contributors
 crypto,https://go.googlesource.com/crypto,BSD-3-Clause,Copyright 2009 The Go Authors.
 cryptography,https://pypi.org/project/cryptography/,Apache-2.0 OR BSD-3-Clause,Copyright (c) Individual contributors
+datadog,https://pypi.org/project/datadog/,BSD-3-Clause,"Copyright (c) 2015-Present Datadog, Inc <opensource@datadoghq.com>"
 datadog-api-client,https://pypi.org/project/datadog-api-client/,Apache-2.0,Copyright (c) 2020 Datadog
 datadog-serverless-compat,https://pypi.org/project/datadog-serverless-compat/,Apache-2.0,"Datadog, Inc."
 datadog-api-client-go,https://github.com/DataDog/datadog-api-client-go/tree/master/api/datadogV2,Apache-2.0,Copyright (c) 2020 Datadog
