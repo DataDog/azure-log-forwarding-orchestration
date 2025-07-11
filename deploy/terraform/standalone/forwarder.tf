@@ -44,8 +44,6 @@ variable "storage_account_sku" {
       "Standard_GRS",
       "Standard_GZRS",
       "Standard_LRS",
-      "Standard_RAGRS",
-      "Standard_RAGZRS",
       "Standard_ZRS"
     ], var.storage_account_sku)
     error_message = "Storage account SKU must be one of the allowed values."
@@ -87,7 +85,8 @@ variable "datadog_site" {
       "ap2.datadoghq.com",
       "us3.datadoghq.com",
       "us5.datadoghq.com",
-      "ddog-gov.com"
+      "ddog-gov.com",
+      "datad0g.com",
     ], var.datadog_site)
     error_message = "Datadog site must be one of the allowed values."
   }
@@ -113,13 +112,13 @@ variable "forwarder_image" {
 variable "forwarder_cpu" {
   description = "CPU allocation for the forwarder container"
   type        = number
-  default     = 1
+  default     = 2
 }
 
 variable "forwarder_memory" {
   description = "Memory allocation for the forwarder container"
   type        = string
-  default     = "2Gi"
+  default     = "4Gi"
 }
 
 variable "schedule_expression" {
