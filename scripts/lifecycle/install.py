@@ -30,7 +30,7 @@ def set_test_configuration():
     """Set test configuration values when -t flag is passed."""
     global control_plane_subscription, control_plane_resource_group, control_plane_location
     global control_plane_id, datadog_api_key, datadog_application_key, datadog_site
-    global monitored_subscriptions, resource_tag_filters, pii_scrubber_rules, datadog_telemetry
+    global monitored_subscriptions, resource_tag_filters, pii_scrubber_rules, datadog_telemetry, log_level
 
     control_plane_subscription = "0b62a232-b8db-4380-9da6-640f7272ed6d"
     control_plane_resource_group = "lfo_altan_onboarding"
@@ -46,6 +46,7 @@ def set_test_configuration():
     resource_tag_filters = ""
     pii_scrubber_rules = ""
     datadog_telemetry = False
+    log_level = "INFO"
 
 
 def generate_control_plane_id(
@@ -73,6 +74,7 @@ def initialize_configuration(
     resource_tag_filters_arg: str = "",
     pii_scrubber_rules_arg: str = "",
     datadog_telemetry_arg: bool = False,
+    log_level_arg: str = "INFO",
 ):
     """Initialize configuration parameters."""
     global control_plane_subscription, control_plane_resource_group, control_plane_location
@@ -80,7 +82,7 @@ def initialize_configuration(
     global monitored_subscriptions, storage_account_name, control_plane_cache
     global app_service_plan, control_plane_env, deployer_job_name, container_app_start_role
     global storage_account_url, image_registry, deployer_image, function_apps
-    global resource_tag_filters, pii_scrubber_rules, datadog_telemetry
+    global resource_tag_filters, pii_scrubber_rules, datadog_telemetry, log_level
 
     if use_test_values:
         set_test_configuration()
@@ -102,6 +104,7 @@ def initialize_configuration(
         resource_tag_filters = resource_tag_filters_arg
         pii_scrubber_rules = pii_scrubber_rules_arg
         datadog_telemetry = datadog_telemetry_arg
+        log_level = log_level_arg
 
     # Generate control plane ID dynamically if management group is provided
     if management_group_id and not use_test_values:
@@ -117,7 +120,7 @@ def initialize_configuration(
     storage_account_name = f"lfostorage{control_plane_id}"
     control_plane_cache = "control-plane-cache"
     app_service_plan = f"control-plane-asp-{control_plane_id}"
-    control_plane_env = f"deployer-task-env-{control_plane_id}"
+    control_plane_env = f"dd-log-forwarder-env-{control_plane_id}-{control_plane_location}"
     deployer_job_name = f"deployer-task-{control_plane_id}"
     container_app_start_role = f"ContainerAppStartRole{control_plane_id}"
     storage_account_url = f"https://{storage_account_name}.blob.core.windows.net"
@@ -169,6 +172,7 @@ monitored_subscriptions = []
 resource_tag_filters = ""
 pii_scrubber_rules = ""
 datadog_telemetry = False
+log_level = "INFO"
 storage_account_name = ""
 control_plane_cache = ""
 app_service_plan = ""
@@ -332,6 +336,9 @@ def validate_configuration():
     if not monitored_subscriptions or any(sub.startswith("<") for sub in monitored_subscriptions):
         raise RuntimeError("Monitored subscriptions not properly configured")
 
+    if log_level not in ["DEBUG", "INFO", "WARNING", "ERROR"]:
+        raise RuntimeError(f"Invalid log level: {log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR")
+
     log.debug("Configuration validation completed")
 
 
@@ -389,6 +396,10 @@ def create_storage_account():
             "StorageV2",
             "--access-tier",
             "Hot",
+            "--min-tls-version",
+            "TLS1_2",
+            "--https-only",
+            "true",
         ]
     )
 
@@ -544,6 +555,46 @@ def create_function_app(name: str, key: str):
         ]
     )
 
+    # Enhanced connection string to match bicep template
+    enhanced_connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};EndpointSuffix=core.windows.net;AccountKey={key}"
+
+    # Common app settings (matching bicep commonAppSettings)
+    common_settings = [
+        f"AzureWebJobsStorage={enhanced_connection_string}",
+        "FUNCTIONS_EXTENSION_VERSION=~4",
+        "FUNCTIONS_WORKER_RUNTIME=python",
+        f"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING={enhanced_connection_string}",
+        f"WEBSITE_CONTENTSHARE={name}",
+        "AzureWebJobsFeatureFlags=EnableWorkerIndexing",
+        f"DD_API_KEY={datadog_api_key}",
+        f"DD_SITE={datadog_site}",
+        f"DD_TELEMETRY={'true' if datadog_telemetry else 'false'}",
+        f"CONTROL_PLANE_ID={control_plane_id}",
+        f"LOG_LEVEL={log_level}",
+    ]
+
+    # Function-specific settings
+    if "resources" in name:
+        specific_settings = [
+            f"MONITORED_SUBSCRIPTIONS={','.join(monitored_subscriptions)}",
+            f"RESOURCE_TAG_FILTERS={resource_tag_filters}",
+        ]
+    elif "diagnostic" in name:
+        specific_settings = [
+            f"RESOURCE_GROUP={control_plane_resource_group}",
+        ]
+    elif "scaling" in name:
+        specific_settings = [
+            f"RESOURCE_GROUP={control_plane_resource_group}",
+            f"FORWARDER_IMAGE={image_registry}/forwarder:latest",
+            f"CONTROL_PLANE_REGION={control_plane_location}",
+            f"PII_SCRUBBER_RULES={pii_scrubber_rules}",
+        ]
+    else:
+        specific_settings = []
+
+    all_settings = common_settings + specific_settings
+
     # Add app settings (simulating what's in ARM)
     log.debug(f"Configuring app settings for Function App {name}")
     run_cli(
@@ -558,13 +609,8 @@ def create_function_app(name: str, key: str):
             "--resource-group",
             control_plane_resource_group,
             "--settings",
-            f"AzureWebJobsStorage=DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key}",
-            "FUNCTIONS_EXTENSION_VERSION=~4",
-            "FUNCTIONS_WORKER_RUNTIME=python",
-            f"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING=DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key}",
-            f"WEBSITE_CONTENTSHARE={name}",
-            "AzureWebJobsFeatureFlags=EnableWorkerIndexing",
         ]
+        + all_settings
     )
 
 
@@ -577,7 +623,7 @@ def create_function_apps():
     key = get_storage_key()
 
     log.info("Creating Function Apps...")
-    for role, app_name in function_apps.items():
+    for _role, app_name in function_apps.items():
         log.info(f"Creating Function App: {app_name}")
         create_function_app(app_name, key)
 
@@ -632,6 +678,8 @@ def create_containerapp_job():
     log.info(f"Creating Container App job {deployer_job_name}")
     storage_key = get_storage_key()
 
+    enhanced_connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};EndpointSuffix=core.windows.net;AccountKey={storage_key}"
+
     run_cli(
         [
             "az",
@@ -660,16 +708,19 @@ def create_containerapp_job():
             "1Gi",
             "--assign-identity",
             "--env-vars",
+            f"AzureWebJobsStorage=secretref:connection-string",
             f"SUBSCRIPTION_ID={control_plane_subscription}",
             f"RESOURCE_GROUP={control_plane_resource_group}",
-            f"REGION={control_plane_location}",
+            f"CONTROL_PLANE_ID={control_plane_id}",
+            f"CONTROL_PLANE_REGION={control_plane_location}",
             "DD_API_KEY=secretref:dd-api-key",
             "DD_APP_KEY=secretref:dd-app-key",
             f"DD_SITE={datadog_site}",
-            "AzureWebJobsStorage=secretref:connection-string",
+            f"DD_TELEMETRY={'true' if datadog_telemetry else 'false'}",
             f"STORAGE_ACCOUNT_URL={storage_account_url}",
+            f"LOG_LEVEL={log_level}",
             "--secrets",
-            f"connection-string=DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={storage_key}",
+            f"connection-string={enhanced_connection_string}",
             f"dd-api-key={datadog_api_key}",
             f"dd-app-key={datadog_application_key}",
         ]
@@ -1028,6 +1079,7 @@ if __name__ == "__main__":
         resource_tag_filters_arg=args.resource_tag_filters,
         pii_scrubber_rules_arg=args.pii_scrubber_rules,
         datadog_telemetry_arg=args.datadog_telemetry,
+        log_level_arg=args.log_level,
     )
 
     # Set up logging and run main function
