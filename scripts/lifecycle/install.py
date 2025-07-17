@@ -2,11 +2,40 @@
 """
 Azure Log Forwarding Orchestration Installation Script
 
-This script combines the functionality from the ARM template at /deploy/build/azuredeploy.json
-into a Python script that deploys identities, role assignments, resources, and scripts
-into a customer's Azure environment using Python and the Azure CLI.
+This script deploys necessary infrastructure to enable Automated Log Forwarding in an Azure environment.
 
 This script is designed to be executed in Azure Cloud Shell.
+
+USAGE:
+    python install.py \
+        --management-group "/providers/Microsoft.Management/managementGroups/your-mg-id" \
+        --control-plane-region "eastus" \
+        --control-plane-subscription "12345678-1234-1234-1234-123456789012" \
+        --control-plane-resource-group "dd-control-plane-rg" \
+        --monitored-subscriptions "12345678-1234-1234-1234-123456789012,87654321-4321-4321-4321-210987654321" \
+        --datadog-api-key "your-32-char-api-key" \
+        --datadog-app-key "your-40-char-app-key" \
+        --datadog-site "datadoghq.com"
+        --resource-tag-filters "environment:prod,team:platform" \
+        --pii-scrubber-rules "$(cat pii-rules.yaml)" \
+        --datadog-telemetry \
+        --log-level "DEBUG"
+
+PARAMETERS:
+    Required:
+        --management-group: Management group ID for enterprise-scale deployment
+        --control-plane-region: Azure region (e.g., eastus, westus2, northeurope)
+        --control-plane-subscription: Subscription ID for the control plane infrastructure  
+        --control-plane-resource-group: Resource group name for control plane resources
+        --monitored-subscriptions: Comma-separated subscription IDs to monitor for logs
+        --datadog-api-key: 32-character Datadog API key from organization settings
+        --datadog-app-key: 40-character Datadog Application key for deployer access
+        --datadog-site: Datadog site region (default: datadoghq.com)
+    Optional:
+        --resource-tag-filters: Comma-separated tags to filter which resources to monitor
+        --pii-scrubber-rules: YAML-formatted PII scrubbing rules
+        --datadog-telemetry: Enable Datadog telemetry collection
+        --log-level: Logging verbosity (DEBUG, INFO, WARNING, ERROR)
 """
 
 import argparse
@@ -14,6 +43,7 @@ import json
 import subprocess
 import time
 import uuid
+from dataclasses import dataclass
 from logging import INFO, WARNING, basicConfig, getLogger
 from typing import Optional
 
@@ -24,29 +54,6 @@ log = getLogger("installer")
 # =============================================================================
 # CONFIGURATION PARAMETERS
 # =============================================================================
-
-
-def set_test_configuration():
-    """Set test configuration values when -t flag is passed."""
-    global control_plane_subscription, control_plane_resource_group, control_plane_location
-    global control_plane_id, datadog_api_key, datadog_application_key, datadog_site
-    global monitored_subscriptions, resource_tag_filters, pii_scrubber_rules, datadog_telemetry, log_level
-
-    control_plane_subscription = "0b62a232-b8db-4380-9da6-640f7272ed6d"
-    control_plane_resource_group = "lfo_altan_onboarding"
-    control_plane_location = "eastus"
-    control_plane_id = "altan234test"  # 12-char lowercase unique ID
-
-    datadog_api_key = "<api-key>"
-    datadog_application_key = "<app-key>"
-    datadog_site = "datadoghq.com"
-    monitored_subscriptions = ["0b62a232-b8db-4380-9da6-640f7272ed6d", "34464906-34fe-401e-a420-79bd0ce2a1da"]
-
-    # Additional configuration parameters
-    resource_tag_filters = ""
-    pii_scrubber_rules = ""
-    datadog_telemetry = False
-    log_level = "INFO"
 
 
 def generate_control_plane_id(
@@ -68,72 +75,70 @@ def generate_control_plane_id(
     return clean_guid[-12:].lower()
 
 
-def initialize_configuration(
-    use_test_values: bool = False,
-    management_group_id: Optional[str] = None,
-    resource_tag_filters_arg: str = "",
-    pii_scrubber_rules_arg: str = "",
-    datadog_telemetry_arg: bool = False,
-    log_level_arg: str = "INFO",
-):
-    """Initialize configuration parameters."""
-    global control_plane_subscription, control_plane_resource_group, control_plane_location
-    global control_plane_id, datadog_api_key, datadog_application_key, datadog_site
-    global monitored_subscriptions, storage_account_name, control_plane_cache
-    global app_service_plan, control_plane_env, deployer_job_name, container_app_start_role
-    global storage_account_url, image_registry, deployer_image, function_apps
-    global resource_tag_filters, pii_scrubber_rules, datadog_telemetry, log_level
+@dataclass
+class Configuration:
+    """Class to hold all configuration parameters."""
 
-    if use_test_values:
-        set_test_configuration()
-    else:
-        # Default configuration - update these parameters for your environment
-        control_plane_subscription = "<your-subscription-id>"
-        control_plane_resource_group = "dd-control-plane-rg"
-        control_plane_location = "eastus"
+    # Required parameters
+    management_group_id: str
+    control_plane_region: str
+    control_plane_subscription_id: str
+    control_plane_rg: str
+    monitored_subs: str
+    datadog_api_key: str
+    datadog_app_key: str
+
+    # Optional parameters (with defaults)
+    datadog_site: str = "datadoghq.com"
+    resource_tag_filters_arg: str = ""
+    pii_scrubber_rules_arg: str = ""
+    datadog_telemetry_arg: bool = False
+    log_level_arg: str = "INFO"
+
+    def __post_init__(self):
+        """Post-initialization to calculate derived values."""
+        # Basic configuration mapping
+        self.control_plane_subscription = self.control_plane_subscription_id
+        self.control_plane_resource_group = self.control_plane_rg
+        self.control_plane_location = self.control_plane_region
 
         # Datadog configuration
-        datadog_api_key = "<your-datadog-api-key>"
-        datadog_application_key = "<your-datadog-app-key>"  # Added for deployer
-        datadog_site = "datadoghq.com"
+        self.datadog_application_key = self.datadog_app_key
 
-        # Monitored subscriptions - update with actual subscription IDs
-        monitored_subscriptions = ["<sub-id-1>", "<sub-id-2>"]
+        # Parse monitored subscriptions from comma-separated string
+        self.monitored_subscriptions = [sub.strip() for sub in self.monitored_subs.split(",") if sub.strip()]
 
-        # Additional configuration parameters
-        resource_tag_filters = resource_tag_filters_arg
-        pii_scrubber_rules = pii_scrubber_rules_arg
-        datadog_telemetry = datadog_telemetry_arg
-        log_level = log_level_arg
+        self.resource_tag_filters = self.resource_tag_filters_arg
+        self.pii_scrubber_rules = self.pii_scrubber_rules_arg
+        self.datadog_telemetry = self.datadog_telemetry_arg
+        self.log_level = self.log_level_arg
 
-    # Generate control plane ID dynamically if management group is provided
-    if management_group_id and not use_test_values:
-        control_plane_id = generate_control_plane_id(
-            management_group_id, control_plane_subscription, control_plane_resource_group, control_plane_location
+        self.control_plane_id = generate_control_plane_id(
+            self.management_group_id,
+            self.control_plane_subscription,
+            self.control_plane_resource_group,
+            self.control_plane_location,
         )
-        log.info(f"Generated control plane ID: {control_plane_id}")
-    elif not use_test_values:
-        # Fallback to default if no management group provided
-        control_plane_id = "abcd1234efgh"  # 12-char lowercase unique ID
+        log.info(f"Generated control plane ID: {self.control_plane_id}")
 
-    # Derived resource names (calculated after base configuration is set)
-    storage_account_name = f"lfostorage{control_plane_id}"
-    control_plane_cache = "control-plane-cache"
-    app_service_plan = f"control-plane-asp-{control_plane_id}"
-    control_plane_env = f"dd-log-forwarder-env-{control_plane_id}-{control_plane_location}"
-    deployer_job_name = f"deployer-task-{control_plane_id}"
-    container_app_start_role = f"ContainerAppStartRole{control_plane_id}"
-    storage_account_url = f"https://{storage_account_name}.blob.core.windows.net"
+        # Derived resource names (calculated after base configuration is set)
+        self.storage_account_name = f"lfostorage{self.control_plane_id}"
+        self.control_plane_cache = "control-plane-cache"
+        self.app_service_plan = f"control-plane-asp-{self.control_plane_id}"
+        self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_location}"
+        self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
+        self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
+        self.storage_account_url = f"https://{self.storage_account_name}.blob.core.windows.net"
 
-    # Container configuration
-    image_registry = "datadoghq.azurecr.io"
-    deployer_image = f"{image_registry}/deployer:latest"
+        # Container configuration
+        self.image_registry = "datadoghq.azurecr.io"
+        self.deployer_image = f"{self.image_registry}/deployer:latest"
 
-    function_apps = {
-        "resources": f"resources-task-{control_plane_id}",
-        "diagnostic": f"diagnostic-settings-task-{control_plane_id}",
-        "scaling": f"scaling-task-{control_plane_id}",
-    }
+        self.control_plane_function_apps = {
+            "resources": f"resources-task-{self.control_plane_id}",
+            "diagnostic": f"diagnostic-settings-task-{self.control_plane_id}",
+            "scaling": f"scaling-task-{self.control_plane_id}",
+        }
 
 
 def parse_arguments():
@@ -142,61 +147,94 @@ def parse_arguments():
         description="Azure Log Forwarding Orchestration Installation Script",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+
+    # Required parameters
     parser.add_argument(
-        "-t", "--test", action="store_true", help="Use test configuration values instead of default placeholders"
+        "-mg", "--management-group", type=str, required=True, help="Management group ID to deploy under (required)"
     )
+
     parser.add_argument(
-        "-mg",
-        "--management-group",
+        "--control-plane-region",
         type=str,
-        help="Management group ID to deploy under",
+        required=True,
+        help="Azure region for the control plane (e.g., eastus, westus2) (required)",
     )
+
+    parser.add_argument(
+        "--control-plane-subscription",
+        type=str,
+        required=True,
+        help="Subscription ID where the control plane will be deployed (required)",
+    )
+
+    parser.add_argument(
+        "--control-plane-resource-group",
+        type=str,
+        required=True,
+        help="Resource group name for the control plane (required)",
+    )
+
+    parser.add_argument(
+        "--monitored-subscriptions",
+        type=str,
+        required=True,
+        help="Comma-separated list of subscription IDs to monitor for log forwarding (required)",
+    )
+
+    parser.add_argument("--datadog-api-key", type=str, required=True, help="Datadog API key (required)")
+
+    parser.add_argument("--datadog-app-key", type=str, required=True, help="Datadog Application key (required)")
+
+    parser.add_argument(
+        "--datadog-site",
+        type=str,
+        choices=[
+            "datadoghq.com",
+            "datadoghq.eu",
+            "ap1.datadoghq.com",
+            "ap2.datadoghq.com",
+            "us3.datadoghq.com",
+            "us5.datadoghq.com",
+            "ddog-gov.com",
+        ],
+        default="datadoghq.com",
+        help="Datadog site (default: datadoghq.com)",
+    )
+
+    # Optional parameters
     parser.add_argument(
         "--resource-tag-filters", type=str, default="", help="Comma separated list of tags to filter resources by"
     )
+
     parser.add_argument("--pii-scrubber-rules", type=str, default="", help="YAML formatted list of PII Scrubber Rules")
+
     parser.add_argument("--datadog-telemetry", action="store_true", help="Enable Datadog telemetry")
+
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Set the log level (default: INFO)",
+    )
 
     return parser.parse_args()
 
-
-# Initialize configuration variables as globals with default values
-control_plane_subscription = ""
-control_plane_resource_group = ""
-control_plane_location = ""
-control_plane_id = ""
-datadog_api_key = ""
-datadog_application_key = ""
-datadog_site = ""
-monitored_subscriptions = []
-resource_tag_filters = ""
-pii_scrubber_rules = ""
-datadog_telemetry = False
-log_level = "INFO"
-storage_account_name = ""
-control_plane_cache = ""
-app_service_plan = ""
-control_plane_env = ""
-deployer_job_name = ""
-container_app_start_role = ""
-storage_account_url = ""
-image_registry = ""
-deployer_image = ""
-function_apps = {}
 
 # =============================================================================
 # UTILITY FUNCTIONS
 # =============================================================================
 
 
-def run_cli(command: list[str]) -> str:
-    """Run a shell command and return output or raise error."""
-    log.debug(f"Running: {' '.join(command)}")
-    result = subprocess.run(command, capture_output=True, text=True)
+def az(command: list[str]) -> str:
+    """Run an Azure CLI command and return output or raise error."""
+    log.debug(f"Running: az {' '.join(command)}")
+    full_command = ["az"] + command
+    result = subprocess.run(full_command, capture_output=True, text=True)
     if result.returncode != 0:
-        log.error(f"Command failed: {' '.join(command)}")
+        log.error(f"Command failed: az {' '.join(command)}")
         log.error(result.stderr)
-        raise RuntimeError(f"Command failed: {' '.join(command)}")
+        raise RuntimeError(f"Command failed: az {' '.join(command)}")
     return result.stdout
 
 
@@ -205,7 +243,7 @@ def run_cli(command: list[str]) -> str:
 # =============================================================================
 
 
-def validate_deployment():
+def validate_deployment(config: Configuration):
     """Phase 0: Validate all parameters and permissions before creating anything."""
     log.info("=" * 70)
     log.info("VALIDATION: Checking deployment parameters and permissions...")
@@ -215,19 +253,21 @@ def validate_deployment():
     validate_azure_cli()
 
     # Validate subscription access
-    validate_subscription_access()
+    validate_subscription_access(config.control_plane_subscription)
 
-    # Validate resource names availability
-    validate_resource_names()
+    # Validate resource names
+    validate_resource_names(
+        config.control_plane_resource_group, config.control_plane_subscription, config.storage_account_name
+    )
 
     # Validate Datadog credentials
-    validate_datadog_credentials()
+    validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
 
     # Validate configuration parameters
-    validate_configuration()
+    validate_configuration(config)
 
     # Validate monitored subscription access
-    validate_monitored_subscriptions()
+    validate_monitored_subscriptions(config.monitored_subscriptions, config.control_plane_subscription)
 
     log.info("=" * 70)
     log.info("VALIDATION COMPLETED: All checks passed - ready to deploy")
@@ -237,30 +277,31 @@ def validate_deployment():
 def validate_azure_cli():
     """Ensure Azure CLI is installed and user is authenticated."""
     try:
-        run_cli(["az", "account", "show"])
+        az(["account", "show"])
         log.debug("Azure CLI authentication verified")
     except Exception as e:
         raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.")
 
 
-def validate_subscription_access():
+def validate_subscription_access(control_plane_subscription: str):
     """Verify access to the control plane subscription."""
     try:
-        run_cli(["az", "account", "set", "--subscription", control_plane_subscription])
+        set_subscription(control_plane_subscription)
         log.debug(f"Subscription access verified: {control_plane_subscription}")
     except Exception as e:
         raise RuntimeError(f"Cannot access subscription {control_plane_subscription}: {e}")
 
 
-def validate_resource_names():
+def validate_resource_names(
+    control_plane_resource_group: str, control_plane_subscription: str, storage_account_name: str
+):
     """Check if resource names are available and valid."""
     log.info("Validating resource name availability...")
 
     # Check if resource group already exists
     try:
-        output = run_cli(
+        output = az(
             [
-                "az",
                 "group",
                 "exists",
                 "--name",
@@ -278,7 +319,7 @@ def validate_resource_names():
 
     # Check storage account name availability
     try:
-        output = run_cli(["az", "storage", "account", "check-name", "--name", storage_account_name])
+        output = az(["storage", "account", "check-name", "--name", storage_account_name])
         result = json.loads(output)
         if not result.get("nameAvailable", False):
             reason = result.get("reason", "Unknown")
@@ -289,11 +330,11 @@ def validate_resource_names():
         raise RuntimeError("Failed to parse storage account name availability check")
 
 
-def validate_datadog_credentials():
+def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
     """Validate Datadog API credentials without making changes."""
     log.info("Validating Datadog API credentials...")
 
-    if not datadog_api_key or datadog_api_key.startswith("<"):
+    if not datadog_api_key:
         raise RuntimeError("Datadog API key not configured")
 
     try:
@@ -320,41 +361,38 @@ def validate_datadog_credentials():
         raise RuntimeError(f"Failed to parse Datadog validation response: {e}")
 
 
-def validate_configuration():
+def validate_configuration(config: Configuration):
     """Validate configuration parameters."""
     log.info("Validating configuration parameters...")
 
-    if not control_plane_subscription or control_plane_subscription.startswith("<"):
+    if not config.control_plane_subscription:
         raise RuntimeError("Control plane subscription not configured")
 
-    if not control_plane_resource_group:
+    if not config.control_plane_resource_group:
         raise RuntimeError("Control plane resource group not configured")
 
-    if not control_plane_location:
+    if not config.control_plane_location:
         raise RuntimeError("Control plane location not configured")
 
-    if not monitored_subscriptions or any(sub.startswith("<") for sub in monitored_subscriptions):
+    if not config.monitored_subscriptions:
         raise RuntimeError("Monitored subscriptions not properly configured")
 
-    if log_level not in ["DEBUG", "INFO", "WARNING", "ERROR"]:
-        raise RuntimeError(f"Invalid log level: {log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR")
+    if config.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR"]:
+        raise RuntimeError(f"Invalid log level: {config.log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR")
 
     log.debug("Configuration validation completed")
 
 
-def validate_monitored_subscriptions():
+def validate_monitored_subscriptions(monitored_subscriptions: list[str], control_plane_subscription: str):
     """Verify access to all monitored subscriptions."""
     log.info("Validating access to monitored subscriptions...")
 
     for sub_id in monitored_subscriptions:
         try:
-            run_cli(["az", "account", "set", "--subscription", sub_id])
+            set_subscription(sub_id)
             log.debug(f"Monitored subscription access verified: {sub_id}")
         except Exception as e:
             raise RuntimeError(f"Cannot access monitored subscription {sub_id}: {e}")
-
-    # Reset to control plane subscription
-    run_cli(["az", "account", "set", "--subscription", control_plane_subscription])
 
 
 # =============================================================================
@@ -363,24 +401,23 @@ def validate_monitored_subscriptions():
 # =============================================================================
 
 
-def set_subscription():
+def set_subscription(subscription_id: str):
     """Set the active Azure subscription."""
-    log.info(f"Setting active subscription to {control_plane_subscription}")
-    run_cli(["az", "account", "set", "--subscription", control_plane_subscription])
+    log.debug(f"Setting active subscription to {subscription_id}")
+    az(["account", "set", "--subscription", subscription_id])
 
 
-def create_resource_group():
+def create_resource_group(control_plane_resource_group: str, control_plane_location: str):
     """Create the control plane resource group."""
     log.info(f"Creating resource group {control_plane_resource_group} in {control_plane_location}")
-    run_cli(["az", "group", "create", "--name", control_plane_resource_group, "--location", control_plane_location])
+    az(["group", "create", "--name", control_plane_resource_group, "--location", control_plane_location])
 
 
-def create_storage_account():
+def create_storage_account(storage_account_name: str, control_plane_resource_group: str, control_plane_location: str):
     """Create the storage account for the control plane."""
     log.info(f"Creating storage account {storage_account_name}")
-    run_cli(
+    az(
         [
-            "az",
             "storage",
             "account",
             "create",
@@ -404,12 +441,11 @@ def create_storage_account():
     )
 
 
-def get_storage_key() -> str:
+def get_storage_key(storage_account_name: str, control_plane_resource_group: str) -> str:
     """Get the storage account primary key."""
     log.debug(f"Retrieving storage account key for {storage_account_name}")
-    output = run_cli(
+    output = az(
         [
-            "az",
             "storage",
             "account",
             "keys",
@@ -424,12 +460,11 @@ def get_storage_key() -> str:
     return keys[0]["value"]
 
 
-def create_blob_container(account_key: str):
+def create_blob_container(storage_account_name: str, control_plane_cache: str, account_key: str):
     """Create blob container in the storage account."""
     log.info(f"Creating blob container {control_plane_cache}")
-    run_cli(
+    az(
         [
-            "az",
             "storage",
             "container",
             "create",
@@ -443,12 +478,11 @@ def create_blob_container(account_key: str):
     )
 
 
-def create_file_share(account_key: str):
+def create_file_share(storage_account_name: str, control_plane_cache: str, account_key: str):
     """Create file share in the storage account."""
     log.info(f"Creating file share {control_plane_cache}")
-    run_cli(
+    az(
         [
-            "az",
             "storage",
             "share-rm",
             "create",
@@ -462,11 +496,10 @@ def create_file_share(account_key: str):
 
 # =============================================================================
 # STEP 2: DATADOG API KEY VALIDATION
-# Source: scripts/lifecycle/02_api_key_valid.py
 # =============================================================================
 
 
-def validate_datadog_api_key():
+def validate_datadog_api_key(datadog_site: str, datadog_api_key: str):
     """Validate the Datadog API key."""
     log.info("Validating Datadog API key...")
 
@@ -503,12 +536,11 @@ def validate_datadog_api_key():
 # =============================================================================
 
 
-def create_app_service_plan():
+def create_app_service_plan(app_service_plan: str, control_plane_resource_group: str, control_plane_location: str):
     """Create the App Service Plan for Function Apps."""
     log.info(f"Creating App Service Plan {app_service_plan}")
-    run_cli(
+    az(
         [
-            "az",
             "functionapp",
             "plan",
             "create",
@@ -527,18 +559,17 @@ def create_app_service_plan():
     )
 
 
-def create_function_app(name: str, key: str):
+def create_function_app(config: Configuration, name: str, key: str):
     """Create a Function App with required configuration."""
     log.info(f"Creating Function App {name}")
-    run_cli(
+    az(
         [
-            "az",
             "functionapp",
             "create",
             "--resource-group",
-            control_plane_resource_group,
+            config.control_plane_resource_group,
             "--consumption-plan-location",
-            control_plane_location,
+            config.control_plane_location,
             "--runtime",
             "python",
             "--functions-version",
@@ -548,17 +579,15 @@ def create_function_app(name: str, key: str):
             "--name",
             name,
             "--storage-account",
-            storage_account_name,
+            config.storage_account_name,
             "--plan",
-            app_service_plan,
+            config.app_service_plan,
             "--assign-identity",
         ]
     )
 
-    # Enhanced connection string to match bicep template
-    enhanced_connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};EndpointSuffix=core.windows.net;AccountKey={key}"
+    enhanced_connection_string = f"DefaultEndpointsProtocol=https;AccountName={config.storage_account_name};EndpointSuffix=core.windows.net;AccountKey={key}"
 
-    # Common app settings (matching bicep commonAppSettings)
     common_settings = [
         f"AzureWebJobsStorage={enhanced_connection_string}",
         "FUNCTIONS_EXTENSION_VERSION=~4",
@@ -566,29 +595,29 @@ def create_function_app(name: str, key: str):
         f"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING={enhanced_connection_string}",
         f"WEBSITE_CONTENTSHARE={name}",
         "AzureWebJobsFeatureFlags=EnableWorkerIndexing",
-        f"DD_API_KEY={datadog_api_key}",
-        f"DD_SITE={datadog_site}",
-        f"DD_TELEMETRY={'true' if datadog_telemetry else 'false'}",
-        f"CONTROL_PLANE_ID={control_plane_id}",
-        f"LOG_LEVEL={log_level}",
+        f"DD_API_KEY={config.datadog_api_key}",
+        f"DD_SITE={config.datadog_site}",
+        f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
+        f"CONTROL_PLANE_ID={config.control_plane_id}",
+        f"LOG_LEVEL={config.log_level}",
     ]
 
     # Function-specific settings
     if "resources" in name:
         specific_settings = [
-            f"MONITORED_SUBSCRIPTIONS={','.join(monitored_subscriptions)}",
-            f"RESOURCE_TAG_FILTERS={resource_tag_filters}",
+            f"MONITORED_SUBSCRIPTIONS={','.join(config.monitored_subscriptions)}",
+            f"RESOURCE_TAG_FILTERS={config.resource_tag_filters}",
         ]
     elif "diagnostic" in name:
         specific_settings = [
-            f"RESOURCE_GROUP={control_plane_resource_group}",
+            f"RESOURCE_GROUP={config.control_plane_resource_group}",
         ]
     elif "scaling" in name:
         specific_settings = [
-            f"RESOURCE_GROUP={control_plane_resource_group}",
-            f"FORWARDER_IMAGE={image_registry}/forwarder:latest",
-            f"CONTROL_PLANE_REGION={control_plane_location}",
-            f"PII_SCRUBBER_RULES={pii_scrubber_rules}",
+            f"RESOURCE_GROUP={config.control_plane_resource_group}",
+            f"FORWARDER_IMAGE={config.image_registry}/forwarder:latest",
+            f"CONTROL_PLANE_REGION={config.control_plane_location}",
+            f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
         ]
     else:
         specific_settings = []
@@ -597,9 +626,8 @@ def create_function_app(name: str, key: str):
 
     # Add app settings (simulating what's in ARM)
     log.debug(f"Configuring app settings for Function App {name}")
-    run_cli(
+    az(
         [
-            "az",
             "functionapp",
             "config",
             "appsettings",
@@ -607,25 +635,25 @@ def create_function_app(name: str, key: str):
             "--name",
             name,
             "--resource-group",
-            control_plane_resource_group,
+            config.control_plane_resource_group,
             "--settings",
         ]
         + all_settings
     )
 
 
-def create_function_apps():
+def create_function_apps(config: Configuration):
     """Create all required Function Apps."""
     log.info("Creating App Service Plan...")
-    create_app_service_plan()
+    create_app_service_plan(config.app_service_plan, config.control_plane_resource_group, config.control_plane_location)
 
     log.info("Fetching storage key...")
-    key = get_storage_key()
+    key = get_storage_key(config.storage_account_name, config.control_plane_resource_group)
 
     log.info("Creating Function Apps...")
-    for _role, app_name in function_apps.items():
+    for _role, app_name in config.control_plane_function_apps.items():
         log.info(f"Creating Function App: {app_name}")
-        create_function_app(app_name, key)
+        create_function_app(config, app_name, key)
 
     log.info("Function Apps created and configured")
 
@@ -636,12 +664,11 @@ def create_function_apps():
 # =============================================================================
 
 
-def create_user_assigned_identity():
+def create_user_assigned_identity(control_plane_resource_group: str, control_plane_location: str):
     """Create a user-assigned managed identity."""
     log.info("Creating user-assigned managed identity")
-    run_cli(
+    az(
         [
-            "az",
             "identity",
             "create",
             "--name",
@@ -654,12 +681,13 @@ def create_user_assigned_identity():
     )
 
 
-def create_containerapp_environment():
+def create_containerapp_environment(
+    control_plane_env: str, control_plane_resource_group: str, control_plane_location: str
+):
     """Create the Container App environment."""
     log.info(f"Creating Container App environment {control_plane_env}")
-    run_cli(
+    az(
         [
-            "az",
             "containerapp",
             "env",
             "create",
@@ -673,25 +701,24 @@ def create_containerapp_environment():
     )
 
 
-def create_containerapp_job():
+def create_containerapp_job(config: Configuration):
     """Create the Container App job for the deployer."""
-    log.info(f"Creating Container App job {deployer_job_name}")
-    storage_key = get_storage_key()
+    log.info(f"Creating Container App job {config.deployer_job_name}")
+    storage_key = get_storage_key(config.storage_account_name, config.control_plane_resource_group)
 
-    enhanced_connection_string = f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};EndpointSuffix=core.windows.net;AccountKey={storage_key}"
+    enhanced_connection_string = f"DefaultEndpointsProtocol=https;AccountName={config.storage_account_name};EndpointSuffix=core.windows.net;AccountKey={storage_key}"
 
-    run_cli(
+    az(
         [
-            "az",
             "containerapp",
             "job",
             "create",
             "--name",
-            deployer_job_name,
+            config.deployer_job_name,
             "--resource-group",
-            control_plane_resource_group,
+            config.control_plane_resource_group,
             "--environment",
-            control_plane_env,
+            config.control_plane_env,
             "--replica-timeout",
             "1800",
             "--replica-retry-limit",
@@ -701,7 +728,7 @@ def create_containerapp_job():
             "--cron-expression",
             "*/30 * * * *",
             "--image",
-            deployer_image,
+            config.deployer_image,
             "--cpu",
             "0.5",
             "--memory",
@@ -709,30 +736,28 @@ def create_containerapp_job():
             "--assign-identity",
             "--env-vars",
             f"AzureWebJobsStorage=secretref:connection-string",
-            f"SUBSCRIPTION_ID={control_plane_subscription}",
-            f"RESOURCE_GROUP={control_plane_resource_group}",
-            f"CONTROL_PLANE_ID={control_plane_id}",
-            f"CONTROL_PLANE_REGION={control_plane_location}",
+            f"SUBSCRIPTION_ID={config.control_plane_subscription}",
+            f"RESOURCE_GROUP={config.control_plane_resource_group}",
+            f"CONTROL_PLANE_ID={config.control_plane_id}",
+            f"CONTROL_PLANE_REGION={config.control_plane_location}",
             "DD_API_KEY=secretref:dd-api-key",
             "DD_APP_KEY=secretref:dd-app-key",
-            f"DD_SITE={datadog_site}",
-            f"DD_TELEMETRY={'true' if datadog_telemetry else 'false'}",
-            f"STORAGE_ACCOUNT_URL={storage_account_url}",
-            f"LOG_LEVEL={log_level}",
+            f"DD_SITE={config.datadog_site}",
+            f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
+            f"STORAGE_ACCOUNT_URL={config.storage_account_url}",
+            f"LOG_LEVEL={config.log_level}",
             "--secrets",
             f"connection-string={enhanced_connection_string}",
-            f"dd-api-key={datadog_api_key}",
-            f"dd-app-key={datadog_application_key}",
+            f"dd-api-key={config.datadog_api_key}",
+            f"dd-app-key={config.datadog_application_key}",
         ]
     )
 
 
-def create_custom_role_definition():
+def create_custom_role_definition(container_app_start_role: str, control_plane_resource_group: str):
     """Create a custom role for starting container app jobs."""
     log.info(f"Creating custom role definition {container_app_start_role}")
-    scope = run_cli(
-        ["az", "group", "show", "--name", control_plane_resource_group, "--query", "id", "--output", "tsv"]
-    ).strip()
+    scope = az(["group", "show", "--name", control_plane_resource_group, "--query", "id", "--output", "tsv"]).strip()
 
     role_definition = {
         "Name": container_app_start_role,
@@ -746,15 +771,14 @@ def create_custom_role_definition():
     with open("custom_role.json", "w") as f:
         json.dump(role_definition, f)
 
-    run_cli(["az", "role", "definition", "create", "--role-definition", "custom_role.json"])
+    az(["role", "definition", "create", "--role-definition", "custom_role.json"])
 
 
-def assign_custom_role_to_identity():
+def assign_custom_role_to_identity(control_plane_resource_group: str, container_app_start_role: str):
     """Assign the custom role to the managed identity."""
     log.info("Assigning custom role to managed identity")
-    identity_id = run_cli(
+    identity_id = az(
         [
-            "az",
             "identity",
             "show",
             "--name",
@@ -768,13 +792,10 @@ def assign_custom_role_to_identity():
         ]
     ).strip()
 
-    scope = run_cli(
-        ["az", "group", "show", "--name", control_plane_resource_group, "--query", "id", "--output", "tsv"]
-    ).strip()
+    scope = az(["group", "show", "--name", control_plane_resource_group, "--query", "id", "--output", "tsv"]).strip()
 
-    role_id = run_cli(
+    role_id = az(
         [
-            "az",
             "role",
             "definition",
             "list",
@@ -787,9 +808,8 @@ def assign_custom_role_to_identity():
         ]
     ).strip()
 
-    run_cli(
+    az(
         [
-            "az",
             "role",
             "assignment",
             "create",
@@ -805,22 +825,24 @@ def assign_custom_role_to_identity():
     )
 
 
-def deploy_container_job_infra():
+def deploy_container_job_infra(config: Configuration):
     """Deploy all container job infrastructure."""
     log.info("Creating managed identity...")
-    create_user_assigned_identity()
+    create_user_assigned_identity(config.control_plane_resource_group, config.control_plane_location)
 
     log.info("Creating container app environment...")
-    create_containerapp_environment()
+    create_containerapp_environment(
+        config.control_plane_env, config.control_plane_resource_group, config.control_plane_location
+    )
 
     log.info("Creating container app job...")
-    create_containerapp_job()
+    create_containerapp_job(config)
 
     log.info("Defining custom role...")
-    create_custom_role_definition()
+    create_custom_role_definition(config.container_app_start_role, config.control_plane_resource_group)
 
     log.info("Assigning custom role to identity...")
-    assign_custom_role_to_identity()
+    assign_custom_role_to_identity(config.control_plane_resource_group, config.container_app_start_role)
 
     log.info("Container App job + identity setup complete")
 
@@ -831,20 +853,19 @@ def deploy_container_job_infra():
 # =============================================================================
 
 
-def run_initial_deploy_script():
+def run_initial_deploy_script(config: Configuration):
     """Trigger the initial deployment using deployment scripts."""
     log.info("Starting initial container app job via deployment script...")
 
     # Get the full identity resource ID
-    identity_id = run_cli(
+    identity_id = az(
         [
-            "az",
             "identity",
             "show",
             "--name",
             "runInitialDeployIdentity",
             "--resource-group",
-            control_plane_resource_group,
+            config.control_plane_resource_group,
             "--query",
             "id",
             "--output",
@@ -853,22 +874,21 @@ def run_initial_deploy_script():
     ).strip()
 
     # Get the storage key again
-    storage_key = get_storage_key()
+    storage_key = get_storage_key(config.storage_account_name, config.control_plane_resource_group)
 
     # Build PowerShell script content
-    ps_script = f"Start-AzContainerAppJob -Name {deployer_job_name} -ResourceGroupName {control_plane_resource_group}"
+    ps_script = f"Start-AzContainerAppJob -Name {config.deployer_job_name} -ResourceGroupName {config.control_plane_resource_group}"
 
-    run_cli(
+    az(
         [
-            "az",
             "deployment-scripts",
             "create",
             "--name",
             "runInitialDeploy",
             "--resource-group",
-            control_plane_resource_group,
+            config.control_plane_resource_group,
             "--location",
-            control_plane_location,
+            config.control_plane_location,
             "--script-name",
             "runInitialDeploy",
             "--script-content",
@@ -876,7 +896,7 @@ def run_initial_deploy_script():
             "--az-powershell-version",
             "12.3",
             "--storage-account-name",
-            storage_account_name,
+            config.storage_account_name,
             "--storage-account-key",
             storage_key,
             "--cleanup-preference",
@@ -899,12 +919,11 @@ def run_initial_deploy_script():
 # =============================================================================
 
 
-def get_function_principal_id(function_app_name: str) -> str:
+def get_function_principal_id(control_plane_resource_group: str, function_app_name: str) -> str:
     """Get the principal ID of a Function App's managed identity."""
     log.debug(f"Getting principal ID for Function App {function_app_name}")
-    output = run_cli(
+    output = az(
         [
-            "az",
             "functionapp",
             "identity",
             "show",
@@ -924,9 +943,8 @@ def get_function_principal_id(function_app_name: str) -> str:
 def assign_role(scope: str, principal_id: str, role_id: str):
     """Assign a role to a principal at a given scope."""
     log.debug(f"Assigning role {role_id} to principal {principal_id} at scope {scope}")
-    run_cli(
+    az(
         [
-            "az",
             "role",
             "assignment",
             "create",
@@ -942,54 +960,61 @@ def assign_role(scope: str, principal_id: str, role_id: str):
     )
 
 
-def grant_subscription_permissions():
+def grant_subscription_permissions(config: Configuration):
     """Grant permissions across all monitored subscriptions."""
     log.info("Setting up permissions across monitored subscriptions...")
 
     # Get principal IDs for function apps
-    resource_task_pid = get_function_principal_id(function_apps["resources"])
-    diagnostic_pid = get_function_principal_id(function_apps["diagnostic"])
-    scaling_pid = get_function_principal_id(function_apps["scaling"])
+    resource_task_pid = get_function_principal_id(
+        config.control_plane_resource_group, config.control_plane_function_apps["resources"]
+    )
+    diagnostic_pid = get_function_principal_id(
+        config.control_plane_resource_group, config.control_plane_function_apps["diagnostic"]
+    )
+    scaling_pid = get_function_principal_id(
+        config.control_plane_resource_group, config.control_plane_function_apps["scaling"]
+    )
 
-    for sub_id in monitored_subscriptions:
+    for sub_id in config.monitored_subscriptions:
         log.info(f"Assigning permissions in subscription: {sub_id}")
 
         # Set context to target subscription
-        run_cli(["az", "account", "set", "--subscription", sub_id])
+        set_subscription(sub_id)
 
         # Create RG in target subscription if it doesn't exist
-        run_cli(["az", "group", "create", "--name", control_plane_resource_group, "--location", control_plane_location])
+        az(
+            [
+                "group",
+                "create",
+                "--name",
+                config.control_plane_resource_group,
+                "--location",
+                config.control_plane_location,
+            ]
+        )
 
         # Get scope
         subscription_scope = f"/subscriptions/{sub_id}"
-        resource_group_scope = f"{subscription_scope}/resourceGroups/{control_plane_resource_group}"
+        resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_resource_group}"
 
         # Assign roles at subscription level
         assign_role(
-            subscription_scope,
-            resource_task_pid,
-            "43d0d8ad-25c7-4714-9337-8ba259a9fe05",  # Reader role
-        )
+            subscription_scope, resource_task_pid, "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
+        )  # Monitoring Reader role
         assign_role(
-            subscription_scope,
-            diagnostic_pid,
-            "749f88d5-cbae-40b8-bcfc-e573ddc772fa",  # Monitoring Reader
-        )
+            subscription_scope, diagnostic_pid, "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
+        )  # Monitoring Contributor
 
         # Assign roles at resource group level
         assign_role(
-            resource_group_scope,
-            diagnostic_pid,
-            "c12c1c16-33a1-487b-954d-41c89c60f349",  # Storage blob reader for diagnostics
-        )
+            resource_group_scope, diagnostic_pid, "c12c1c16-33a1-487b-954d-41c89c60f349"
+        )  # Reader and Data Access - Storage blob reader for diagnostics
         assign_role(
-            resource_group_scope,
-            scaling_pid,
-            "b24988ac-6180-42a0-ab88-20f7382dd24c",  # Contributor (used for scaling)
-        )
+            resource_group_scope, scaling_pid, "b24988ac-6180-42a0-ab88-20f7382dd24c"
+        )  # Contributor (used for scaling)
 
     # Reset back to control plane subscription
-    run_cli(["az", "account", "set", "--subscription", control_plane_subscription])
+    set_subscription(config.control_plane_subscription)
     log.info("Subscription permission setup complete")
 
 
@@ -998,23 +1023,25 @@ def grant_subscription_permissions():
 # =============================================================================
 
 
-def deploy_control_plane():
+def deploy_control_plane(config: Configuration):
     """Deploy all control plane infrastructure: storage, functions, and containers."""
     log.info("Deploying storage account...")
-    set_subscription()
-    create_storage_account()
+    set_subscription(config.control_plane_subscription)
+    create_storage_account(
+        config.storage_account_name, config.control_plane_resource_group, config.control_plane_location
+    )
     log.info("Waiting for storage account to be ready...")
     time.sleep(10)  # Ensure the storage account is ready
-    key = get_storage_key()
-    create_blob_container(key)
-    create_file_share(key)
+    key = get_storage_key(config.storage_account_name, config.control_plane_resource_group)
+    create_blob_container(config.storage_account_name, config.control_plane_cache, key)
+    create_file_share(config.storage_account_name, config.control_plane_cache, key)
     log.info("Storage account setup completed")
 
     log.info("Creating Function Apps...")
-    create_function_apps()
+    create_function_apps(config)
 
     log.info("Deploying Container App infrastructure...")
-    deploy_container_job_infra()
+    deploy_container_job_infra(config)
 
     log.info("Control plane infrastructure deployment completed")
 
@@ -1026,36 +1053,59 @@ def deploy_control_plane():
 
 def main():
     """Main installation flow that orchestrates all steps."""
-    log.info("Starting Azure Log Forwarding Orchestration Installation...")
-    log.info("=" * 70)
 
     try:
-        # Step 0: Validate deployment parameters and permissions
-        validate_deployment()
+        # Step 0: Parse arguments and create configuration
+        args = parse_arguments()
+        config = Configuration(
+            management_group_id=args.management_group,
+            control_plane_region=args.control_plane_region,
+            control_plane_subscription_id=args.control_plane_subscription,
+            control_plane_rg=args.control_plane_resource_group,
+            monitored_subs=args.monitored_subscriptions,
+            datadog_api_key=args.datadog_api_key,
+            datadog_app_key=args.datadog_app_key,
+            datadog_site=args.datadog_site,
+            resource_tag_filters_arg=args.resource_tag_filters,
+            pii_scrubber_rules_arg=args.pii_scrubber_rules,
+            datadog_telemetry_arg=args.datadog_telemetry,
+            log_level_arg=args.log_level,
+        )
+
+        # Set up logging based on config
+        basicConfig(level=getattr(__import__("logging"), config.log_level))
+
+        log.info("Starting Azure Log Forwarding Orchestration Installation...")
+        log.info("=" * 70)
+
+        # Validate deployment parameters and permissions
+        validate_deployment(config)
+
+        set_subscription(config.control_plane_subscription)
 
         # Step 1: controlPlaneResourceGroup - Create resource group
         log.info("STEP 1: Creating control plane resource group...")
-        set_subscription()
-        create_resource_group()
+        set_subscription(config.control_plane_subscription)
+        create_resource_group(config.control_plane_resource_group, config.control_plane_location)
         log.info("Control plane resource group created")
 
         # Step 2: validateConfig - Validate Datadog API key and configuration
         log.info("STEP 2: Validating configuration...")
-        validate_datadog_api_key()
+        validate_datadog_api_key(config.datadog_site, config.datadog_api_key)
         log.info("Configuration validation completed")
 
         # Step 3: controlPlane - Deploy main infrastructure (storage + functions + containers)
         log.info("STEP 3: Deploying control plane infrastructure...")
-        deploy_control_plane()
+        deploy_control_plane(config)
 
         # Step 4: subscriptionPermissions - Set up cross-subscription permissions
         log.info("STEP 4: Setting up cross-subscription permissions...")
-        grant_subscription_permissions()
+        grant_subscription_permissions(config)
         log.info("Cross-subscription permissions configured")
 
         # Step 5: initialRun - Trigger initial deployment
         log.info("STEP 5: Triggering initial deployment...")
-        run_initial_deploy_script()
+        run_initial_deploy_script(config)
         log.info("Initial deployment triggered")
 
         log.info("=" * 70)
@@ -1069,19 +1119,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # Parse command line arguments
-    args = parse_arguments()
-
-    # Initialize configuration based on arguments
-    initialize_configuration(
-        use_test_values=args.test,
-        management_group_id=args.management_group,
-        resource_tag_filters_arg=args.resource_tag_filters,
-        pii_scrubber_rules_arg=args.pii_scrubber_rules,
-        datadog_telemetry_arg=args.datadog_telemetry,
-        log_level_arg=args.log_level,
-    )
-
-    # Set up logging and run main function
-    basicConfig(level=INFO)
     main()
