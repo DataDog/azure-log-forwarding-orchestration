@@ -93,7 +93,8 @@ class Configuration:
     resource_tag_filters_arg: str = ""
     pii_scrubber_rules_arg: str = ""
     datadog_telemetry_arg: bool = False
-    log_level_arg: str = "INFO"
+    log_level_arg: str = "DEBUG"
+    # altan log_level_arg: str = "INFO"
 
     def __post_init__(self):
         """Post-initialization to calculate derived values."""
@@ -324,7 +325,8 @@ def validate_resource_names(
         if not result.get("nameAvailable", False):
             reason = result.get("reason", "Unknown")
             message = result.get("message", "")
-            raise RuntimeError(f"Storage account name '{storage_account_name}' not available: {reason} - {message}")
+            # raise RuntimeError(f"Storage account name '{storage_account_name}' not available: {reason} - {message}")
+            log.info(f"Storage account name '{storage_account_name}' exists - will use existing")
         log.debug(f"Storage account name available: {storage_account_name}")
     except json.JSONDecodeError:
         raise RuntimeError("Failed to parse storage account name availability check")
@@ -478,7 +480,7 @@ def create_blob_container(storage_account_name: str, control_plane_cache: str, a
     )
 
 
-def create_file_share(storage_account_name: str, control_plane_cache: str, account_key: str):
+def create_file_share(storage_account_name: str, control_plane_cache: str, resource_group: str):
     """Create file share in the storage account."""
     log.info(f"Creating file share {control_plane_cache}")
     az(
@@ -490,6 +492,8 @@ def create_file_share(storage_account_name: str, control_plane_cache: str, accou
             storage_account_name,
             "--name",
             control_plane_cache,
+            "--resource-group",
+            resource_group,
         ]
     )
 
@@ -541,7 +545,7 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
     log.info(f"Creating App Service Plan {app_service_plan}")
     az(
         [
-            "functionapp",
+            "appservice",
             "plan",
             "create",
             "--resource-group",
@@ -550,8 +554,6 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
             app_service_plan,
             "--location",
             control_plane_location,
-            "--number-of-workers",
-            "1",
             "--sku",
             "Y1",
             "--is-linux",
@@ -568,8 +570,8 @@ def create_function_app(config: Configuration, name: str, key: str):
             "create",
             "--resource-group",
             config.control_plane_resource_group,
-            "--consumption-plan-location",
-            config.control_plane_location,
+            "--plan",
+            config.app_service_plan,
             "--runtime",
             "python",
             "--functions-version",
@@ -580,8 +582,6 @@ def create_function_app(config: Configuration, name: str, key: str):
             name,
             "--storage-account",
             config.storage_account_name,
-            "--plan",
-            config.app_service_plan,
             "--assign-identity",
         ]
     )
@@ -639,6 +639,21 @@ def create_function_app(config: Configuration, name: str, key: str):
             "--settings",
         ]
         + all_settings
+    )
+
+    log.debug(f"Configuring Linux runtime for Function App {name}")
+    az(
+        [
+            "functionapp",
+            "config",
+            "set",
+            "--name",
+            name,
+            "--resource-group",
+            config.control_plane_resource_group,
+            "--linux-fx-version",
+            "Python|3.11",
+        ]
     )
 
 
@@ -940,7 +955,7 @@ def get_function_principal_id(control_plane_resource_group: str, function_app_na
     return output.strip()
 
 
-def assign_role(scope: str, principal_id: str, role_id: str):
+def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: str):
     """Assign a role to a principal at a given scope."""
     log.debug(f"Assigning role {role_id} to principal {principal_id} at scope {scope}")
     az(
@@ -956,6 +971,8 @@ def assign_role(scope: str, principal_id: str, role_id: str):
             role_id,
             "--scope",
             scope,
+            "--description",
+            f"ddlfo{control_plane_id}",
         ]
     )
 
@@ -999,18 +1016,18 @@ def grant_subscription_permissions(config: Configuration):
 
         # Assign roles at subscription level
         assign_role(
-            subscription_scope, resource_task_pid, "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
+            subscription_scope, resource_task_pid, "43d0d8ad-25c7-4714-9337-8ba259a9fe05", config.control_plane_id
         )  # Monitoring Reader role
         assign_role(
-            subscription_scope, diagnostic_pid, "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
+            subscription_scope, diagnostic_pid, "749f88d5-cbae-40b8-bcfc-e573ddc772fa", config.control_plane_id
         )  # Monitoring Contributor
 
         # Assign roles at resource group level
         assign_role(
-            resource_group_scope, diagnostic_pid, "c12c1c16-33a1-487b-954d-41c89c60f349"
+            resource_group_scope, diagnostic_pid, "c12c1c16-33a1-487b-954d-41c89c60f349", config.control_plane_id
         )  # Reader and Data Access - Storage blob reader for diagnostics
         assign_role(
-            resource_group_scope, scaling_pid, "b24988ac-6180-42a0-ab88-20f7382dd24c"
+            resource_group_scope, scaling_pid, "b24988ac-6180-42a0-ab88-20f7382dd24c", config.control_plane_id
         )  # Contributor (used for scaling)
 
     # Reset back to control plane subscription
@@ -1034,7 +1051,7 @@ def deploy_control_plane(config: Configuration):
     time.sleep(10)  # Ensure the storage account is ready
     key = get_storage_key(config.storage_account_name, config.control_plane_resource_group)
     create_blob_container(config.storage_account_name, config.control_plane_cache, key)
-    create_file_share(config.storage_account_name, config.control_plane_cache, key)
+    create_file_share(config.storage_account_name, config.control_plane_cache, config.control_plane_resource_group)
     log.info("Storage account setup completed")
 
     log.info("Creating Function Apps...")
