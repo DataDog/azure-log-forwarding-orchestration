@@ -543,20 +543,47 @@ def validate_datadog_api_key(datadog_site: str, datadog_api_key: str):
 def create_app_service_plan(app_service_plan: str, control_plane_resource_group: str, control_plane_location: str):
     """Create the App Service Plan for Function Apps."""
     log.info(f"Creating App Service Plan {app_service_plan}")
+    # az(
+    #     [
+    #         "appservice",
+    #         "plan",
+    #         "create",
+    #         "--resource-group",
+    #         control_plane_resource_group,
+    #         "--name",
+    #         app_service_plan,
+    #         "--location",
+    #         control_plane_location,
+    #         "--sku",
+    #         "Y1",
+    #         "--is-linux",
+    #     ]
+    # )
+
+    # Use `az resource create` vs `az appservice plan create` because of an Azure CLI issue with the SKU we utilize: https://github.com/Azure/azure-cli/issues/19864
     az(
         [
-            "appservice",
-            "plan",
+            "resource",
             "create",
             "--resource-group",
             control_plane_resource_group,
             "--name",
             app_service_plan,
-            "--location",
-            control_plane_location,
-            "--sku",
-            "Y1",
-            "--is-linux",
+            "--resource-type",
+            "Microsoft.Web/serverfarms",
+            "--is-full-object",
+            "--properties",
+            json.dumps(
+                {
+                    "name": app_service_plan,
+                    "location": control_plane_location,
+                    "kind": "linux",
+                    "sku": {"name": "Y1", "tier": "Dynamic"},
+                    "properties": {"reserved": True},
+                }
+            ),
+            "--api-version",
+            "2022-09-01",
         ]
     )
 
@@ -570,8 +597,8 @@ def create_function_app(config: Configuration, name: str, key: str):
             "create",
             "--resource-group",
             config.control_plane_resource_group,
-            "--plan",
-            config.app_service_plan,
+            "--consumption-plan-location",
+            config.control_plane_location,
             "--runtime",
             "python",
             "--functions-version",
@@ -681,17 +708,39 @@ def create_function_apps(config: Configuration):
 
 def create_user_assigned_identity(control_plane_resource_group: str, control_plane_location: str):
     """Create a user-assigned managed identity."""
-    log.info("Creating user-assigned managed identity")
+    identity_name = "runInitialDeployIdentity"
+
+    # Check if the identity already exists
+    try:
+        log.info("Checking if user-assigned managed identity already exists...")
+        az(
+            [
+                "identity",
+                "show",
+                "--name",
+                identity_name,
+                "--resource-group",
+                control_plane_resource_group,
+            ]
+        )
+        log.info(f"User-assigned managed identity '{identity_name}' already exists - reusing existing identity")
+        return
+    except RuntimeError:
+        # Identity doesn't exist, proceed with creation
+        log.info("User-assigned managed identity not found - creating new identity")
+        pass
+
     az(
         [
             "identity",
             "create",
             "--name",
-            "runInitialDeployIdentity",
+            identity_name,
             "--resource-group",
             control_plane_resource_group,
             "--location",
             control_plane_location,
+            "--enable-managed-identity",
         ]
     )
 
@@ -748,7 +797,7 @@ def create_containerapp_job(config: Configuration):
             "0.5",
             "--memory",
             "1Gi",
-            "--assign-identity",
+            # "--assign-identity"
             "--env-vars",
             f"AzureWebJobsStorage=secretref:connection-string",
             f"SUBSCRIPTION_ID={config.control_plane_subscription}",
