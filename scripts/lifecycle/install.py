@@ -45,7 +45,6 @@ import time
 import uuid
 from dataclasses import dataclass
 from logging import INFO, WARNING, basicConfig, getLogger
-from typing import Optional
 
 # Set up logging
 getLogger("azure").setLevel(WARNING)
@@ -101,7 +100,7 @@ class Configuration:
         # Basic configuration mapping
         self.control_plane_subscription = self.control_plane_subscription_id
         self.control_plane_resource_group = self.control_plane_rg
-        self.control_plane_location = self.control_plane_region
+        self.control_plane_region = self.control_plane_region
 
         # Datadog configuration
         self.datadog_application_key = self.datadog_app_key
@@ -118,7 +117,7 @@ class Configuration:
             self.management_group_id,
             self.control_plane_subscription,
             self.control_plane_resource_group,
-            self.control_plane_location,
+            self.control_plane_region,
         )
         log.info(f"Generated control plane ID: {self.control_plane_id}")
 
@@ -129,7 +128,7 @@ class Configuration:
         self.control_plane_cache_storage_key = ""
 
         self.app_service_plan = f"control-plane-asp-{self.control_plane_id}"
-        self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_location}"
+        self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_region}"
         self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
         self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
         self.control_plane_resource_group_id = (
@@ -147,8 +146,7 @@ class Configuration:
             "diagnostic": f"diagnostic-settings-task-{self.control_plane_id}",
         }
 
-    @property
-    def control_plane_cache_storage_connection_string(self) -> str:
+    def get_control_plane_cache_conn_string(self) -> str:
         """Get the connection string for the control plane cache storage account."""
         if not self.control_plane_cache_storage_key:
             self.control_plane_cache_storage_key = get_storage_key(
@@ -238,12 +236,39 @@ def parse_arguments():
 
 
 # =============================================================================
-# UTILITY FUNCTIONS
+# UTILITY
 # =============================================================================
 
 
-def az(command: list[str]) -> str:
+class AzCommand:
+    """Builder for Azure CLI commands."""
+
+    def __init__(self, service: str, action: str):
+        """Initialize with service and action (e.g., 'functionapp', 'create')."""
+        self.cmd = [service, action]
+
+    def param(self, key: str, value: str) -> "AzCommand":
+        """Add a parameter with key-value pair (key should include --)."""
+        self.cmd.extend([key, value])
+        return self
+
+    def flag(self, flag: str) -> "AzCommand":
+        """Add a flag (should include --)."""
+        self.cmd.append(flag)
+        return self
+
+    def param_list(self, key: str, values: list[str]) -> "AzCommand":
+        """Add multiple parameters with the same key"""
+        self.cmd.append(key)
+        for value in values:
+            self.cmd.extend([key, value])
+        return self
+
+
+def execute(az_cmd: AzCommand) -> str:
     """Run an Azure CLI command and return output or raise error."""
+
+    command = az_cmd.cmd
     log.debug(f"Running: az {' '.join(command)}")
     full_command = ["az"] + command
     result = subprocess.run(full_command, capture_output=True, text=True)
@@ -293,7 +318,7 @@ def validate_deployment(config: Configuration):
 def validate_azure_cli():
     """Ensure Azure CLI is installed and user is authenticated."""
     try:
-        az(["account", "show"])
+        execute(AzCommand("account", "show"))
         log.debug("Azure CLI authentication verified")
     except Exception as e:
         raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.")
@@ -316,15 +341,10 @@ def validate_resource_names(
 
     # Check if resource group already exists
     try:
-        output = az(
-            [
-                "group",
-                "exists",
-                "--name",
-                control_plane_resource_group,
-                "--subscription",
-                control_plane_subscription,
-            ]
+        output = execute(
+            AzCommand("group", "exists")
+            .param("--name", control_plane_resource_group)
+            .param("--subscription", control_plane_subscription)
         )
         if output.strip().lower() == "true":
             log.warning(f"Resource group {control_plane_resource_group} already exists - will use existing")
@@ -335,7 +355,7 @@ def validate_resource_names(
 
     # Check storage account name availability
     try:
-        output = az(["storage", "account", "check-name", "--name", storage_account_name])
+        output = execute(AzCommand("storage", "account check-name").param("--name", storage_account_name))
         result = json.loads(output)
         if not result.get("nameAvailable", False):
             reason = result.get("reason", "Unknown")
@@ -388,7 +408,7 @@ def validate_configuration(config: Configuration):
     if not config.control_plane_resource_group:
         raise RuntimeError("Control plane resource group not configured")
 
-    if not config.control_plane_location:
+    if not config.control_plane_region:
         raise RuntimeError("Control plane location not configured")
 
     if not config.monitored_subscriptions:
@@ -421,57 +441,42 @@ def validate_monitored_subscriptions(monitored_subscriptions: list[str], control
 def set_subscription(subscription_id: str):
     """Set the active Azure subscription."""
     log.debug(f"Setting active subscription to {subscription_id}")
-    az(["account", "set", "--subscription", subscription_id])
+    execute(AzCommand("account", "set").param("--subscription", subscription_id))
 
 
 def create_resource_group(control_plane_resource_group: str, control_plane_location: str):
     """Create the control plane resource group."""
     log.info(f"Creating resource group {control_plane_resource_group} in {control_plane_location}")
-    az(["group", "create", "--name", control_plane_resource_group, "--location", control_plane_location])
+    execute(
+        AzCommand("group", "create")
+        .param("--name", control_plane_resource_group)
+        .param("--location", control_plane_location)
+    )
 
 
 def create_storage_account(storage_account_name: str, control_plane_resource_group: str, control_plane_location: str):
     """Create the storage account for the control plane."""
     log.info(f"Creating storage account {storage_account_name}")
-    az(
-        [
-            "storage",
-            "account",
-            "create",
-            "--name",
-            storage_account_name,
-            "--resource-group",
-            control_plane_resource_group,
-            "--location",
-            control_plane_location,
-            "--sku",
-            "Standard_LRS",
-            "--kind",
-            "StorageV2",
-            "--access-tier",
-            "Hot",
-            "--min-tls-version",
-            "TLS1_2",
-            "--https-only",
-            "true",
-        ]
+    execute(
+        AzCommand("storage", "account create")
+        .param("--name", storage_account_name)
+        .param("--resource-group", control_plane_resource_group)
+        .param("--location", control_plane_location)
+        .param("--sku", "Standard_LRS")
+        .param("--kind", "StorageV2")
+        .param("--access-tier", "Hot")
+        .param("--min-tls-version", "TLS1_2")
+        .flag("--https-only")
     )
 
 
 def get_storage_key(storage_account_name: str, control_plane_resource_group: str) -> str:
     """Get the storage account primary key."""
     log.debug(f"Retrieving storage account key for {storage_account_name}")
-    output = az(
-        [
-            "storage",
-            "account",
-            "keys",
-            "list",
-            "--account-name",
-            storage_account_name,
-            "--resource-group",
-            control_plane_resource_group,
-        ]
+    output = execute(
+        AzCommand("storage", "account keys list")
+        .param("--account-name", storage_account_name)
+        .param("--resource-group", control_plane_resource_group)
     )
     keys = json.loads(output)
     return keys[0]["value"]
@@ -480,36 +485,22 @@ def get_storage_key(storage_account_name: str, control_plane_resource_group: str
 def create_blob_container(storage_account_name: str, control_plane_cache: str, account_key: str):
     """Create blob container in the storage account."""
     log.info(f"Creating blob container {control_plane_cache}")
-    az(
-        [
-            "storage",
-            "container",
-            "create",
-            "--account-name",
-            storage_account_name,
-            "--account-key",
-            account_key,
-            "--name",
-            control_plane_cache,
-        ]
+    execute(
+        AzCommand("storage", "container create")
+        .param("--account-name", storage_account_name)
+        .param("--account-key", account_key)
+        .param("--name", control_plane_cache)
     )
 
 
 def create_file_share(storage_account_name: str, control_plane_cache: str, resource_group: str):
     """Create file share in the storage account."""
     log.info(f"Creating file share {control_plane_cache}")
-    az(
-        [
-            "storage",
-            "share-rm",
-            "create",
-            "--storage-account",
-            storage_account_name,
-            "--name",
-            control_plane_cache,
-            "--resource-group",
-            resource_group,
-        ]
+    execute(
+        AzCommand("storage", "share-rm create")
+        .param("--storage-account", storage_account_name)
+        .param("--name", control_plane_cache)
+        .param("--resource-group", resource_group)
     )
 
 
@@ -561,16 +552,10 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
     # Check if the app service plan already exists
     try:
         log.info(f"Checking if App Service Plan '{app_service_plan}' already exists...")
-        az(
-            [
-                "appservice",
-                "plan",
-                "show",
-                "--name",
-                app_service_plan,
-                "--resource-group",
-                control_plane_resource_group,
-            ]
+        execute(
+            AzCommand("appservice", "plan show")
+            .param("--name", app_service_plan)
+            .param("--resource-group", control_plane_resource_group)
         )
         log.info(f"App Service Plan '{app_service_plan}' already exists - reusing existing plan")
         return
@@ -583,17 +568,13 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
 
     # Use `az resource create` instead of `az appservice plan create` because of
     # Azure CLI issue with the SKU (Y1) we utilize: https://github.com/Azure/azure-cli/issues/19864
-    az(
-        [
-            "resource",
-            "create",
-            "--resource-group",
-            control_plane_resource_group,
-            "--name",
-            app_service_plan,
-            "--resource-type",
-            "Microsoft.Web/serverfarms",
-            "--is-full-object",
+    execute(
+        AzCommand("resource", "create")
+        .param("--resource-group", control_plane_resource_group)
+        .param("--name", app_service_plan)
+        .param("--resource-type", "Microsoft.Web/serverfarms")
+        .flag("--is-full-object")
+        .param(
             "--properties",
             json.dumps(
                 {
@@ -604,9 +585,8 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
                     "properties": {"reserved": True},
                 }
             ),
-            "--api-version",
-            "2022-09-01",
-        ]
+        )
+        .param("--api-version", "2022-09-01")
     )
 
 
@@ -616,15 +596,10 @@ def create_function_app(config: Configuration, name: str, key: str):
     # Check if the function app already exists
     try:
         log.info(f"Checking if Function App '{name}' already exists...")
-        az(
-            [
-                "functionapp",
-                "show",
-                "--name",
-                name,
-                "--resource-group",
-                config.control_plane_resource_group,
-            ]
+        execute(
+            AzCommand("functionapp", "show")
+            .param("--name", name)
+            .param("--resource-group", config.control_plane_resource_group)
         )
         log.info(f"Function App '{name}' already exists - skipping creation and updating configuration")
         function_app_exists = True
@@ -634,33 +609,23 @@ def create_function_app(config: Configuration, name: str, key: str):
 
     if not function_app_exists:
         log.info(f"Creating Function App {name}")
-        az(
-            [
-                "functionapp",
-                "create",
-                "--resource-group",
-                config.control_plane_resource_group,
-                "--consumption-plan-location",
-                config.control_plane_location,
-                "--runtime",
-                "python",
-                "--functions-version",
-                "4",
-                "--os-type",
-                "Linux",
-                "--name",
-                name,
-                "--storage-account",
-                config.control_plane_cache_storage_name,
-                "--assign-identity",
-            ]
+        execute(
+            AzCommand("functionapp", "create")
+            .param("--resource-group", config.control_plane_resource_group)
+            .param("--consumption-plan-location", config.control_plane_region)
+            .param("--runtime", "python")
+            .param("--functions-version", "4")
+            .param("--os-type", "Linux")
+            .param("--name", name)
+            .param("--storage-account", config.control_plane_cache_storage_name)
+            .flag("--assign-identity")
         )
 
     common_settings = [
-        f"AzureWebJobsStorage={config.control_plane_cache_storage_connection_string}",
+        f"AzureWebJobsStorage={config.get_control_plane_cache_conn_string()}",
         "FUNCTIONS_EXTENSION_VERSION=~4",
         "FUNCTIONS_WORKER_RUNTIME=python",
-        f"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING={config.control_plane_cache_storage_connection_string}",
+        f"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING={config.get_control_plane_cache_conn_string()}",
         f"WEBSITE_CONTENTSHARE={name}",
         "AzureWebJobsFeatureFlags=EnableWorkerIndexing",
         f"DD_API_KEY={config.datadog_api_key}",
@@ -684,7 +649,7 @@ def create_function_app(config: Configuration, name: str, key: str):
         specific_settings = [
             f"RESOURCE_GROUP={config.control_plane_resource_group}",
             f"FORWARDER_IMAGE={config.image_registry}/forwarder:latest",
-            f"CONTROL_PLANE_REGION={config.control_plane_location}",
+            f"CONTROL_PLANE_REGION={config.control_plane_region}",
             f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
         ]
     else:
@@ -694,42 +659,27 @@ def create_function_app(config: Configuration, name: str, key: str):
 
     # Always update app settings (even if function app exists) to ensure configuration is current
     log.debug(f"Configuring app settings for Function App {name}")
-    az(
-        [
-            "functionapp",
-            "config",
-            "appsettings",
-            "set",
-            "--name",
-            name,
-            "--resource-group",
-            config.control_plane_resource_group,
-            "--settings",
-        ]
-        + all_settings
+    execute(
+        AzCommand("functionapp", "config appsettings set")
+        .param("--name", name)
+        .param("--resource-group", config.control_plane_resource_group)
+        .param_list("--settings", all_settings)
     )
 
     # Always update runtime configuration
     log.debug(f"Configuring Linux runtime for Function App {name}")
-    az(
-        [
-            "functionapp",
-            "config",
-            "set",
-            "--name",
-            name,
-            "--resource-group",
-            config.control_plane_resource_group,
-            "--linux-fx-version",
-            "Python|3.11",
-        ]
+    execute(
+        AzCommand("functionapp", "config set")
+        .param("--name", name)
+        .param("--resource-group", config.control_plane_resource_group)
+        .param("--linux-fx-version", "Python|3.11")
     )
 
 
 def create_function_apps(config: Configuration):
     """Create all required Function Apps."""
     log.info("Creating App Service Plan...")
-    create_app_service_plan(config.app_service_plan, config.control_plane_resource_group, config.control_plane_location)
+    create_app_service_plan(config.app_service_plan, config.control_plane_resource_group, config.control_plane_region)
 
     log.info("Fetching storage key...")
     key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_resource_group)
@@ -755,15 +705,10 @@ def create_user_assigned_identity(control_plane_resource_group: str, control_pla
     # Check if the identity already exists
     try:
         log.info("Checking if user-assigned managed identity already exists...")
-        az(
-            [
-                "identity",
-                "show",
-                "--name",
-                identity_name,
-                "--resource-group",
-                control_plane_resource_group,
-            ]
+        execute(
+            AzCommand("identity", "show")
+            .param("--name", identity_name)
+            .param("--resource-group", control_plane_resource_group)
         )
         log.info(f"User-assigned managed identity '{identity_name}' already exists - reusing existing identity")
         return
@@ -772,18 +717,12 @@ def create_user_assigned_identity(control_plane_resource_group: str, control_pla
         log.info("User-assigned managed identity not found - creating new identity")
         pass
 
-    az(
-        [
-            "identity",
-            "create",
-            "--name",
-            identity_name,
-            "--resource-group",
-            control_plane_resource_group,
-            "--location",
-            control_plane_location,
-            "--enable-managed-identity",
-        ]
+    execute(
+        AzCommand("identity", "create")
+        .param("--name", identity_name)
+        .param("--resource-group", control_plane_resource_group)
+        .param("--location", control_plane_location)
+        .flag("--enable-managed-identity")
     )
 
 
@@ -795,16 +734,10 @@ def create_containerapp_environment(
     # Check if the container app environment already exists
     try:
         log.info(f"Checking if Container App environment '{control_plane_env}' already exists...")
-        az(
-            [
-                "containerapp",
-                "env",
-                "show",
-                "--name",
-                control_plane_env,
-                "--resource-group",
-                control_plane_resource_group,
-            ]
+        execute(
+            AzCommand("containerapp", "env show")
+            .param("--name", control_plane_env)
+            .param("--resource-group", control_plane_resource_group)
         )
         log.info(f"Container App environment '{control_plane_env}' already exists - reusing existing environment")
         return
@@ -814,18 +747,11 @@ def create_containerapp_environment(
         pass
 
     log.info(f"Creating Container App environment {control_plane_env}")
-    az(
-        [
-            "containerapp",
-            "env",
-            "create",
-            "--name",
-            control_plane_env,
-            "--resource-group",
-            control_plane_resource_group,
-            "--location",
-            control_plane_location,
-        ]
+    execute(
+        AzCommand("containerapp", "env create")
+        .param("--name", control_plane_env)
+        .param("--resource-group", control_plane_resource_group)
+        .param("--location", control_plane_location)
     )
 
 
@@ -835,16 +761,10 @@ def create_containerapp_job(config: Configuration):
     # Check if the container app job already exists
     try:
         log.info(f"Checking if Container App job '{config.deployer_job_name}' already exists...")
-        az(
-            [
-                "containerapp",
-                "job",
-                "show",
-                "--name",
-                config.deployer_job_name,
-                "--resource-group",
-                config.control_plane_resource_group,
-            ]
+        execute(
+            AzCommand("containerapp", "job show")
+            .param("--name", config.deployer_job_name)
+            .param("--resource-group", config.control_plane_resource_group)
         )
         log.info(f"Container App job '{config.deployer_job_name}' already exists - reusing existing job")
         return
@@ -854,53 +774,44 @@ def create_containerapp_job(config: Configuration):
         pass
 
     log.info(f"Creating Container App job {config.deployer_job_name}")
-    az(
-        [
-            "containerapp",
-            "job",
-            "create",
-            "--name",
-            config.deployer_job_name,
-            "--resource-group",
-            config.control_plane_resource_group,
-            "--environment",
-            config.control_plane_env,
-            "--replica-timeout",
-            "1800",
-            "--replica-retry-limit",
-            "1",
-            "--trigger-type",
-            "Schedule",
-            "--cron-expression",
-            "*/30 * * * *",
-            "--image",
-            config.deployer_image,
-            "--cpu",
-            "0.5",
-            "--memory",
-            "1Gi",
-            "--parallelism",
-            "1",
-            "--replica-completion-count",
-            "1",
-            "--mi-system-assigned",
-            "--env-vars",
-            "AzureWebJobsStorage=secretref:connection-string",
-            f"SUBSCRIPTION_ID={config.control_plane_subscription}",
-            f"RESOURCE_GROUP={config.control_plane_resource_group}",
-            f"CONTROL_PLANE_ID={config.control_plane_id}",
-            f"CONTROL_PLANE_REGION={config.control_plane_location}",
-            "DD_API_KEY=secretref:dd-api-key",
-            "DD_APP_KEY=secretref:dd-app-key",
-            f"DD_SITE={config.datadog_site}",
-            f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
-            f"STORAGE_ACCOUNT_URL={config.lfo_public_storage_account_url}",
-            f"LOG_LEVEL={config.log_level}",
-            "--secrets",
-            f"connection-string={config.control_plane_cache_storage_connection_string}",
-            f"dd-api-key={config.datadog_api_key}",
-            f"dd-app-key={config.datadog_application_key}",
-        ]
+
+    env_vars = [
+        "AzureWebJobsStorage=secretref:connection-string",
+        f"SUBSCRIPTION_ID={config.control_plane_subscription}",
+        f"RESOURCE_GROUP={config.control_plane_resource_group}",
+        f"CONTROL_PLANE_ID={config.control_plane_id}",
+        f"CONTROL_PLANE_REGION={config.control_plane_region}",
+        "DD_API_KEY=secretref:dd-api-key",
+        "DD_APP_KEY=secretref:dd-app-key",
+        f"DD_SITE={config.datadog_site}",
+        f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
+        f"STORAGE_ACCOUNT_URL={config.lfo_public_storage_account_url}",
+        f"LOG_LEVEL={config.log_level}",
+    ]
+
+    secrets = [
+        f"connection-string={config.get_control_plane_cache_conn_string()}",
+        f"dd-api-key={config.datadog_api_key}",
+        f"dd-app-key={config.datadog_application_key}",
+    ]
+
+    execute(
+        AzCommand("containerapp", "job create")
+        .param("--name", config.deployer_job_name)
+        .param("--resource-group", config.control_plane_resource_group)
+        .param("--environment", config.control_plane_env)
+        .param("--replica-timeout", "1800")
+        .param("--replica-retry-limit", "1")
+        .param("--trigger-type", "Schedule")
+        .param("--cron-expression", "*/30 * * * *")
+        .param("--image", config.deployer_image)
+        .param("--cpu", "0.5")
+        .param("--memory", "1Gi")
+        .param("--parallelism", "1")
+        .param("--replica-completion-count", "1")
+        .flag("--mi-system-assigned")
+        .param_list("--env-vars", env_vars)
+        .param_list("--secrets", secrets)
     )
 
 
@@ -908,25 +819,22 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
     """Create a custom role for starting container app jobs."""
 
     # Get the resource group scope
-    scope = az(["group", "show", "--name", control_plane_resource_group, "--query", "id", "--output", "tsv"]).strip()
+    scope = execute(
+        AzCommand("group", "show")
+        .param("--name", control_plane_resource_group)
+        .param("--query", "id")
+        .param("--output", "tsv")
+    ).strip()
 
     # Check if the custom role definition already exists
     try:
         log.info(f"Checking if custom role definition '{container_app_start_role}' already exists...")
-        output = az(
-            [
-                "role",
-                "definition",
-                "list",
-                "--name",
-                container_app_start_role,
-                "--scope",
-                scope,
-                "--query",
-                "[0].name",
-                "--output",
-                "tsv",
-            ]
+        output = execute(
+            AzCommand("role", "definition list")
+            .param("--name", container_app_start_role)
+            .param("--scope", scope)
+            .param("--query", "[0].name")
+            .param("--output", "tsv")
         )
         if output.strip():
             log.info(f"Custom role definition '{container_app_start_role}' already exists - reusing existing role")
@@ -952,43 +860,33 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
     with open("custom_role.json", "w") as f:
         json.dump(role_definition, f)
 
-    az(["role", "definition", "create", "--role-definition", "custom_role.json"])
+    execute(AzCommand("role", "definition create").param("--role-definition", "custom_role.json"))
 
 
 def assign_custom_role_to_identity(control_plane_resource_group: str, container_app_start_role: str):
     """Assign the custom role to the managed identity."""
     log.info("Assigning custom role to managed identity")
-    identity_id = az(
-        [
-            "identity",
-            "show",
-            "--name",
-            "runInitialDeployIdentity",
-            "--resource-group",
-            control_plane_resource_group,
-            "--query",
-            "principalId",
-            "--output",
-            "tsv",
-        ]
+    identity_id = execute(
+        AzCommand("identity", "show")
+        .param("--name", "runInitialDeployIdentity")
+        .param("--resource-group", control_plane_resource_group)
+        .param("--query", "principalId")
+        .param("--output", "tsv")
     ).strip()
 
-    scope = az(["group", "show", "--name", control_plane_resource_group, "--query", "id", "--output", "tsv"]).strip()
+    scope = execute(
+        AzCommand("group", "show")
+        .param("--name", control_plane_resource_group)
+        .param("--query", "id")
+        .param("--output", "tsv")
+    ).strip()
 
-    role_id = az(
-        [
-            "role",
-            "definition",
-            "list",
-            "--name",
-            container_app_start_role,
-            "--scope",
-            scope,
-            "--query",
-            "[0].name",
-            "--output",
-            "tsv",
-        ]
+    role_id = execute(
+        AzCommand("role", "definition list")
+        .param("--name", container_app_start_role)
+        .param("--scope", scope)
+        .param("--query", "[0].name")
+        .param("--output", "tsv")
     ).strip()
 
     # Check if the role assignment already exists
@@ -996,22 +894,13 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
         log.debug(
             f"Checking if custom role assignment already exists for role {container_app_start_role} to identity {identity_id}"
         )
-        output = az(
-            [
-                "role",
-                "assignment",
-                "list",
-                "--assignee",
-                identity_id,
-                "--role",
-                role_id,
-                "--scope",
-                scope,
-                "--query",
-                "length([])",
-                "--output",
-                "tsv",
-            ]
+        output = execute(
+            AzCommand("role", "assignment list")
+            .param("--assignee", identity_id)
+            .param("--role", role_id)
+            .param("--scope", scope)
+            .param("--query", "length([])")
+            .param("--output", "tsv")
         )
         if int(output.strip()) > 0:
             log.info(
@@ -1019,37 +908,29 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
             )
             return
         else:
-            log.debug(f"Custom role assignment not found - creating new assignment")
+            log.debug("Custom role assignment not found - creating new assignment")
     except (RuntimeError, ValueError):
         # Role assignment doesn't exist or error occurred, proceed with creation
-        log.debug(f"Custom role assignment not found - creating new assignment")
+        log.debug("Custom role assignment not found - creating new assignment")
         pass
 
-    az(
-        [
-            "role",
-            "assignment",
-            "create",
-            "--role",
-            role_id,
-            "--assignee-object-id",
-            identity_id,
-            "--assignee-principal-type",
-            "ServicePrincipal",
-            "--scope",
-            scope,
-        ]
+    execute(
+        AzCommand("role", "assignment create")
+        .param("--role", role_id)
+        .param("--assignee-object-id", identity_id)
+        .param("--assignee-principal-type", "ServicePrincipal")
+        .param("--scope", scope)
     )
 
 
 def deploy_container_job_infra(config: Configuration):
     """Deploy all container job infrastructure."""
     log.info("Creating managed identity...")
-    create_user_assigned_identity(config.control_plane_resource_group, config.control_plane_location)
+    create_user_assigned_identity(config.control_plane_resource_group, config.control_plane_region)
 
     log.info("Creating container app environment...")
     create_containerapp_environment(
-        config.control_plane_env, config.control_plane_resource_group, config.control_plane_location
+        config.control_plane_env, config.control_plane_resource_group, config.control_plane_region
     )
 
     log.info("Creating container app job...")
@@ -1139,20 +1020,12 @@ def run_initial_deploy_script(config: Configuration):
 def get_function_principal_id(control_plane_resource_group: str, function_app_name: str) -> str:
     """Get the principal ID of a Function App's managed identity."""
     log.debug(f"Getting principal ID for Function App {function_app_name}")
-    output = az(
-        [
-            "functionapp",
-            "identity",
-            "show",
-            "--name",
-            function_app_name,
-            "--resource-group",
-            control_plane_resource_group,
-            "--query",
-            "principalId",
-            "--output",
-            "tsv",
-        ]
+    output = execute(
+        AzCommand("functionapp", "identity show")
+        .param("--name", function_app_name)
+        .param("--resource-group", control_plane_resource_group)
+        .param("--query", "principalId")
+        .param("--output", "tsv")
     )
     return output.strip()
 
@@ -1160,20 +1033,12 @@ def get_function_principal_id(control_plane_resource_group: str, function_app_na
 def get_containerapp_job_principal_id(control_plane_resource_group: str, job_name: str) -> str:
     """Get the principal ID of a Container App Job's managed identity."""
     log.debug(f"Getting principal ID for Container App Job {job_name}")
-    output = az(
-        [
-            "containerapp",
-            "job",
-            "show",
-            "--name",
-            job_name,
-            "--resource-group",
-            control_plane_resource_group,
-            "--query",
-            "identity.principalId",
-            "--output",
-            "tsv",
-        ]
+    output = execute(
+        AzCommand("containerapp", "job show")
+        .param("--name", job_name)
+        .param("--resource-group", control_plane_resource_group)
+        .param("--query", "identity.principalId")
+        .param("--output", "tsv")
     )
     return output.strip()
 
@@ -1186,22 +1051,13 @@ def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: s
         log.debug(
             f"Checking if role assignment already exists for role {role_id} to principal {principal_id} at scope {scope}"
         )
-        output = az(
-            [
-                "role",
-                "assignment",
-                "list",
-                "--assignee",
-                principal_id,
-                "--role",
-                role_id,
-                "--scope",
-                scope,
-                "--query",
-                "length([])",
-                "--output",
-                "tsv",
-            ]
+        output = execute(
+            AzCommand("role", "assignment list")
+            .param("--assignee", principal_id)
+            .param("--role", role_id)
+            .param("--scope", scope)
+            .param("--query", "length([])")
+            .param("--output", "tsv")
         )
         if int(output.strip()) > 0:
             log.debug(
@@ -1209,29 +1065,20 @@ def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: s
             )
             return
         else:
-            log.debug(f"Role assignment not found - creating new assignment")
+            log.debug("Role assignment not found - creating new assignment")
     except (RuntimeError, ValueError):
         # Role assignment doesn't exist or error occurred, proceed with creation
-        log.debug(f"Role assignment not found - creating new assignment")
+        log.debug("Role assignment not found - creating new assignment")
         pass
 
     log.debug(f"Assigning role {role_id} to principal {principal_id} at scope {scope}")
-    az(
-        [
-            "role",
-            "assignment",
-            "create",
-            "--assignee-object-id",
-            principal_id,
-            "--assignee-principal-type",
-            "ServicePrincipal",
-            "--role",
-            role_id,
-            "--scope",
-            scope,
-            "--description",
-            f"ddlfo{control_plane_id}",
-        ]
+    execute(
+        AzCommand("role", "assignment create")
+        .param("--assignee-object-id", principal_id)
+        .param("--assignee-principal-type", "ServicePrincipal")
+        .param("--role", role_id)
+        .param("--scope", scope)
+        .param("--description", f"ddlfo{control_plane_id}")
     )
 
 
@@ -1269,15 +1116,10 @@ def grant_subscription_permissions(config: Configuration):
         set_subscription(sub_id)
 
         # Create RG in target subscription if it doesn't exist
-        az(
-            [
-                "group",
-                "create",
-                "--name",
-                config.control_plane_resource_group,
-                "--location",
-                config.control_plane_location,
-            ]
+        execute(
+            AzCommand("group", "create")
+            .param("--name", config.control_plane_resource_group)
+            .param("--location", config.control_plane_region)
         )
 
         # Get scope
@@ -1315,7 +1157,7 @@ def deploy_control_plane(config: Configuration):
     log.info("Deploying storage account...")
     set_subscription(config.control_plane_subscription)
     create_storage_account(
-        config.control_plane_cache_storage_name, config.control_plane_resource_group, config.control_plane_location
+        config.control_plane_cache_storage_name, config.control_plane_resource_group, config.control_plane_region
     )
     log.info("Waiting for storage account to be ready...")
     time.sleep(10)  # Ensure the storage account is ready
@@ -1375,7 +1217,7 @@ def main():
         # Step 1: controlPlaneResourceGroup - Create resource group
         log.info("STEP 1: Creating control plane resource group...")
         set_subscription(config.control_plane_subscription)
-        create_resource_group(config.control_plane_resource_group, config.control_plane_location)
+        create_resource_group(config.control_plane_resource_group, config.control_plane_region)
         log.info("Control plane resource group created")
 
         # Step 2: validateConfig - Validate Datadog API key and configuration
