@@ -252,16 +252,15 @@ class AzCommand:
         self.cmd.extend([key, value])
         return self
 
-    def flag(self, flag: str) -> "AzCommand":
-        """Add a flag (should include --)."""
-        self.cmd.append(flag)
-        return self
-
     def param_list(self, key: str, values: list[str]) -> "AzCommand":
         """Add multiple parameters with the same key"""
         self.cmd.append(key)
-        for value in values:
-            self.cmd.extend([key, value])
+        self.cmd.extend(values)
+        return self
+
+    def flag(self, flag: str) -> "AzCommand":
+        """Add a flag (should include --)."""
+        self.cmd.append(flag)
         return self
 
 
