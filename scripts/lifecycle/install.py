@@ -85,7 +85,6 @@ class Configuration:
     control_plane_rg: str
     monitored_subs: str
     datadog_api_key: str
-    datadog_app_key: str
 
     # Optional parameters (with defaults)
     datadog_site: str = "datadoghq.com"
@@ -97,15 +96,10 @@ class Configuration:
 
     def __post_init__(self):
         """Post-initialization to calculate derived values."""
-        # Basic configuration mapping
+
         self.control_plane_subscription = self.control_plane_subscription_id
         self.control_plane_resource_group = self.control_plane_rg
         self.control_plane_region = self.control_plane_region
-
-        # Datadog configuration
-        self.datadog_application_key = self.datadog_app_key
-
-        # Parse monitored subscriptions from comma-separated string
         self.monitored_subscriptions = [sub.strip() for sub in self.monitored_subs.split(",") if sub.strip()]
         self.all_subscriptions = {self.control_plane_subscription, *self.monitored_subscriptions}
 
@@ -197,8 +191,6 @@ def parse_arguments():
     )
 
     parser.add_argument("--datadog-api-key", type=str, required=True, help="Datadog API key (required)")
-
-    parser.add_argument("--datadog-app-key", type=str, required=True, help="Datadog Application key (required)")
 
     parser.add_argument(
         "--datadog-site",
@@ -1348,7 +1340,6 @@ def main():
             control_plane_rg=args.control_plane_resource_group,
             monitored_subs=args.monitored_subscriptions,
             datadog_api_key=args.datadog_api_key,
-            datadog_app_key=args.datadog_app_key,
             datadog_site=args.datadog_site,
             resource_tag_filters_arg=args.resource_tag_filters,
             pii_scrubber_rules_arg=args.pii_scrubber_rules,
