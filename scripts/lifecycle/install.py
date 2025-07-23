@@ -937,7 +937,6 @@ def create_containerapp_job(config: Configuration):
     secrets = [
         f"connection-string={config.get_control_plane_cache_conn_string()}",
         f"dd-api-key={config.datadog_api_key}",
-        f"dd-app-key={config.datadog_application_key}",
     ]
 
     execute(
@@ -1162,7 +1161,7 @@ def run_initial_deploy_script(config: Configuration):
 # =============================================================================
 
 
-def get_function_principal_id(control_plane_resource_group: str, function_app_name: str) -> str:
+def get_function_app_principal_id(control_plane_resource_group: str, function_app_name: str) -> str:
     """Get the principal ID of a Function App's managed identity."""
     log.debug(f"Getting principal ID for Function App {function_app_name}")
     output = execute(
@@ -1227,32 +1226,35 @@ def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: s
     )
 
 
-def grant_subscription_permissions(config: Configuration):
+def grant_permissions(config: Configuration):
     """Grant permissions across all monitored subscriptions."""
     log.info("Setting up permissions across monitored subscriptions...")
 
-    # Get principal IDs for function apps
-    resource_task_pid = get_function_principal_id(
-        config.control_plane_resource_group, config.control_plane_function_apps["resources"]
-    )
-    diagnostic_pid = get_function_principal_id(
-        config.control_plane_resource_group, config.control_plane_function_apps["diagnostic"]
-    )
-    scaling_pid = get_function_principal_id(
-        config.control_plane_resource_group, config.control_plane_function_apps["scaling"]
-    )
-
-    # Get principal ID for deployer container app job
     deployer_pid = get_containerapp_job_principal_id(config.control_plane_resource_group, config.deployer_job_name)
 
-    # Assign Website Contributor role to deployer in control plane resource group
+    MONITORING_READER_ID = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
+    MONITORING_CONTRIBUTOR_ID = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
+    STORAGE_READER_AND_DATA_ACCESS_ID = "c12c1c16-33a1-487b-954d-41c89c60f349"
+    SCALING_CONTRIBUTOR_ID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+    WEBSITE_CONTRIBUTOR_ID = "de139f84-1756-47ae-9be6-808fbbe84772"
+
     log.info("Assigning Website Contributor role to deployer container app job...")
     assign_role(
         config.control_plane_resource_group_id,
         deployer_pid,
-        "de139f84-1756-47ae-9be6-808fbbe84772",
+        WEBSITE_CONTRIBUTOR_ID,
         config.control_plane_id,
-    )  # Website Contributor role
+    )
+
+    resource_task_pid = get_function_app_principal_id(
+        config.control_plane_resource_group, config.control_plane_function_apps["resources"]
+    )
+    diagnostic_pid = get_function_app_principal_id(
+        config.control_plane_resource_group, config.control_plane_function_apps["diagnostic"]
+    )
+    scaling_pid = get_function_app_principal_id(
+        config.control_plane_resource_group, config.control_plane_function_apps["scaling"]
+    )
 
     for sub_id in config.monitored_subscriptions:
         log.info(f"Assigning permissions in subscription: {sub_id}")
@@ -1271,21 +1273,10 @@ def grant_subscription_permissions(config: Configuration):
         subscription_scope = f"/subscriptions/{sub_id}"
         resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_resource_group}"
 
-        # Assign roles at subscription level
-        assign_role(
-            subscription_scope, resource_task_pid, "43d0d8ad-25c7-4714-9337-8ba259a9fe05", config.control_plane_id
-        )  # Monitoring Reader role
-        assign_role(
-            subscription_scope, diagnostic_pid, "749f88d5-cbae-40b8-bcfc-e573ddc772fa", config.control_plane_id
-        )  # Monitoring Contributor
-
-        # Assign roles at resource group level
-        assign_role(
-            resource_group_scope, diagnostic_pid, "c12c1c16-33a1-487b-954d-41c89c60f349", config.control_plane_id
-        )  # Reader and Data Access - Storage blob reader for diagnostics
-        assign_role(
-            resource_group_scope, scaling_pid, "b24988ac-6180-42a0-ab88-20f7382dd24c", config.control_plane_id
-        )  # Contributor (used for scaling)
+        assign_role(subscription_scope, resource_task_pid, MONITORING_READER_ID, config.control_plane_id)
+        assign_role(subscription_scope, diagnostic_pid, MONITORING_CONTRIBUTOR_ID, config.control_plane_id)
+        assign_role(resource_group_scope, diagnostic_pid, STORAGE_READER_AND_DATA_ACCESS_ID, config.control_plane_id)
+        assign_role(resource_group_scope, scaling_pid, SCALING_CONTRIBUTOR_ID, config.control_plane_id)
 
     # Reset back to control plane subscription
     set_subscription(config.control_plane_subscription)
@@ -1358,25 +1349,21 @@ def main():
 
         set_subscription(config.control_plane_subscription)
 
-        # Step 1: controlPlaneResourceGroup - Create resource group
-        log.info("STEP 1: Creating control plane resource group...")
+        log.info("STEP 1: Validating Datadog configuration...")
+        validate_datadog_api_key(config.datadog_site, config.datadog_api_key)
+        log.info("Datadog configuration validated")
+
+        log.info("STEP 2: Creating control plane resource group...")
         set_subscription(config.control_plane_subscription)
         create_resource_group(config.control_plane_resource_group, config.control_plane_region)
         log.info("Control plane resource group created")
 
-        # Step 2: validateConfig - Validate Datadog API key and configuration
-        log.info("STEP 2: Validating configuration...")
-        validate_datadog_api_key(config.datadog_site, config.datadog_api_key)
-        log.info("Configuration validation completed")
-
-        # Step 3: controlPlane - Deploy main infrastructure (storage + functions + containers)
         log.info("STEP 3: Deploying control plane infrastructure...")
         deploy_control_plane(config)
 
-        # Step 4: subscriptionPermissions - Set up cross-subscription permissions
-        log.info("STEP 4: Setting up cross-subscription permissions...")
-        grant_subscription_permissions(config)
-        log.info("Cross-subscription permissions configured")
+        log.info("STEP 4: Setting up subscription permissions...")
+        grant_permissions(config)
+        log.info("Subscription and resource group permissions configured")
 
         # Step 5: initialRun - Trigger initial deployment
         log.info("STEP 5: Triggering initial deployment...")
