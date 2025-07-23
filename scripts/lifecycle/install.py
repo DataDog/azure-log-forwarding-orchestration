@@ -107,6 +107,7 @@ class Configuration:
 
         # Parse monitored subscriptions from comma-separated string
         self.monitored_subscriptions = [sub.strip() for sub in self.monitored_subs.split(",") if sub.strip()]
+        self.all_subscriptions = {self.control_plane_subscription, *self.monitored_subscriptions}
 
         self.resource_tag_filters = self.resource_tag_filters_arg
         self.pii_scrubber_rules = self.pii_scrubber_rules_arg
@@ -245,21 +246,21 @@ class AzCommand:
 
     def __init__(self, service: str, action: str):
         """Initialize with service and action (e.g., 'functionapp', 'create')."""
-        self.cmd = [service, action]
+        self.cmd = [service] + action.split()
 
     def param(self, key: str, value: str) -> "AzCommand":
-        """Add a parameter with key-value pair (key should include --)."""
+        """Adds a key-value pair parameter"""
         self.cmd.extend([key, value])
         return self
 
     def param_list(self, key: str, values: list[str]) -> "AzCommand":
-        """Add multiple parameters with the same key"""
+        """Adds a list of parameters with the same key"""
         self.cmd.append(key)
         self.cmd.extend(values)
         return self
 
     def flag(self, flag: str) -> "AzCommand":
-        """Add a flag (should include --)."""
+        """Adds a flag to the command"""
         self.cmd.append(flag)
         return self
 
@@ -292,8 +293,15 @@ def validate_deployment(config: Configuration):
     # Validate Azure CLI and authentication
     validate_azure_cli()
 
+    # Validate Azure CLI version and extensions
+    validate_azure_cli_extensions()
+
     # Validate subscription access
+    validate_monitored_subscriptions(config.monitored_subscriptions)
     validate_subscription_access(config.control_plane_subscription)
+
+    # Validate required resource providers across all subscriptions
+    validate_required_resource_providers(config.all_subscriptions)
 
     # Validate resource names
     validate_resource_names(
@@ -305,9 +313,6 @@ def validate_deployment(config: Configuration):
 
     # Validate configuration parameters
     validate_configuration(config)
-
-    # Validate monitored subscription access
-    validate_monitored_subscriptions(config.monitored_subscriptions, config.control_plane_subscription)
 
     log.info("=" * 70)
     log.info("VALIDATION COMPLETED: All checks passed - ready to deploy")
@@ -321,6 +326,155 @@ def validate_azure_cli():
         log.debug("Azure CLI authentication verified")
     except Exception as e:
         raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.")
+
+
+def validate_azure_cli_extensions():
+    """Ensure required Azure CLI extensions are installed."""
+    required_extension = "containerapp"
+
+    try:
+        output = execute(AzCommand("extension", "list").param("--output", "json"))
+        installed_extensions = json.loads(output)
+        installed_names = {ext["name"] for ext in installed_extensions}
+
+        if required_extension not in installed_names:
+            log.info(f"Installing missing Azure CLI extension: {required_extension}")
+            execute(AzCommand("extension", "add").param("--name", required_extension))
+
+        log.debug("Azure CLI extensions verified")
+    except Exception as e:
+        raise RuntimeError(f"Failed to validate/install Azure CLI extensions: {e}")
+
+
+def validate_required_resource_providers(subscription_ids: set[str]):
+    """Ensure required Azure resource providers are registered across all subscriptions."""
+    required_providers = [
+        "Microsoft.Web",  # Function Apps
+        "Microsoft.App",  # Container Apps
+        "Microsoft.Storage",  # Storage Accounts
+        "Microsoft.Authorization",  # Role Assignments
+        "Microsoft.Insights",  # Diagnostic Settings
+    ]
+
+    log.info(f"Checking required resource providers across {len(subscription_ids)} subscription(s)...")
+
+    # Track overall status across all subscriptions
+    total_unregistered = []
+    subscription_provider_status = {}
+
+    for subscription_id in subscription_ids:
+        try:
+            log.debug(f"Checking resource providers in subscription: {subscription_id}")
+
+            # Get all resource providers and their registration state
+            output = execute(
+                AzCommand("provider", "list")
+                .param("--subscription", subscription_id)
+                .param("--query", "[].{namespace:namespace, registrationState:registrationState}")
+                .param("--output", "json")
+            )
+            providers_status = json.loads(output)
+
+            # Create a lookup dict
+            provider_states = {p["namespace"]: p["registrationState"] for p in providers_status}
+
+            unregistered_providers = []
+            for provider in required_providers:
+                state = provider_states.get(provider, "NotFound")
+                if state != "Registered":
+                    unregistered_providers.append(provider)
+                    log.debug(f"Subscription {subscription_id}: Resource provider {provider} is {state}")
+
+            subscription_provider_status[subscription_id] = unregistered_providers
+            total_unregistered.extend(unregistered_providers)
+
+            if unregistered_providers:
+                log.info(
+                    f"Subscription {subscription_id}: Detected unregistered resource providers: {', '.join(unregistered_providers)}"
+                )
+                # log.info("Attempting to register resource providers")
+                # for provider in unregistered_providers:
+                #     log.debug(f"Registering provider: {provider} in subscription: {subscription_id}")
+                #     execute(
+                #         AzCommand("provider", "register")
+                #         .param("--namespace", provider)
+                #         .param("--subscription", subscription_id)
+                #     )
+            else:
+                log.debug(f"Subscription {subscription_id}: All required resource providers are registered")
+
+        except Exception as e:
+            log.error(f"Failed to validate resource providers in subscription {subscription_id}: {e}")
+            raise RuntimeError(f"Resource provider validation failed for subscription {subscription_id}: {e}")
+
+    # If any providers were unregistered, wait for critical ones to register
+    # if total_unregistered:
+    #     critical_providers = ["Microsoft.Web", "Microsoft.App", "Microsoft.Storage"]
+    #     critical_subscriptions_to_check = {}
+
+    #     # Identify which subscriptions need critical provider registration checks
+    #     for subscription_id, unregistered in subscription_provider_status.items():
+    #         critical_unregistered = [p for p in unregistered if p in critical_providers]
+    #         if critical_unregistered:
+    #             critical_subscriptions_to_check[subscription_id] = critical_unregistered
+
+    #     if critical_subscriptions_to_check:
+    #         log.info(
+    #             "Waiting for critical resource providers to register across subscriptions (this may take 1-2 minutes)..."
+    #         )
+    #         max_wait_time = 120  # 2 minutes
+    #         check_interval = 10  # 10 seconds
+    #         waited = 0
+
+    #         while waited < max_wait_time and critical_subscriptions_to_check:
+    #             time.sleep(check_interval)
+    #             waited += check_interval
+
+    #             # Check each subscription's critical providers
+    #             completed_subscriptions = []
+    #             for subscription_id, critical_providers_list in critical_subscriptions_to_check.items():
+    #                 if not critical_providers_list:  # All providers registered for this sub
+    #                     completed_subscriptions.append(subscription_id)
+    #                     continue
+
+    #                 # Check the first unregistered critical provider
+    #                 provider_to_check = critical_providers_list[0]
+    #                 try:
+    #                     output = execute(
+    #                         AzCommand("provider", "list")
+    #                         .param("--subscription", subscription_id)
+    #                         .param("--query", f"[?namespace=='{provider_to_check}'].registrationState")
+    #                         .param("--output", "tsv")
+    #                     )
+
+    #                     if output.strip() == "Registered":
+    #                         log.debug(
+    #                             f"Subscription {subscription_id}: Provider {provider_to_check} registered successfully"
+    #                         )
+    #                         critical_providers_list.pop(0)
+    #                         if not critical_providers_list:
+    #                             completed_subscriptions.append(subscription_id)
+    #                     else:
+    #                         log.debug(
+    #                             f"Subscription {subscription_id}: Still waiting for {provider_to_check} registration..."
+    #                         )
+    #                 except Exception as e:
+    #                     log.warning(f"Error checking provider registration status in {subscription_id}: {e}")
+
+    #             # Remove completed subscriptions
+    #             for sub_id in completed_subscriptions:
+    #                 del critical_subscriptions_to_check[sub_id]
+
+    #         # Warn about any remaining unregistered critical providers
+    #         if critical_subscriptions_to_check:
+    #             for subscription_id, remaining_providers in critical_subscriptions_to_check.items():
+    #                 log.warning(
+    #                     f"Subscription {subscription_id}: Resource providers still registering: {', '.join(remaining_providers)}. Deployment may fail if these are not ready."
+    #                 )
+
+    log.debug("Resource provider validation completed across all subscriptions")
+
+    return True
 
 
 def validate_subscription_access(control_plane_subscription: str):
@@ -354,7 +508,7 @@ def validate_resource_names(
 
     # Check storage account name availability
     try:
-        output = execute(AzCommand("storage", "account check-name").param("--name", storage_account_name))
+        execute(AzCommand("storage", "account check-name").param("--name", storage_account_name))
         result = json.loads(output)
         if not result.get("nameAvailable", False):
             reason = result.get("reason", "Unknown")
@@ -419,7 +573,7 @@ def validate_configuration(config: Configuration):
     log.debug("Configuration validation completed")
 
 
-def validate_monitored_subscriptions(monitored_subscriptions: list[str], control_plane_subscription: str):
+def validate_monitored_subscriptions(monitored_subscriptions: list[str]):
     """Verify access to all monitored subscriptions."""
     log.info("Validating access to monitored subscriptions...")
 
