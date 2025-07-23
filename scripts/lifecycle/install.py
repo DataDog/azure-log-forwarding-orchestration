@@ -229,7 +229,7 @@ def parse_arguments():
 
 
 # =============================================================================
-# UTILITY
+# AZ COMMAND UTILITY
 # =============================================================================
 
 
@@ -500,8 +500,8 @@ def validate_resource_names(
 
     # Check storage account name availability
     try:
-        execute(AzCommand("storage", "account check-name").param("--name", storage_account_name))
-        result = json.loads(output)
+        result_json = execute(AzCommand("storage", "account check-name").param("--name", storage_account_name))
+        result = json.loads(result_json)
         if not result.get("nameAvailable", False):
             reason = result.get("reason", "Unknown")
             message = result.get("message", "")
@@ -579,7 +579,6 @@ def validate_monitored_subscriptions(monitored_subscriptions: list[str]):
 
 # =============================================================================
 # STEP 1: BASIC RESOURCE SETUP
-# Source: scripts/lifecycle/01_install_param.py
 # =============================================================================
 
 
@@ -687,7 +686,6 @@ def validate_datadog_api_key(datadog_site: str, datadog_api_key: str):
 
 # =============================================================================
 # STEP 3: APP SERVICE PLAN AND FUNCTION APPS
-# Source: scripts/lifecycle/03_asp_control_plane.py
 # =============================================================================
 
 
@@ -839,7 +837,6 @@ def create_function_apps(config: Configuration):
 
 # =============================================================================
 # STEP 4: CONTAINER APP ENVIRONMENT AND DEPLOYER JOB
-# Source: scripts/lifecycle/04_deployer.py
 # =============================================================================
 
 
@@ -1091,73 +1088,30 @@ def deploy_container_job_infra(config: Configuration):
 
 # =============================================================================
 # STEP 5: INITIAL DEPLOYMENT TRIGGER
-# Source: scripts/lifecycle/05_initial_job_trigger.py
 # =============================================================================
 
 
-def run_initial_deploy_script(config: Configuration):
-    """Trigger the initial deployment using deployment scripts."""
-    log.info("Starting initial container app job via deployment script...")
+def run_initial_deploy(deployer_job_name: str, control_plane_resource_group: str, control_plane_subscription: str):
+    """Trigger the initial deployment by starting the deployer container app job."""
+    log.info("Triggering initial deployment by starting deployer container app job...")
 
-    # Get the full identity resource ID
-    # identity_id = az(
-    #     [
-    #         "identity",
-    #         "show",
-    #         "--name",
-    #         "runInitialDeployIdentity",
-    #         "--resource-group",
-    #         config.control_plane_resource_group,
-    #         "--query",
-    #         "id",
-    #         "--output",
-    #         "tsv",
-    #     ]
-    # ).strip()
+    try:
+        execute(
+            AzCommand("containerapp", "job start")
+            .param("--name", deployer_job_name)
+            .param("--resource-group", control_plane_resource_group)
+            .param("--subscription", control_plane_subscription)
+            .flag("--no-wait")
+        )
 
-    # # Get the storage key again
-    # storage_key = get_storage_key(config.storage_account_name, config.control_plane_resource_group)
-
-    # # Build PowerShell script content
-    # ps_script = f"Start-AzContainerAppJob -Name {config.deployer_job_name} -ResourceGroupName {config.control_plane_resource_group}"
-
-    # az(
-    #     [
-    #         "deployment-scripts",
-    #         "create",
-    #         "--name",
-    #         "runInitialDeploy",
-    #         "--resource-group",
-    #         config.control_plane_resource_group,
-    #         "--location",
-    #         config.control_plane_location,
-    #         "--script-name",
-    #         "runInitialDeploy",
-    #         "--script-content",
-    #         ps_script,
-    #         "--az-powershell-version",
-    #         "12.3",
-    #         "--storage-account-name",
-    #         config.storage_account_name,
-    #         "--storage-account-key",
-    #         storage_key,
-    #         "--cleanup-preference",
-    #         "OnSuccess",
-    #         "--retention-interval",
-    #         "PT1H",
-    #         "--identity-type",
-    #         "UserAssigned",
-    #         "--user-assigned-identities",
-    #         identity_id,
-    #     ]
-    # )
-
-    log.info("Initial deployment script executed")
+        log.info(f"Successfully started deployer job: {deployer_job_name}")
+    except Exception as e:
+        log.error(f"Failed to start deployer container app job: {e}")
+        raise RuntimeError(f"Could not trigger initial deployment: {e}")
 
 
 # =============================================================================
 # STEP 6: RBAC PERMISSIONS ACROSS SUBSCRIPTIONS
-# Source: scripts/lifecycle/06_monitored_subs_roles.py
 # =============================================================================
 
 
@@ -1365,9 +1319,10 @@ def main():
         grant_permissions(config)
         log.info("Subscription and resource group permissions configured")
 
-        # Step 5: initialRun - Trigger initial deployment
-        log.info("STEP 5: Triggering initial deployment...")
-        run_initial_deploy_script(config)
+        log.info("STEP 5: Triggering initial deploy...")
+        run_initial_deploy(
+            config.deployer_job_name, config.control_plane_resource_group, config.control_plane_subscription
+        )
         log.info("Initial deployment triggered")
 
         log.info("=" * 70)
