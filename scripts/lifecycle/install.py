@@ -91,8 +91,7 @@ class Configuration:
     resource_tag_filters_arg: str = ""
     pii_scrubber_rules_arg: str = ""
     datadog_telemetry_arg: bool = False
-    log_level_arg: str = "DEBUG"
-    # altan log_level_arg: str = "INFO"
+    log_level_arg: str = "INFO"
 
     def __post_init__(self):
         """Post-initialization to calculate derived values."""
@@ -274,13 +273,19 @@ def execute(az_cmd: AzCommand) -> str:
 # =============================================================================
 # VALIDATION PHASE
 # =============================================================================
+def validate_user_parameters(config: Configuration):
+    print_separator()
+    log.info("VALIDATION: Checking deployment parameters, Azure permissions, and Datadog credentials...")
+
+    validate_deployment(config)
+    validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
+
+    print_separator()
+    log.info("VALIDATION: Completed")
 
 
 def validate_deployment(config: Configuration):
     """Phase 0: Validate all parameters and permissions before creating anything."""
-    log.info("=" * 70)
-    log.info("VALIDATION: Checking deployment parameters and permissions...")
-    log.info("=" * 70)
 
     # Validate Azure CLI and authentication
     validate_azure_cli()
@@ -300,15 +305,8 @@ def validate_deployment(config: Configuration):
         config.control_plane_resource_group, config.control_plane_subscription, config.control_plane_cache_storage_name
     )
 
-    # Validate Datadog credentials
-    validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
-
     # Validate configuration parameters
     validate_configuration(config)
-
-    log.info("=" * 70)
-    log.info("VALIDATION COMPLETED: All checks passed - ready to deploy")
-    log.info("=" * 70)
 
 
 def validate_azure_cli():
@@ -398,71 +396,6 @@ def validate_required_resource_providers(subscription_ids: set[str]):
         except Exception as e:
             log.error(f"Failed to validate resource providers in subscription {subscription_id}: {e}")
             raise RuntimeError(f"Resource provider validation failed for subscription {subscription_id}: {e}")
-
-    # If any providers were unregistered, wait for critical ones to register
-    # if total_unregistered:
-    #     critical_providers = ["Microsoft.Web", "Microsoft.App", "Microsoft.Storage"]
-    #     critical_subscriptions_to_check = {}
-
-    #     # Identify which subscriptions need critical provider registration checks
-    #     for subscription_id, unregistered in subscription_provider_status.items():
-    #         critical_unregistered = [p for p in unregistered if p in critical_providers]
-    #         if critical_unregistered:
-    #             critical_subscriptions_to_check[subscription_id] = critical_unregistered
-
-    #     if critical_subscriptions_to_check:
-    #         log.info(
-    #             "Waiting for critical resource providers to register across subscriptions (this may take 1-2 minutes)..."
-    #         )
-    #         max_wait_time = 120  # 2 minutes
-    #         check_interval = 10  # 10 seconds
-    #         waited = 0
-
-    #         while waited < max_wait_time and critical_subscriptions_to_check:
-    #             time.sleep(check_interval)
-    #             waited += check_interval
-
-    #             # Check each subscription's critical providers
-    #             completed_subscriptions = []
-    #             for subscription_id, critical_providers_list in critical_subscriptions_to_check.items():
-    #                 if not critical_providers_list:  # All providers registered for this sub
-    #                     completed_subscriptions.append(subscription_id)
-    #                     continue
-
-    #                 # Check the first unregistered critical provider
-    #                 provider_to_check = critical_providers_list[0]
-    #                 try:
-    #                     output = execute(
-    #                         AzCommand("provider", "list")
-    #                         .param("--subscription", subscription_id)
-    #                         .param("--query", f"[?namespace=='{provider_to_check}'].registrationState")
-    #                         .param("--output", "tsv")
-    #                     )
-
-    #                     if output.strip() == "Registered":
-    #                         log.debug(
-    #                             f"Subscription {subscription_id}: Provider {provider_to_check} registered successfully"
-    #                         )
-    #                         critical_providers_list.pop(0)
-    #                         if not critical_providers_list:
-    #                             completed_subscriptions.append(subscription_id)
-    #                     else:
-    #                         log.debug(
-    #                             f"Subscription {subscription_id}: Still waiting for {provider_to_check} registration..."
-    #                         )
-    #                 except Exception as e:
-    #                     log.warning(f"Error checking provider registration status in {subscription_id}: {e}")
-
-    #             # Remove completed subscriptions
-    #             for sub_id in completed_subscriptions:
-    #                 del critical_subscriptions_to_check[sub_id]
-
-    #         # Warn about any remaining unregistered critical providers
-    #         if critical_subscriptions_to_check:
-    #             for subscription_id, remaining_providers in critical_subscriptions_to_check.items():
-    #                 log.warning(
-    #                     f"Subscription {subscription_id}: Resource providers still registering: {', '.join(remaining_providers)}. Deployment may fail if these are not ready."
-    #                 )
 
     log.debug("Resource provider validation completed across all subscriptions")
 
@@ -578,7 +511,7 @@ def validate_monitored_subscriptions(monitored_subscriptions: list[str]):
 
 
 # =============================================================================
-# STEP 1: BASIC RESOURCE SETUP
+# BASIC RESOURCE SETUP
 # =============================================================================
 
 
@@ -649,43 +582,7 @@ def create_file_share(storage_account_name: str, control_plane_cache: str, resou
 
 
 # =============================================================================
-# STEP 2: DATADOG API KEY VALIDATION
-# =============================================================================
-
-
-def validate_datadog_api_key(datadog_site: str, datadog_api_key: str):
-    """Validate the Datadog API key."""
-    log.info("Validating Datadog API key...")
-
-    # Construct curl command
-    curl_command = [
-        "curl",
-        "-s",
-        "-X",
-        "GET",
-        f"https://api.{datadog_site}/api/v1/validate",
-        "-H",
-        "Accept: application/json",
-        "-H",
-        f"DD-API-KEY: {datadog_api_key}",
-    ]
-
-    # Run curl and parse result
-    response = subprocess.check_output(curl_command, text=True)
-    log.debug(f"Datadog API validation response: {response}")
-
-    try:
-        response_json = json.loads(response)
-        if not response_json.get("valid", False):
-            raise RuntimeError(f"Datadog API Key validation failed against {datadog_site}")
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Failed to parse Datadog response: {e}")
-
-    log.info("Datadog API Key validated successfully")
-
-
-# =============================================================================
-# STEP 3: APP SERVICE PLAN AND FUNCTION APPS
+# APP SERVICE PLAN AND FUNCTION APPS
 # =============================================================================
 
 
@@ -836,7 +733,7 @@ def create_function_apps(config: Configuration):
 
 
 # =============================================================================
-# STEP 4: CONTAINER APP ENVIRONMENT AND DEPLOYER JOB
+# CONTAINER APP ENVIRONMENT AND DEPLOYER JOB
 # =============================================================================
 
 
@@ -864,7 +761,6 @@ def create_user_assigned_identity(control_plane_resource_group: str, control_pla
         .param("--name", identity_name)
         .param("--resource-group", control_plane_resource_group)
         .param("--location", control_plane_location)
-        .flag("--enable-managed-identity")
     )
 
 
@@ -1087,7 +983,7 @@ def deploy_container_job_infra(config: Configuration):
 
 
 # =============================================================================
-# STEP 5: INITIAL DEPLOYMENT TRIGGER
+# INITIAL DEPLOYMENT TRIGGER
 # =============================================================================
 
 
@@ -1111,7 +1007,7 @@ def run_initial_deploy(deployer_job_name: str, control_plane_resource_group: str
 
 
 # =============================================================================
-# STEP 6: RBAC PERMISSIONS ACROSS SUBSCRIPTIONS
+# RBAC PERMISSIONS ACROSS SUBSCRIPTIONS
 # =============================================================================
 
 
@@ -1272,11 +1168,14 @@ def deploy_control_plane(config: Configuration):
 # =============================================================================
 
 
+def print_separator():
+    log.info("=" * 70)
+
+
 def main():
     """Main installation flow that orchestrates all steps."""
 
     try:
-        # Step 0: Parse arguments and create configuration
         args = parse_arguments()
         config = Configuration(
             management_group_id=args.management_group,
@@ -1295,17 +1194,11 @@ def main():
         # Set up logging based on config
         basicConfig(level=getattr(__import__("logging"), config.log_level))
 
-        log.info("Starting Azure Log Forwarding Orchestration Installation...")
-        log.info("=" * 70)
+        log.info("Starting setup for Azure Automated Log Forwarding...")
 
-        # Validate deployment parameters and permissions
-        validate_deployment(config)
+        validate_user_parameters(config)
 
         set_subscription(config.control_plane_subscription)
-
-        log.info("STEP 1: Validating Datadog configuration...")
-        validate_datadog_api_key(config.datadog_site, config.datadog_api_key)
-        log.info("Datadog configuration validated")
 
         log.info("STEP 2: Creating control plane resource group...")
         set_subscription(config.control_plane_subscription)
@@ -1325,7 +1218,7 @@ def main():
         )
         log.info("Initial deployment triggered")
 
-        log.info("=" * 70)
+        print_separator()
         log.info("Azure Log Forwarding Orchestration installation completed successfully!")
         log.info("Check the Azure portal to verify all resources were created")
 
