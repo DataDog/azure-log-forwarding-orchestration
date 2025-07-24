@@ -2,40 +2,36 @@
 """
 Azure Log Forwarding Orchestration Installation Script
 
-This script deploys necessary infrastructure to enable Automated Log Forwarding in an Azure environment.
+This script deploys necessary infrastructure to enable Automated Log Forwarding in an Azure environment and is designed to be executed in Azure Cloud Shell.
 
-This script is designed to be executed in Azure Cloud Shell.
+usage: install.py [-h] -mg MANAGEMENT_GROUP --control-plane-region CONTROL_PLANE_REGION --control-plane-subscription CONTROL_PLANE_SUBSCRIPTION
+                  --control-plane-resource-group CONTROL_PLANE_RESOURCE_GROUP --monitored-subscriptions MONITORED_SUBSCRIPTIONS --datadog-api-key DATADOG_API_KEY
+                  [--datadog-site {datadoghq.com,datadoghq.eu,ap1.datadoghq.com,ap2.datadoghq.com,us3.datadoghq.com,us5.datadoghq.com,ddog-gov.com}]
+                  [--resource-tag-filters RESOURCE_TAG_FILTERS] [--pii-scrubber-rules PII_SCRUBBER_RULES] [--datadog-telemetry] [--log-level {DEBUG,INFO,WARNING,ERROR}]
 
-USAGE:
-    python install.py \
-        --management-group "/providers/Microsoft.Management/managementGroups/your-mg-id" \
-        --control-plane-region "eastus" \
-        --control-plane-subscription "12345678-1234-1234-1234-123456789012" \
-        --control-plane-resource-group "dd-control-plane-rg" \
-        --monitored-subscriptions "12345678-1234-1234-1234-123456789012,87654321-4321-4321-4321-210987654321" \
-        --datadog-api-key "your-32-char-api-key" \
-        --datadog-app-key "your-40-char-app-key" \
-        --datadog-site "datadoghq.com"
-        --resource-tag-filters "environment:prod,team:platform" \
-        --pii-scrubber-rules "$(cat pii-rules.yaml)" \
-        --datadog-telemetry \
-        --log-level "DEBUG"
-
-PARAMETERS:
-    Required:
-        --management-group: Management group ID for enterprise-scale deployment
-        --control-plane-region: Azure region (e.g., eastus, westus2, northeurope)
-        --control-plane-subscription: Subscription ID for the control plane infrastructure  
-        --control-plane-resource-group: Resource group name for control plane resources
-        --monitored-subscriptions: Comma-separated subscription IDs to monitor for logs
-        --datadog-api-key: 32-character Datadog API key from organization settings
-        --datadog-app-key: 40-character Datadog Application key for deployer access
-        --datadog-site: Datadog site region (default: datadoghq.com)
-    Optional:
-        --resource-tag-filters: Comma-separated tags to filter which resources to monitor
-        --pii-scrubber-rules: YAML-formatted PII scrubbing rules
-        --datadog-telemetry: Enable Datadog telemetry collection
-        --log-level: Logging verbosity (DEBUG, INFO, WARNING, ERROR)
+options:
+  -h, --help            show this help message and exit
+  -mg MANAGEMENT_GROUP, --management-group MANAGEMENT_GROUP
+                        Management group ID to deploy under (required)
+  --control-plane-region CONTROL_PLANE_REGION
+                        Azure region for the control plane (e.g., eastus, westus2) (required)
+  --control-plane-subscription CONTROL_PLANE_SUBSCRIPTION
+                        Subscription ID where the control plane will be deployed (required)
+  --control-plane-resource-group CONTROL_PLANE_RESOURCE_GROUP
+                        Resource group name for the control plane (required)
+  --monitored-subscriptions MONITORED_SUBSCRIPTIONS
+                        Comma-separated list of subscription IDs to monitor for log forwarding (required)
+  --datadog-api-key DATADOG_API_KEY
+                        Datadog API key (required)
+  --datadog-site {datadoghq.com,datadoghq.eu,ap1.datadoghq.com,ap2.datadoghq.com,us3.datadoghq.com,us5.datadoghq.com,ddog-gov.com}
+                        Datadog site (default: datadoghq.com)
+  --resource-tag-filters RESOURCE_TAG_FILTERS
+                        Comma separated list of tags to filter resources by
+  --pii-scrubber-rules PII_SCRUBBER_RULES
+                        YAML formatted list of PII Scrubber Rules
+  --datadog-telemetry   Enable Datadog telemetry
+  --log-level {DEBUG,INFO,WARNING,ERROR}
+                        Set the log level (default: INFO)
 """
 
 import argparse
