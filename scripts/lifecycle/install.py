@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
+
 """
 Azure Automated Log Forwarding Installation Script
 
@@ -40,9 +43,8 @@ import subprocess
 import time
 import uuid
 from dataclasses import dataclass
-from logging import INFO, WARNING, basicConfig, getLogger
+from logging import WARNING, basicConfig, getLogger
 
-# Set up logging
 getLogger("azure").setLevel(WARNING)
 log = getLogger("installer")
 
@@ -53,9 +55,9 @@ log = getLogger("installer")
 
 @dataclass
 class Configuration:
-    """Class to hold all configuration parameters."""
+    """User-specified configuration parameters and their derivations"""
 
-    # Required parameters
+    # Required params
     management_group_id: str
     control_plane_region: str
     control_plane_sub_id: str
@@ -63,7 +65,7 @@ class Configuration:
     monitored_subs: str
     datadog_api_key: str
 
-    # Optional parameters (with defaults)
+    # Optional params with defaults
     datadog_site: str = "datadoghq.com"
     resource_tag_filters_arg: str = ""
     pii_scrubber_rules_arg: str = ""
@@ -71,25 +73,17 @@ class Configuration:
     log_level_arg: str = "INFO"
 
     def generate_control_plane_id(self) -> str:
-        """Generate control plane ID"""
-
-        # Create deterministic UUID from same inputs as bicep
         combined = (
             f"{self.management_group_id}{self.control_plane_sub_id}{self.control_plane_rg}{self.control_plane_region}"
         )
 
-        # Create a deterministic UUID using the combined string
-        # This mimics the guid() function in bicep
         namespace = uuid.UUID("00000000-0000-0000-0000-000000000000")
         guid_like = str(uuid.uuid5(namespace, combined))
 
-        # Extract last 12 characters and convert to lowercase (matching bicep subUuid function)
-        # Remove hyphens and take the last 12 characters
         clean_guid = guid_like.replace("-", "")
         return clean_guid[-12:].lower()
 
     def get_control_plane_cache_conn_string(self) -> str:
-        """Get the connection string for the control plane cache storage account."""
         if not self.control_plane_cache_storage_key:
             self.control_plane_cache_storage_key = get_storage_key(
                 self.control_plane_cache_storage_name, self.control_plane_rg
@@ -97,7 +91,7 @@ class Configuration:
         return f"DefaultEndpointsProtocol=https;AccountName={self.control_plane_cache_storage_name};EndpointSuffix=core.windows.net;AccountKey={self.control_plane_cache_storage_key}"
 
     def __post_init__(self):
-        """Post-initialization to calculate derived values."""
+        """Calculates derived values from user-specified params."""
 
         self.monitored_subscriptions = [sub.strip() for sub in self.monitored_subs.split(",") if sub.strip()]
         self.all_subscriptions = {self.control_plane_sub_id, *self.monitored_subscriptions}
@@ -107,28 +101,25 @@ class Configuration:
         self.datadog_telemetry = self.datadog_telemetry_arg
         self.log_level = self.log_level_arg
 
+        # Control plane
         self.control_plane_id = self.generate_control_plane_id()
         log.info(f"Generated control plane ID: {self.control_plane_id}")
-
-        # Derived resource names (calculated after base configuration is set)
         self.control_plane_cache = "control-plane-cache"
         self.control_plane_cache_storage_name = f"lfostorage{self.control_plane_id}"
         self.control_plane_cache_storage_url = f"https://{self.control_plane_cache_storage_name}.blob.core.windows.net"
         self.control_plane_cache_storage_key = ""
-
-        self.app_service_plan = f"control-plane-asp-{self.control_plane_id}"
-        self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_region}"
-        self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
-        self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
         self.control_plane_resource_group_id = (
             f"/subscriptions/{self.control_plane_sub_id}/resourceGroups/{self.control_plane_rg}"
         )
 
-        # Container configuration
-        self.lfo_public_storage_account_url = "https://ddazurelfo.blob.core.windows.net"
+        # Deployer + function apps
+        self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
+        self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_region}"
+        self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
         self.image_registry = "datadoghq.azurecr.io"
         self.deployer_image = f"{self.image_registry}/deployer:latest"
-
+        self.app_service_plan = f"control-plane-asp-{self.control_plane_id}"
+        self.lfo_public_storage_account_url = "https://ddazurelfo.blob.core.windows.net"
         self.control_plane_function_apps = {
             "resources": f"resources-task-{self.control_plane_id}",
             "scaling": f"scaling-task-{self.control_plane_id}",
@@ -258,42 +249,31 @@ def execute(az_cmd: AzCommand) -> str:
 
 
 # =============================================================================
-# VALIDATION PHASE
+# VALIDATION
 # =============================================================================
 def validate_user_parameters(config: Configuration):
     print_separator()
-    log.info("VALIDATION: Checking deployment parameters, Azure permissions, and Datadog credentials...")
+    log.info("Validating deployment parameters, Azure permissions, and Datadog credentials...")
 
     validate_deployment(config)
     validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
 
     print_separator()
-    log.info("VALIDATION: Completed")
+    log.info("Validation completed")
 
 
 def validate_deployment(config: Configuration):
-    """Phase 0: Validate all parameters and permissions before creating anything."""
+    """Validate all parameters and permissions before creating any resources."""
 
-    # Validate Azure CLI and authentication
+    validate_configuration(config)
     validate_azure_cli()
-
-    # Validate Azure CLI version and extensions
     validate_azure_cli_extensions()
-
-    # Validate subscription access
     validate_monitored_subscriptions(config.monitored_subscriptions)
-    validate_subscription_access(config.control_plane_sub_id)
-
-    # Validate required resource providers across all subscriptions
+    validate_control_plane_sub_access(config.control_plane_sub_id)
     validate_required_resource_providers(config.all_subscriptions)
-
-    # Validate resource names
     validate_resource_names(
         config.control_plane_rg, config.control_plane_sub_id, config.control_plane_cache_storage_name
     )
-
-    # Validate configuration parameters
-    validate_configuration(config)
 
 
 def validate_azure_cli():
@@ -323,7 +303,7 @@ def validate_azure_cli_extensions():
         raise RuntimeError(f"Failed to validate/install Azure CLI extensions: {e}") from e
 
 
-def validate_required_resource_providers(subscription_ids: set[str]):
+def validate_required_resource_providers(sub_ids: set[str]):
     """Ensure required Azure resource providers are registered across all subscriptions."""
     required_providers = [
         "Microsoft.Web",  # Function Apps
@@ -333,20 +313,20 @@ def validate_required_resource_providers(subscription_ids: set[str]):
         "Microsoft.Insights",  # Diagnostic Settings
     ]
 
-    log.info(f"Checking required resource providers across {len(subscription_ids)} subscription(s)...")
+    log.info(f"Checking required resource providers across {len(sub_ids)} subscription(s)...")
 
     # Track overall status across all subscriptions
     total_unregistered = []
-    subscription_provider_status = {}
+    subs_provider_status = {}
 
-    for subscription_id in subscription_ids:
+    for sub_id in sub_ids:
         try:
-            log.debug(f"Checking resource providers in subscription: {subscription_id}")
+            log.debug(f"Checking resource providers in subscription: {sub_id}")
 
             # Get all resource providers and their registration state
             output = execute(
                 AzCommand("provider", "list")
-                .param("--subscription", subscription_id)
+                .param("--subscription", sub_id)
                 .param("--query", "[].{namespace:namespace, registrationState:registrationState}")
                 .param("--output", "json")
             )
@@ -360,74 +340,75 @@ def validate_required_resource_providers(subscription_ids: set[str]):
                 state = provider_states.get(provider, "NotFound")
                 if state != "Registered":
                     unregistered_providers.append(provider)
-                    log.debug(f"Subscription {subscription_id}: Resource provider {provider} is {state}")
+                    log.debug(f"Subscription {sub_id}: Resource provider {provider} is {state}")
 
-            subscription_provider_status[subscription_id] = unregistered_providers
+            subs_provider_status[sub_id] = unregistered_providers
             total_unregistered.extend(unregistered_providers)
 
             if unregistered_providers:
                 log.info(
-                    f"Subscription {subscription_id}: Detected unregistered resource providers: {', '.join(unregistered_providers)}"
+                    f"Subscription {sub_id}: Detected unregistered resource providers: {', '.join(unregistered_providers)}"
                 )
-                # log.info("Attempting to register resource providers")
-                # for provider in unregistered_providers:
-                #     log.debug(f"Registering provider: {provider} in subscription: {subscription_id}")
-                #     execute(
-                #         AzCommand("provider", "register")
-                #         .param("--namespace", provider)
-                #         .param("--subscription", subscription_id)
-                #     )
             else:
-                log.debug(f"Subscription {subscription_id}: All required resource providers are registered")
-
+                log.debug(f"Subscription {sub_id}: All required resource providers are registered")
         except Exception as e:
-            log.error(f"Failed to validate resource providers in subscription {subscription_id}: {e}")
-            raise RuntimeError(f"Resource provider validation failed for subscription {subscription_id}: {e}") from e
+            log.error(f"Failed to validate resource providers in subscription {sub_id}: {e}")
+            raise RuntimeError(f"Resource provider validation failed for subscription {sub_id}: {e}") from e
 
-    log.debug("Resource provider validation completed across all subscriptions")
+    success = True
+    for sub_id, unregistered_providers in subs_provider_status.items():
+        if unregistered_providers:
+            success = False
+            log.error(
+                f"Subscription {sub_id}: Detected unregistered resource providers: {', '.join(unregistered_providers)}"
+            )
+            log.error("Please run the following commands to register the missing resource providers:")
+            log.error(f"az account set --subscription {sub_id}")
+            for provider in unregistered_providers:
+                log.error(f"az provider register --namespace {provider}")
+        else:
+            log.debug(f"Subscription {sub_id}: All required resource providers are registered")
 
-    return True
+    log.info("Resource provider validation successful across all subscriptions")
+
+    if not success:
+        raise RuntimeError("Resource provider validation failed")
 
 
-def validate_subscription_access(control_plane_subscription: str):
+def validate_control_plane_sub_access(control_plane_sub_id: str):
     """Verify access to the control plane subscription."""
     try:
-        set_subscription(control_plane_subscription)
-        log.debug(f"Subscription access verified: {control_plane_subscription}")
+        set_subscription(control_plane_sub_id)
+        log.debug(f"Control plane subscription access verified: {control_plane_sub_id}")
     except Exception as e:
-        raise RuntimeError(f"Cannot access subscription {control_plane_subscription}: {e}") from e
+        raise RuntimeError(f"Cannot access control plane subscription {control_plane_sub_id}: {e}") from e
 
 
-def validate_resource_names(
-    control_plane_resource_group: str, control_plane_subscription: str, storage_account_name: str
-):
+def validate_resource_names(control_plane_rg: str, control_plane_sub_id: str, control_plane_cache_storage_name: str):
     """Check if resource names are available and valid."""
     log.info("Validating resource name availability...")
 
     # Check if resource group already exists
     try:
         output = execute(
-            AzCommand("group", "exists")
-            .param("--name", control_plane_resource_group)
-            .param("--subscription", control_plane_subscription)
+            AzCommand("group", "exists").param("--name", control_plane_rg).param("--subscription", control_plane_sub_id)
         )
         if output.strip().lower() == "true":
-            log.warning(f"Resource group {control_plane_resource_group} already exists - will use existing")
+            log.warning(f"Resource group {control_plane_rg} already exists - will use existing")
         else:
-            log.debug(f"Resource group name available: {control_plane_resource_group}")
+            log.debug(f"Resource group name available: {control_plane_rg}")
     except Exception as e:
         raise RuntimeError(f"Cannot check resource group availability: {e}") from e
 
     # Check storage account name availability
     try:
-        result_json = execute(AzCommand("storage", "account check-name").param("--name", storage_account_name))
+        result_json = execute(
+            AzCommand("storage", "account check-name").param("--name", control_plane_cache_storage_name)
+        )
         result = json.loads(result_json)
         if not result.get("nameAvailable", False):
-            reason = result.get("reason", "Unknown")
-            message = result.get("message", "")
-            # raise RuntimeError(f"Storage account name '{storage_account_name}' not available: {reason} - {message}")
-            log.info(f"Storage account name '{storage_account_name}' exists - will use existing")
-        log.debug(f"Storage account name available: {storage_account_name}")
+            log.info(f"Storage account name '{control_plane_cache_storage_name}' exists - will use existing")
+        log.debug(f"Storage account name available: {control_plane_cache_storage_name}")
     except json.JSONDecodeError as e:
         raise RuntimeError("Failed to parse storage account name availability check") from e
 
@@ -485,11 +466,11 @@ def validate_configuration(config: Configuration):
     log.debug("Configuration validation completed")
 
 
-def validate_monitored_subscriptions(monitored_subscriptions: list[str]):
+def validate_monitored_subscriptions(monitored_subs: list[str]):
     """Verify access to all monitored subscriptions."""
     log.info("Validating access to monitored subscriptions...")
 
-    for sub_id in monitored_subscriptions:
+    for sub_id in monitored_subs:
         try:
             set_subscription(sub_id)
             log.debug(f"Monitored subscription access verified: {sub_id}")
