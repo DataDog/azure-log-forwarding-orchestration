@@ -85,7 +85,7 @@ class Configuration:
 
     def get_control_plane_cache_conn_string(self) -> str:
         if not self.control_plane_cache_storage_key:
-            self.control_plane_cache_storage_key = get_storage_key(
+            self.control_plane_cache_storage_key = get_storage_acct_key(
                 self.control_plane_cache_storage_name, self.control_plane_rg
             )
         return f"DefaultEndpointsProtocol=https;AccountName={self.control_plane_cache_storage_name};EndpointSuffix=core.windows.net;AccountKey={self.control_plane_cache_storage_key}"
@@ -477,34 +477,29 @@ def validate_monitored_subscriptions(monitored_subs: list[str]):
 
 
 # =============================================================================
-# BASIC RESOURCE SETUP
+# RESOURCE SETUP - Subscription, Resource Group, Storage Account
 # =============================================================================
 
 
-def set_subscription(subscription_id: str):
-    """Set the active Azure subscription."""
-    log.debug(f"Setting active subscription to {subscription_id}")
-    execute(AzCmd("account", "set").param("--subscription", subscription_id))
+def set_subscription(sub_id: str):
+    log.debug(f"Setting active subscription to {sub_id}")
+    execute(AzCmd("account", "set").param("--subscription", sub_id))
 
 
-def create_resource_group(control_plane_resource_group: str, control_plane_location: str):
-    """Create the control plane resource group."""
-    log.info(f"Creating resource group {control_plane_resource_group} in {control_plane_location}")
-    execute(
-        AzCmd("group", "create")
-        .param("--name", control_plane_resource_group)
-        .param("--location", control_plane_location)
-    )
+def create_resource_group(control_plane_rg: str, control_plane_region: str):
+    """Create resource group for control plane"""
+    log.info(f"Creating resource group {control_plane_rg} in {control_plane_region}")
+    execute(AzCmd("group", "create").param("--name", control_plane_rg).param("--location", control_plane_region))
 
 
-def create_storage_account(storage_account_name: str, control_plane_resource_group: str, control_plane_location: str):
-    """Create the storage account for the control plane."""
+def create_storage_account(storage_account_name: str, control_plane_rg: str, control_plane_region: str):
+    """Create storage account for control plane cache"""
     log.info(f"Creating storage account {storage_account_name}")
     execute(
         AzCmd("storage", "account create")
         .param("--name", storage_account_name)
-        .param("--resource-group", control_plane_resource_group)
-        .param("--location", control_plane_location)
+        .param("--resource-group", control_plane_rg)
+        .param("--location", control_plane_region)
         .param("--sku", "Standard_LRS")
         .param("--kind", "StorageV2")
         .param("--access-tier", "Hot")
@@ -513,20 +508,20 @@ def create_storage_account(storage_account_name: str, control_plane_resource_gro
     )
 
 
-def get_storage_key(storage_account_name: str, control_plane_resource_group: str) -> str:
-    """Get the storage account primary key."""
+def get_storage_acct_key(storage_account_name: str, control_plane_rg: str) -> str:
+    """Retrieve storage account key for control plane cache - this is needed to connect to the storage account"""
     log.debug(f"Retrieving storage account key for {storage_account_name}")
     output = execute(
         AzCmd("storage", "account keys list")
         .param("--account-name", storage_account_name)
-        .param("--resource-group", control_plane_resource_group)
+        .param("--resource-group", control_plane_rg)
     )
     keys = json.loads(output)
     return keys[0]["value"]
 
 
 def create_blob_container(storage_account_name: str, control_plane_cache: str, account_key: str):
-    """Create blob container in the storage account."""
+    """Create blob container for control plane cache"""
     log.info(f"Creating blob container {control_plane_cache}")
     execute(
         AzCmd("storage", "container create")
@@ -536,47 +531,44 @@ def create_blob_container(storage_account_name: str, control_plane_cache: str, a
     )
 
 
-def create_file_share(storage_account_name: str, control_plane_cache: str, resource_group: str):
-    """Create file share in the storage account."""
+def create_file_share(storage_account_name: str, control_plane_cache: str, control_plane_rg: str):
+    """Create file share for control plane cache"""
     log.info(f"Creating file share {control_plane_cache}")
     execute(
         AzCmd("storage", "share-rm create")
         .param("--storage-account", storage_account_name)
         .param("--name", control_plane_cache)
-        .param("--resource-group", resource_group)
+        .param("--resource-group", control_plane_rg)
     )
 
 
 # =============================================================================
-# APP SERVICE PLAN AND FUNCTION APPS
+# RESOURCE SETUP - App Service Plan, Function Apps
 # =============================================================================
 
 
-def create_app_service_plan(app_service_plan: str, control_plane_resource_group: str, control_plane_location: str):
-    """Create the App Service Plan for Function Apps."""
-
-    # Check if the app service plan already exists
+def create_app_service_plan(app_service_plan: str, control_plane_rg: str, control_plane_region: str):
+    """Create app service plan that the function apps slot into"""
     try:
         log.info(f"Checking if App Service Plan '{app_service_plan}' already exists...")
         execute(
             AzCmd("appservice", "plan show")
             .param("--name", app_service_plan)
-            .param("--resource-group", control_plane_resource_group)
+            .param("--resource-group", control_plane_rg)
         )
         log.info(f"App Service Plan '{app_service_plan}' already exists - reusing existing plan")
         return
     except RuntimeError:
-        # App service plan doesn't exist, proceed with creation
         log.info(f"App Service Plan '{app_service_plan}' not found - creating new plan")
         pass
 
     log.info(f"Creating App Service Plan {app_service_plan}")
 
-    # Use `az resource create` instead of `az appservice plan create` because of
-    # Azure CLI issue with the SKU (Y1) we utilize: https://github.com/Azure/azure-cli/issues/19864
+    # Use `az resource create` instead of `az appservice plan create` because of Azure CLI issue with the SKU we utilize (Y1)
+    # https://github.com/Azure/azure-cli/issues/19864
     execute(
         AzCmd("resource", "create")
-        .param("--resource-group", control_plane_resource_group)
+        .param("--resource-group", control_plane_rg)
         .param("--name", app_service_plan)
         .param("--resource-type", "Microsoft.Web/serverfarms")
         .flag("--is-full-object")
@@ -585,7 +577,7 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
             json.dumps(
                 {
                     "name": app_service_plan,
-                    "location": control_plane_location,
+                    "location": control_plane_region,
                     "kind": "linux",
                     "sku": {"name": "Y1", "tier": "Dynamic"},
                     "properties": {"reserved": True},
@@ -596,10 +588,8 @@ def create_app_service_plan(app_service_plan: str, control_plane_resource_group:
     )
 
 
-def create_function_app(config: Configuration, name: str, key: str):
-    """Create a Function App with required configuration."""
-
-    # Check if the function app already exists
+def create_function_app(config: Configuration, name: str):
+    """Create function app and configure settings depending on task type"""
     try:
         log.info(f"Checking if Function App '{name}' already exists...")
         execute(AzCmd("functionapp", "show").param("--name", name).param("--resource-group", config.control_plane_rg))
@@ -659,7 +649,6 @@ def create_function_app(config: Configuration, name: str, key: str):
 
     all_settings = common_settings + specific_settings
 
-    # Always update app settings (even if function app exists) to ensure configuration is current
     log.debug(f"Configuring app settings for Function App {name}")
     execute(
         AzCmd("functionapp", "config appsettings set")
@@ -668,7 +657,6 @@ def create_function_app(config: Configuration, name: str, key: str):
         .param_list("--settings", all_settings)
     )
 
-    # Always update runtime configuration
     log.debug(f"Configuring Linux runtime for Function App {name}")
     execute(
         AzCmd("functionapp", "config set")
@@ -679,38 +667,31 @@ def create_function_app(config: Configuration, name: str, key: str):
 
 
 def create_function_apps(config: Configuration):
-    """Create all required Function Apps."""
+    """Create Resources Task, Scaling Task, and Diagnostic Settings Task function apps"""
     log.info("Creating App Service Plan...")
     create_app_service_plan(config.app_service_plan, config.control_plane_rg, config.control_plane_region)
 
-    log.info("Fetching storage key...")
-    key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_rg)
-
     log.info("Creating Function Apps...")
-    for _role, app_name in config.control_plane_function_apps.items():
+    for _, app_name in config.control_plane_function_apps.items():
         log.info(f"Creating Function App: {app_name}")
-        create_function_app(config, app_name, key)
+        create_function_app(config, app_name)
 
     log.info("Function Apps created and configured")
 
 
 # =============================================================================
-# CONTAINER APP ENVIRONMENT AND DEPLOYER JOB
+# RESOURCE SETUP - Container App Environment, Deployer Job
 # =============================================================================
 
 
-def create_user_assigned_identity(control_plane_resource_group: str, control_plane_location: str):
-    """Create a user-assigned managed identity."""
+def create_user_assigned_identity(control_plane_rg: str, control_plane_region: str):
+    """Create a user-assigned managed identity"""
     identity_name = "runInitialDeployIdentity"
 
     # Check if the identity already exists
     try:
         log.info("Checking if user-assigned managed identity already exists...")
-        execute(
-            AzCmd("identity", "show")
-            .param("--name", identity_name)
-            .param("--resource-group", control_plane_resource_group)
-        )
+        execute(AzCmd("identity", "show").param("--name", identity_name).param("--resource-group", control_plane_rg))
         log.info(f"User-assigned managed identity '{identity_name}' already exists - reusing existing identity")
         return
     except RuntimeError:
@@ -721,8 +702,8 @@ def create_user_assigned_identity(control_plane_resource_group: str, control_pla
     execute(
         AzCmd("identity", "create")
         .param("--name", identity_name)
-        .param("--resource-group", control_plane_resource_group)
-        .param("--location", control_plane_location)
+        .param("--resource-group", control_plane_rg)
+        .param("--location", control_plane_region)
     )
 
 
@@ -1105,7 +1086,7 @@ def deploy_control_plane(config: Configuration):
     )
     log.info("Waiting for storage account to be ready...")
     time.sleep(10)  # Ensure the storage account is ready
-    key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_rg)
+    key = get_storage_acct_key(config.control_plane_cache_storage_name, config.control_plane_rg)
     create_blob_container(config.control_plane_cache_storage_name, config.control_plane_cache, key)
     create_file_share(config.control_plane_cache_storage_name, config.control_plane_cache, config.control_plane_rg)
     log.info("Storage account setup completed")
