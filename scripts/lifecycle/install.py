@@ -255,19 +255,19 @@ def validate_user_parameters(config: Configuration):
     print_separator()
     log.info("Validating deployment parameters, Azure permissions, and Datadog credentials...")
 
-    validate_deployment(config)
+    validate_azure_values(config)
     validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
 
     print_separator()
     log.info("Validation completed")
 
 
-def validate_deployment(config: Configuration):
-    """Validate all parameters and permissions before creating any resources."""
+def validate_azure_values(config: Configuration):
+    """Validate Azure parameters and permissions before creating any resources."""
 
-    validate_configuration(config)
-    validate_azure_cli()
-    validate_azure_cli_extensions()
+    validate_azure_configuration(config)
+    validate_az_cli()
+    validate_az_cli_extensions()
     validate_monitored_subscriptions(config.monitored_subscriptions)
     validate_control_plane_sub_access(config.control_plane_sub_id)
     validate_required_resource_providers(config.all_subscriptions)
@@ -276,7 +276,7 @@ def validate_deployment(config: Configuration):
     )
 
 
-def validate_azure_cli():
+def validate_az_cli():
     """Ensure Azure CLI is installed and user is authenticated."""
     try:
         execute(AzCommand("account", "show"))
@@ -285,7 +285,7 @@ def validate_azure_cli():
         raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.") from e
 
 
-def validate_azure_cli_extensions():
+def validate_az_cli_extensions():
     """Ensure required Azure CLI extensions are installed."""
     required_extension = "containerapp"
 
@@ -444,9 +444,9 @@ def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
         raise RuntimeError(f"Failed to parse Datadog validation response: {e}") from e
 
 
-def validate_configuration(config: Configuration):
-    """Validate configuration parameters."""
-    log.info("Validating configuration parameters...")
+def validate_azure_configuration(config: Configuration):
+    """Validate Azure configuration parameters."""
+    log.info("Validating Azure configuration parameters...")
 
     if not config.control_plane_sub_id:
         raise ValueError("Control plane subscription not configured")
