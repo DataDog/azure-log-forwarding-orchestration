@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Azure Log Forwarding Orchestration Installation Script
+Azure Automated Log Forwarding Installation Script
 
-This script deploys necessary infrastructure to enable Automated Log Forwarding in an Azure environment and is designed to be executed in Azure Cloud Shell.
+This script deploys necessary resources to enable Automated Log Forwarding in an Azure environment and is designed to be executed in Azure Cloud Shell.
 
 usage: install.py [-h] -mg MANAGEMENT_GROUP --control-plane-region CONTROL_PLANE_REGION --control-plane-subscription CONTROL_PLANE_SUBSCRIPTION
                   --control-plane-resource-group CONTROL_PLANE_RESOURCE_GROUP --monitored-subscriptions MONITORED_SUBSCRIPTIONS --datadog-api-key DATADOG_API_KEY
@@ -24,7 +24,7 @@ options:
   --datadog-api-key DATADOG_API_KEY
                         Datadog API key (required)
   --datadog-site {datadoghq.com,datadoghq.eu,ap1.datadoghq.com,ap2.datadoghq.com,us3.datadoghq.com,us5.datadoghq.com,ddog-gov.com}
-                        Datadog site (default: datadoghq.com)
+                        Datadog site (required,default: datadoghq.com)
   --resource-tag-filters RESOURCE_TAG_FILTERS
                         Comma separated list of tags to filter resources by
   --pii-scrubber-rules PII_SCRUBBER_RULES
@@ -51,25 +51,6 @@ log = getLogger("installer")
 # =============================================================================
 
 
-def generate_control_plane_id(
-    management_group_id: str, subscription_id: str, resource_group: str, location: str
-) -> str:
-    """Generate control plane ID matching bicep logic: subUuid(guid(...))."""
-
-    # Create deterministic UUID from same inputs as bicep
-    combined = f"{management_group_id}{subscription_id}{resource_group}{location}"
-
-    # Create a deterministic UUID using the combined string
-    # This mimics the guid() function in bicep
-    namespace = uuid.UUID("00000000-0000-0000-0000-000000000000")
-    guid_like = str(uuid.uuid5(namespace, combined))
-
-    # Extract last 12 characters and convert to lowercase (matching bicep subUuid function)
-    # Remove hyphens and take the last 12 characters
-    clean_guid = guid_like.replace("-", "")
-    return clean_guid[-12:].lower()
-
-
 @dataclass
 class Configuration:
     """Class to hold all configuration parameters."""
@@ -77,7 +58,7 @@ class Configuration:
     # Required parameters
     management_group_id: str
     control_plane_region: str
-    control_plane_subscription_id: str
+    control_plane_sub_id: str
     control_plane_rg: str
     monitored_subs: str
     datadog_api_key: str
@@ -89,26 +70,44 @@ class Configuration:
     datadog_telemetry_arg: bool = False
     log_level_arg: str = "INFO"
 
+    def generate_control_plane_id(self) -> str:
+        """Generate control plane ID"""
+
+        # Create deterministic UUID from same inputs as bicep
+        combined = (
+            f"{self.management_group_id}{self.control_plane_sub_id}{self.control_plane_rg}{self.control_plane_region}"
+        )
+
+        # Create a deterministic UUID using the combined string
+        # This mimics the guid() function in bicep
+        namespace = uuid.UUID("00000000-0000-0000-0000-000000000000")
+        guid_like = str(uuid.uuid5(namespace, combined))
+
+        # Extract last 12 characters and convert to lowercase (matching bicep subUuid function)
+        # Remove hyphens and take the last 12 characters
+        clean_guid = guid_like.replace("-", "")
+        return clean_guid[-12:].lower()
+
+    def get_control_plane_cache_conn_string(self) -> str:
+        """Get the connection string for the control plane cache storage account."""
+        if not self.control_plane_cache_storage_key:
+            self.control_plane_cache_storage_key = get_storage_key(
+                self.control_plane_cache_storage_name, self.control_plane_rg
+            )
+        return f"DefaultEndpointsProtocol=https;AccountName={self.control_plane_cache_storage_name};EndpointSuffix=core.windows.net;AccountKey={self.control_plane_cache_storage_key}"
+
     def __post_init__(self):
         """Post-initialization to calculate derived values."""
 
-        self.control_plane_subscription = self.control_plane_subscription_id
-        self.control_plane_resource_group = self.control_plane_rg
-        self.control_plane_region = self.control_plane_region
         self.monitored_subscriptions = [sub.strip() for sub in self.monitored_subs.split(",") if sub.strip()]
-        self.all_subscriptions = {self.control_plane_subscription, *self.monitored_subscriptions}
+        self.all_subscriptions = {self.control_plane_sub_id, *self.monitored_subscriptions}
 
         self.resource_tag_filters = self.resource_tag_filters_arg
         self.pii_scrubber_rules = self.pii_scrubber_rules_arg
         self.datadog_telemetry = self.datadog_telemetry_arg
         self.log_level = self.log_level_arg
 
-        self.control_plane_id = generate_control_plane_id(
-            self.management_group_id,
-            self.control_plane_subscription,
-            self.control_plane_resource_group,
-            self.control_plane_region,
-        )
+        self.control_plane_id = self.generate_control_plane_id()
         log.info(f"Generated control plane ID: {self.control_plane_id}")
 
         # Derived resource names (calculated after base configuration is set)
@@ -122,7 +121,7 @@ class Configuration:
         self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
         self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
         self.control_plane_resource_group_id = (
-            f"/subscriptions/{self.control_plane_subscription}/resourceGroups/{self.control_plane_resource_group}"
+            f"/subscriptions/{self.control_plane_sub_id}/resourceGroups/{self.control_plane_rg}"
         )
 
         # Container configuration
@@ -135,14 +134,6 @@ class Configuration:
             "scaling": f"scaling-task-{self.control_plane_id}",
             "diagnostic": f"diagnostic-settings-task-{self.control_plane_id}",
         }
-
-    def get_control_plane_cache_conn_string(self) -> str:
-        """Get the connection string for the control plane cache storage account."""
-        if not self.control_plane_cache_storage_key:
-            self.control_plane_cache_storage_key = get_storage_key(
-                self.control_plane_cache_storage_name, self.control_plane_resource_group
-            )
-        return f"DefaultEndpointsProtocol=https;AccountName={self.control_plane_cache_storage_name};EndpointSuffix=core.windows.net;AccountKey={self.control_plane_cache_storage_key}"
 
 
 def parse_arguments():
@@ -291,14 +282,14 @@ def validate_deployment(config: Configuration):
 
     # Validate subscription access
     validate_monitored_subscriptions(config.monitored_subscriptions)
-    validate_subscription_access(config.control_plane_subscription)
+    validate_subscription_access(config.control_plane_sub_id)
 
     # Validate required resource providers across all subscriptions
     validate_required_resource_providers(config.all_subscriptions)
 
     # Validate resource names
     validate_resource_names(
-        config.control_plane_resource_group, config.control_plane_subscription, config.control_plane_cache_storage_name
+        config.control_plane_rg, config.control_plane_sub_id, config.control_plane_cache_storage_name
     )
 
     # Validate configuration parameters
@@ -476,10 +467,10 @@ def validate_configuration(config: Configuration):
     """Validate configuration parameters."""
     log.info("Validating configuration parameters...")
 
-    if not config.control_plane_subscription:
+    if not config.control_plane_sub_id:
         raise ValueError("Control plane subscription not configured")
 
-    if not config.control_plane_resource_group:
+    if not config.control_plane_rg:
         raise ValueError("Control plane resource group not configured")
 
     if not config.control_plane_region:
@@ -633,9 +624,7 @@ def create_function_app(config: Configuration, name: str, key: str):
     try:
         log.info(f"Checking if Function App '{name}' already exists...")
         execute(
-            AzCommand("functionapp", "show")
-            .param("--name", name)
-            .param("--resource-group", config.control_plane_resource_group)
+            AzCommand("functionapp", "show").param("--name", name).param("--resource-group", config.control_plane_rg)
         )
         log.info(f"Function App '{name}' already exists - skipping creation and updating configuration")
         function_app_exists = True
@@ -647,7 +636,7 @@ def create_function_app(config: Configuration, name: str, key: str):
         log.info(f"Creating Function App {name}")
         execute(
             AzCommand("functionapp", "create")
-            .param("--resource-group", config.control_plane_resource_group)
+            .param("--resource-group", config.control_plane_rg)
             .param("--consumption-plan-location", config.control_plane_region)
             .param("--runtime", "python")
             .param("--functions-version", "4")
@@ -679,11 +668,11 @@ def create_function_app(config: Configuration, name: str, key: str):
         ]
     elif "diagnostic" in name:
         specific_settings = [
-            f"RESOURCE_GROUP={config.control_plane_resource_group}",
+            f"RESOURCE_GROUP={config.control_plane_rg}",
         ]
     elif "scaling" in name:
         specific_settings = [
-            f"RESOURCE_GROUP={config.control_plane_resource_group}",
+            f"RESOURCE_GROUP={config.control_plane_rg}",
             f"FORWARDER_IMAGE={config.image_registry}/forwarder:latest",
             f"CONTROL_PLANE_REGION={config.control_plane_region}",
             f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
@@ -698,7 +687,7 @@ def create_function_app(config: Configuration, name: str, key: str):
     execute(
         AzCommand("functionapp", "config appsettings set")
         .param("--name", name)
-        .param("--resource-group", config.control_plane_resource_group)
+        .param("--resource-group", config.control_plane_rg)
         .param_list("--settings", all_settings)
     )
 
@@ -707,7 +696,7 @@ def create_function_app(config: Configuration, name: str, key: str):
     execute(
         AzCommand("functionapp", "config set")
         .param("--name", name)
-        .param("--resource-group", config.control_plane_resource_group)
+        .param("--resource-group", config.control_plane_rg)
         .param("--linux-fx-version", "Python|3.11")
     )
 
@@ -715,10 +704,10 @@ def create_function_app(config: Configuration, name: str, key: str):
 def create_function_apps(config: Configuration):
     """Create all required Function Apps."""
     log.info("Creating App Service Plan...")
-    create_app_service_plan(config.app_service_plan, config.control_plane_resource_group, config.control_plane_region)
+    create_app_service_plan(config.app_service_plan, config.control_plane_rg, config.control_plane_region)
 
     log.info("Fetching storage key...")
-    key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_resource_group)
+    key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_rg)
 
     log.info("Creating Function Apps...")
     for _role, app_name in config.control_plane_function_apps.items():
@@ -798,7 +787,7 @@ def create_containerapp_job(config: Configuration):
         execute(
             AzCommand("containerapp", "job show")
             .param("--name", config.deployer_job_name)
-            .param("--resource-group", config.control_plane_resource_group)
+            .param("--resource-group", config.control_plane_rg)
         )
         log.info(f"Container App job '{config.deployer_job_name}' already exists - reusing existing job")
         return
@@ -811,8 +800,8 @@ def create_containerapp_job(config: Configuration):
 
     env_vars = [
         "AzureWebJobsStorage=secretref:connection-string",
-        f"SUBSCRIPTION_ID={config.control_plane_subscription}",
-        f"RESOURCE_GROUP={config.control_plane_resource_group}",
+        f"SUBSCRIPTION_ID={config.control_plane_sub_id}",
+        f"RESOURCE_GROUP={config.control_plane_rg}",
         f"CONTROL_PLANE_ID={config.control_plane_id}",
         f"CONTROL_PLANE_REGION={config.control_plane_region}",
         "DD_API_KEY=secretref:dd-api-key",
@@ -831,7 +820,7 @@ def create_containerapp_job(config: Configuration):
     execute(
         AzCommand("containerapp", "job create")
         .param("--name", config.deployer_job_name)
-        .param("--resource-group", config.control_plane_resource_group)
+        .param("--resource-group", config.control_plane_rg)
         .param("--environment", config.control_plane_env)
         .param("--replica-timeout", "1800")
         .param("--replica-retry-limit", "1")
@@ -959,21 +948,19 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
 def deploy_container_job_infra(config: Configuration):
     """Deploy all container job infrastructure."""
     log.info("Creating managed identity...")
-    create_user_assigned_identity(config.control_plane_resource_group, config.control_plane_region)
+    create_user_assigned_identity(config.control_plane_rg, config.control_plane_region)
 
     log.info("Creating container app environment...")
-    create_containerapp_environment(
-        config.control_plane_env, config.control_plane_resource_group, config.control_plane_region
-    )
+    create_containerapp_environment(config.control_plane_env, config.control_plane_rg, config.control_plane_region)
 
     log.info("Creating container app job...")
     create_containerapp_job(config)
 
     log.info("Defining custom role...")
-    create_custom_role_definition(config.container_app_start_role, config.control_plane_resource_group)
+    create_custom_role_definition(config.container_app_start_role, config.control_plane_rg)
 
     log.info("Assigning custom role to identity...")
-    assign_custom_role_to_identity(config.control_plane_resource_group, config.container_app_start_role)
+    assign_custom_role_to_identity(config.control_plane_rg, config.container_app_start_role)
 
     log.info("Container App job + identity setup complete")
 
@@ -1076,7 +1063,7 @@ def grant_permissions(config: Configuration):
     """Grant permissions across all monitored subscriptions."""
     log.info("Setting up permissions across monitored subscriptions...")
 
-    deployer_pid = get_containerapp_job_principal_id(config.control_plane_resource_group, config.deployer_job_name)
+    deployer_pid = get_containerapp_job_principal_id(config.control_plane_rg, config.deployer_job_name)
 
     MONITORING_READER_ID = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
     MONITORING_CONTRIBUTOR_ID = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
@@ -1093,14 +1080,12 @@ def grant_permissions(config: Configuration):
     )
 
     resource_task_pid = get_function_app_principal_id(
-        config.control_plane_resource_group, config.control_plane_function_apps["resources"]
+        config.control_plane_rg, config.control_plane_function_apps["resources"]
     )
     diagnostic_pid = get_function_app_principal_id(
-        config.control_plane_resource_group, config.control_plane_function_apps["diagnostic"]
+        config.control_plane_rg, config.control_plane_function_apps["diagnostic"]
     )
-    scaling_pid = get_function_app_principal_id(
-        config.control_plane_resource_group, config.control_plane_function_apps["scaling"]
-    )
+    scaling_pid = get_function_app_principal_id(config.control_plane_rg, config.control_plane_function_apps["scaling"])
 
     for sub_id in config.monitored_subscriptions:
         log.info(f"Assigning permissions in subscription: {sub_id}")
@@ -1111,13 +1096,13 @@ def grant_permissions(config: Configuration):
         # Create RG in target subscription if it doesn't exist
         execute(
             AzCommand("group", "create")
-            .param("--name", config.control_plane_resource_group)
+            .param("--name", config.control_plane_rg)
             .param("--location", config.control_plane_region)
         )
 
         # Get scope
         subscription_scope = f"/subscriptions/{sub_id}"
-        resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_resource_group}"
+        resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_rg}"
 
         assign_role(subscription_scope, resource_task_pid, MONITORING_READER_ID, config.control_plane_id)
         assign_role(subscription_scope, diagnostic_pid, MONITORING_CONTRIBUTOR_ID, config.control_plane_id)
@@ -1125,7 +1110,7 @@ def grant_permissions(config: Configuration):
         assign_role(resource_group_scope, scaling_pid, SCALING_CONTRIBUTOR_ID, config.control_plane_id)
 
     # Reset back to control plane subscription
-    set_subscription(config.control_plane_subscription)
+    set_subscription(config.control_plane_sub_id)
     log.info("Subscription permission setup complete")
 
 
@@ -1137,17 +1122,15 @@ def grant_permissions(config: Configuration):
 def deploy_control_plane(config: Configuration):
     """Deploy all control plane infrastructure: storage, functions, and containers."""
     log.info("Deploying storage account...")
-    set_subscription(config.control_plane_subscription)
+    set_subscription(config.control_plane_sub_id)
     create_storage_account(
-        config.control_plane_cache_storage_name, config.control_plane_resource_group, config.control_plane_region
+        config.control_plane_cache_storage_name, config.control_plane_rg, config.control_plane_region
     )
     log.info("Waiting for storage account to be ready...")
     time.sleep(10)  # Ensure the storage account is ready
-    key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_resource_group)
+    key = get_storage_key(config.control_plane_cache_storage_name, config.control_plane_rg)
     create_blob_container(config.control_plane_cache_storage_name, config.control_plane_cache, key)
-    create_file_share(
-        config.control_plane_cache_storage_name, config.control_plane_cache, config.control_plane_resource_group
-    )
+    create_file_share(config.control_plane_cache_storage_name, config.control_plane_cache, config.control_plane_rg)
     log.info("Storage account setup completed")
 
     log.info("Creating Function Apps...")
@@ -1176,7 +1159,7 @@ def main():
         config = Configuration(
             management_group_id=args.management_group,
             control_plane_region=args.control_plane_region,
-            control_plane_subscription_id=args.control_plane_subscription,
+            control_plane_sub_id=args.control_plane_subscription,
             control_plane_rg=args.control_plane_resource_group,
             monitored_subs=args.monitored_subscriptions,
             datadog_api_key=args.datadog_api_key,
@@ -1194,11 +1177,11 @@ def main():
 
         validate_user_parameters(config)
 
-        set_subscription(config.control_plane_subscription)
+        set_subscription(config.control_plane_sub_id)
 
         log.info("STEP 2: Creating control plane resource group...")
-        set_subscription(config.control_plane_subscription)
-        create_resource_group(config.control_plane_resource_group, config.control_plane_region)
+        set_subscription(config.control_plane_sub_id)
+        create_resource_group(config.control_plane_rg, config.control_plane_region)
         log.info("Control plane resource group created")
 
         log.info("STEP 3: Deploying control plane infrastructure...")
@@ -1209,9 +1192,7 @@ def main():
         log.info("Subscription and resource group permissions configured")
 
         log.info("STEP 5: Triggering initial deploy...")
-        run_initial_deploy(
-            config.deployer_job_name, config.control_plane_resource_group, config.control_plane_subscription
-        )
+        run_initial_deploy(config.deployer_job_name, config.control_plane_rg, config.control_plane_sub_id)
         log.info("Initial deployment triggered")
 
         print_separator()
