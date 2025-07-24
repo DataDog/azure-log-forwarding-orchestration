@@ -44,9 +44,24 @@ import time
 import uuid
 from dataclasses import dataclass
 from logging import WARNING, basicConfig, getLogger
+from re import search
+from time import sleep
 
 getLogger("azure").setLevel(WARNING)
 log = getLogger("installer")
+
+
+def get_storage_acct_key(storage_account_name: str, control_plane_rg: str) -> str:
+    """Retrieve storage account key for control plane cache - this is needed to connect to the storage account"""
+    log.debug(f"Retrieving storage account key for {storage_account_name}")
+    output = execute(
+        AzCmd("storage", "account keys list")
+        .param("--account-name", storage_account_name)
+        .param("--resource-group", control_plane_rg)
+    )
+    keys = json.loads(output)
+    return keys[0]["value"]
+
 
 # =============================================================================
 # CONFIGURATION INPUT PARAMETERS
@@ -208,6 +223,23 @@ def parse_arguments():
 # =============================================================================
 # AZ COMMAND UTILITY
 # =============================================================================
+AUTHORIZATION_ERROR = "AuthorizationFailed"
+AZURE_THROTTLING_ERROR = "TooManyRequests"
+REFRESH_TOKEN_EXPIRED_ERROR = "AADSTS700082"
+RESOURCE_COLLECTION_THROTTLING_ERROR = "ResourceCollectionRequestsThrottled"
+MAX_RETRIES = 7
+
+
+class RateLimitExceeded(Exception):
+    pass
+
+
+class AuthError(Exception):
+    pass
+
+
+class RefreshTokenError(Exception):
+    pass
 
 
 class AzCmd:
@@ -234,18 +266,59 @@ class AzCmd:
         return self
 
 
+def try_regex_access_error(stderr: str):
+    # Sample:
+    # (AuthorizationFailed) The client 'user@example.com' with object id '00000000-0000-0000-0000-000000000000'
+    # does not have authorization to perform action 'Microsoft.Storage/storageAccounts/read'
+    # over scope '/subscriptions/00000000-0000-0000-0000-000000000000' or the scope is invalid.
+    # If access was recently granted, please refresh your credentials.
+
+    client_match = search(r"client '([^']*)'", stderr)
+    action_match = search(r"action '([^']*)'", stderr)
+    scope_match = search(r"scope '([^']*)'", stderr)
+
+    if action_match and scope_match and client_match:
+        client = client_match.group(1)
+        action = action_match.group(1)
+        scope = scope_match.group(1)
+        raise RuntimeError(f"Insufficient permissions for {client} to perform {action} on {scope}")
+
+
 def execute(az_cmd: AzCmd) -> str:
     """Run an Azure CLI command and return output or raise error."""
 
     command = az_cmd.cmd
     log.debug(f"Running: az {' '.join(command)}")
     full_command = ["az"] + command
-    result = subprocess.run(full_command, capture_output=True, text=True)
-    if result.returncode != 0:
-        log.error(f"Command failed: az {' '.join(command)}")
-        log.error(result.stderr)
-        raise RuntimeError(f"Command failed: az {' '.join(command)}")
-    return result.stdout
+    delay = 2  # seconds
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            result = subprocess.run(full_command, capture_output=True, text=True)
+            if result.returncode != 0:
+                log.error(f"Command failed: az {' '.join(command)}")
+                log.error(result.stderr)
+                raise RuntimeError(f"Command failed: az {' '.join(command)}")
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            stderr = str(e.stderr)
+            if AZURE_THROTTLING_ERROR in stderr or RESOURCE_COLLECTION_THROTTLING_ERROR in stderr:
+                if attempt < MAX_RETRIES - 1:
+                    log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
+                    sleep(delay)
+                    delay *= 2
+                    continue
+                raise RateLimitExceeded("Rate limit exceeded. Please wait a few minutes and try again.") from e
+            if REFRESH_TOKEN_EXPIRED_ERROR in stderr:
+                raise RefreshTokenError(f"Auth token is expired. Refresh token before running '{az_cmd}'") from e
+            if AUTHORIZATION_ERROR in stderr:
+                try_regex_access_error(stderr)
+                raise AuthError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from e
+            log.error(f"Command failed: az {' '.join(command)}")
+            log.error(e.stderr)
+            raise RuntimeError(f"Command failed: az {' '.join(command)}") from e
+
+    raise SystemExit(1)  # unreachable
 
 
 # =============================================================================
@@ -508,18 +581,6 @@ def create_storage_account(storage_account_name: str, control_plane_rg: str, con
     )
 
 
-def get_storage_acct_key(storage_account_name: str, control_plane_rg: str) -> str:
-    """Retrieve storage account key for control plane cache - this is needed to connect to the storage account"""
-    log.debug(f"Retrieving storage account key for {storage_account_name}")
-    output = execute(
-        AzCmd("storage", "account keys list")
-        .param("--account-name", storage_account_name)
-        .param("--resource-group", control_plane_rg)
-    )
-    keys = json.loads(output)
-    return keys[0]["value"]
-
-
 def create_blob_container(storage_account_name: str, control_plane_cache: str, account_key: str):
     """Create blob container for control plane cache"""
     log.info(f"Creating blob container {control_plane_cache}")
@@ -680,22 +741,20 @@ def create_function_apps(config: Configuration):
 
 
 # =============================================================================
-# RESOURCE SETUP - Container App Environment, Deployer Job
+# RESOURCE SETUP - Container App Environment, Deployer Job, Custom ContainerAppStart Role Definition
 # =============================================================================
 
 
 def create_user_assigned_identity(control_plane_rg: str, control_plane_region: str):
-    """Create a user-assigned managed identity"""
+    """Create a user-assigned managed identity if it does not exist"""
     identity_name = "runInitialDeployIdentity"
 
-    # Check if the identity already exists
     try:
         log.info("Checking if user-assigned managed identity already exists...")
         execute(AzCmd("identity", "show").param("--name", identity_name).param("--resource-group", control_plane_rg))
         log.info(f"User-assigned managed identity '{identity_name}' already exists - reusing existing identity")
         return
     except RuntimeError:
-        # Identity doesn't exist, proceed with creation
         log.info("User-assigned managed identity not found - creating new identity")
         pass
 
@@ -710,9 +769,8 @@ def create_user_assigned_identity(control_plane_rg: str, control_plane_region: s
 def create_containerapp_environment(
     control_plane_env: str, control_plane_resource_group: str, control_plane_location: str
 ):
-    """Create the Container App environment."""
+    """Create the Container App environment if it does not exist"""
 
-    # Check if the container app environment already exists
     try:
         log.info(f"Checking if Container App environment '{control_plane_env}' already exists...")
         execute(
@@ -723,7 +781,6 @@ def create_containerapp_environment(
         log.info(f"Container App environment '{control_plane_env}' already exists - reusing existing environment")
         return
     except RuntimeError:
-        # Environment doesn't exist, proceed with creation
         log.info(f"Container App environment '{control_plane_env}' not found - creating new environment")
         pass
 
@@ -737,9 +794,8 @@ def create_containerapp_environment(
 
 
 def create_containerapp_job(config: Configuration):
-    """Create the Container App job for the deployer."""
+    """Create the Container App job for the deployer if it does not exist"""
 
-    # Check if the container app job already exists
     try:
         log.info(f"Checking if Container App job '{config.deployer_job_name}' already exists...")
         execute(
@@ -750,7 +806,6 @@ def create_containerapp_job(config: Configuration):
         log.info(f"Container App job '{config.deployer_job_name}' already exists - reusing existing job")
         return
     except RuntimeError:
-        # Container app job doesn't exist, proceed with creation
         log.info(f"Container App job '{config.deployer_job_name}' not found - creating new job")
         pass
 
@@ -796,9 +851,8 @@ def create_containerapp_job(config: Configuration):
 
 
 def create_custom_role_definition(container_app_start_role: str, control_plane_resource_group: str):
-    """Create a custom role for starting container app jobs."""
+    """Create a custom role for starting container app jobs if it does not exist"""
 
-    # Get the resource group scope
     scope = execute(
         AzCmd("group", "show")
         .param("--name", control_plane_resource_group)
@@ -806,7 +860,6 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
         .param("--output", "tsv")
     ).strip()
 
-    # Check if the custom role definition already exists
     try:
         log.info(f"Checking if custom role definition '{container_app_start_role}' already exists...")
         output = execute(
@@ -819,10 +872,8 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
         if output.strip():
             log.info(f"Custom role definition '{container_app_start_role}' already exists - reusing existing role")
             return
-        else:
-            log.info(f"Custom role definition '{container_app_start_role}' not found - creating new role")
+        log.info(f"Custom role definition '{container_app_start_role}' not found - creating new role")
     except RuntimeError:
-        # Role doesn't exist or error occurred, proceed with creation
         log.info(f"Custom role definition '{container_app_start_role}' not found - creating new role")
         pass
 
@@ -844,7 +895,7 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
 
 
 def assign_custom_role_to_identity(control_plane_resource_group: str, container_app_start_role: str):
-    """Assign the custom role to the managed identity."""
+    """Assign the custom role to the managed identity if the role assignment does not exist"""
     log.info("Assigning custom role to managed identity")
     identity_id = execute(
         AzCmd("identity", "show")
@@ -869,7 +920,6 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
         .param("--output", "tsv")
     ).strip()
 
-    # Check if the role assignment already exists
     try:
         log.debug(
             f"Checking if custom role assignment already exists for role {container_app_start_role} to identity {identity_id}"
@@ -890,7 +940,6 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
         else:
             log.debug("Custom role assignment not found - creating new assignment")
     except (RuntimeError, ValueError):
-        # Role assignment doesn't exist or error occurred, proceed with creation
         log.debug("Custom role assignment not found - creating new assignment")
         pass
 
@@ -914,37 +963,13 @@ def deploy_container_job_infra(config: Configuration):
     log.info("Creating container app job...")
     create_containerapp_job(config)
 
-    log.info("Defining custom role...")
+    log.info("Defining custom ContainerAppStart role...")
     create_custom_role_definition(config.container_app_start_role, config.control_plane_rg)
 
     log.info("Assigning custom role to identity...")
     assign_custom_role_to_identity(config.control_plane_rg, config.container_app_start_role)
 
     log.info("Container App job + identity setup complete")
-
-
-# =============================================================================
-# INITIAL DEPLOYMENT TRIGGER
-# =============================================================================
-
-
-def run_initial_deploy(deployer_job_name: str, control_plane_resource_group: str, control_plane_subscription: str):
-    """Trigger the initial deployment by starting the deployer container app job."""
-    log.info("Triggering initial deployment by starting deployer container app job...")
-
-    try:
-        execute(
-            AzCmd("containerapp", "job start")
-            .param("--name", deployer_job_name)
-            .param("--resource-group", control_plane_resource_group)
-            .param("--subscription", control_plane_subscription)
-            .flag("--no-wait")
-        )
-
-        log.info(f"Successfully started deployer job: {deployer_job_name}")
-    except Exception as e:
-        log.error(f"Failed to start deployer container app job: {e}")
-        raise RuntimeError(f"Could not trigger initial deployment: {e}") from e
 
 
 # =============================================================================
@@ -1021,8 +1046,6 @@ def grant_permissions(config: Configuration):
     """Grant permissions across all monitored subscriptions."""
     log.info("Setting up permissions across monitored subscriptions...")
 
-    deployer_pid = get_containerapp_job_principal_id(config.control_plane_rg, config.deployer_job_name)
-
     MONITORING_READER_ID = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
     MONITORING_CONTRIBUTOR_ID = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
     STORAGE_READER_AND_DATA_ACCESS_ID = "c12c1c16-33a1-487b-954d-41c89c60f349"
@@ -1030,9 +1053,10 @@ def grant_permissions(config: Configuration):
     WEBSITE_CONTRIBUTOR_ID = "de139f84-1756-47ae-9be6-808fbbe84772"
 
     log.info("Assigning Website Contributor role to deployer container app job...")
+    deployer_principal_id = get_containerapp_job_principal_id(config.control_plane_rg, config.deployer_job_name)
     assign_role(
         config.control_plane_resource_group_id,
-        deployer_pid,
+        deployer_principal_id,
         WEBSITE_CONTRIBUTOR_ID,
         config.control_plane_id,
     )
@@ -1047,18 +1071,13 @@ def grant_permissions(config: Configuration):
 
     for sub_id in config.monitored_subscriptions:
         log.info(f"Assigning permissions in subscription: {sub_id}")
-
-        # Set context to target subscription
         set_subscription(sub_id)
-
-        # Create RG in target subscription if it doesn't exist
         execute(
             AzCmd("group", "create")
             .param("--name", config.control_plane_rg)
             .param("--location", config.control_plane_region)
         )
 
-        # Get scope
         subscription_scope = f"/subscriptions/{sub_id}"
         resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_rg}"
 
@@ -1067,7 +1086,6 @@ def grant_permissions(config: Configuration):
         assign_role(resource_group_scope, diagnostic_pid, STORAGE_READER_AND_DATA_ACCESS_ID, config.control_plane_id)
         assign_role(resource_group_scope, scaling_pid, SCALING_CONTRIBUTOR_ID, config.control_plane_id)
 
-    # Reset back to control plane subscription
     set_subscription(config.control_plane_sub_id)
     log.info("Subscription permission setup complete")
 
@@ -1098,6 +1116,30 @@ def deploy_control_plane(config: Configuration):
     deploy_container_job_infra(config)
 
     log.info("Control plane infrastructure deployment completed")
+
+
+# =============================================================================
+# INITIAL DEPLOYMENT TRIGGER
+# =============================================================================
+
+
+def run_initial_deploy(deployer_job_name: str, control_plane_rg: str, control_plane_sub_id: str):
+    """Trigger the initial deployment by starting the deployer container app job."""
+    log.info("Triggering initial deployment by starting deployer container app job...")
+
+    try:
+        execute(
+            AzCmd("containerapp", "job start")
+            .param("--name", deployer_job_name)
+            .param("--resource-group", control_plane_rg)
+            .param("--subscription", control_plane_sub_id)
+            .flag("--no-wait")
+        )
+
+        log.info(f"Successfully started deployer job: {deployer_job_name}")
+    except Exception as e:
+        log.error(f"Failed to start deployer container app job: {e}")
+        raise RuntimeError(f"Could not trigger initial deployment: {e}") from e
 
 
 # =============================================================================
