@@ -315,7 +315,7 @@ def validate_azure_cli():
         execute(AzCommand("account", "show"))
         log.debug("Azure CLI authentication verified")
     except Exception as e:
-        raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.")
+        raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.") from e
 
 
 def validate_azure_cli_extensions():
@@ -333,7 +333,7 @@ def validate_azure_cli_extensions():
 
         log.debug("Azure CLI extensions verified")
     except Exception as e:
-        raise RuntimeError(f"Failed to validate/install Azure CLI extensions: {e}")
+        raise RuntimeError(f"Failed to validate/install Azure CLI extensions: {e}") from e
 
 
 def validate_required_resource_providers(subscription_ids: set[str]):
@@ -395,7 +395,7 @@ def validate_required_resource_providers(subscription_ids: set[str]):
 
         except Exception as e:
             log.error(f"Failed to validate resource providers in subscription {subscription_id}: {e}")
-            raise RuntimeError(f"Resource provider validation failed for subscription {subscription_id}: {e}")
+            raise RuntimeError(f"Resource provider validation failed for subscription {subscription_id}: {e}") from e
 
     log.debug("Resource provider validation completed across all subscriptions")
 
@@ -408,7 +408,7 @@ def validate_subscription_access(control_plane_subscription: str):
         set_subscription(control_plane_subscription)
         log.debug(f"Subscription access verified: {control_plane_subscription}")
     except Exception as e:
-        raise RuntimeError(f"Cannot access subscription {control_plane_subscription}: {e}")
+        raise RuntimeError(f"Cannot access subscription {control_plane_subscription}: {e}") from e
 
 
 def validate_resource_names(
@@ -429,7 +429,7 @@ def validate_resource_names(
         else:
             log.debug(f"Resource group name available: {control_plane_resource_group}")
     except Exception as e:
-        raise RuntimeError(f"Cannot check resource group availability: {e}")
+        raise RuntimeError(f"Cannot check resource group availability: {e}") from e
 
     # Check storage account name availability
     try:
@@ -441,8 +441,8 @@ def validate_resource_names(
             # raise RuntimeError(f"Storage account name '{storage_account_name}' not available: {reason} - {message}")
             log.info(f"Storage account name '{storage_account_name}' exists - will use existing")
         log.debug(f"Storage account name available: {storage_account_name}")
-    except json.JSONDecodeError:
-        raise RuntimeError("Failed to parse storage account name availability check")
+    except json.JSONDecodeError as e:
+        raise RuntimeError("Failed to parse storage account name availability check") from e
 
 
 def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
@@ -471,9 +471,9 @@ def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
 
         log.debug("Datadog API credentials validated")
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Failed to validate Datadog credentials: {e}")
+        raise ValueError(f"Failed to validate Datadog credentials: {e}") from e
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Failed to parse Datadog validation response: {e}")
+        raise RuntimeError(f"Failed to parse Datadog validation response: {e}") from e
 
 
 def validate_configuration(config: Configuration):
@@ -481,19 +481,19 @@ def validate_configuration(config: Configuration):
     log.info("Validating configuration parameters...")
 
     if not config.control_plane_subscription:
-        raise RuntimeError("Control plane subscription not configured")
+        raise ValueError("Control plane subscription not configured")
 
     if not config.control_plane_resource_group:
-        raise RuntimeError("Control plane resource group not configured")
+        raise ValueError("Control plane resource group not configured")
 
     if not config.control_plane_region:
-        raise RuntimeError("Control plane location not configured")
+        raise ValueError("Control plane location not configured")
 
     if not config.monitored_subscriptions:
-        raise RuntimeError("Monitored subscriptions not properly configured")
+        raise ValueError("Monitored subscriptions not properly configured")
 
     if config.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR"]:
-        raise RuntimeError(f"Invalid log level: {config.log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR")
+        raise ValueError(f"Invalid log level: {config.log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR")
 
     log.debug("Configuration validation completed")
 
@@ -507,7 +507,7 @@ def validate_monitored_subscriptions(monitored_subscriptions: list[str]):
             set_subscription(sub_id)
             log.debug(f"Monitored subscription access verified: {sub_id}")
         except Exception as e:
-            raise RuntimeError(f"Cannot access monitored subscription {sub_id}: {e}")
+            raise RuntimeError(f"Cannot access monitored subscription {sub_id}: {e}") from e
 
 
 # =============================================================================
@@ -1003,7 +1003,7 @@ def run_initial_deploy(deployer_job_name: str, control_plane_resource_group: str
         log.info(f"Successfully started deployer job: {deployer_job_name}")
     except Exception as e:
         log.error(f"Failed to start deployer container app job: {e}")
-        raise RuntimeError(f"Could not trigger initial deployment: {e}")
+        raise RuntimeError(f"Could not trigger initial deployment: {e}") from e
 
 
 # =============================================================================
