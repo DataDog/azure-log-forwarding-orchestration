@@ -287,18 +287,17 @@ def try_regex_access_error(stderr: str):
 def execute(az_cmd: AzCmd) -> str:
     """Run an Azure CLI command and return output or raise error."""
 
-    command = az_cmd.cmd
-    log.debug(f"Running: az {' '.join(command)}")
-    full_command = ["az"] + command
+    full_command = "az " + " ".join(az_cmd.cmd)
+    log.debug(f"Running: {full_command}")
     delay = 2  # seconds
 
     for attempt in range(MAX_RETRIES):
         try:
-            result = subprocess.run(full_command, capture_output=True, text=True)
+            result = subprocess.run(full_command, shell=True, check=True, capture_output=True, text=True)
             if result.returncode != 0:
-                log.error(f"Command failed: az {' '.join(command)}")
+                log.error(f"Command failed: {full_command}")
                 log.error(result.stderr)
-                raise RuntimeError(f"Command failed: az {' '.join(command)}")
+                raise RuntimeError(f"Command failed: {full_command}")
             return result.stdout
         except subprocess.CalledProcessError as e:
             stderr = str(e.stderr)
@@ -314,9 +313,9 @@ def execute(az_cmd: AzCmd) -> str:
             if AUTHORIZATION_ERROR in stderr:
                 try_regex_access_error(stderr)
                 raise AuthError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from e
-            log.error(f"Command failed: az {' '.join(command)}")
+            log.error(f"Command failed: {full_command}")
             log.error(e.stderr)
-            raise RuntimeError(f"Command failed: az {' '.join(command)}") from e
+            raise RuntimeError(f"Command failed: {full_command}") from e
 
     raise SystemExit(1)  # unreachable
 
@@ -383,7 +382,6 @@ def validate_required_resource_providers(sub_ids: set[str]):
         "Microsoft.App",  # Container Apps
         "Microsoft.Storage",  # Storage Accounts
         "Microsoft.Authorization",  # Role Assignments
-        "Microsoft.Insights",  # Diagnostic Settings
     ]
 
     log.info(f"Checking required resource providers across {len(sub_ids)} subscription(s)...")
@@ -398,7 +396,7 @@ def validate_required_resource_providers(sub_ids: set[str]):
             output = execute(
                 AzCmd("provider", "list")
                 .param("--subscription", sub_id)
-                .param("--query", "[].{namespace:namespace, registrationState:registrationState}")
+                .param("--query", '"[].{namespace:namespace, registrationState:registrationState}"')
                 .param("--output", "json")
             )
             providers_status = json.loads(output)
@@ -439,10 +437,10 @@ def validate_required_resource_providers(sub_ids: set[str]):
         else:
             log.debug(f"Subscription {sub_id}: All required resource providers are registered")
 
-    log.info("Resource provider validation successful across all subscriptions")
-
     if not success:
         raise RuntimeError("Resource provider validation failed")
+
+    log.info("Resource provider validation successful across all subscriptions")
 
 
 def validate_control_plane_sub_access(control_plane_sub_id: str):
@@ -498,7 +496,7 @@ def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
             "-H",
             "Accept: application/json",
             "-H",
-            f"DD-API-KEY: {datadog_api_key}",
+            f"DD-API-KEY:{datadog_api_key}",
         ]
         response = subprocess.check_output(curl_command, text=True)
         response_json = json.loads(response)
@@ -720,7 +718,7 @@ def create_function_app(config: Configuration, name: str):
         AzCmd("functionapp", "config set")
         .param("--name", name)
         .param("--resource-group", config.control_plane_rg)
-        .param("--linux-fx-version", "Python|3.11")
+        .param("--linux-fx-version", '"Python|3.11"')
     )
 
 
@@ -815,7 +813,6 @@ def create_containerapp_job(config: Configuration):
         f"CONTROL_PLANE_ID={config.control_plane_id}",
         f"CONTROL_PLANE_REGION={config.control_plane_region}",
         "DD_API_KEY=secretref:dd-api-key",
-        "DD_APP_KEY=secretref:dd-app-key",
         f"DD_SITE={config.datadog_site}",
         f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
         f"STORAGE_ACCOUNT_URL={config.lfo_public_storage_account_url}",
@@ -863,7 +860,6 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
             AzCmd("role", "definition list")
             .param("--name", container_app_start_role)
             .param("--scope", scope)
-            .param("--query", "[0].name")
             .param("--output", "tsv")
         )
         if output.strip():
@@ -913,7 +909,7 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
         AzCmd("role", "definition list")
         .param("--name", container_app_start_role)
         .param("--scope", scope)
-        .param("--query", "[0].name")
+        .param("--query", '"[0].name"')
         .param("--output", "tsv")
     ).strip()
 
@@ -926,7 +922,7 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
             .param("--assignee", identity_id)
             .param("--role", role_id)
             .param("--scope", scope)
-            .param("--query", "length([])")
+            .param("--query", '"length([])"')
             .param("--output", "tsv")
         )
         if int(output.strip()) > 0:
@@ -1013,7 +1009,7 @@ def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: s
             .param("--assignee", principal_id)
             .param("--role", role_id)
             .param("--scope", scope)
-            .param("--query", "length([])")
+            .param("--query", '"length([])"')
             .param("--output", "tsv")
         )
         if int(output.strip()) > 0:
@@ -1172,6 +1168,7 @@ def main():
 
         log.info("Starting setup for Azure Automated Log Forwarding...")
 
+        log.info("STEP 1: Validating user configuration...")
         validate_user_parameters(config)
 
         set_subscription(config.control_plane_sub_id)
@@ -1197,7 +1194,7 @@ def main():
         log.info("Check the Azure portal to verify all resources were created")
 
     except Exception as e:
-        log.error(f"Installation failed with error: {e}")
+        log.error(f"Failed with error: {e}")
         log.error("Check the Azure CLI output above for more details")
         raise
 
