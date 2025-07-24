@@ -324,13 +324,9 @@ def execute(az_cmd: AzCmd) -> str:
 # VALIDATION
 # =============================================================================
 def validate_user_parameters(config: Configuration):
-    print_separator()
-    log.info("Validating deployment parameters, Azure permissions, and Datadog credentials...")
-
     validate_azure_values(config)
     validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
 
-    print_separator()
     log.info("Validation completed")
 
 
@@ -1140,7 +1136,9 @@ def run_initial_deploy(deployer_job_name: str, control_plane_rg: str, control_pl
 # =============================================================================
 
 
-def print_separator():
+def log_header(message: str):
+    log.info("=" * 70)
+    log.info(message)
     log.info("=" * 70)
 
 
@@ -1168,30 +1166,28 @@ def main():
 
         log.info("Starting setup for Azure Automated Log Forwarding...")
 
-        log.info("STEP 1: Validating user configuration...")
+        log_header("STEP 1: Validating user configuration...")
         validate_user_parameters(config)
 
         set_subscription(config.control_plane_sub_id)
 
-        log.info("STEP 2: Creating control plane resource group...")
+        log_header("STEP 2: Creating control plane resource group...")
         set_subscription(config.control_plane_sub_id)
         create_resource_group(config.control_plane_rg, config.control_plane_region)
         log.info("Control plane resource group created")
 
-        log.info("STEP 3: Deploying control plane infrastructure...")
+        log_header("STEP 3: Deploying control plane infrastructure...")
         deploy_control_plane(config)
 
-        log.info("STEP 4: Setting up subscription permissions...")
+        log_header("STEP 4: Setting up subscription permissions...")
         grant_permissions(config)
         log.info("Subscription and resource group permissions configured")
 
-        log.info("STEP 5: Triggering initial deploy...")
+        log_header("STEP 5: Triggering initial deploy...")
         run_initial_deploy(config.deployer_job_name, config.control_plane_rg, config.control_plane_sub_id)
         log.info("Initial deployment triggered")
 
-        print_separator()
-        log.info("Azure Log Forwarding Orchestration installation completed successfully!")
-        log.info("Check the Azure portal to verify all resources were created")
+        log_header("Success! Azure Automated Log Forwarding installation completed!")
 
     except Exception as e:
         log.error(f"Failed with error: {e}")
