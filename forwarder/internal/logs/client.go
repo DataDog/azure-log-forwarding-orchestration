@@ -35,7 +35,6 @@ const (
 	newlineBytes = 1
 
 	functionAppContainer = "insights-logs-functionapplogs"
-	flowEventContainer   = "insights-logs-networksecuritygroupflowevent"
 )
 
 // Client is a client for submitting logs to Datadog.
