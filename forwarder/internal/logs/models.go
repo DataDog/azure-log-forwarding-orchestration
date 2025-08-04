@@ -282,6 +282,10 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	}, nil
 }
 
+type vnetFlowRecords[T any] struct {
+	Records []T `json:"records"`
+}
+
 type vnetSecurityGroupFlowLog struct {
 	Time          time.Time `json:"time"`
 	SystemID      string    `json:"systemId"`
@@ -299,10 +303,6 @@ type vnetSecurityGroupFlowLog struct {
 			} `json:"flows"`
 		} `json:"flows"`
 	} `json:"properties"`
-}
-
-type vnetSecurityGroupFlowLogs struct {
-	Records []vnetSecurityGroupFlowLog `json:"records"`
 }
 
 func (l *vnetSecurityGroupFlowLog) Bytes() ([]byte, error) {
@@ -340,10 +340,6 @@ func (l *vnetSecurityGroupFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 		Level:      "Informational",
 		Tags:       tags,
 	}, nil
-}
-
-type vnetFlowEventLogs struct {
-	Records []vnetFlowEventLog `json:"records"`
 }
 
 type vnetFlowEventLog struct {

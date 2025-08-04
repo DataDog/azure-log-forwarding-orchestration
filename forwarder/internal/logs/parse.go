@@ -38,6 +38,12 @@ type Parser interface {
 // FlowEventParser is a parser for flow events.
 type FlowEventParser struct{}
 
+func unmarshalVnetFlowRecords[T any](bytes []byte) (*vnetFlowRecords[T], error) {
+	var vnetFlowRecords vnetFlowRecords[T]
+	err := json.Unmarshal(bytes, &vnetFlowRecords)
+	return &vnetFlowRecords, err
+}
+
 // Parse reads logs from a reader and parses them into Log objects.
 func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
 	return func(yield func(ParsedLogResponse) bool) {
@@ -48,23 +54,21 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 			response := ParsedLogResponse{}
 
 			if blob.Container.Name == NetworkSecurityGroupFlowEventContainer {
-				var securityGroupFlowLogs vnetSecurityGroupFlowLogs
-
-				err := json.Unmarshal(scrubbedBytes, &securityGroupFlowLogs)
+				vnetFlowRecords, err := unmarshalVnetFlowRecords[vnetSecurityGroupFlowLog](scrubbedBytes)
 
 				if err != nil {
 					response.Err = err
 					yield(response)
 					return
 				}
-				for idx, securityGroupLog := range securityGroupFlowLogs.Records {
+				for idx, securityGroupLog := range vnetFlowRecords.Records {
 					currLog, err := securityGroupLog.ToLog(blob)
 					if err != nil {
 						response.Err = err
 						yield(response)
 						return
 					}
-					if idx == len(securityGroupFlowLogs.Records)-1 {
+					if idx == len(vnetFlowRecords.Records)-1 {
 						currLog.RawByteSize = int64(originalSize)
 					}
 					response.ParsedLog = currLog
@@ -73,23 +77,21 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 					}
 				}
 			} else {
-				var flowEventLogs vnetFlowEventLogs
-
-				err := json.Unmarshal(scrubbedBytes, &flowEventLogs)
+				vnetFlowRecords, err := unmarshalVnetFlowRecords[vnetFlowEventLog](scrubbedBytes)
 
 				if err != nil {
 					response.Err = err
 					yield(response)
 					return
 				}
-				for idx, flowLog := range flowEventLogs.Records {
+				for idx, flowLog := range vnetFlowRecords.Records {
 					currLog, err := flowLog.ToLog(blob)
 					if err != nil {
 						response.Err = err
 						yield(response)
 						return
 					}
-					if idx == len(flowEventLogs.Records)-1 {
+					if idx == len(vnetFlowRecords.Records)-1 {
 						currLog.RawByteSize = int64(originalSize)
 					}
 					response.ParsedLog = currLog
