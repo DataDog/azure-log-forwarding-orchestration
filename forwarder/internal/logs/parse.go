@@ -43,47 +43,75 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 	return func(yield func(ParsedLogResponse) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			var flowLogs vnetFlowLogs
 			originalSize := len(currBytes)
 			scrubbedBytes := piiScrubber.Scrub(currBytes)
-
 			response := ParsedLogResponse{}
 
-			err := json.Unmarshal(scrubbedBytes, &flowLogs)
-			if err != nil {
-				response.Err = err
-				yield(response)
-				return
-			}
-			for idx, flowLog := range flowLogs.Records {
-				currLog, err := flowLog.ToLog(blob)
+			if blob.Container.Name == NetworkSecurityGroupFlowEventContainer {
+				var securityGroupFlowLogs vnetSecurityGroupFlowLogs
+
+				err := json.Unmarshal(scrubbedBytes, &securityGroupFlowLogs)
+
 				if err != nil {
 					response.Err = err
 					yield(response)
 					return
 				}
-				if idx == len(flowLogs.Records)-1 {
-					currLog.RawByteSize = int64(originalSize)
+				for idx, securityGroupLog := range securityGroupFlowLogs.Records {
+					currLog, err := securityGroupLog.ToLog(blob)
+					if err != nil {
+						response.Err = err
+						yield(response)
+						return
+					}
+					if idx == len(securityGroupFlowLogs.Records)-1 {
+						currLog.RawByteSize = int64(originalSize)
+					}
+					response.ParsedLog = currLog
+					if !yield(response) {
+						return
+					}
 				}
-				response.ParsedLog = currLog
-				if !yield(response) {
+			} else {
+				var flowEventLogs vnetFlowEventLogs
+
+				err := json.Unmarshal(scrubbedBytes, &flowEventLogs)
+
+				if err != nil {
+					response.Err = err
+					yield(response)
 					return
 				}
+				for idx, flowLog := range flowEventLogs.Records {
+					currLog, err := flowLog.ToLog(blob)
+					if err != nil {
+						response.Err = err
+						yield(response)
+						return
+					}
+					if idx == len(flowEventLogs.Records)-1 {
+						currLog.RawByteSize = int64(originalSize)
+					}
+					response.ParsedLog = currLog
+					if !yield(response) {
+						return
+					}
+				}
 			}
-			continue
-
 		}
 	}
 }
 
-var flowEventContainers = []string{
-	"insights-logs-flowlogflowevent",
-	"insights-logs-networksecuritygroupflowevent",
-}
+const (
+	NetworkSecurityGroupFlowEventContainer = "insights-logs-networksecuritygroupflowevent"
+	FlowEventContainer                     = "insights-logs-flowlogflowevent"
+)
+
+var vnetFlowEventContainers = []string{FlowEventContainer, NetworkSecurityGroupFlowEventContainer}
 
 // Valid checks if the blob is in a flow event container.
 func (f FlowEventParser) Valid(blob storage.Blob) bool {
-	return slices.Contains(flowEventContainers, blob.Container.Name)
+	return slices.Contains(vnetFlowEventContainers, blob.Container.Name)
 }
 
 type FunctionAppParser struct{}
@@ -130,27 +158,16 @@ func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 
 type ActiveDirectoryParser struct{}
 
-// TODO Commented containers need additional testing: https://datadoghq.atlassian.net/browse/AZINTS-3430
+// TODO Support all AD log containers: https://datadoghq.atlassian.net/browse/AZINTS-3430
 var activeDirectoryContainers = []string{
 	"insights-logs-auditlogs",
 	"insights-logs-signinlogs",
 	"insights-logs-noninteractiveusersigninlogs",
 	"insights-logs-serviceprincipalsigninlogs",
 	"insights-logs-managedidentitysigninlogs",
-	// "insights-logs-provisioninglogs",
-	// "insights-logs-adfssigninlogs",
 	"insights-logs-riskyusers",
 	"insights-logs-userriskevents",
-	// "insights-logs-networkaccesstrafficlogs",
-	// "insights-logs-riskyserviceprincipals",
-	// "insights-logs-serviceprincipalriskevents",
-	// "insights-logs-enrichedoffice365auditlogs",
 	"insights-logs-microsoftgraphactivitylogs",
-	// "insights-logs-remotenetworkhealthlogs",
-	// "insights-logs-networkaccessalerts",
-	// "insights-logs-networkaccessconnectionevents",
-	// "insights-logs-microsoftserviceprincipalsigninlogs",
-	// "insights-logs-azureadgraphactivitylogs",
 }
 
 func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {

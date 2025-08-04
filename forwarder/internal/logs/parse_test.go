@@ -54,8 +54,11 @@ var (
 	//go:embed fixtures/function_app_logs_with_usa_short_timestamp.json
 	usaShortTimestampLogData []byte
 
-	//go:embed fixtures/networksecuritygroupflowevent_logs.json
+	//go:embed fixtures/vnetflow/networksecuritygroupflowevent_logs.json
 	networkSecurityGroupFlowEventLogData []byte
+
+	//go:embed fixtures/vnetflow/flowevent_logs.json
+	flowLogFlowEventLogData []byte
 
 	//go:embed fixtures/workflowruntime_logs.json
 	workflowRuntimeLogData []byte
@@ -160,7 +163,7 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, len(workflowRuntimeLogData), *totalBytes)
 	})
 
-	t.Run("can parse vnet flow logs", func(t *testing.T) {
+	t.Run("can parse vnet security group event logs", func(t *testing.T) {
 		t.Parallel()
 		// GIVEN
 		reader := bytes.NewReader(networkSecurityGroupFlowEventLogData)
@@ -169,7 +172,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, networkSecurityGroupFlowEventLogData))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, logs.NetworkSecurityGroupFlowEventContainer), MockScrubber(t, networkSecurityGroupFlowEventLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -184,6 +187,31 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, 2, got)
 		assert.Equal(t, len(networkSecurityGroupFlowEventLogData), *totalBytes)
 
+	})
+
+	t.Run("can parse vnet flow event logs", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		reader := bytes.NewReader(flowLogFlowEventLogData)
+		closer := io.NopCloser(reader)
+
+		var got int
+
+		// WHEN
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, logs.FlowEventContainer), MockScrubber(t, flowLogFlowEventLogData))
+		for parsedLog := range parsedLogsIter {
+			require.NoError(t, parsedLog.Err)
+			currLog := parsedLog.ParsedLog
+			require.Equal(t, "FlowLogFlowEvent", currLog.Category)
+			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
+			require.False(t, currLog.Time.IsZero())
+			got += 1
+		}
+
+		// THEN
+		// vnet flow logs have multiple logs per line
+		assert.Equal(t, 2, got)
+		assert.Equal(t, len(flowLogFlowEventLogData), *totalBytes)
 	})
 }
 

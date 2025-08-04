@@ -282,7 +282,7 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	}, nil
 }
 
-type vnetFlowLog struct {
+type vnetSecurityGroupFlowLog struct {
 	Time          time.Time `json:"time"`
 	SystemID      string    `json:"systemId"`
 	MacAddress    string    `json:"macAddress"`
@@ -301,15 +301,15 @@ type vnetFlowLog struct {
 	} `json:"properties"`
 }
 
-type vnetFlowLogs struct {
-	Records []vnetFlowLog `json:"records"`
+type vnetSecurityGroupFlowLogs struct {
+	Records []vnetSecurityGroupFlowLog `json:"records"`
 }
 
-func (l *vnetFlowLog) Bytes() ([]byte, error) {
+func (l *vnetSecurityGroupFlowLog) Bytes() ([]byte, error) {
 	return json.Marshal(l)
 }
 
-func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
+func (l *vnetSecurityGroupFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 	logBytes, err := l.Bytes()
 	if err != nil {
 		return nil, err
@@ -332,6 +332,67 @@ func (l *vnetFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 		Time:       l.Time,
 		Category:   l.Category,
 		ResourceId: l.ResourceID,
+		Service:    azureService,
+		Source:     logSource,
+		Content:    logBytes,
+		Container:  blob.Container.Name,
+		Blob:       blob.Name,
+		Level:      "Informational",
+		Tags:       tags,
+	}, nil
+}
+
+type vnetFlowEventLogs struct {
+	Records []vnetFlowEventLog `json:"records"`
+}
+
+type vnetFlowEventLog struct {
+	Time              time.Time `json:"time"`
+	FlowLogGUID       string    `json:"flowLogGUID"`
+	MacAddress        string    `json:"macAddress"`
+	Category          string    `json:"category"`
+	FlowLogResourceID string    `json:"flowLogResourceID"`
+	TargetResourceID  string    `json:"targetResourceID"`
+	FlowLogVersion    int       `json:"flowLogVersion"`
+	OperationName     string    `json:"operationName"`
+	FlowRecords       struct {
+		Flows []struct {
+			AclID      string `json:"aclID"`
+			FlowGroups []struct {
+				Rule       string   `json:"rule"`
+				FlowTuples []string `json:"flowTuples"`
+			} `json:"flowGroups"`
+		} `json:"flows"`
+	} `json:"flowRecords"`
+}
+
+func (l *vnetFlowEventLog) Bytes() ([]byte, error) {
+	return json.Marshal(l)
+}
+
+func (l *vnetFlowEventLog) ToLog(blob storage.Blob) (*Log, error) {
+	logBytes, err := l.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	parsedId, err := arm.ParseResourceID(l.FlowLogResourceID)
+	if err != nil && l.FlowLogResourceID != "" {
+		return nil, err
+	}
+
+	tags := append([]string(nil), DefaultTags...)
+
+	var logSource string
+	if parsedId != nil {
+		logSource = sourceTag(parsedId.ResourceType.String())
+	}
+	tags = append(tags, tagsFromResourceId(parsedId)...)
+
+	return &Log{
+		Time:       l.Time,
+		Category:   l.Category,
+		ResourceId: l.FlowLogResourceID,
 		Service:    azureService,
 		Source:     logSource,
 		Content:    logBytes,
