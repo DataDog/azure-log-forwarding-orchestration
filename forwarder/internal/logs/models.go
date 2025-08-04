@@ -282,6 +282,10 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	}, nil
 }
 
+type vnetFlowLogRecord interface {
+	ToLog(blob storage.Blob) (*Log, error)
+}
+
 type vnetFlowRecords[T any] struct {
 	Records []T `json:"records"`
 }
