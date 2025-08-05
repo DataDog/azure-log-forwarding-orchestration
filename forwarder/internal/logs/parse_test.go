@@ -170,18 +170,21 @@ func TestParseVnetFlowLogs(t *testing.T) {
 	tests := map[string]struct {
 		categoryName     string
 		containerName    string
+		resourceId       string
 		logData          []byte
 		expectedLogCount int
 	}{
 		"can parse vnet security group event logs": {
 			categoryName:     "NetworkSecurityGroupFlowEvent",
 			containerName:    logs.NetworkSecurityGroupFlowEventContainer,
+			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/CRONK-VM-2_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/CRONK-VM-2-NSG",
 			logData:          networkSecurityGroupFlowEventLogData,
 			expectedLogCount: 2,
 		},
 		"can parse vnet flow event logs": {
 			categoryName:     "FlowLogFlowEvent",
 			containerName:    logs.FlowEventContainer,
+			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG",
 			logData:          flowLogFlowEventLogData,
 			expectedLogCount: 2,
 		},
@@ -198,7 +201,7 @@ func TestParseVnetFlowLogs(t *testing.T) {
 			var numLogsParsed int
 
 			// WHEN
-			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, testData.logData))
+			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(testData.resourceId, testData.containerName), MockScrubber(t, testData.logData))
 			require.NoError(t, err)
 
 			for parsedLog := range parsedLogsIter {
@@ -206,7 +209,7 @@ func TestParseVnetFlowLogs(t *testing.T) {
 				currLog := parsedLog.ParsedLog
 				require.Equal(t, testData.categoryName, currLog.Category)
 				require.Equal(t, testData.containerName, currLog.Container)
-				require.NotEqual(t, resourceId, currLog.ResourceId) // resourceId is overridden in the log
+				require.True(t, strings.EqualFold(testData.resourceId, currLog.ResourceId))
 				require.False(t, currLog.Time.IsZero())
 				numLogsParsed += 1
 			}
