@@ -177,6 +177,7 @@ func TestParseLogs(t *testing.T) {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
 			require.Equal(t, "NetworkSecurityGroupFlowEvent", currLog.Category)
+			require.Equal(t, logs.NetworkSecurityGroupFlowEventContainer, currLog.Container)
 			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
 			require.False(t, currLog.Time.IsZero())
 			got += 1
@@ -203,6 +204,7 @@ func TestParseLogs(t *testing.T) {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
 			require.Equal(t, "FlowLogFlowEvent", currLog.Category)
+			require.Equal(t, logs.FlowEventContainer, currLog.Container)
 			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
 			require.False(t, currLog.Time.IsZero())
 			got += 1

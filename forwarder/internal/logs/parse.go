@@ -44,23 +44,24 @@ func unmarshalVnetFlowRecords[T any](bytes []byte) (*vnetFlowRecords[T], error) 
 	return &vnetFlowRecords, err
 }
 
-func processVnetFlowRecords[T vnetFlowLogRecord](vnetFlowRecords *vnetFlowRecords[T], blob storage.Blob, originalSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) {
+func processVnetFlowRecords[T vnetFlowLogRecord](vnetFlowRecords *vnetFlowRecords[T], blob storage.Blob, originalSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) bool {
 	response := ParsedLogResponse{}
 	for idx, vnetFlowLog := range vnetFlowRecords.Records {
 		currLog, err := vnetFlowLog.ToLog(blob)
 		if err != nil {
 			response.Err = err
 			yield(response)
-			return
+			return false
 		}
 		if idx == len(vnetFlowRecords.Records)-1 {
 			currLog.RawByteSize = int64(originalSize)
 		}
 		response.ParsedLog = currLog
 		if !yield(response) {
-			return
+			return false
 		}
 	}
+	return true
 }
 
 // Parse reads logs from a reader and parses them into Log objects.
@@ -80,7 +81,9 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 					yield(response)
 					return
 				}
-				processVnetFlowRecords[*vnetSecurityGroupFlowLog](vnetFlowRecords, blob, originalSize, piiScrubber, yield)
+				if !processVnetFlowRecords[*vnetSecurityGroupFlowLog](vnetFlowRecords, blob, originalSize, piiScrubber, yield) {
+					return
+				}
 			case FlowEventContainer:
 				vnetFlowRecords, err := unmarshalVnetFlowRecords[*vnetFlowEventLog](scrubbedBytes)
 				if err != nil {
@@ -88,7 +91,9 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 					yield(response)
 					return
 				}
-				processVnetFlowRecords[*vnetFlowEventLog](vnetFlowRecords, blob, originalSize, piiScrubber, yield)
+				if !processVnetFlowRecords[*vnetFlowEventLog](vnetFlowRecords, blob, originalSize, piiScrubber, yield) {
+					return
+				}
 			default:
 				response.Err = errors.New("no parser found for log type" + blob.Container.Name)
 				yield(response)
