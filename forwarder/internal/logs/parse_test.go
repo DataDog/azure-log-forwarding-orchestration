@@ -162,59 +162,60 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, 7, got)
 		assert.Equal(t, len(workflowRuntimeLogData), *totalBytes)
 	})
+}
 
-	t.Run("can parse vnet security group event logs", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		reader := bytes.NewReader(networkSecurityGroupFlowEventLogData)
-		closer := io.NopCloser(reader)
+func TestParseVnetFlowLogs(t *testing.T) {
+	t.Parallel()
 
-		var got int
+	tests := map[string]struct {
+		categoryName     string
+		containerName    string
+		logData          []byte
+		expectedLogCount int
+	}{
+		"can parse vnet security group event logs": {
+			categoryName:     "NetworkSecurityGroupFlowEvent",
+			containerName:    logs.NetworkSecurityGroupFlowEventContainer,
+			logData:          networkSecurityGroupFlowEventLogData,
+			expectedLogCount: 2,
+		},
+		"can parse vnet flow event logs": {
+			categoryName:     "FlowLogFlowEvent",
+			containerName:    logs.FlowEventContainer,
+			logData:          flowLogFlowEventLogData,
+			expectedLogCount: 2,
+		},
+	}
 
-		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, logs.NetworkSecurityGroupFlowEventContainer), MockScrubber(t, networkSecurityGroupFlowEventLogData))
-		for parsedLog := range parsedLogsIter {
-			require.NoError(t, parsedLog.Err)
-			currLog := parsedLog.ParsedLog
-			require.Equal(t, "NetworkSecurityGroupFlowEvent", currLog.Category)
-			require.Equal(t, logs.NetworkSecurityGroupFlowEventContainer, currLog.Container)
-			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
-			require.False(t, currLog.Time.IsZero())
-			got += 1
-		}
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		// THEN
-		// vnet flow logs have multiple logs per line
-		assert.Equal(t, 2, got)
-		assert.Equal(t, len(networkSecurityGroupFlowEventLogData), *totalBytes)
+			// GIVEN
+			reader := bytes.NewReader(testData.logData)
+			closer := io.NopCloser(reader)
 
-	})
+			var numLogsParsed int
 
-	t.Run("can parse vnet flow event logs", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		reader := bytes.NewReader(flowLogFlowEventLogData)
-		closer := io.NopCloser(reader)
+			// WHEN
+			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, testData.containerName), MockScrubber(t, testData.logData))
+			require.NoError(t, err)
 
-		var got int
+			for parsedLog := range parsedLogsIter {
+				require.NoError(t, parsedLog.Err)
+				currLog := parsedLog.ParsedLog
+				require.Equal(t, testData.categoryName, currLog.Category)
+				require.Equal(t, testData.containerName, currLog.Container)
+				require.NotEqual(t, resourceId, currLog.ResourceId) // resourceId is overridden in the log
+				require.False(t, currLog.Time.IsZero())
+				numLogsParsed += 1
+			}
 
-		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, logs.FlowEventContainer), MockScrubber(t, flowLogFlowEventLogData))
-		for parsedLog := range parsedLogsIter {
-			require.NoError(t, parsedLog.Err)
-			currLog := parsedLog.ParsedLog
-			require.Equal(t, "FlowLogFlowEvent", currLog.Category)
-			require.Equal(t, logs.FlowEventContainer, currLog.Container)
-			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
-			require.False(t, currLog.Time.IsZero())
-			got += 1
-		}
-
-		// THEN
-		// vnet flow logs have multiple logs per line
-		assert.Equal(t, 2, got)
-		assert.Equal(t, len(flowLogFlowEventLogData), *totalBytes)
-	})
+			// THEN
+			assert.Equal(t, len(testData.logData), *totalBytes)
+			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
+		})
+	}
 }
 
 func TestParseActiveDirectoryLogs(t *testing.T) {
