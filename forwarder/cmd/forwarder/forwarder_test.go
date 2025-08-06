@@ -738,6 +738,12 @@ var (
 
 	//go:embed fixtures/activedirectory/user_risk_event_logs.json
 	adUserRiskEventLogData string
+
+	//go:embed fixtures/vnetflow/flowevent_logs.json
+	vnetFlowLogData string
+
+	//go:embed fixtures/vnetflow/networksecuritygroupflowevent_logs.json
+	networkSecurityGroupFlowEventLogData string
 )
 
 func TestCursors(t *testing.T) {
@@ -1013,6 +1019,100 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, azureService, *logItem.Service)
 				assert.Equal(t, "azure.aadiam", *logItem.Ddsource)
+				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
+			}
+		}
+	}
+}
+
+func TestCursorsOnVnetFlowLogs(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		containerName string
+		testFileName  string
+		testLogData   string
+	}{
+		"works with vnet flow event logs": {
+			containerName: "insights-logs-flowlogflowevent",
+			testFileName:  "flowevent_logs.json",
+			testLogData:   vnetFlowLogData,
+		},
+		"works with vnet network security group flow event logs": {
+			containerName: "insights-logs-networksecuritygroupflowevent",
+			testFileName:  "networksecuritygroupflowevent_logs.json",
+			testLogData:   networkSecurityGroupFlowEventLogData,
+		},
+	}
+
+	for name, test := range tests {
+		// GIVEN
+		containerName := test.containerName
+		blobName := test.testFileName
+
+		containerPage := []*service.ContainerItem{
+			newContainerItem(containerName),
+		}
+
+		n := 5 // Number of times to execute
+
+		var currentLogData []byte
+		now := time.Now()
+
+		lastCursor := cursor.New(nil)
+
+		for i := 0; i < n; i++ {
+			// REPEATED GIVEN
+			currentLogData = append(currentLogData, test.testLogData...)
+			currentLength := int64(len(currentLogData))
+
+			blobItem := &container.BlobItem{
+				Name: &blobName,
+				Properties: &container.BlobProperties{
+					ContentLength: &currentLength,
+					CreationTime:  &now,
+				},
+			}
+
+			cursorResp := azblob.DownloadStreamResponse{}
+			cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+			deadLetterQueueResp := azblob.DownloadStreamResponse{}
+			deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
+
+			uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+				if blobName == cursor.BlobName {
+					lastCursor = cursor.FromBytes(content, log.NewEntry(nullLogger()))
+				}
+				return azblob.UploadBufferResponse{}, nil
+			}
+
+			getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
+				resp := azblob.DownloadStreamResponse{}
+				resp.Body = io.NopCloser(strings.NewReader(string(currentLogData[o.Range.Offset:])))
+				return resp
+			}
+			logResp := func(req *http.Request) (*http.Response, error) {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			}
+			customNow := func() time.Time {
+				return time.Now()
+			}
+
+			// WHEN
+			submittedLogs, err := mockedRun(t, context.Background(), containerPage, []*container.BlobItem{blobItem}, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+
+			// THEN
+			assert.NoError(t, err)
+
+			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName), name)
+
+			for _, logItem := range submittedLogs {
+				assert.Equal(t, azureService, *logItem.Service)
+				assert.Equal(t, "azure.network", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
