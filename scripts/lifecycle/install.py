@@ -958,8 +958,7 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
                 f"Custom role assignment already exists for role {container_app_start_role} to managed identity - skipping"
             )
             return
-        else:
-            log.debug("Custom role assignment not found - creating new assignment")
+        log.debug("Custom role assignment not found - creating new assignment")
     except (RuntimeError, ValueError):
         log.debug("Custom role assignment not found - creating new assignment")
         pass
