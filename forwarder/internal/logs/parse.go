@@ -76,9 +76,14 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 	}
 }
 
+var flowEventContainers = []string{
+	"insights-logs-flowlogflowevent",
+	"insights-logs-networksecuritygroupflowevent",
+}
+
 // Valid checks if the blob is in a flow event container.
 func (f FlowEventParser) Valid(blob storage.Blob) bool {
-	return blob.Container.Name == flowEventContainer
+	return slices.Contains(flowEventContainers, blob.Container.Name)
 }
 
 type FunctionAppParser struct{}
@@ -125,7 +130,7 @@ func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 
 type ActiveDirectoryParser struct{}
 
-// TODO for commented containers: https://datadoghq.atlassian.net/browse/AZINTS-3430
+// TODO Commented containers need additional testing: https://datadoghq.atlassian.net/browse/AZINTS-3430
 var activeDirectoryContainers = []string{
 	"insights-logs-auditlogs",
 	"insights-logs-signinlogs",
