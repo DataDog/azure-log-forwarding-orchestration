@@ -600,24 +600,24 @@ def create_storage_account(storage_account_name: str, control_plane_rg: str, con
     )
 
 
-def create_blob_container(storage_account_name: str, control_plane_cache: str, account_key: str):
+def create_blob_container(storage_account_name: str, account_key: str):
     """Create blob container for control plane cache"""
-    log.info(f"Creating blob container {control_plane_cache}")
+    log.info(f"Creating blob container {CONTROL_PLANE_CACHE}")
     execute(
         AzCmd("storage", "container create")
         .param("--account-name", storage_account_name)
         .param("--account-key", account_key)
-        .param("--name", control_plane_cache)
+        .param("--name", CONTROL_PLANE_CACHE)
     )
 
 
-def create_file_share(storage_account_name: str, control_plane_cache: str, control_plane_rg: str):
+def create_file_share(storage_account_name: str, control_plane_rg: str):
     """Create file share for control plane cache"""
-    log.info(f"Creating file share {control_plane_cache}")
+    log.info(f"Creating file share {CONTROL_PLANE_CACHE}")
     execute(
         AzCmd("storage", "share-rm create")
         .param("--storage-account", storage_account_name)
-        .param("--name", control_plane_cache)
+        .param("--name", CONTROL_PLANE_CACHE)
         .param("--resource-group", control_plane_rg)
     )
 
@@ -1146,12 +1146,10 @@ def deploy_control_plane(config: Configuration):
     time.sleep(10)  # Ensure the storage account is ready
     create_blob_container(
         config.control_plane_cache_storage_name,
-        CONTROL_PLANE_CACHE,
         config.get_control_plane_cache_key(),
     )
     create_file_share(
         config.control_plane_cache_storage_name,
-        CONTROL_PLANE_CACHE,
         config.control_plane_rg,
     )
     log.info("Storage account setup completed")
