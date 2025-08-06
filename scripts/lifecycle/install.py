@@ -50,18 +50,14 @@ from time import sleep
 getLogger("azure").setLevel(WARNING)
 log = getLogger("installer")
 
+# =============================================================================
+# CONSTANTS
+# =============================================================================
 
-def get_storage_acct_key(storage_account_name: str, control_plane_rg: str) -> str:
-    """Retrieve storage account key for control plane cache - this is needed to connect to the storage account"""
-    log.debug(f"Retrieving storage account key for {storage_account_name}")
-    output = execute(
-        AzCmd("storage", "account keys list")
-        .param("--account-name", storage_account_name)
-        .param("--resource-group", control_plane_rg)
-    )
-    keys = json.loads(output)
-    return keys[0]["value"]
-
+NIL_UUID = "00000000-0000-0000-0000-000000000000"
+CONTROL_PLANE_CACHE = "control-plane-cache"
+IMAGE_REGISTRY_URL = "datadoghq.azurecr.io"
+LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 
 # =============================================================================
 # CONFIGURATION INPUT PARAMETERS
@@ -84,45 +80,58 @@ class Configuration:
     datadog_site: str = "datadoghq.com"
     resource_tag_filters_arg: str = ""
     pii_scrubber_rules_arg: str = ""
-    datadog_telemetry_arg: bool = False
-    log_level_arg: str = "INFO"
+    datadog_telemetry: bool = False
+    log_level: str = "INFO"
 
     def generate_control_plane_id(self) -> str:
+        """Returns a 12-character unique ID based on user input parameters.
+        This ID is suffixed on Azure artifacts we create to identify their connection to the control plane.
+        """
+
         combined = (
             f"{self.management_group_id}{self.control_plane_sub_id}{self.control_plane_rg}{self.control_plane_region}"
         )
 
-        namespace = uuid.UUID("00000000-0000-0000-0000-000000000000")
-        guid_like = str(uuid.uuid5(namespace, combined))
+        namespace = uuid.UUID(NIL_UUID)
+        guid = str(uuid.uuid5(namespace, combined)).lower()
+        return guid[:8] + guid[9:13]
 
-        clean_guid = guid_like.replace("-", "")
-        return clean_guid[-12:].lower()
+    def get_control_plane_cache_key(self) -> str:
+        if self.control_plane_cache_storage_key:
+            return self.control_plane_cache_storage_key
+
+        log.debug(f"Retrieving storage account key for {self.control_plane_cache_storage_name}")
+        output = execute(
+            AzCmd("storage", "account keys list")
+            .param("--account-name", self.control_plane_cache_storage_name)
+            .param("--resource-group", self.control_plane_rg)
+        )
+        keys = json.loads(output)
+        self.control_plane_cache_storage_key = keys[0]["value"]
+
+        return self.control_plane_cache_storage_key
 
     def get_control_plane_cache_conn_string(self) -> str:
-        if not self.control_plane_cache_storage_key:
-            self.control_plane_cache_storage_key = get_storage_acct_key(
-                self.control_plane_cache_storage_name, self.control_plane_rg
-            )
-        return f"DefaultEndpointsProtocol=https;AccountName={self.control_plane_cache_storage_name};EndpointSuffix=core.windows.net;AccountKey={self.control_plane_cache_storage_key}"
+        return f"DefaultEndpointsProtocol=https;AccountName={self.control_plane_cache_storage_name};EndpointSuffix=core.windows.net;AccountKey={self.get_control_plane_cache_key()}"
 
     def __post_init__(self):
         """Calculates derived values from user-specified params."""
 
         self.monitored_subscriptions = [sub.strip() for sub in self.monitored_subs.split(",") if sub.strip()]
-        self.all_subscriptions = {self.control_plane_sub_id, *self.monitored_subscriptions}
+        self.all_subscriptions = {
+            self.control_plane_sub_id,
+            *self.monitored_subscriptions,
+        }
 
         self.resource_tag_filters = self.resource_tag_filters_arg
         self.pii_scrubber_rules = self.pii_scrubber_rules_arg
-        self.datadog_telemetry = self.datadog_telemetry_arg
-        self.log_level = self.log_level_arg
 
         # Control plane
         self.control_plane_id = self.generate_control_plane_id()
         log.info(f"Generated control plane ID: {self.control_plane_id}")
-        self.control_plane_cache = "control-plane-cache"
         self.control_plane_cache_storage_name = f"lfostorage{self.control_plane_id}"
         self.control_plane_cache_storage_url = f"https://{self.control_plane_cache_storage_name}.blob.core.windows.net"
-        self.control_plane_cache_storage_key = ""
+        self.control_plane_cache_storage_key = None  # lazy-loaded
         self.control_plane_resource_group_id = (
             f"/subscriptions/{self.control_plane_sub_id}/resourceGroups/{self.control_plane_rg}"
         )
@@ -131,10 +140,8 @@ class Configuration:
         self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
         self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_region}"
         self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
-        self.image_registry = "datadoghq.azurecr.io"
-        self.deployer_image = f"{self.image_registry}/deployer:latest"
+        self.deployer_image = f"{IMAGE_REGISTRY_URL}/deployer:latest"
         self.app_service_plan = f"control-plane-asp-{self.control_plane_id}"
-        self.lfo_public_storage_account_url = "https://ddazurelfo.blob.core.windows.net"
         self.control_plane_function_apps = {
             "resources": f"resources-task-{self.control_plane_id}",
             "scaling": f"scaling-task-{self.control_plane_id}",
@@ -151,7 +158,11 @@ def parse_arguments():
 
     # Required parameters
     parser.add_argument(
-        "-mg", "--management-group", type=str, required=True, help="Management group ID to deploy under (required)"
+        "-mg",
+        "--management-group",
+        type=str,
+        required=True,
+        help="Management group ID to deploy under (required)",
     )
 
     parser.add_argument(
@@ -202,10 +213,18 @@ def parse_arguments():
 
     # Optional parameters
     parser.add_argument(
-        "--resource-tag-filters", type=str, default="", help="Comma separated list of tags to filter resources by"
+        "--resource-tag-filters",
+        type=str,
+        default="",
+        help="Comma separated list of tags to filter resources by",
     )
 
-    parser.add_argument("--pii-scrubber-rules", type=str, default="", help="YAML formatted list of PII Scrubber Rules")
+    parser.add_argument(
+        "--pii-scrubber-rules",
+        type=str,
+        default="",
+        help="YAML formatted list of PII Scrubber Rules",
+    )
 
     parser.add_argument("--datadog-telemetry", action="store_true", help="Enable Datadog telemetry")
 
@@ -340,7 +359,9 @@ def validate_azure_values(config: Configuration):
     validate_control_plane_sub_access(config.control_plane_sub_id)
     validate_required_resource_providers(config.all_subscriptions)
     validate_resource_names(
-        config.control_plane_rg, config.control_plane_sub_id, config.control_plane_cache_storage_name
+        config.control_plane_rg,
+        config.control_plane_sub_id,
+        config.control_plane_cache_storage_name,
     )
 
 
@@ -392,7 +413,10 @@ def validate_required_resource_providers(sub_ids: set[str]):
             output = execute(
                 AzCmd("provider", "list")
                 .param("--subscription", sub_id)
-                .param("--query", '"[].{namespace:namespace, registrationState:registrationState}"')
+                .param(
+                    "--query",
+                    '"[].{namespace:namespace, registrationState:registrationState}"',
+                )
                 .param("--output", "json")
             )
             providers_status = json.loads(output)
@@ -448,7 +472,11 @@ def validate_control_plane_sub_access(control_plane_sub_id: str):
         raise RuntimeError(f"Cannot access control plane subscription {control_plane_sub_id}: {e}") from e
 
 
-def validate_resource_names(control_plane_rg: str, control_plane_sub_id: str, control_plane_cache_storage_name: str):
+def validate_resource_names(
+    control_plane_rg: str,
+    control_plane_sub_id: str,
+    control_plane_cache_storage_name: str,
+):
     """Check if resource names are available and valid."""
     log.info("Validating resource name availability...")
 
@@ -692,7 +720,7 @@ def create_function_app(config: Configuration, name: str):
     elif "scaling" in name:
         specific_settings = [
             f"RESOURCE_GROUP={config.control_plane_rg}",
-            f"FORWARDER_IMAGE={config.image_registry}/forwarder:latest",
+            f"FORWARDER_IMAGE={IMAGE_REGISTRY_URL}/forwarder:latest",
             f"CONTROL_PLANE_REGION={config.control_plane_region}",
             f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
         ]
@@ -758,7 +786,9 @@ def create_user_assigned_identity(control_plane_rg: str, control_plane_region: s
 
 
 def create_containerapp_environment(
-    control_plane_env: str, control_plane_resource_group: str, control_plane_location: str
+    control_plane_env: str,
+    control_plane_resource_group: str,
+    control_plane_location: str,
 ):
     """Create the Container App environment if it does not exist"""
 
@@ -811,7 +841,7 @@ def create_containerapp_job(config: Configuration):
         "DD_API_KEY=secretref:dd-api-key",
         f"DD_SITE={config.datadog_site}",
         f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
-        f"STORAGE_ACCOUNT_URL={config.lfo_public_storage_account_url}",
+        f"STORAGE_ACCOUNT_URL={LFO_PUBLIC_STORAGE_ACCOUNT_URL}",
         f"LOG_LEVEL={config.log_level}",
     ]
 
@@ -1013,8 +1043,7 @@ def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: s
                 f"Role assignment already exists for role {role_id} to principal {principal_id} at scope {scope} - skipping"
             )
             return
-        else:
-            log.debug("Role assignment not found - creating new assignment")
+        log.debug("Role assignment not found - creating new assignment")
     except (RuntimeError, ValueError):
         # Role assignment doesn't exist or error occurred, proceed with creation
         log.debug("Role assignment not found - creating new assignment")
@@ -1070,10 +1099,30 @@ def grant_permissions(config: Configuration):
         subscription_scope = f"/subscriptions/{sub_id}"
         resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_rg}"
 
-        assign_role(subscription_scope, resource_task_pid, MONITORING_READER_ID, config.control_plane_id)
-        assign_role(subscription_scope, diagnostic_pid, MONITORING_CONTRIBUTOR_ID, config.control_plane_id)
-        assign_role(resource_group_scope, diagnostic_pid, STORAGE_READER_AND_DATA_ACCESS_ID, config.control_plane_id)
-        assign_role(resource_group_scope, scaling_pid, SCALING_CONTRIBUTOR_ID, config.control_plane_id)
+        assign_role(
+            subscription_scope,
+            resource_task_pid,
+            MONITORING_READER_ID,
+            config.control_plane_id,
+        )
+        assign_role(
+            subscription_scope,
+            diagnostic_pid,
+            MONITORING_CONTRIBUTOR_ID,
+            config.control_plane_id,
+        )
+        assign_role(
+            resource_group_scope,
+            diagnostic_pid,
+            STORAGE_READER_AND_DATA_ACCESS_ID,
+            config.control_plane_id,
+        )
+        assign_role(
+            resource_group_scope,
+            scaling_pid,
+            SCALING_CONTRIBUTOR_ID,
+            config.control_plane_id,
+        )
 
     set_subscription(config.control_plane_sub_id)
     log.info("Subscription permission setup complete")
@@ -1089,13 +1138,22 @@ def deploy_control_plane(config: Configuration):
     log.info("Deploying storage account...")
     set_subscription(config.control_plane_sub_id)
     create_storage_account(
-        config.control_plane_cache_storage_name, config.control_plane_rg, config.control_plane_region
+        config.control_plane_cache_storage_name,
+        config.control_plane_rg,
+        config.control_plane_region,
     )
     log.info("Waiting for storage account to be ready...")
     time.sleep(10)  # Ensure the storage account is ready
-    key = get_storage_acct_key(config.control_plane_cache_storage_name, config.control_plane_rg)
-    create_blob_container(config.control_plane_cache_storage_name, config.control_plane_cache, key)
-    create_file_share(config.control_plane_cache_storage_name, config.control_plane_cache, config.control_plane_rg)
+    create_blob_container(
+        config.control_plane_cache_storage_name,
+        CONTROL_PLANE_CACHE,
+        config.get_control_plane_cache_key(),
+    )
+    create_file_share(
+        config.control_plane_cache_storage_name,
+        CONTROL_PLANE_CACHE,
+        config.control_plane_rg,
+    )
     log.info("Storage account setup completed")
 
     log.info("Creating Function Apps...")
@@ -1157,8 +1215,8 @@ def main():
             datadog_site=args.datadog_site,
             resource_tag_filters_arg=args.resource_tag_filters,
             pii_scrubber_rules_arg=args.pii_scrubber_rules,
-            datadog_telemetry_arg=args.datadog_telemetry,
-            log_level_arg=args.log_level,
+            datadog_telemetry=args.datadog_telemetry,
+            log_level=args.log_level,
         )
 
         # Set up logging based on config
@@ -1184,7 +1242,11 @@ def main():
         log.info("Subscription and resource group permissions configured")
 
         log_header("STEP 5: Triggering initial deploy...")
-        run_initial_deploy(config.deployer_job_name, config.control_plane_rg, config.control_plane_sub_id)
+        run_initial_deploy(
+            config.deployer_job_name,
+            config.control_plane_rg,
+            config.control_plane_sub_id,
+        )
         log.info("Initial deployment triggered")
 
         log_header("Success! Azure Automated Log Forwarding installation completed!")
