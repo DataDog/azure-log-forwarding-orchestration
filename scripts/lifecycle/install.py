@@ -54,7 +54,6 @@ log = getLogger("installer")
 # CONSTANTS
 # =============================================================================
 
-NIL_UUID = "00000000-0000-0000-0000-000000000000"
 CONTROL_PLANE_CACHE = "control-plane-cache"
 IMAGE_REGISTRY_URL = "datadoghq.azurecr.io"
 LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
@@ -83,6 +82,9 @@ class Configuration:
     datadog_telemetry: bool = False
     log_level: str = "INFO"
 
+    # Constants
+    NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
     def generate_control_plane_id(self) -> str:
         """Returns a 12-character unique ID based on user input parameters.
         This ID is suffixed on Azure artifacts we create to identify their connection to the control plane.
@@ -92,7 +94,7 @@ class Configuration:
             f"{self.management_group_id}{self.control_plane_sub_id}{self.control_plane_rg}{self.control_plane_region}"
         )
 
-        namespace = uuid.UUID(NIL_UUID)
+        namespace = uuid.UUID(self.NIL_UUID)
         guid = str(uuid.uuid5(namespace, combined)).lower()
         return guid[:8] + guid[9:13]
 
@@ -725,7 +727,7 @@ def create_function_app(config: Configuration, name: str):
             f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
         ]
     else:
-        specific_settings = []
+        raise RuntimeError(f"Unknown function app task when configuring app settings: {name}")
 
     all_settings = common_settings + specific_settings
 
@@ -1133,6 +1135,40 @@ def grant_permissions(config: Configuration):
 # =============================================================================
 
 
+def wait_for_storage_account_ready(storage_account_name: str, control_plane_rg: str) -> None:
+    """Waits for storage account to be in 'Succeeded' provisioning state.
+    Storage accounts are created asynchronously, so we need to wait for them to be ready.
+    """
+    log.info(f"Waiting for storage account {storage_account_name} to be ready...")
+
+    start_time = time.time()
+    max_wait_seconds = 60
+    while time.time() - start_time < max_wait_seconds:
+        output = execute(
+            AzCmd("storage", "account show")
+            .param("--name", storage_account_name)
+            .param("--resource-group", control_plane_rg)
+            .param("--query", "provisioningState")
+            .param("--output", "tsv")
+        )
+
+        state = output.strip()
+        log.debug(f"Storage account {storage_account_name} provisioning state: {state}")
+
+        if state == "Succeeded":
+            log.info(f"Storage account {storage_account_name} is ready")
+            return
+        elif state in ["Failed", "Canceled"]:
+            raise RuntimeError(f"Storage account {storage_account_name} provisioning failed with state: {state}")
+
+        # Still provisioning, wait and check again
+        time.sleep(5)
+
+    raise RuntimeError(
+        f"Timeout waiting for storage account {storage_account_name} to be ready after {max_wait_seconds} seconds"
+    )
+
+
 def deploy_control_plane(config: Configuration):
     """Deploy all control plane infrastructure: storage, functions, and containers."""
     log.info("Deploying storage account...")
@@ -1142,8 +1178,7 @@ def deploy_control_plane(config: Configuration):
         config.control_plane_rg,
         config.control_plane_region,
     )
-    log.info("Waiting for storage account to be ready...")
-    time.sleep(10)  # Ensure the storage account is ready
+    wait_for_storage_account_ready(config.control_plane_cache_storage_name, config.control_plane_rg)
     create_blob_container(
         config.control_plane_cache_storage_name,
         config.get_control_plane_cache_key(),
