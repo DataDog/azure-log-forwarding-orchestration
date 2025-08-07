@@ -874,29 +874,29 @@ def create_containerapp_job(config: Configuration):
     )
 
 
-def create_custom_role_definition(container_app_start_role_name: str, role_scope: str):
+def create_custom_container_app_start_role(role_name: str, role_scope: str):
     """Create a custom role for starting container app jobs if it does not exist"""
 
     try:
-        log.info(f"Checking if custom role definition '{container_app_start_role_name}' already exists...")
+        log.info(f"Checking if custom role definition '{role_name}' already exists...")
         output = execute(
             AzCmd("role", "definition list")
-            .param("--name", container_app_start_role_name)
+            .param("--name", role_name)
             .param("--scope", role_scope)
             .param("--output", "tsv")
         )
         if output.strip():
-            log.info(f"Custom role definition '{container_app_start_role_name}' already exists - reusing existing role")
+            log.info(f"Custom role definition '{role_name}' already exists - reusing existing role")
             return
-        log.info(f"Custom role definition '{container_app_start_role_name}' not found - creating new role")
+        log.info(f"Custom role definition '{role_name}' not found - creating new role")
     except RuntimeError:
-        log.info(f"Custom role definition '{container_app_start_role_name}' not found - creating new role")
+        log.info(f"Custom role definition '{role_name}' not found - creating new role")
         pass
 
-    log.info(f"Creating custom role definition {container_app_start_role_name}")
+    log.info(f"Creating custom role definition {role_name}")
 
     role_definition = {
-        "Name": container_app_start_role_name,
+        "Name": role_name,
         "IsCustom": True,
         "Description": "Custom role to start container app jobs",
         "Actions": ["Microsoft.App/jobs/start/action"],
@@ -911,7 +911,8 @@ def create_custom_role_definition(container_app_start_role_name: str, role_scope
 
 
 def assign_custom_role_to_identity(
-    container_app_start_role: str,
+    role_name: str,
+    role_id: str,
     control_plane_resource_group: str,
     control_plane_rg_scope: str,
 ):
@@ -925,18 +926,8 @@ def assign_custom_role_to_identity(
         .param("--output", "tsv")
     ).strip()
 
-    role_id = execute(
-        AzCmd("role", "definition list")
-        .param("--name", container_app_start_role)
-        .param("--scope", control_plane_rg_scope)
-        .param("--query", '"[0].name"')
-        .param("--output", "tsv")
-    ).strip()
-
     try:
-        log.debug(
-            f"Checking if custom role assignment already exists for role {container_app_start_role} to identity {identity_id}"
-        )
+        log.debug(f"Checking if custom role assignment already exists for role {role_name} to identity {identity_id}")
         output = execute(
             AzCmd("role", "assignment list")
             .param("--assignee", identity_id)
@@ -946,9 +937,7 @@ def assign_custom_role_to_identity(
             .param("--output", "tsv")
         )
         if int(output.strip()) > 0:
-            log.info(
-                f"Custom role assignment already exists for role {container_app_start_role} to managed identity - skipping"
-            )
+            log.info(f"Custom role assignment already exists for role {role_name} to managed identity - skipping")
             return
         log.debug("Custom role assignment not found - creating new assignment")
     except (RuntimeError, ValueError):
@@ -964,6 +953,39 @@ def assign_custom_role_to_identity(
     )
 
 
+def wait_for_role_definition_ready(role_name: str, role_scope: str) -> str:
+    """Waits for custom role definition to be available in Azure.
+    Role definitions are created asynchronously, so we need to wait for them to be available.
+    Returns the role ID when the role definition is ready.
+    """
+    log.info(f"Waiting for role definition {role_name} to be ready...")
+
+    start_time = time.time()
+    max_wait_seconds = 120
+    while time.time() - start_time < max_wait_seconds:
+        try:
+            role_id = execute(
+                AzCmd("role", "definition list")
+                .param("--name", role_name)
+                .param("--scope", role_scope)
+                .param("--query", '"[0].name"')
+                .param("--output", "tsv")
+            ).strip()
+
+            if role_id:
+                log.info(f"Role definition {role_name} is ready")
+                log.debug(f"ID: {role_id}")
+                return role_id
+
+        except (RuntimeError, ValueError) as e:
+            log.debug(f"Role definition {role_name} not yet available: {e}")
+
+        # Still creating, wait and check again
+        time.sleep(5)
+
+    raise RuntimeError(f"Timeout waiting for role definition {role_name} to be ready after {max_wait_seconds} seconds")
+
+
 def deploy_container_job_infra(config: Configuration):
     """Deploy all container job infrastructure."""
     log.info("Creating managed identity...")
@@ -977,11 +999,14 @@ def deploy_container_job_infra(config: Configuration):
 
     log.info("Defining custom ContainerAppStart role...")
     role_scope = config.control_plane_rg_scope
-    create_custom_role_definition(config.container_app_start_role_name, role_scope)
+    create_custom_container_app_start_role(config.container_app_start_role_name, role_scope)
+
+    role_id = wait_for_role_definition_ready(config.container_app_start_role_name, role_scope)
 
     log.info("Assigning custom role to identity...")
     assign_custom_role_to_identity(
         config.container_app_start_role_name,
+        role_id,
         config.control_plane_rg,
         role_scope,
     )
@@ -1092,27 +1117,30 @@ def grant_permissions(config: Configuration):
             .param("--location", config.control_plane_region)
         )
 
+        subscription_scope = f"/subscriptions/{sub_id}"
+        resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_rg}"
+
         log.info(f"Assigning permissions in subscription: {sub_id}")
         assign_role(
-            config.control_plane_sub_scope,
+            subscription_scope,
             resource_principal_id,
             MONITORING_READER_ID,
             config.control_plane_id,
         )
         assign_role(
-            config.control_plane_rg_scope,
+            resource_group_scope,
             scaling_principal_id,
             SCALING_CONTRIBUTOR_ID,
             config.control_plane_id,
         )
         assign_role(
-            config.control_plane_sub_scope,
+            subscription_scope,
             diagnostic_principal_id,
             MONITORING_CONTRIBUTOR_ID,
             config.control_plane_id,
         )
         assign_role(
-            config.control_plane_rg_scope,
+            resource_group_scope,
             diagnostic_principal_id,
             STORAGE_READER_AND_DATA_ACCESS_ID,
             config.control_plane_id,
