@@ -739,10 +739,10 @@ var (
 	//go:embed fixtures/activedirectory/user_risk_event_logs.json
 	adUserRiskEventLogData string
 
-	//go:embed fixtures/vnetflow/flowevent_logs.json
+	//go:embed fixtures/flowevent/vnetflowevent_logs.json
 	vnetFlowLogData string
 
-	//go:embed fixtures/vnetflow/networksecuritygroupflowevent_logs.json
+	//go:embed fixtures/flowevent/networksecuritygroupflowevent_logs.json
 	networkSecurityGroupFlowEventLogData string
 )
 

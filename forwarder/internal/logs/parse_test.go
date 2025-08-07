@@ -54,10 +54,10 @@ var (
 	//go:embed fixtures/function_app_logs_with_usa_short_timestamp.json
 	usaShortTimestampLogData []byte
 
-	//go:embed fixtures/vnetflow/networksecuritygroupflowevent_logs.json
+	//go:embed fixtures/flowevent/networksecuritygroupflowevent_logs.json
 	networkSecurityGroupFlowEventLogData []byte
 
-	//go:embed fixtures/vnetflow/flowevent_logs.json
+	//go:embed fixtures/flowevent/vnetflowevent_logs.json
 	flowLogFlowEventLogData []byte
 
 	//go:embed fixtures/workflowruntime_logs.json
