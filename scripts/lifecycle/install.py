@@ -39,6 +39,7 @@ options:
 
 import argparse
 import json
+import shlex
 import subprocess
 import time
 import uuid
@@ -648,24 +649,24 @@ def create_app_service_plan(app_service_plan: str, control_plane_rg: str, contro
 
     # Use `az resource create` instead of `az appservice plan create` because of Azure CLI issue with the SKU we utilize (Y1)
     # https://github.com/Azure/azure-cli/issues/19864
+
+    properties_json = json.dumps(
+        {
+            "name": app_service_plan,
+            "location": control_plane_region,
+            "kind": "linux",
+            "sku": {"name": "Y1", "tier": "Dynamic"},
+            "properties": {"reserved": True},
+        }
+    )
+
     execute(
         AzCmd("resource", "create")
         .param("--resource-group", control_plane_rg)
         .param("--name", app_service_plan)
         .param("--resource-type", "Microsoft.Web/serverfarms")
         .flag("--is-full-object")
-        .param(
-            "--properties",
-            json.dumps(
-                {
-                    "name": app_service_plan,
-                    "location": control_plane_region,
-                    "kind": "linux",
-                    "sku": {"name": "Y1", "tier": "Dynamic"},
-                    "properties": {"reserved": True},
-                }
-            ),
-        )
+        .param("--properties", shlex.quote(properties_json))
         .param("--api-version", "2022-09-01")
     )
 
@@ -744,7 +745,7 @@ def create_function_app(config: Configuration, name: str):
         AzCmd("functionapp", "config set")
         .param("--name", name)
         .param("--resource-group", config.control_plane_rg)
-        .param("--linux-fx-version", '"Python|3.11"')
+        .param("--linux-fx-version", shlex.quote("Python|3.11"))
     )
 
 
@@ -843,13 +844,13 @@ def create_containerapp_job(config: Configuration):
         "DD_API_KEY=secretref:dd-api-key",
         f"DD_SITE={config.datadog_site}",
         f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
-        f"STORAGE_ACCOUNT_URL={LFO_PUBLIC_STORAGE_ACCOUNT_URL}",
+        shlex.quote(f"STORAGE_ACCOUNT_URL={LFO_PUBLIC_STORAGE_ACCOUNT_URL}"),
         f"LOG_LEVEL={config.log_level}",
     ]
 
     secrets = [
-        f"connection-string={config.get_control_plane_cache_conn_string()}",
-        f"dd-api-key={config.datadog_api_key}",
+        shlex.quote(f"connection-string={config.get_control_plane_cache_conn_string()}"),
+        shlex.quote(f"dd-api-key={config.datadog_api_key}"),
     ]
 
     execute(
@@ -860,7 +861,7 @@ def create_containerapp_job(config: Configuration):
         .param("--replica-timeout", "1800")
         .param("--replica-retry-limit", "1")
         .param("--trigger-type", "Schedule")
-        .param("--cron-expression", "*/30 * * * *")
+        .param("--cron-expression", shlex.quote("*/30 * * * *"))
         .param("--image", config.deployer_image)
         .param("--cpu", "0.5")
         .param("--memory", "1Gi")
