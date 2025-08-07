@@ -35,28 +35,30 @@ type Parser interface {
 	Valid(blob storage.Blob) bool
 }
 
-// FlowEventParser is a parser for flow events.
+// FlowEventParser is a parser for flow events - vnet flow events and network security group flow events.
 type FlowEventParser struct{}
 
-func unmarshalVnetFlowRecords[T any](bytes []byte) (*vnetFlowRecords[T], error) {
-	var vnetFlowRecords vnetFlowRecords[T]
-	err := json.Unmarshal(bytes, &vnetFlowRecords)
-	return &vnetFlowRecords, err
+func unmarshalFlowEventRecords[T any](bytes []byte) (*flowEventRecords[T], error) {
+	var flowEventRecords flowEventRecords[T]
+	err := json.Unmarshal(bytes, &flowEventRecords)
+	return &flowEventRecords, err
 }
 
-func processVnetFlowRecords[T vnetFlowLogRecord](vnetFlowRecords *vnetFlowRecords[T], blob storage.Blob, originalSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) bool {
+func processFlowEventRecords[T flowEventRecord](flowEventRecords *flowEventRecords[T], blob storage.Blob, originalSize int, scrubbedSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) bool {
 	response := ParsedLogResponse{}
-	for idx, vnetFlowLog := range vnetFlowRecords.Records {
-		currLog, err := vnetFlowLog.ToLog(blob)
+	for idx, flowEventLog := range flowEventRecords.Records {
+		currLog, err := flowEventLog.ToLog(blob)
+		response.ParsedLog = currLog
 		if err != nil {
 			response.Err = err
 			yield(response)
 			return false
 		}
-		if idx == len(vnetFlowRecords.Records)-1 {
-			currLog.RawByteSize = int64(originalSize)
+		if idx == len(flowEventRecords.Records)-1 {
+			response.ParsedLog.RawByteSize = int64(originalSize)
+			response.ParsedLog.ScrubbedByteSize = int64(scrubbedSize)
 		}
-		response.ParsedLog = currLog
+
 		if !yield(response) {
 			return false
 		}
@@ -71,29 +73,26 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 			currBytes := scanner.Bytes()
 			originalSize := len(currBytes)
 			scrubbedBytes := piiScrubber.Scrub(currBytes)
+			scrubbedSize := len(scrubbedBytes)
 			response := ParsedLogResponse{}
 
 			switch blob.Container.Name {
 			case NetworkSecurityGroupFlowEventContainer:
-				vnetFlowRecords, err := unmarshalVnetFlowRecords[*vnetSecurityGroupFlowLog](scrubbedBytes)
+				networkSecGroupRecords, err := unmarshalFlowEventRecords[*networkSecurityGroupFlowLog](scrubbedBytes)
 				if err != nil {
 					response.Err = err
 					yield(response)
 					return
 				}
-				if !processVnetFlowRecords[*vnetSecurityGroupFlowLog](vnetFlowRecords, blob, originalSize, piiScrubber, yield) {
-					return
-				}
+				processFlowEventRecords[*networkSecurityGroupFlowLog](networkSecGroupRecords, blob, originalSize, scrubbedSize, piiScrubber, yield)
 			case FlowEventContainer:
-				vnetFlowRecords, err := unmarshalVnetFlowRecords[*vnetFlowEventLog](scrubbedBytes)
+				vnetFlowRecords, err := unmarshalFlowEventRecords[*vnetFlowEventLog](scrubbedBytes)
 				if err != nil {
 					response.Err = err
 					yield(response)
 					return
 				}
-				if !processVnetFlowRecords[*vnetFlowEventLog](vnetFlowRecords, blob, originalSize, piiScrubber, yield) {
-					return
-				}
+				processFlowEventRecords[*vnetFlowEventLog](vnetFlowRecords, blob, originalSize, scrubbedSize, piiScrubber, yield)
 			default:
 				response.Err = errors.New("no parser found for log type" + blob.Container.Name)
 				yield(response)

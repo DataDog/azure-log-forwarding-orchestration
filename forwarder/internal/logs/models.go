@@ -282,15 +282,15 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 	}, nil
 }
 
-type vnetFlowLogRecord interface {
+type flowEventRecord interface {
 	ToLog(blob storage.Blob) (*Log, error)
 }
 
-type vnetFlowRecords[T any] struct {
+type flowEventRecords[T any] struct {
 	Records []T `json:"records"`
 }
 
-type vnetSecurityGroupFlowLog struct {
+type networkSecurityGroupFlowLog struct {
 	Time          time.Time `json:"time"`
 	SystemID      string    `json:"systemId"`
 	MacAddress    string    `json:"macAddress"`
@@ -309,11 +309,11 @@ type vnetSecurityGroupFlowLog struct {
 	} `json:"properties"`
 }
 
-func (l *vnetSecurityGroupFlowLog) Bytes() ([]byte, error) {
+func (l *networkSecurityGroupFlowLog) Bytes() ([]byte, error) {
 	return json.Marshal(l)
 }
 
-func (l *vnetSecurityGroupFlowLog) ToLog(blob storage.Blob) (*Log, error) {
+func (l *networkSecurityGroupFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 	logBytes, err := l.Bytes()
 	if err != nil {
 		return nil, err

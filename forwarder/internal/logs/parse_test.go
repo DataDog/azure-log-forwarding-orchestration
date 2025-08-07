@@ -58,7 +58,7 @@ var (
 	networkSecurityGroupFlowEventLogData []byte
 
 	//go:embed fixtures/flowevent/vnetflowevent_logs.json
-	flowLogFlowEventLogData []byte
+	vnetFlowLogData []byte
 
 	//go:embed fixtures/workflowruntime_logs.json
 	workflowRuntimeLogData []byte
@@ -185,7 +185,7 @@ func TestParseVnetFlowLogs(t *testing.T) {
 			categoryName:     "FlowLogFlowEvent",
 			containerName:    logs.FlowEventContainer,
 			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG",
-			logData:          flowLogFlowEventLogData,
+			logData:          vnetFlowLogData,
 			expectedLogCount: 6,
 		},
 	}
