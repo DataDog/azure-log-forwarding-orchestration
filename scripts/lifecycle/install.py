@@ -66,9 +66,9 @@ LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 
 @dataclass
 class Configuration:
-    """User-specified configuration parameters and their derivations"""
+    """User-specified configuration parameters and derivations necessary for deployment"""
 
-    # Required params
+    # Required user-specified params
     management_group_id: str
     control_plane_region: str
     control_plane_sub_id: str
@@ -76,10 +76,10 @@ class Configuration:
     monitored_subs: str
     datadog_api_key: str
 
-    # Optional params with defaults
+    # Optional user-specified params with defaults
     datadog_site: str = "datadoghq.com"
-    resource_tag_filters_arg: str = ""
-    pii_scrubber_rules_arg: str = ""
+    resource_tag_filters: str = ""
+    pii_scrubber_rules: str = ""
     datadog_telemetry: bool = False
     log_level: str = "INFO"
 
@@ -88,7 +88,7 @@ class Configuration:
 
     def generate_control_plane_id(self) -> str:
         """Returns a 12-character unique ID based on user input parameters.
-        This ID is suffixed on Azure artifacts we create to identify their connection to the control plane.
+        This ID is suffixed on Azure resources we create to identify their relationship to the control plane.
         """
 
         combined = (
@@ -126,30 +126,31 @@ class Configuration:
             *self.monitored_subscriptions,
         }
 
-        self.resource_tag_filters = self.resource_tag_filters_arg
-        self.pii_scrubber_rules = self.pii_scrubber_rules_arg
-
         # Control plane
         self.control_plane_id = self.generate_control_plane_id()
         log.info(f"Generated control plane ID: {self.control_plane_id}")
         self.control_plane_cache_storage_name = f"lfostorage{self.control_plane_id}"
         self.control_plane_cache_storage_url = f"https://{self.control_plane_cache_storage_name}.blob.core.windows.net"
         self.control_plane_cache_storage_key = None  # lazy-loaded
-        self.control_plane_resource_group_id = (
-            f"/subscriptions/{self.control_plane_sub_id}/resourceGroups/{self.control_plane_rg}"
-        )
+        self.control_plane_sub_scope = f"/subscriptions/{self.control_plane_sub_id}"
+        self.control_plane_rg_scope = f"{self.control_plane_sub_scope}/resourceGroups/{self.control_plane_rg}"
+        self.control_plane_env_name = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_region}"
 
-        # Deployer + function apps
+        # Deployer
         self.deployer_job_name = f"deployer-task-{self.control_plane_id}"
-        self.control_plane_env = f"dd-log-forwarder-env-{self.control_plane_id}-{self.control_plane_region}"
-        self.container_app_start_role = f"ContainerAppStartRole{self.control_plane_id}"
-        self.deployer_image = f"{IMAGE_REGISTRY_URL}/deployer:latest"
-        self.app_service_plan = f"control-plane-asp-{self.control_plane_id}"
-        self.control_plane_function_apps = {
-            "resources": f"resources-task-{self.control_plane_id}",
-            "scaling": f"scaling-task-{self.control_plane_id}",
-            "diagnostic": f"diagnostic-settings-task-{self.control_plane_id}",
-        }
+        self.deployer_image_url = f"{IMAGE_REGISTRY_URL}/deployer:latest"
+        self.container_app_start_role_name = f"ContainerAppStartRole{self.control_plane_id}"
+
+        # Function apps (control plane tasks)
+        self.app_service_plan_name = f"control-plane-asp-{self.control_plane_id}"
+        self.resources_task_name = f"resources-task-{self.control_plane_id}"
+        self.scaling_task_name = f"scaling-task-{self.control_plane_id}"
+        self.diagnostic_settings_task_name = f"diagnostic-settings-task-{self.control_plane_id}"
+        self.control_plane_function_app_names = [
+            self.resources_task_name,
+            self.scaling_task_name,
+            self.diagnostic_settings_task_name,
+        ]
 
 
 def parse_arguments():
@@ -752,12 +753,12 @@ def create_function_app(config: Configuration, name: str):
 def create_function_apps(config: Configuration):
     """Create Resources Task, Scaling Task, and Diagnostic Settings Task function apps"""
     log.info("Creating App Service Plan...")
-    create_app_service_plan(config.app_service_plan, config.control_plane_rg, config.control_plane_region)
+    create_app_service_plan(config.app_service_plan_name, config.control_plane_rg, config.control_plane_region)
 
     log.info("Creating Function Apps...")
-    for _, app_name in config.control_plane_function_apps.items():
-        log.info(f"Creating Function App: {app_name}")
-        create_function_app(config, app_name)
+    for function_app_name in config.control_plane_function_app_names:
+        log.info(f"Creating Function App: {function_app_name}")
+        create_function_app(config, function_app_name)
 
     log.info("Function Apps created and configured")
 
@@ -857,12 +858,12 @@ def create_containerapp_job(config: Configuration):
         AzCmd("containerapp", "job create")
         .param("--name", config.deployer_job_name)
         .param("--resource-group", config.control_plane_rg)
-        .param("--environment", config.control_plane_env)
+        .param("--environment", config.control_plane_env_name)
         .param("--replica-timeout", "1800")
         .param("--replica-retry-limit", "1")
         .param("--trigger-type", "Schedule")
         .param("--cron-expression", shlex.quote("*/30 * * * *"))
-        .param("--image", config.deployer_image)
+        .param("--image", config.deployer_image_url)
         .param("--cpu", "0.5")
         .param("--memory", "1Gi")
         .param("--parallelism", "1")
@@ -873,41 +874,34 @@ def create_containerapp_job(config: Configuration):
     )
 
 
-def create_custom_role_definition(container_app_start_role: str, control_plane_resource_group: str):
+def create_custom_role_definition(container_app_start_role_name: str, role_scope: str):
     """Create a custom role for starting container app jobs if it does not exist"""
 
-    scope = execute(
-        AzCmd("group", "show")
-        .param("--name", control_plane_resource_group)
-        .param("--query", "id")
-        .param("--output", "tsv")
-    ).strip()
-
     try:
-        log.info(f"Checking if custom role definition '{container_app_start_role}' already exists...")
+        log.info(f"Checking if custom role definition '{container_app_start_role_name}' already exists...")
         output = execute(
             AzCmd("role", "definition list")
-            .param("--name", container_app_start_role)
-            .param("--scope", scope)
+            .param("--name", container_app_start_role_name)
+            .param("--scope", role_scope)
             .param("--output", "tsv")
         )
         if output.strip():
-            log.info(f"Custom role definition '{container_app_start_role}' already exists - reusing existing role")
+            log.info(f"Custom role definition '{container_app_start_role_name}' already exists - reusing existing role")
             return
-        log.info(f"Custom role definition '{container_app_start_role}' not found - creating new role")
+        log.info(f"Custom role definition '{container_app_start_role_name}' not found - creating new role")
     except RuntimeError:
-        log.info(f"Custom role definition '{container_app_start_role}' not found - creating new role")
+        log.info(f"Custom role definition '{container_app_start_role_name}' not found - creating new role")
         pass
 
-    log.info(f"Creating custom role definition {container_app_start_role}")
+    log.info(f"Creating custom role definition {container_app_start_role_name}")
 
     role_definition = {
-        "Name": container_app_start_role,
+        "Name": container_app_start_role_name,
         "IsCustom": True,
         "Description": "Custom role to start container app jobs",
         "Actions": ["Microsoft.App/jobs/start/action"],
         "NotActions": [],
-        "AssignableScopes": [scope],
+        "AssignableScopes": [role_scope],
     }
 
     with open("custom_role.json", "w") as f:
@@ -916,7 +910,11 @@ def create_custom_role_definition(container_app_start_role: str, control_plane_r
     execute(AzCmd("role", "definition create").param("--role-definition", "custom_role.json"))
 
 
-def assign_custom_role_to_identity(control_plane_resource_group: str, container_app_start_role: str):
+def assign_custom_role_to_identity(
+    container_app_start_role: str,
+    control_plane_resource_group: str,
+    control_plane_rg_scope: str,
+):
     """Assign the custom role to the managed identity if the role assignment does not exist"""
     log.info("Assigning custom role to managed identity")
     identity_id = execute(
@@ -927,17 +925,10 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
         .param("--output", "tsv")
     ).strip()
 
-    scope = execute(
-        AzCmd("group", "show")
-        .param("--name", control_plane_resource_group)
-        .param("--query", "id")
-        .param("--output", "tsv")
-    ).strip()
-
     role_id = execute(
         AzCmd("role", "definition list")
         .param("--name", container_app_start_role)
-        .param("--scope", scope)
+        .param("--scope", control_plane_rg_scope)
         .param("--query", '"[0].name"')
         .param("--output", "tsv")
     ).strip()
@@ -950,7 +941,7 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
             AzCmd("role", "assignment list")
             .param("--assignee", identity_id)
             .param("--role", role_id)
-            .param("--scope", scope)
+            .param("--scope", control_plane_rg_scope)
             .param("--query", '"length([])"')
             .param("--output", "tsv")
         )
@@ -969,7 +960,7 @@ def assign_custom_role_to_identity(control_plane_resource_group: str, container_
         .param("--role", role_id)
         .param("--assignee-object-id", identity_id)
         .param("--assignee-principal-type", "ServicePrincipal")
-        .param("--scope", scope)
+        .param("--scope", control_plane_rg_scope)
     )
 
 
@@ -979,16 +970,21 @@ def deploy_container_job_infra(config: Configuration):
     create_user_assigned_identity(config.control_plane_rg, config.control_plane_region)
 
     log.info("Creating container app environment...")
-    create_containerapp_environment(config.control_plane_env, config.control_plane_rg, config.control_plane_region)
+    create_containerapp_environment(config.control_plane_env_name, config.control_plane_rg, config.control_plane_region)
 
     log.info("Creating container app job...")
     create_containerapp_job(config)
 
     log.info("Defining custom ContainerAppStart role...")
-    create_custom_role_definition(config.container_app_start_role, config.control_plane_rg)
+    role_scope = config.control_plane_rg_scope
+    create_custom_role_definition(config.container_app_start_role_name, role_scope)
 
     log.info("Assigning custom role to identity...")
-    assign_custom_role_to_identity(config.control_plane_rg, config.container_app_start_role)
+    assign_custom_role_to_identity(
+        config.container_app_start_role_name,
+        config.control_plane_rg,
+        role_scope,
+    )
 
     log.info("Container App job + identity setup complete")
 
@@ -1075,22 +1071,20 @@ def grant_permissions(config: Configuration):
     log.info("Assigning Website Contributor role to deployer container app job...")
     deployer_principal_id = get_containerapp_job_principal_id(config.control_plane_rg, config.deployer_job_name)
     assign_role(
-        config.control_plane_resource_group_id,
+        config.control_plane_rg_scope,
         deployer_principal_id,
         WEBSITE_CONTRIBUTOR_ID,
         config.control_plane_id,
     )
 
-    resource_task_pid = get_function_app_principal_id(
-        config.control_plane_rg, config.control_plane_function_apps["resources"]
+    resource_principal_id = get_function_app_principal_id(config.control_plane_rg, config.resources_task_name)
+    scaling_principal_id = get_function_app_principal_id(config.control_plane_rg, config.scaling_task_name)
+    diagnostic_principal_id = get_function_app_principal_id(
+        config.control_plane_rg, config.diagnostic_settings_task_name
     )
-    diagnostic_pid = get_function_app_principal_id(
-        config.control_plane_rg, config.control_plane_function_apps["diagnostic"]
-    )
-    scaling_pid = get_function_app_principal_id(config.control_plane_rg, config.control_plane_function_apps["scaling"])
 
     for sub_id in config.monitored_subscriptions:
-        log.info(f"Assigning permissions in subscription: {sub_id}")
+        log.info(f"Create resource group in subscription: {sub_id}")
         set_subscription(sub_id)
         execute(
             AzCmd("group", "create")
@@ -1098,31 +1092,29 @@ def grant_permissions(config: Configuration):
             .param("--location", config.control_plane_region)
         )
 
-        subscription_scope = f"/subscriptions/{sub_id}"
-        resource_group_scope = f"{subscription_scope}/resourceGroups/{config.control_plane_rg}"
-
+        log.info(f"Assigning permissions in subscription: {sub_id}")
         assign_role(
-            subscription_scope,
-            resource_task_pid,
+            config.control_plane_sub_scope,
+            resource_principal_id,
             MONITORING_READER_ID,
             config.control_plane_id,
         )
         assign_role(
-            subscription_scope,
-            diagnostic_pid,
+            config.control_plane_rg_scope,
+            scaling_principal_id,
+            SCALING_CONTRIBUTOR_ID,
+            config.control_plane_id,
+        )
+        assign_role(
+            config.control_plane_sub_scope,
+            diagnostic_principal_id,
             MONITORING_CONTRIBUTOR_ID,
             config.control_plane_id,
         )
         assign_role(
-            resource_group_scope,
-            diagnostic_pid,
+            config.control_plane_rg_scope,
+            diagnostic_principal_id,
             STORAGE_READER_AND_DATA_ACCESS_ID,
-            config.control_plane_id,
-        )
-        assign_role(
-            resource_group_scope,
-            scaling_pid,
-            SCALING_CONTRIBUTOR_ID,
             config.control_plane_id,
         )
 
@@ -1246,8 +1238,8 @@ def main():
             monitored_subs=args.monitored_subscriptions,
             datadog_api_key=args.datadog_api_key,
             datadog_site=args.datadog_site,
-            resource_tag_filters_arg=args.resource_tag_filters,
-            pii_scrubber_rules_arg=args.pii_scrubber_rules,
+            resource_tag_filters=args.resource_tag_filters,
+            pii_scrubber_rules=args.pii_scrubber_rules,
             datadog_telemetry=args.datadog_telemetry,
             log_level=args.log_level,
         )
