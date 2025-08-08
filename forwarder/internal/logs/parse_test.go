@@ -183,7 +183,7 @@ func TestParseVnetFlowLogs(t *testing.T) {
 		},
 		"can parse vnet flow event logs": {
 			categoryName:     "FlowLogFlowEvent",
-			containerName:    logs.FlowEventContainer,
+			containerName:    logs.VnetFlowEventContainer,
 			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG",
 			logData:          vnetFlowLogData,
 			expectedLogCount: 6,

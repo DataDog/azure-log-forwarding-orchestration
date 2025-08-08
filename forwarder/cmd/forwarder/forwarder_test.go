@@ -54,9 +54,10 @@ import (
 )
 
 const (
-	resourceId   string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
-	versionTag   string = "test-version"
-	azureService string = "azure"
+	resourceId    string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+	versionTag    string = "test-version"
+	azureService  string = "azure"
+	numExecutions int    = 5
 )
 
 func azureTimestamp(t time.Time) string {
@@ -759,8 +760,6 @@ func TestCursors(t *testing.T) {
 			newContainerItem(containerName),
 		}
 
-		n := 5 // Number of times to execute
-
 		var currentLogData []byte
 		// mock now
 		customNow := func() time.Time {
@@ -770,7 +769,7 @@ func TestCursors(t *testing.T) {
 
 		lastCursor := cursor.New(nil)
 
-		for i := 0; i < n; i++ {
+		for range numExecutions {
 			// REPEATED GIVEN
 			currentLogData = append(currentLogData, aksLogData...)
 			currentLength := int64(len(currentLogData))
@@ -835,8 +834,6 @@ func TestCursors(t *testing.T) {
 			newContainerItem(containerName),
 		}
 
-		n := 5 // Number of times to execute
-
 		var currentLogData []byte
 
 		lastCursor := cursor.New(nil)
@@ -846,7 +843,7 @@ func TestCursors(t *testing.T) {
 			return time.Now()
 		}
 
-		for i := 0; i < n; i++ {
+		for range numExecutions {
 			// REPEATED GIVEN
 			currentLogData = append(currentLogData, functionAppLogData...)
 			currentLength := int64(len(currentLogData))
@@ -960,14 +957,12 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 			newContainerItem(containerName),
 		}
 
-		n := 5 // Number of times to execute
-
 		var currentLogData []byte
 		now := time.Now()
 
 		lastCursor := cursor.New(nil)
 
-		for i := 0; i < n; i++ {
+		for range numExecutions {
 			// REPEATED GIVEN
 			currentLogData = append(currentLogData, test.testLogData...)
 			currentLength := int64(len(currentLogData))
@@ -1054,14 +1049,12 @@ func TestCursorsOnVnetFlowLogs(t *testing.T) {
 			newContainerItem(containerName),
 		}
 
-		n := 5 // Number of times to execute
-
 		var currentLogData []byte
 		now := time.Now()
 
 		lastCursor := cursor.New(nil)
 
-		for i := 0; i < n; i++ {
+		for range numExecutions {
 			// REPEATED GIVEN
 			currentLogData = append(currentLogData, test.testLogData...)
 			currentLength := int64(len(currentLogData))

@@ -85,7 +85,7 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 					return
 				}
 				processFlowEventRecords[*networkSecurityGroupFlowLog](networkSecGroupRecords, blob, originalSize, scrubbedSize, piiScrubber, yield)
-			case FlowEventContainer:
+			case VnetFlowEventContainer:
 				vnetFlowRecords, err := unmarshalFlowEventRecords[*vnetFlowEventLog](scrubbedBytes)
 				if err != nil {
 					response.Err = err
@@ -104,14 +104,14 @@ func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScr
 
 const (
 	NetworkSecurityGroupFlowEventContainer = "insights-logs-networksecuritygroupflowevent"
-	FlowEventContainer                     = "insights-logs-flowlogflowevent"
+	VnetFlowEventContainer                 = "insights-logs-flowlogflowevent"
 )
 
-var vnetFlowEventContainers = []string{FlowEventContainer, NetworkSecurityGroupFlowEventContainer}
+var flowEventContainers = []string{VnetFlowEventContainer, NetworkSecurityGroupFlowEventContainer}
 
 // Valid checks if the blob is in a flow event container.
 func (f FlowEventParser) Valid(blob storage.Blob) bool {
-	return slices.Contains(vnetFlowEventContainers, blob.Container.Name)
+	return slices.Contains(flowEventContainers, blob.Container.Name)
 }
 
 type FunctionAppParser struct{}
