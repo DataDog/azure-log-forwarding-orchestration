@@ -59,6 +59,65 @@ CONTROL_PLANE_CACHE = "control-plane-cache"
 IMAGE_REGISTRY_URL = "datadoghq.azurecr.io"
 LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 
+
+# =============================================================================
+# ERRORS
+# =============================================================================
+class FatalError(Exception):
+    """An error that prevents the installation from completing successfully."""
+
+    pass
+
+
+class RateLimitExceeded(Exception):
+    """An error that indicates we have exceeded the rate limit for the Azure API."""
+
+    pass
+
+
+class RefreshTokenError(Exception):
+    """An error that indicates our auth token has expired."""
+
+    pass
+
+
+# User actionable errors
+class UserActionRequiredError(Exception):
+    """An error that requires user action to resolve."""
+
+    pass
+
+
+class AccessError(UserActionRequiredError):
+    """An error that indicates we are not authorized to access the resource."""
+
+    pass
+
+
+class InputParamValidationError(UserActionRequiredError):
+    """An error that indicates a validation error in user input parameters."""
+
+    pass
+
+
+class ResourceProviderRegistrationValidationError(UserActionRequiredError):
+    """An error that indicates a resource provider is not registered."""
+
+    pass
+
+
+class ResourceNameAvailabilityError(UserActionRequiredError):
+    """An error that indicates a resource name is not available."""
+
+    pass
+
+
+class DatadogAccessValidationError(UserActionRequiredError):
+    """An error that indicates we are not authorized to access Datadog."""
+
+    pass
+
+
 # =============================================================================
 # CONFIGURATION INPUT PARAMETERS
 # =============================================================================
@@ -253,18 +312,6 @@ RESOURCE_COLLECTION_THROTTLING_ERROR = "ResourceCollectionRequestsThrottled"
 MAX_RETRIES = 7
 
 
-class RateLimitExceeded(Exception):
-    pass
-
-
-class AuthError(Exception):
-    pass
-
-
-class RefreshTokenError(Exception):
-    pass
-
-
 class AzCmd:
     """Builder for Azure CLI commands."""
 
@@ -288,6 +335,9 @@ class AzCmd:
         self.cmd.append(flag)
         return self
 
+    def str(self) -> str:
+        return "az " + " ".join(self.cmd)
+
 
 def try_regex_access_error(stderr: str):
     # Sample:
@@ -304,13 +354,13 @@ def try_regex_access_error(stderr: str):
         client = client_match.group(1)
         action = action_match.group(1)
         scope = scope_match.group(1)
-        raise RuntimeError(f"Insufficient permissions for {client} to perform {action} on {scope}")
+        raise AccessError(RuntimeError(f"Insufficient permissions for {client} to perform {action} on {scope}"))
 
 
 def execute(az_cmd: AzCmd) -> str:
     """Run an Azure CLI command and return output or raise error."""
 
-    full_command = "az " + " ".join(az_cmd.cmd)
+    full_command = az_cmd.str()
     log.debug(f"Running: {full_command}")
     delay = 2  # seconds
 
@@ -335,7 +385,7 @@ def execute(az_cmd: AzCmd) -> str:
                 raise RefreshTokenError(f"Auth token is expired. Refresh token before running '{az_cmd}'") from e
             if AUTHORIZATION_ERROR in stderr:
                 try_regex_access_error(stderr)
-                raise AuthError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from e
+                raise AccessError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from e
             log.error(f"Command failed: {full_command}")
             log.error(e.stderr)
             raise RuntimeError(f"Command failed: {full_command}") from e
@@ -347,21 +397,20 @@ def execute(az_cmd: AzCmd) -> str:
 # VALIDATION
 # =============================================================================
 def validate_user_parameters(config: Configuration):
-    validate_azure_values(config)
+    validate_azure_env(config)
     validate_datadog_credentials(config.datadog_api_key, config.datadog_site)
 
     log.info("Validation completed")
 
 
-def validate_azure_values(config: Configuration):
-    """Validate Azure parameters and permissions before creating any resources."""
+def validate_azure_env(config: Configuration):
+    """Validate Azure parameters and environment before creating any resources."""
 
-    validate_azure_configuration(config)
+    validate_user_config(config)
     validate_az_cli()
-    validate_az_cli_extensions()
-    validate_monitored_subscriptions(config.monitored_subscriptions)
     validate_control_plane_sub_access(config.control_plane_sub_id)
-    validate_required_resource_providers(config.all_subscriptions)
+    validate_monitored_subs_access(config.monitored_subscriptions)
+    validate_resource_provider_registrations(config.all_subscriptions)
     validate_resource_names(
         config.control_plane_rg,
         config.control_plane_sub_id,
@@ -375,28 +424,10 @@ def validate_az_cli():
         execute(AzCmd("account", "show"))
         log.debug("Azure CLI authentication verified")
     except Exception as e:
-        raise RuntimeError("Azure CLI not authenticated. Run 'az login' first.") from e
+        raise AccessError("Azure CLI not authenticated. Run 'az login' first.") from e
 
 
-def validate_az_cli_extensions():
-    """Ensure required Azure CLI extensions are installed."""
-    required_extension = "containerapp"
-
-    try:
-        output = execute(AzCmd("extension", "list").param("--output", "json"))
-        installed_extensions = json.loads(output)
-        installed_names = {ext["name"] for ext in installed_extensions}
-
-        if required_extension not in installed_names:
-            log.info(f"Installing missing Azure CLI extension: {required_extension}")
-            execute(AzCmd("extension", "add").param("--name", required_extension))
-
-        log.debug("Azure CLI extensions verified")
-    except Exception as e:
-        raise RuntimeError(f"Failed to validate/install Azure CLI extensions: {e}") from e
-
-
-def validate_required_resource_providers(sub_ids: set[str]):
+def validate_resource_provider_registrations(sub_ids: set[str]):
     """Ensure the required Azure resource providers are registered across all subscriptions."""
     required_providers = [
         "Microsoft.Web",  # Function Apps
@@ -445,7 +476,9 @@ def validate_required_resource_providers(sub_ids: set[str]):
                 log.debug(f"Subscription {sub_id}: All required resource providers are registered")
         except Exception as e:
             log.error(f"Failed to validate resource providers in subscription {sub_id}: {e}")
-            raise RuntimeError(f"Resource provider validation failed for subscription {sub_id}: {e}") from e
+            raise ResourceProviderRegistrationValidationError(
+                f"Resource provider validation failed for subscription {sub_id}: {e}"
+            ) from e
 
     success = True
     for sub_id, unregistered_providers in sub_to_unregistered_provider_list.items():
@@ -462,7 +495,7 @@ def validate_required_resource_providers(sub_ids: set[str]):
             log.debug(f"Subscription {sub_id}: All required resource providers are registered")
 
     if not success:
-        raise RuntimeError("Resource provider validation failed")
+        raise ResourceProviderRegistrationValidationError("Resource provider validation failed")
 
     log.info("Resource provider validation successful across all subscriptions")
 
@@ -473,7 +506,7 @@ def validate_control_plane_sub_access(control_plane_sub_id: str):
         set_subscription(control_plane_sub_id)
         log.debug(f"Control plane subscription access verified: {control_plane_sub_id}")
     except Exception as e:
-        raise RuntimeError(f"Cannot access control plane subscription {control_plane_sub_id}: {e}") from e
+        raise AccessError(f"Cannot access control plane subscription {control_plane_sub_id}: {e}") from e
 
 
 def validate_resource_names(
@@ -512,7 +545,7 @@ def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
     log.info("Validating Datadog API credentials...")
 
     if not datadog_api_key:
-        raise RuntimeError("Datadog API key not configured")
+        raise InputParamValidationError("Datadog API key not configured")
 
     try:
         curl_command = [
@@ -529,38 +562,40 @@ def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
         response = subprocess.check_output(curl_command, text=True)
         response_json = json.loads(response)
         if not response_json.get("valid", False):
-            raise RuntimeError(f"Datadog API Key validation failed against {datadog_site}")
+            raise DatadogAccessValidationError(f"Datadog API Key validation failed against {datadog_site}")
 
         log.debug("Datadog API credentials validated")
     except subprocess.CalledProcessError as e:
-        raise ValueError(f"Failed to validate Datadog credentials: {e}") from e
+        raise DatadogAccessValidationError(f"Failed to validate Datadog credentials: {e}") from e
     except json.JSONDecodeError as e:
-        raise RuntimeError(f"Failed to parse Datadog validation response: {e}") from e
+        raise DatadogAccessValidationError(f"Failed to parse Datadog validation response: {e}") from e
 
 
-def validate_azure_configuration(config: Configuration):
-    """Validate Azure configuration parameters."""
-    log.info("Validating Azure configuration parameters...")
+def validate_user_config(config: Configuration):
+    """Validate user-specified configuration parameters."""
+    log.info("Validating configuration parameters...")
 
     if not config.control_plane_sub_id:
-        raise ValueError("Control plane subscription not configured")
+        raise InputParamValidationError("Control plane subscription not configured")
 
     if not config.control_plane_rg:
-        raise ValueError("Control plane resource group not configured")
+        raise InputParamValidationError("Control plane resource group not configured")
 
     if not config.control_plane_region:
-        raise ValueError("Control plane location not configured")
+        raise InputParamValidationError("Control plane location not configured")
 
     if not config.monitored_subscriptions:
-        raise ValueError("Monitored subscriptions not properly configured")
+        raise InputParamValidationError("Monitored subscriptions not properly configured.")
 
     if config.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR"]:
-        raise ValueError(f"Invalid log level: {config.log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR")
+        raise InputParamValidationError(
+            f"Invalid log level: {config.log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR"
+        )
 
     log.debug("Configuration validation completed")
 
 
-def validate_monitored_subscriptions(monitored_subs: list[str]):
+def validate_monitored_subs_access(monitored_subs: list[str]):
     """Verify access to all monitored subscriptions."""
     log.info("Validating access to monitored subscriptions...")
 
@@ -569,7 +604,7 @@ def validate_monitored_subscriptions(monitored_subs: list[str]):
             set_subscription(sub_id)
             log.debug(f"Monitored subscription access verified: {sub_id}")
         except Exception as e:
-            raise RuntimeError(f"Cannot access monitored subscription {sub_id}: {e}") from e
+            raise AccessError(f"Cannot access monitored subscription {sub_id}: {e}") from e
 
 
 # =============================================================================
