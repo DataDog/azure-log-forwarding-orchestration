@@ -58,6 +58,7 @@ log = getLogger("installer")
 CONTROL_PLANE_CACHE = "control-plane-cache"
 IMAGE_REGISTRY_URL = "datadoghq.azurecr.io"
 LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
+INITIAL_DEPLOY_IDENTITY_NAME = "runInitialDeployIdentity"
 
 
 # =============================================================================
@@ -65,12 +66,6 @@ LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 # =============================================================================
 class FatalError(Exception):
     """An error that prevents the installation from completing successfully."""
-
-    pass
-
-
-class RateLimitExceeded(Exception):
-    """An error that indicates we have exceeded the rate limit for the Azure API."""
 
     pass
 
@@ -114,6 +109,19 @@ class ResourceNameAvailabilityError(UserActionRequiredError):
 
 class DatadogAccessValidationError(UserActionRequiredError):
     """An error that indicates we are not authorized to access Datadog."""
+
+    pass
+
+
+# Expected Errors
+class RateLimitExceededError(Exception):
+    """An error that indicates we have exceeded the rate limit for the Azure API."""
+
+    pass
+
+
+class ResourceNotFoundError(Exception):
+    """An error that indicates a resource was not found."""
 
     pass
 
@@ -309,6 +317,7 @@ AUTHORIZATION_ERROR = "AuthorizationFailed"
 AZURE_THROTTLING_ERROR = "TooManyRequests"
 REFRESH_TOKEN_EXPIRED_ERROR = "AADSTS700082"
 RESOURCE_COLLECTION_THROTTLING_ERROR = "ResourceCollectionRequestsThrottled"
+RESOURCE_NOT_FOUND_ERROR = "ResourceNotFound"
 MAX_RETRIES = 7
 
 
@@ -374,13 +383,15 @@ def execute(az_cmd: AzCmd) -> str:
             return result.stdout
         except subprocess.CalledProcessError as e:
             stderr = str(e.stderr)
+            if RESOURCE_NOT_FOUND_ERROR in stderr:
+                raise ResourceNotFoundError(f"Resource not found when executing '{az_cmd}'") from e
             if AZURE_THROTTLING_ERROR in stderr or RESOURCE_COLLECTION_THROTTLING_ERROR in stderr:
                 if attempt < MAX_RETRIES - 1:
                     log.warning(f"Azure throttling ongoing. Retrying in {delay} seconds...")
                     sleep(delay)
                     delay *= 2
                     continue
-                raise RateLimitExceeded("Rate limit exceeded. Please wait a few minutes and try again.") from e
+                raise RateLimitExceededError("Rate limit exceeded. Please wait a few minutes and try again.") from e
             if REFRESH_TOKEN_EXPIRED_ERROR in stderr:
                 raise RefreshTokenError(f"Auth token is expired. Refresh token before running '{az_cmd}'") from e
             if AUTHORIZATION_ERROR in stderr:
@@ -677,9 +688,10 @@ def create_app_service_plan(app_service_plan: str, control_plane_rg: str, contro
         )
         log.info(f"App Service Plan '{app_service_plan}' already exists - reusing existing plan")
         return
-    except RuntimeError:
+    except ResourceNotFoundError:
         log.info(f"App Service Plan '{app_service_plan}' not found - creating new plan")
-        pass
+    except Exception as e:
+        raise RuntimeError(f"Failed to check if App Service Plan '{app_service_plan}' exists: {e}") from e
 
     log.info(f"Creating App Service Plan {app_service_plan}")
 
@@ -714,9 +726,11 @@ def create_function_app(config: Configuration, name: str):
         execute(AzCmd("functionapp", "show").param("--name", name).param("--resource-group", config.control_plane_rg))
         log.info(f"Function App '{name}' already exists - skipping creation and updating configuration")
         function_app_exists = True
-    except RuntimeError:
+    except ResourceNotFoundError:
         log.info(f"Function App '{name}' not found - creating new function app")
         function_app_exists = False
+    except Exception as e:
+        raise RuntimeError(f"Failed to check if Function App '{name}' exists: {e}") from e
 
     if not function_app_exists:
         log.info(f"Creating Function App {name}")
@@ -746,25 +760,26 @@ def create_function_app(config: Configuration, name: str):
         f"LOG_LEVEL={config.log_level}",
     ]
 
-    # Function-specific settings
-    if "resources" in name:
-        specific_settings = [
-            f"MONITORED_SUBSCRIPTIONS={','.join(config.monitored_subscriptions)}",
-            f"RESOURCE_TAG_FILTERS={config.resource_tag_filters}",
-        ]
-    elif "diagnostic" in name:
-        specific_settings = [
-            f"RESOURCE_GROUP={config.control_plane_rg}",
-        ]
-    elif "scaling" in name:
-        specific_settings = [
-            f"RESOURCE_GROUP={config.control_plane_rg}",
-            f"FORWARDER_IMAGE={IMAGE_REGISTRY_URL}/forwarder:latest",
-            f"CONTROL_PLANE_REGION={config.control_plane_region}",
-            f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
-        ]
-    else:
-        raise RuntimeError(f"Unknown function app task when configuring app settings: {name}")
+    # Task-specific settings
+    match name:
+        case config.resources_task_name:
+            specific_settings = [
+                f"MONITORED_SUBSCRIPTIONS={','.join(config.monitored_subscriptions)}",
+                f"RESOURCE_TAG_FILTERS={config.resource_tag_filters}",
+            ]
+        case config.diagnostic_settings_task_name:
+            specific_settings = [
+                f"RESOURCE_GROUP={config.control_plane_rg}",
+            ]
+        case config.scaling_task_name:
+            specific_settings = [
+                f"RESOURCE_GROUP={config.control_plane_rg}",
+                f"FORWARDER_IMAGE={IMAGE_REGISTRY_URL}/forwarder:latest",
+                f"CONTROL_PLANE_REGION={config.control_plane_region}",
+                f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
+            ]
+        case _:
+            raise FatalError(f"Unknown function app task when configuring app settings: {name}")
 
     all_settings = common_settings + specific_settings
 
@@ -803,22 +818,25 @@ def create_function_apps(config: Configuration):
 # =============================================================================
 
 
-def create_user_assigned_identity(control_plane_rg: str, control_plane_region: str):
-    """Create a user-assigned managed identity if it does not exist"""
-    identity_name = "runInitialDeployIdentity"
-
+def create_initial_deploy_identity(control_plane_rg: str, control_plane_region: str):
+    """Create a managed identity for initial deploy if it does not exist"""
     try:
         log.info("Checking if user-assigned managed identity already exists...")
-        execute(AzCmd("identity", "show").param("--name", identity_name).param("--resource-group", control_plane_rg))
-        log.info(f"User-assigned managed identity '{identity_name}' already exists - reusing existing identity")
+        execute(
+            AzCmd("identity", "show")
+            .param("--name", INITIAL_DEPLOY_IDENTITY_NAME)
+            .param("--resource-group", control_plane_rg)
+        )
+        log.info(
+            f"User-assigned managed identity '{INITIAL_DEPLOY_IDENTITY_NAME}' already exists - reusing existing identity"
+        )
         return
-    except RuntimeError:
+    except ResourceNotFoundError:
         log.info("User-assigned managed identity not found - creating new identity")
-        pass
 
     execute(
         AzCmd("identity", "create")
-        .param("--name", identity_name)
+        .param("--name", INITIAL_DEPLOY_IDENTITY_NAME)
         .param("--resource-group", control_plane_rg)
         .param("--location", control_plane_region)
     )
@@ -840,9 +858,8 @@ def create_containerapp_environment(
         )
         log.info(f"Container App environment '{control_plane_env}' already exists - reusing existing environment")
         return
-    except RuntimeError:
+    except ResourceNotFoundError:
         log.info(f"Container App environment '{control_plane_env}' not found - creating new environment")
-        pass
 
     log.info(f"Creating Container App environment {control_plane_env}")
     execute(
@@ -865,9 +882,8 @@ def create_containerapp_job(config: Configuration):
         )
         log.info(f"Container App job '{config.deployer_job_name}' already exists - reusing existing job")
         return
-    except RuntimeError:
+    except ResourceNotFoundError:
         log.info(f"Container App job '{config.deployer_job_name}' not found - creating new job")
-        pass
 
     log.info(f"Creating Container App job {config.deployer_job_name}")
 
@@ -923,10 +939,11 @@ def create_custom_container_app_start_role(role_name: str, role_scope: str):
         if output.strip():
             log.info(f"Custom role definition '{role_name}' already exists - reusing existing role")
             return
+
+        # `az role definition list` returns empty string if the role definition doesn't exist
         log.info(f"Custom role definition '{role_name}' not found - creating new role")
-    except RuntimeError:
-        log.info(f"Custom role definition '{role_name}' not found - creating new role")
-        pass
+    except Exception as e:
+        raise RuntimeError(f"Failed to check if custom role definition '{role_name}' exists: {e}") from e
 
     log.info(f"Creating custom role definition {role_name}")
 
@@ -942,7 +959,10 @@ def create_custom_container_app_start_role(role_name: str, role_scope: str):
     with open("custom_role.json", "w") as f:
         json.dump(role_definition, f)
 
-    execute(AzCmd("role", "definition create").param("--role-definition", "custom_role.json"))
+    try:
+        execute(AzCmd("role", "definition create").param("--role-definition", "custom_role.json"))
+    except Exception as e:
+        raise RuntimeError(f"Failed to create custom role definition '{role_name}': {e}") from e
 
 
 def assign_custom_role_to_identity(
@@ -955,7 +975,7 @@ def assign_custom_role_to_identity(
     log.info("Assigning custom role to managed identity")
     identity_id = execute(
         AzCmd("identity", "show")
-        .param("--name", "runInitialDeployIdentity")
+        .param("--name", INITIAL_DEPLOY_IDENTITY_NAME)
         .param("--resource-group", control_plane_resource_group)
         .param("--query", "principalId")
         .param("--output", "tsv")
@@ -997,6 +1017,7 @@ def wait_for_role_definition_ready(role_name: str, role_scope: str) -> str:
 
     start_time = time.time()
     max_wait_seconds = 120
+    poll_interval = 5  # seconds
     while time.time() - start_time < max_wait_seconds:
         try:
             role_id = execute(
@@ -1012,25 +1033,18 @@ def wait_for_role_definition_ready(role_name: str, role_scope: str) -> str:
                 log.debug(f"ID: {role_id}")
                 return role_id
 
-        except (RuntimeError, ValueError) as e:
-            log.debug(f"Role definition {role_name} not yet available: {e}")
+        except RuntimeError as e:
+            raise RuntimeError(f"Failure to check if role definition {role_name} is ready: {e}") from e
 
-        # Still creating, wait and check again
-        time.sleep(5)
+        log.info(f"Role definition {role_name} not yet available, will check again in {poll_interval} seconds")
+        time.sleep(poll_interval)
 
     raise RuntimeError(f"Timeout waiting for role definition {role_name} to be ready after {max_wait_seconds} seconds")
 
 
-def deploy_container_job_infra(config: Configuration):
-    """Deploy all container job infrastructure."""
-    log.info("Creating managed identity...")
-    create_user_assigned_identity(config.control_plane_rg, config.control_plane_region)
-
-    log.info("Creating container app environment...")
-    create_containerapp_environment(config.control_plane_env_name, config.control_plane_rg, config.control_plane_region)
-
-    log.info("Creating container app job...")
-    create_containerapp_job(config)
+def deploy_initial_deploy_rbac(config):
+    log.info("Creating identity for initial deployment...")
+    create_initial_deploy_identity(config.control_plane_rg, config.control_plane_region)
 
     log.info("Defining custom ContainerAppStart role...")
     role_scope = config.control_plane_rg_scope
@@ -1045,6 +1059,17 @@ def deploy_container_job_infra(config: Configuration):
         config.control_plane_rg,
         role_scope,
     )
+
+
+def deploy_lfo_deployer(config: Configuration):
+    """Deploy all container job infrastructure."""
+    deploy_initial_deploy_rbac(config)
+
+    log.info("Creating container app environment...")
+    create_containerapp_environment(config.control_plane_env_name, config.control_plane_rg, config.control_plane_region)
+
+    log.info("Creating container app job...")
+    create_containerapp_job(config)
 
     log.info("Container App job + identity setup complete")
 
@@ -1247,8 +1272,8 @@ def deploy_control_plane(config: Configuration):
     log.info("Creating Function Apps...")
     create_function_apps(config)
 
-    log.info("Deploying Container App infrastructure...")
-    deploy_container_job_infra(config)
+    log.info("Deploying Container App infrastructure for deployer job...")
+    deploy_lfo_deployer(config)
 
     log.info("Control plane infrastructure deployment completed")
 
