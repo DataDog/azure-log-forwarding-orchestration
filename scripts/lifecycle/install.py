@@ -41,6 +41,7 @@ import argparse
 import json
 import shlex
 import subprocess
+import tempfile
 import time
 import uuid
 from dataclasses import dataclass
@@ -759,50 +760,54 @@ def create_function_app(config: Configuration, name: str):
             .flag("--assign-identity")
         )
 
-    common_settings = [
-        f"AzureWebJobsStorage={config.get_control_plane_cache_conn_string()}",
-        "FUNCTIONS_EXTENSION_VERSION=~4",
-        "FUNCTIONS_WORKER_RUNTIME=python",
-        f"WEBSITE_CONTENTAZUREFILECONNECTIONSTRING={config.get_control_plane_cache_conn_string()}",
-        f"WEBSITE_CONTENTSHARE={name}",
-        "AzureWebJobsFeatureFlags=EnableWorkerIndexing",
-        f"DD_API_KEY={config.datadog_api_key}",
-        f"DD_SITE={config.datadog_site}",
-        f"DD_TELEMETRY={'true' if config.datadog_telemetry else 'false'}",
-        f"CONTROL_PLANE_ID={config.control_plane_id}",
-        f"LOG_LEVEL={config.log_level}",
-    ]
+    common_settings = {
+        "AzureWebJobsStorage": config.get_control_plane_cache_conn_string(),
+        "FUNCTIONS_EXTENSION_VERSION": "~4",
+        "FUNCTIONS_WORKER_RUNTIME": "python",
+        "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING": config.get_control_plane_cache_conn_string(),
+        "WEBSITE_CONTENTSHARE": name,
+        "AzureWebJobsFeatureFlags": "EnableWorkerIndexing",
+        "DD_API_KEY": config.datadog_api_key,
+        "DD_SITE": config.datadog_site,
+        "DD_TELEMETRY": "true" if config.datadog_telemetry else "false",
+        "CONTROL_PLANE_ID": config.control_plane_id,
+        "LOG_LEVEL": config.log_level,
+    }
 
     # Task-specific settings
     match name:
         case config.resources_task_name:
-            specific_settings = [
-                f"MONITORED_SUBSCRIPTIONS={','.join(config.monitored_subscriptions)}",
-                f"RESOURCE_TAG_FILTERS={config.resource_tag_filters}",
-            ]
+            specific_settings = {
+                "MONITORED_SUBSCRIPTIONS": ",".join(config.monitored_subscriptions),
+                "RESOURCE_TAG_FILTERS": config.resource_tag_filters,
+            }
         case config.diagnostic_settings_task_name:
-            specific_settings = [
-                f"RESOURCE_GROUP={config.control_plane_rg}",
-            ]
+            specific_settings = {
+                "RESOURCE_GROUP": config.control_plane_rg,
+            }
         case config.scaling_task_name:
-            specific_settings = [
-                f"RESOURCE_GROUP={config.control_plane_rg}",
-                f"FORWARDER_IMAGE={IMAGE_REGISTRY_URL}/forwarder:latest",
-                f"CONTROL_PLANE_REGION={config.control_plane_region}",
-                f"PII_SCRUBBER_RULES={config.pii_scrubber_rules}",
-            ]
+            specific_settings = {
+                "RESOURCE_GROUP": config.control_plane_rg,
+                "FORWARDER_IMAGE": f"{IMAGE_REGISTRY_URL}/forwarder:latest",
+                "CONTROL_PLANE_REGION": config.control_plane_region,
+                "PII_SCRUBBER_RULES": config.pii_scrubber_rules,
+            }
         case _:
             raise FatalError(f"Unknown function app task when configuring app settings: {name}")
 
-    all_settings = common_settings + specific_settings
+    all_settings = {**common_settings, **specific_settings}
 
-    log.debug(f"Configuring app settings for Function App {name}")
-    execute(
-        AzCmd("functionapp", "config appsettings set")
-        .param("--name", name)
-        .param("--resource-group", config.control_plane_rg)
-        .param_list("--settings", all_settings)
-    )
+    with tempfile.NamedTemporaryFile("w+", delete=False, suffix=".json") as tmpfile:
+        json.dump(all_settings, tmpfile)
+        tmpfile.flush()
+
+        log.debug(f"Configuring app settings for Function App {name}")
+        execute(
+            AzCmd("functionapp", "config appsettings set")
+            .param("--name", name)
+            .param("--resource-group", config.control_plane_rg)
+            .param("--settings", f"@{tmpfile.name}")
+        )
 
     log.debug(f"Configuring Linux runtime for Function App {name}")
     execute(
