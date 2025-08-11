@@ -64,19 +64,32 @@ INITIAL_DEPLOY_IDENTITY_NAME = "runInitialDeployIdentity"
 # =============================================================================
 # ERRORS
 # =============================================================================
+# Errors that prevent script from completing successfully
 class FatalError(Exception):
     """An error that prevents the installation from completing successfully."""
 
     pass
 
 
-class RefreshTokenError(Exception):
+class TimeoutError(FatalError):
+    """An error that indicates a timeout occurred when waiting for a resource to be ready."""
+
+    pass
+
+
+class ExistenceCheckError(FatalError):
+    """An error that occurs when checking if a resource exists."""
+
+    pass
+
+
+class RefreshTokenError(FatalError):
     """An error that indicates our auth token has expired."""
 
     pass
 
 
-# User actionable errors
+# Errors users can resolve through manual action
 class UserActionRequiredError(Exception):
     """An error that requires user action to resolve."""
 
@@ -115,13 +128,13 @@ class DatadogAccessValidationError(UserActionRequiredError):
 
 # Expected Errors
 class RateLimitExceededError(Exception):
-    """An error that indicates we have exceeded the rate limit for the Azure API."""
+    """An error that indicates we have exceeded the rate limit for the Azure API. Script will retry until MAX_RETRIES are reached."""
 
     pass
 
 
 class ResourceNotFoundError(Exception):
-    """An error that indicates a resource was not found."""
+    """An error that indicates a resource was not found. This gets thrown during some resource existence checks."""
 
     pass
 
@@ -363,7 +376,7 @@ def try_regex_access_error(stderr: str):
         client = client_match.group(1)
         action = action_match.group(1)
         scope = scope_match.group(1)
-        raise AccessError(RuntimeError(f"Insufficient permissions for {client} to perform {action} on {scope}"))
+        raise AccessError(f"Insufficient permissions for {client} to perform {action} on {scope}")
 
 
 def execute(az_cmd: AzCmd) -> str:
@@ -538,7 +551,7 @@ def validate_resource_names(
         else:
             log.debug(f"Resource group name available: {control_plane_rg}")
     except Exception as e:
-        raise RuntimeError(f"Cannot check resource group availability: {e}") from e
+        raise ExistenceCheckError(f"Cannot check resource group availability: {e}") from e
 
     # Check storage account name availability
     try:
@@ -548,7 +561,7 @@ def validate_resource_names(
             log.info(f"Storage account name '{control_plane_cache_storage_name}' exists - will use existing")
         log.debug(f"Storage account name available: {control_plane_cache_storage_name}")
     except json.JSONDecodeError as e:
-        raise RuntimeError("Failed to parse storage account name availability check") from e
+        raise ExistenceCheckError("Failed to parse storage account name availability check") from e
 
 
 def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
@@ -691,7 +704,7 @@ def create_app_service_plan(app_service_plan: str, control_plane_rg: str, contro
     except ResourceNotFoundError:
         log.info(f"App Service Plan '{app_service_plan}' not found - creating new plan")
     except Exception as e:
-        raise RuntimeError(f"Failed to check if App Service Plan '{app_service_plan}' exists: {e}") from e
+        raise ExistenceCheckError(f"Failed to check if App Service Plan '{app_service_plan}' exists: {e}") from e
 
     log.info(f"Creating App Service Plan {app_service_plan}")
 
@@ -730,7 +743,7 @@ def create_function_app(config: Configuration, name: str):
         log.info(f"Function App '{name}' not found - creating new function app")
         function_app_exists = False
     except Exception as e:
-        raise RuntimeError(f"Failed to check if Function App '{name}' exists: {e}") from e
+        raise ExistenceCheckError(f"Failed to check if Function App '{name}' exists: {e}") from e
 
     if not function_app_exists:
         log.info(f"Creating Function App {name}")
@@ -943,7 +956,7 @@ def create_custom_container_app_start_role(role_name: str, role_scope: str):
         # `az role definition list` returns empty string if the role definition doesn't exist
         log.info(f"Custom role definition '{role_name}' not found - creating new role")
     except Exception as e:
-        raise RuntimeError(f"Failed to check if custom role definition '{role_name}' exists: {e}") from e
+        raise ExistenceCheckError(f"Failed to check if custom role definition '{role_name}' exists: {e}") from e
 
     log.info(f"Creating custom role definition {role_name}")
 
@@ -1034,12 +1047,12 @@ def wait_for_role_definition_ready(role_name: str, role_scope: str) -> str:
                 return role_id
 
         except RuntimeError as e:
-            raise RuntimeError(f"Failure to check if role definition {role_name} is ready: {e}") from e
+            raise ExistenceCheckError(f"Failure to check if role definition {role_name} is ready: {e}") from e
 
         log.info(f"Role definition {role_name} not yet available, will check again in {poll_interval} seconds")
         time.sleep(poll_interval)
 
-    raise RuntimeError(f"Timeout waiting for role definition {role_name} to be ready after {max_wait_seconds} seconds")
+    raise TimeoutError(f"Timeout waiting for role definition {role_name} to be ready after {max_wait_seconds} seconds")
 
 
 def deploy_initial_deploy_rbac(config):
@@ -1244,7 +1257,7 @@ def wait_for_storage_account_ready(storage_account_name: str, control_plane_rg: 
         # Still provisioning, wait and check again
         time.sleep(5)
 
-    raise RuntimeError(
+    raise TimeoutError(
         f"Timeout waiting for storage account {storage_account_name} to be ready after {max_wait_seconds} seconds"
     )
 
@@ -1295,7 +1308,6 @@ def run_initial_deploy(deployer_job_name: str, control_plane_rg: str, control_pl
             .param("--subscription", control_plane_sub_id)
             .flag("--no-wait")
         )
-
         log.info(f"Successfully started deployer job: {deployer_job_name}")
     except Exception as e:
         log.error(f"Failed to start deployer container app job: {e}")
@@ -1366,7 +1378,7 @@ def main():
 
     except Exception as e:
         log.error(f"Failed with error: {e}")
-        log.error("Check the Azure CLI output above for more details")
+        log.error("Check the Azure CLI output for more details")
         raise
 
 
