@@ -54,8 +54,11 @@ var (
 	//go:embed fixtures/function_app_logs_with_usa_short_timestamp.json
 	usaShortTimestampLogData []byte
 
-	//go:embed fixtures/networksecuritygroupflowevent_logs.json
+	//go:embed fixtures/flowevent/networksecuritygroupflowevent_logs.json
 	networkSecurityGroupFlowEventLogData []byte
+
+	//go:embed fixtures/flowevent/vnetflowevent_logs.json
+	vnetFlowLogData []byte
 
 	//go:embed fixtures/workflowruntime_logs.json
 	workflowRuntimeLogData []byte
@@ -159,32 +162,63 @@ func TestParseLogs(t *testing.T) {
 		assert.Equal(t, 7, got)
 		assert.Equal(t, len(workflowRuntimeLogData), *totalBytes)
 	})
+}
 
-	t.Run("can parse vnet flow logs", func(t *testing.T) {
-		t.Parallel()
-		// GIVEN
-		reader := bytes.NewReader(networkSecurityGroupFlowEventLogData)
-		closer := io.NopCloser(reader)
+func TestParseVnetFlowLogs(t *testing.T) {
+	t.Parallel()
 
-		var got int
+	tests := map[string]struct {
+		categoryName     string
+		containerName    string
+		resourceId       string
+		logData          []byte
+		expectedLogCount int
+	}{
+		"can parse vnet security group event logs": {
+			categoryName:     "NetworkSecurityGroupFlowEvent",
+			containerName:    logs.NetworkSecurityGroupFlowEventContainer,
+			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/CRONK-VM-2_GROUP/PROVIDERS/MICROSOFT.NETWORK/NETWORKSECURITYGROUPS/CRONK-VM-2-NSG",
+			logData:          networkSecurityGroupFlowEventLogData,
+			expectedLogCount: 2,
+		},
+		"can parse vnet flow event logs": {
+			categoryName:     "FlowLogFlowEvent",
+			containerName:    logs.VnetFlowEventContainer,
+			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG",
+			logData:          vnetFlowLogData,
+			expectedLogCount: 6,
+		},
+	}
 
-		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, "insights-logs-networksecuritygroupflowevent"), MockScrubber(t, networkSecurityGroupFlowEventLogData))
-		for parsedLog := range parsedLogsIter {
-			require.NoError(t, parsedLog.Err)
-			currLog := parsedLog.ParsedLog
-			require.Equal(t, "NetworkSecurityGroupFlowEvent", currLog.Category)
-			require.NotEqual(t, resourceId, currLog.ResourceId) // resource id is overridden in the log
-			require.False(t, currLog.Time.IsZero())
-			got += 1
-		}
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 
-		// THEN
-		// vnet flow logs have multiple logs per line
-		assert.Equal(t, 2, got)
-		assert.Equal(t, len(networkSecurityGroupFlowEventLogData), *totalBytes)
+			// GIVEN
+			reader := bytes.NewReader(testData.logData)
+			closer := io.NopCloser(reader)
 
-	})
+			var numLogsParsed int
+
+			// WHEN
+			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(testData.resourceId, testData.containerName), MockScrubber(t, testData.logData))
+			require.NoError(t, err)
+
+			for parsedLog := range parsedLogsIter {
+				require.NoError(t, parsedLog.Err)
+				currLog := parsedLog.ParsedLog
+				require.Equal(t, testData.categoryName, currLog.Category)
+				require.Equal(t, testData.containerName, currLog.Container)
+				require.True(t, strings.EqualFold(testData.resourceId, currLog.ResourceId))
+				require.False(t, currLog.Time.IsZero())
+				numLogsParsed += 1
+			}
+
+			// THEN
+			assert.Equal(t, len(testData.logData), *totalBytes)
+			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
+		})
+	}
 }
 
 func TestParseActiveDirectoryLogs(t *testing.T) {

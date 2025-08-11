@@ -35,51 +35,79 @@ type Parser interface {
 	Valid(blob storage.Blob) bool
 }
 
-// FlowEventParser is a parser for flow events.
+// FlowEventParser is a parser for flow events - vnet flow events and network security group flow events.
 type FlowEventParser struct{}
+
+func unmarshalFlowEventRecords[T any](bytes []byte) (*flowEventRecords[T], error) {
+	var flowEventRecords flowEventRecords[T]
+	err := json.Unmarshal(bytes, &flowEventRecords)
+	return &flowEventRecords, err
+}
+
+func processFlowEventRecords[T flowEventRecord](flowEventRecords *flowEventRecords[T], blob storage.Blob, originalSize int, scrubbedSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) bool {
+	response := ParsedLogResponse{}
+	for idx, flowEventLog := range flowEventRecords.Records {
+		currLog, err := flowEventLog.ToLog(blob)
+		response.ParsedLog = currLog
+		if err != nil {
+			response.Err = err
+			yield(response)
+			return false
+		}
+		if idx == len(flowEventRecords.Records)-1 {
+			response.ParsedLog.RawByteSize = int64(originalSize)
+			response.ParsedLog.ScrubbedByteSize = int64(scrubbedSize)
+		}
+
+		if !yield(response) {
+			return false
+		}
+	}
+	return true
+}
 
 // Parse reads logs from a reader and parses them into Log objects.
 func (f FlowEventParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
 	return func(yield func(ParsedLogResponse) bool) {
 		for scanner.Scan() {
 			currBytes := scanner.Bytes()
-			var flowLogs vnetFlowLogs
 			originalSize := len(currBytes)
 			scrubbedBytes := piiScrubber.Scrub(currBytes)
-
+			scrubbedSize := len(scrubbedBytes)
 			response := ParsedLogResponse{}
 
-			err := json.Unmarshal(scrubbedBytes, &flowLogs)
-			if err != nil {
-				response.Err = err
-				yield(response)
-				return
-			}
-			for idx, flowLog := range flowLogs.Records {
-				currLog, err := flowLog.ToLog(blob)
+			switch blob.Container.Name {
+			case NetworkSecurityGroupFlowEventContainer:
+				networkSecGroupRecords, err := unmarshalFlowEventRecords[*networkSecurityGroupFlowLog](scrubbedBytes)
 				if err != nil {
 					response.Err = err
 					yield(response)
 					return
 				}
-				if idx == len(flowLogs.Records)-1 {
-					currLog.RawByteSize = int64(originalSize)
-				}
-				response.ParsedLog = currLog
-				if !yield(response) {
+				processFlowEventRecords[*networkSecurityGroupFlowLog](networkSecGroupRecords, blob, originalSize, scrubbedSize, piiScrubber, yield)
+			case VnetFlowEventContainer:
+				vnetFlowRecords, err := unmarshalFlowEventRecords[*vnetFlowEventLog](scrubbedBytes)
+				if err != nil {
+					response.Err = err
+					yield(response)
 					return
 				}
+				processFlowEventRecords[*vnetFlowEventLog](vnetFlowRecords, blob, originalSize, scrubbedSize, piiScrubber, yield)
+			default:
+				response.Err = errors.New("no parser found for log type" + blob.Container.Name)
+				yield(response)
+				return
 			}
-			continue
-
 		}
 	}
 }
 
-var flowEventContainers = []string{
-	"insights-logs-flowlogflowevent",
-	"insights-logs-networksecuritygroupflowevent",
-}
+const (
+	NetworkSecurityGroupFlowEventContainer = "insights-logs-networksecuritygroupflowevent"
+	VnetFlowEventContainer                 = "insights-logs-flowlogflowevent"
+)
+
+var flowEventContainers = []string{VnetFlowEventContainer, NetworkSecurityGroupFlowEventContainer}
 
 // Valid checks if the blob is in a flow event container.
 func (f FlowEventParser) Valid(blob storage.Blob) bool {
@@ -130,27 +158,16 @@ func (f FunctionAppParser) Valid(blob storage.Blob) bool {
 
 type ActiveDirectoryParser struct{}
 
-// TODO Commented containers need additional testing: https://datadoghq.atlassian.net/browse/AZINTS-3430
+// TODO Support all AD log containers: https://datadoghq.atlassian.net/browse/AZINTS-3430
 var activeDirectoryContainers = []string{
 	"insights-logs-auditlogs",
 	"insights-logs-signinlogs",
 	"insights-logs-noninteractiveusersigninlogs",
 	"insights-logs-serviceprincipalsigninlogs",
 	"insights-logs-managedidentitysigninlogs",
-	// "insights-logs-provisioninglogs",
-	// "insights-logs-adfssigninlogs",
 	"insights-logs-riskyusers",
 	"insights-logs-userriskevents",
-	// "insights-logs-networkaccesstrafficlogs",
-	// "insights-logs-riskyserviceprincipals",
-	// "insights-logs-serviceprincipalriskevents",
-	// "insights-logs-enrichedoffice365auditlogs",
 	"insights-logs-microsoftgraphactivitylogs",
-	// "insights-logs-remotenetworkhealthlogs",
-	// "insights-logs-networkaccessalerts",
-	// "insights-logs-networkaccessconnectionevents",
-	// "insights-logs-microsoftserviceprincipalsigninlogs",
-	// "insights-logs-azureadgraphactivitylogs",
 }
 
 func (a ActiveDirectoryParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiScrubber Scrubber) iter.Seq[ParsedLogResponse] {
