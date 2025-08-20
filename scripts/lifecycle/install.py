@@ -43,6 +43,8 @@ import shlex
 import subprocess
 import tempfile
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass
 from logging import WARNING, basicConfig, getLogger
@@ -56,10 +58,22 @@ log = getLogger("installer")
 # CONSTANTS
 # =============================================================================
 
-CONTROL_PLANE_CACHE = "control-plane-cache"
 IMAGE_REGISTRY_URL = "datadoghq.azurecr.io"
 LFO_PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
+CONTROL_PLANE_CACHE = "control-plane-cache"
 INITIAL_DEPLOY_IDENTITY_NAME = "runInitialDeployIdentity"
+STORAGE_ACCOUNT_KEY_FULL_PERMISSIONS = "FULL"
+REQUIRED_RESOURCE_PROVIDERS = [
+    "Microsoft.Web",  # Function Apps
+    "Microsoft.App",  # Container Apps
+    "Microsoft.Storage",  # Storage Accounts
+    "Microsoft.Authorization",  # Role Assignments
+]
+MONITORING_READER_ID = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
+MONITORING_CONTRIBUTOR_ID = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
+STORAGE_READER_AND_DATA_ACCESS_ID = "c12c1c16-33a1-487b-954d-41c89c60f349"
+SCALING_CONTRIBUTOR_ID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+WEBSITE_CONTRIBUTOR_ID = "de139f84-1756-47ae-9be6-808fbbe84772"
 
 
 # =============================================================================
@@ -185,13 +199,34 @@ class Configuration:
             return self.control_plane_cache_storage_key
 
         log.debug(f"Retrieving storage account key for {self.control_plane_cache_storage_name}")
-        output = execute(
-            AzCmd("storage", "account keys list")
-            .param("--account-name", self.control_plane_cache_storage_name)
-            .param("--resource-group", self.control_plane_rg)
-        )
-        keys = json.loads(output)
-        self.control_plane_cache_storage_key = keys[0]["value"]
+
+        try:
+            output = execute(
+                AzCmd("storage", "account keys list")
+                .param("--account-name", self.control_plane_cache_storage_name)
+                .param("--resource-group", self.control_plane_rg)
+            )
+            keys_json = json.loads(output)
+
+            if not isinstance(keys_json, list) or len(keys_json) == 0:
+                raise FatalError(f"Failed to retrieve storage account keys for {self.control_plane_cache_storage_name}")
+
+            for key_entry in keys_json:
+                if key_entry.get("permissions") == STORAGE_ACCOUNT_KEY_FULL_PERMISSIONS and key_entry.get("value"):
+                    self.control_plane_cache_storage_key = key_entry["value"]
+                    break
+            else:
+                raise FatalError(
+                    f"No storage account keys with full read/write permissions found for {self.control_plane_cache_storage_name}"
+                )
+        except json.JSONDecodeError as e:
+            raise FatalError(
+                f"Failed to parse storage account keys for {self.control_plane_cache_storage_name}: {e}"
+            ) from e
+        except KeyError as e:
+            raise FatalError(
+                f"Failed to retrieve storage account keys for {self.control_plane_cache_storage_name}: {e}"
+            ) from e
 
         return self.control_plane_cache_storage_key
 
@@ -362,7 +397,7 @@ class AzCmd:
         return "az " + " ".join(self.cmd)
 
 
-def try_regex_access_error(stderr: str):
+def check_access_error(stderr: str) -> str | None:
     # Sample:
     # (AuthorizationFailed) The client 'user@example.com' with object id '00000000-0000-0000-0000-000000000000'
     # does not have authorization to perform action 'Microsoft.Storage/storageAccounts/read'
@@ -373,11 +408,13 @@ def try_regex_access_error(stderr: str):
     action_match = search(r"action '([^']*)'", stderr)
     scope_match = search(r"scope '([^']*)'", stderr)
 
-    if action_match and scope_match and client_match:
-        client = client_match.group(1)
-        action = action_match.group(1)
-        scope = scope_match.group(1)
-        raise AccessError(f"Insufficient permissions for {client} to perform {action} on {scope}")
+    if not (action_match and scope_match and client_match):
+        return
+
+    client = client_match.group(1)
+    action = action_match.group(1)
+    scope = scope_match.group(1)
+    return f"Insufficient permissions for {client} to perform {action} on {scope}"
 
 
 def execute(az_cmd: AzCmd) -> str:
@@ -409,8 +446,11 @@ def execute(az_cmd: AzCmd) -> str:
             if REFRESH_TOKEN_EXPIRED_ERROR in stderr:
                 raise RefreshTokenError(f"Auth token is expired. Refresh token before running '{az_cmd}'") from e
             if AUTHORIZATION_ERROR in stderr:
-                try_regex_access_error(stderr)
-                raise AccessError(f"Insufficient permissions to access resource when executing '{az_cmd}'") from e
+                error_message = f"Insufficient permissions to access resource when executing '{az_cmd}'"
+                error_details = check_access_error(stderr)
+                if error_details:
+                    raise AccessError(f"{error_message}: {error_details}") from e
+                raise AccessError(error_message) from e
             log.error(f"Command failed: {full_command}")
             log.error(e.stderr)
             raise RuntimeError(f"Command failed: {full_command}") from e
@@ -452,16 +492,8 @@ def validate_az_cli():
         raise AccessError("Azure CLI not authenticated. Run 'az login' first.") from e
 
 
-def validate_resource_provider_registrations(sub_ids: set[str]):
-    """Ensure the required Azure resource providers are registered across all subscriptions."""
-    required_providers = [
-        "Microsoft.Web",  # Function Apps
-        "Microsoft.App",  # Container Apps
-        "Microsoft.Storage",  # Storage Accounts
-        "Microsoft.Authorization",  # Role Assignments
-    ]
-
-    log.info(f"Checking required resource providers across {len(sub_ids)} subscription(s)...")
+def check_providers_per_subscription(sub_ids: set[str]) -> dict[str, list[str]]:
+    """Check resource providers per subscription and return a dict of subscription IDs to unregistered providers."""
 
     sub_to_unregistered_provider_list = {}
 
@@ -485,25 +517,27 @@ def validate_resource_provider_registrations(sub_ids: set[str]):
             provider_states = {p["namespace"]: p["registrationState"] for p in providers_status}
 
             unregistered_providers = []
-            for provider in required_providers:
+            for provider in REQUIRED_RESOURCE_PROVIDERS:
                 state = provider_states.get(provider, "NotFound")
                 if state != "Registered":
                     unregistered_providers.append(provider)
                     log.debug(f"Subscription {sub_id}: Resource provider {provider} is {state}")
 
             sub_to_unregistered_provider_list[sub_id] = unregistered_providers
-
-            if unregistered_providers:
-                log.info(
-                    f"Subscription {sub_id}: Detected unregistered resource providers: {', '.join(unregistered_providers)}"
-                )
-            else:
-                log.debug(f"Subscription {sub_id}: All required resource providers are registered")
         except Exception as e:
             log.error(f"Failed to validate resource providers in subscription {sub_id}: {e}")
             raise ResourceProviderRegistrationValidationError(
                 f"Resource provider validation failed for subscription {sub_id}: {e}"
             ) from e
+
+    return sub_to_unregistered_provider_list
+
+
+def validate_resource_provider_registrations(sub_ids: set[str]):
+    """Ensure the required Azure resource providers are registered across all subscriptions."""
+
+    log.info(f"Checking required resource providers across {len(sub_ids)} subscription(s)...")
+    sub_to_unregistered_provider_list = check_providers_per_subscription(sub_ids)
 
     success = True
     for sub_id, unregistered_providers in sub_to_unregistered_provider_list.items():
@@ -520,7 +554,9 @@ def validate_resource_provider_registrations(sub_ids: set[str]):
             log.debug(f"Subscription {sub_id}: All required resource providers are registered")
 
     if not success:
-        raise ResourceProviderRegistrationValidationError("Resource provider validation failed")
+        raise ResourceProviderRegistrationValidationError(
+            "Resource provider validation failed. Check logs for more details."
+        )
 
     log.info("Resource provider validation successful across all subscriptions")
 
@@ -573,25 +609,19 @@ def validate_datadog_credentials(datadog_api_key: str, datadog_site: str):
         raise InputParamValidationError("Datadog API key not configured")
 
     try:
-        curl_command = [
-            "curl",
-            "-s",
-            "-X",
-            "GET",
-            f"https://api.{datadog_site}/api/v1/validate",
-            "-H",
-            "Accept: application/json",
-            "-H",
-            f"DD-API-KEY:{datadog_api_key}",
-        ]
-        response = subprocess.check_output(curl_command, text=True)
-        response_json = json.loads(response)
-        if not response_json.get("valid", False):
-            raise DatadogAccessValidationError(f"Datadog API Key validation failed against {datadog_site}")
+        url = f"https://api.{datadog_site}/api/v1/validate"
+        headers = {"Accept": "application/json", "DD-API-KEY": datadog_api_key}
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req) as response:
+            response_json = json.loads(response.read())
+            if not response_json.get("valid", False):
+                raise DatadogAccessValidationError(f"Datadog API Key validation with {datadog_site} failed")
 
         log.debug("Datadog API credentials validated")
-    except subprocess.CalledProcessError as e:
-        raise DatadogAccessValidationError(f"Failed to validate Datadog credentials: {e}") from e
+    except urllib.error.HTTPError as e:
+        raise DatadogAccessValidationError(f"Failed to validate Datadog credentials: HTTP {e.code} {e.reason}") from e
+    except urllib.error.URLError as e:
+        raise DatadogAccessValidationError(f"Failed to validate Datadog credentials: {e.reason}") from e
     except json.JSONDecodeError as e:
         raise DatadogAccessValidationError(f"Failed to parse Datadog validation response: {e}") from e
 
@@ -612,7 +642,7 @@ def validate_user_config(config: Configuration):
     if not config.monitored_subscriptions:
         raise InputParamValidationError("Monitored subscriptions not properly configured.")
 
-    if config.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR"]:
+    if config.log_level not in {"DEBUG", "INFO", "WARNING", "ERROR"}:
         raise InputParamValidationError(
             f"Invalid log level: {config.log_level}. Must be one of: DEBUG, INFO, WARNING, ERROR"
         )
@@ -860,7 +890,7 @@ def create_initial_deploy_identity(control_plane_rg: str, control_plane_region: 
     )
 
 
-def create_containerapp_environment(
+def create_container_app_environment(
     control_plane_env: str,
     control_plane_resource_group: str,
     control_plane_location: str,
@@ -888,7 +918,7 @@ def create_containerapp_environment(
     )
 
 
-def create_containerapp_job(config: Configuration):
+def create_container_app_job(config: Configuration):
     """Create the Container App job for the deployer if it does not exist"""
 
     try:
@@ -983,6 +1013,25 @@ def create_custom_container_app_start_role(role_name: str, role_scope: str):
         raise RuntimeError(f"Failed to create custom role definition '{role_name}': {e}") from e
 
 
+def role_exists(role_id: str, scope: str, principal_id: str) -> bool:
+    """Check if a role assignment exists for a given role, scope, and principal"""
+
+    try:
+        output = execute(
+            AzCmd("role", "assignment list")
+            .param("--assignee", principal_id)
+            .param("--role", role_id)
+            .param("--scope", scope)
+            .param("--query", '"length([])"')
+            .param("--output", "tsv")
+        )
+
+        return int(output.strip()) > 0
+    except (RuntimeError, ValueError) as e:
+        log.error(f"Failed to check if role assignment exists: {e}")
+        return False
+
+
 def assign_custom_role_to_identity(
     role_name: str,
     role_id: str,
@@ -999,23 +1048,11 @@ def assign_custom_role_to_identity(
         .param("--output", "tsv")
     ).strip()
 
-    try:
-        log.debug(f"Checking if custom role assignment already exists for role {role_name} to identity {identity_id}")
-        output = execute(
-            AzCmd("role", "assignment list")
-            .param("--assignee", identity_id)
-            .param("--role", role_id)
-            .param("--scope", control_plane_rg_scope)
-            .param("--query", '"length([])"')
-            .param("--output", "tsv")
-        )
-        if int(output.strip()) > 0:
-            log.info(f"Custom role assignment already exists for role {role_name} to managed identity - skipping")
-            return
-        log.debug("Custom role assignment not found - creating new assignment")
-    except (RuntimeError, ValueError):
-        log.debug("Custom role assignment not found - creating new assignment")
-        pass
+    log.debug(f"Checking if custom role assignment already exists for role {role_name} to identity {identity_id}")
+    if role_exists(role_id, control_plane_rg_scope, identity_id):
+        log.info(f"Custom role assignment already exists for role {role_name} to managed identity - skipping")
+        return
+    log.debug("Custom role assignment not found - creating new assignment")
 
     execute(
         AzCmd("role", "assignment create")
@@ -1060,7 +1097,7 @@ def wait_for_role_definition_ready(role_name: str, role_scope: str) -> str:
     raise TimeoutError(f"Timeout waiting for role definition {role_name} to be ready after {max_wait_seconds} seconds")
 
 
-def deploy_initial_deploy_rbac(config):
+def deploy_initial_deploy_role(config: Configuration):
     log.info("Creating identity for initial deployment...")
     create_initial_deploy_identity(config.control_plane_rg, config.control_plane_region)
 
@@ -1081,13 +1118,15 @@ def deploy_initial_deploy_rbac(config):
 
 def deploy_lfo_deployer(config: Configuration):
     """Deploy all container job infrastructure."""
-    deploy_initial_deploy_rbac(config)
+    deploy_initial_deploy_role(config)
 
     log.info("Creating container app environment...")
-    create_containerapp_environment(config.control_plane_env_name, config.control_plane_rg, config.control_plane_region)
+    create_container_app_environment(
+        config.control_plane_env_name, config.control_plane_rg, config.control_plane_region
+    )
 
     log.info("Creating container app job...")
-    create_containerapp_job(config)
+    create_container_app_job(config)
 
     log.info("Container App job + identity setup complete")
 
@@ -1110,7 +1149,7 @@ def get_function_app_principal_id(control_plane_resource_group: str, function_ap
     return output.strip()
 
 
-def get_containerapp_job_principal_id(control_plane_resource_group: str, job_name: str) -> str:
+def get_container_app_job_principal_id(control_plane_resource_group: str, job_name: str) -> str:
     """Get the principal ID of a Container App Job's managed identity."""
     log.debug(f"Getting principal ID for Container App Job {job_name}")
     output = execute(
@@ -1126,29 +1165,16 @@ def get_containerapp_job_principal_id(control_plane_resource_group: str, job_nam
 def assign_role(scope: str, principal_id: str, role_id: str, control_plane_id: str):
     """Assign a role to a principal at a given scope."""
 
-    # Check if the role assignment already exists
-    try:
+    log.debug(
+        f"Checking if role assignment already exists for role {role_id} to principal {principal_id} at scope {scope}"
+    )
+
+    if role_exists(role_id, scope, principal_id):
         log.debug(
-            f"Checking if role assignment already exists for role {role_id} to principal {principal_id} at scope {scope}"
+            f"Role assignment already exists for role {role_id} to principal {principal_id} at scope {scope} - skipping"
         )
-        output = execute(
-            AzCmd("role", "assignment list")
-            .param("--assignee", principal_id)
-            .param("--role", role_id)
-            .param("--scope", scope)
-            .param("--query", '"length([])"')
-            .param("--output", "tsv")
-        )
-        if int(output.strip()) > 0:
-            log.debug(
-                f"Role assignment already exists for role {role_id} to principal {principal_id} at scope {scope} - skipping"
-            )
-            return
-        log.debug("Role assignment not found - creating new assignment")
-    except (RuntimeError, ValueError):
-        # Role assignment doesn't exist or error occurred, proceed with creation
-        log.debug("Role assignment not found - creating new assignment")
-        pass
+        return
+    log.debug("Role assignment not found - creating new assignment")
 
     log.debug(f"Assigning role {role_id} to principal {principal_id} at scope {scope}")
     execute(
@@ -1165,14 +1191,8 @@ def grant_permissions(config: Configuration):
     """Grant permissions across all monitored subscriptions."""
     log.info("Setting up permissions across monitored subscriptions...")
 
-    MONITORING_READER_ID = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
-    MONITORING_CONTRIBUTOR_ID = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
-    STORAGE_READER_AND_DATA_ACCESS_ID = "c12c1c16-33a1-487b-954d-41c89c60f349"
-    SCALING_CONTRIBUTOR_ID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
-    WEBSITE_CONTRIBUTOR_ID = "de139f84-1756-47ae-9be6-808fbbe84772"
-
     log.info("Assigning Website Contributor role to deployer container app job...")
-    deployer_principal_id = get_containerapp_job_principal_id(config.control_plane_rg, config.deployer_job_name)
+    deployer_principal_id = get_container_app_job_principal_id(config.control_plane_rg, config.deployer_job_name)
     assign_role(
         config.control_plane_rg_scope,
         deployer_principal_id,
