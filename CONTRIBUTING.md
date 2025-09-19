@@ -13,6 +13,14 @@ submitted](#pull-request-guidelines) for review. We do not accept issues on this
 
 We have automatic code formatting enabled using [pre-commit](https://pre-commit.com/#install) for the python, go and yaml in this repository. Make sure to install it and run `pre-commit install` before committing changes.
 
+### Testing
+
+```bash
+cd $HOME/dd/azure-log-forwarding-orchestration/forwarder
+go mod tidy
+go test ./internal/logs/...
+```
+
 ## Pull request guidelines
 
 ### Draft first
@@ -24,15 +32,16 @@ When opening a pull request, please open it as a [draft](https://github.blog/201
 Pull request titles should briefly describe the proposed changes in a way that makes sense for the users.
 They should be a sentence starting with an infinitive verb and avoid using prefixes like `[PROD]` or `PROD - ` in favor of [labels](#labels).
 
->[!CAUTION]
+> [!CAUTION]
 > Don't title:
-> * _Another bug fix_: it doesn't describe the change
-> * _Span sampling bug fix_: it doesn't start with an infinite verb
-> * _Fix off-by-one error from rule parsing_: it doesn't make sense for the user
-> * _[CORE] Fix span sampling rule parsing_: it doesn't use label for component tagging
-> * _Fix span sampling rule parsing when using both remote config and property config_: it doesn't fit and will be cut during changelog generation
+>
+> - _Another bug fix_: it doesn't describe the change
+> - _Span sampling bug fix_: it doesn't start with an infinite verb
+> - _Fix off-by-one error from rule parsing_: it doesn't make sense for the user
+> - _[CORE] Fix span sampling rule parsing_: it doesn't use label for component tagging
+> - _Fix span sampling rule parsing when using both remote config and property config_: it doesn't fit and will be cut during changelog generation
 
->[!TIP]
+> [!TIP]
 > Do instead: _Fix span sampling rule parsing_
 
 ### Labels
@@ -42,10 +51,10 @@ They are used to identify the related components using [the `comp: ` category](h
 
 Pull requests should be labelled with at least a component, in addition to the type of changes using [the `type: ` category](https://github.com/DataDog/azure-log-forwarding-orchestration/labels?q=type).
 
->[!TIP]
+> [!TIP]
 > Always add a `comp:` and a `type:` label.
 
->[!NOTE]
+> [!NOTE]
 > For reference, the [full list of all labels available](https://github.com/DataDog/azure-log-forwarding-orchestration/labels).
 
 ## Pull request reviews
