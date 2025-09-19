@@ -16,7 +16,7 @@ We have automatic code formatting enabled using [pre-commit](https://pre-commit.
 ### Testing
 
 ```bash
-cd $HOME/dd/azure-log-forwarding-orchestration/forwarder
+cd azure-log-forwarding-orchestration/forwarder
 go mod tidy
 go test ./internal/logs/...
 ```
