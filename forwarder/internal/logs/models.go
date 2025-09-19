@@ -199,7 +199,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 		Service:          azureService,
 		Source:           logSource,
 		Time:             l.Time.AsTime(),
-		Level:            l.Level,
+		Level:            string(l.Level),
 		Tags:             tags,
 		Container:        l.Container,
 		Blob:             l.Blob,

@@ -62,6 +62,9 @@ var (
 
 	//go:embed fixtures/workflowruntime_logs.json
 	workflowRuntimeLogData []byte
+
+	//go:embed fixtures/logs_with_level_as_int_or_string.json
+	logsWithLevelAsIntOrStringData []byte
 )
 
 func TestParseLogs(t *testing.T) {
@@ -137,6 +140,26 @@ func TestParseLogs(t *testing.T) {
 		// THEN
 		assert.Equal(t, 5, got)
 		assert.Equal(t, len(usaShortTimestampLogData), *totalBytes)
+	})
+
+	t.Run("can parse logs with level as integer", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		reader := bytes.NewReader(logsWithLevelAsIntOrStringData)
+		closer := io.NopCloser(reader)
+
+		var got int
+
+		// WHEN
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, logsWithLevelAsIntOrStringData))
+		for parsedLog := range parsedLogsIter {
+			require.NoError(t, parsedLog.Err)
+			got += 1
+		}
+
+		// THEN
+		assert.Equal(t, 7, got)
+		assert.Equal(t, len(logsWithLevelAsIntOrStringData), *totalBytes)
 	})
 
 	t.Run("can parse workflow runtime logs", func(t *testing.T) {
