@@ -139,7 +139,7 @@ func (l *azureLogLevel) UnmarshalJSON(data []byte) error {
 	}
 	// In some cases, log level is an integer.
 	var i int
-	json.Unmarshal(data, &i)
+	err = json.Unmarshal(data, &i)
 	if err == nil {
 		*l = azureLogLevel(strconv.Itoa(i))
 		return nil
