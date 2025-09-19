@@ -13,6 +13,14 @@ submitted](#pull-request-guidelines) for review. We do not accept issues on this
 
 We have automatic code formatting enabled using [pre-commit](https://pre-commit.com/#install) for the python, go and yaml in this repository. Make sure to install it and run `pre-commit install` before committing changes.
 
+### Testing
+
+```bash
+cd azure-log-forwarding-orchestration/forwarder
+go mod tidy
+go test ./internal/logs/...
+```
+
 ## Pull request guidelines
 
 ### Draft first
