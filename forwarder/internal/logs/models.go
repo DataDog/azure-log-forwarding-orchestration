@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -126,6 +127,26 @@ func (t AzureLogTime) AsTime() time.Time {
 	return time.Time(t)
 }
 
+type azureLogLevel string
+
+func (l *azureLogLevel) UnmarshalJSON(data []byte) error {
+	var err error
+	var s string
+	err = json.Unmarshal(data, &s)
+	if err == nil {
+		*l = azureLogLevel(s)
+		return nil
+	}
+	// In some cases, log level is an integer.
+	var i int
+	err = json.Unmarshal(data, &i)
+	if err == nil {
+		*l = azureLogLevel(strconv.Itoa(i))
+		return nil
+	}
+	return err
+}
+
 type azureLog struct {
 	raw             []byte
 	byteSize        int64
@@ -136,8 +157,8 @@ type azureLog struct {
 	ResourceIdUpper string `json:"ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
 	blobResourceId string
-	Time           AzureLogTime `json:"time"`
-	Level          string       `json:"level,omitempty"`
+	Time           AzureLogTime  `json:"time"`
+	Level          azureLogLevel `json:"level,omitempty"`
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
@@ -178,7 +199,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 		Service:          azureService,
 		Source:           logSource,
 		Time:             l.Time.AsTime(),
-		Level:            l.Level,
+		Level:            string(l.Level),
 		Tags:             tags,
 		Container:        l.Container,
 		Blob:             l.Blob,
