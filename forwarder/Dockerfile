@@ -9,7 +9,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" cmd/forwarder/forwarder.go
 
-FROM registry.ddbuild.io/images/mirror/scratch:latest
+FROM scratch
 WORKDIR /
 COPY --from=builder /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder/forwarder /forwarder
 
