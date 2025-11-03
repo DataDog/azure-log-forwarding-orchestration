@@ -8,8 +8,10 @@ go version go1.22.4 darwin/arm64
 
 Install dependencies
 ```bash
-go mod vendor
+go mod tidy
 ```
+
+Run tests
 
 ### Local Testing Environment
 
