@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	// 3p
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
@@ -118,7 +119,7 @@ func assertTags(t *testing.T, log *logs.Log) {
 	assert.Contains(t, log.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
 	assert.Contains(t, log.Tags, "source:azure.web")
 	assert.Contains(t, log.Tags, "resource_group:FORWARDER-INTEGRATION-TESTING")
-	assert.Contains(t, log.Tags, "control_plane_id:")
+	assert.Contains(t, log.Tags, "control_plane_id:"+environment.Get(environment.ControlPlaneId))
 	assert.Contains(t, log.Tags, "config_id:")
 	assert.Contains(t, log.Source, "azure.web")
 	assert.Contains(t, log.Service, azureService)

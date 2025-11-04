@@ -1,4 +1,4 @@
-FROM registry.ddbuild.io/images/mirror/golang:1.24.0 AS builder
+FROM registry.ddbuild.io/images/mirror/golang:1.25.3 AS builder
 WORKDIR /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 # Copy and download dependencies
 COPY go.mod go.sum ./
@@ -9,7 +9,7 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" cmd/forwarder/forwarder.go
 
-FROM registry.ddbuild.io/images/mirror/alpine:latest
+FROM scratch
 WORKDIR /
 COPY --from=builder /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder/forwarder /forwarder
 

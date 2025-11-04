@@ -8,8 +8,10 @@ go version go1.22.4 darwin/arm64
 
 Install dependencies
 ```bash
-go mod vendor
+go mod tidy
 ```
+
+## Running tests
 
 ### Local Testing Environment
 
@@ -39,7 +41,7 @@ export AzureWebJobsStorage="<VALID CONNECTION STRING>"
 Traces should now appear in the Datadog organization that was used to configure the agent.
 
 
-### Publishing and Running
+## Publishing and Running
 Publish Custom function app in azure to run the cmd/forwarder.go file in the function app:
 
 Via the cli:
