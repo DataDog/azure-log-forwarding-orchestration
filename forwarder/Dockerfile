@@ -1,6 +1,6 @@
 FROM registry.ddbuild.io/images/mirror/golang:1.25.3 AS builder
 
-RUN apk --no-cache add ca-certificates
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 WORKDIR /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 # Copy and download dependencies
