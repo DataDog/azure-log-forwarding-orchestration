@@ -1,5 +1,6 @@
 module github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 
+// update ci/scripts/forwarder/test.sh when upgrading go versions
 go 1.25.3
 
 require (
