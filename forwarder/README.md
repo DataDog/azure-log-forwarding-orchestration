@@ -41,7 +41,7 @@ export AzureWebJobsStorage="<VALID CONNECTION STRING>"
 Traces should now appear in the Datadog organization that was used to configure the agent.
 
 
-### Publishing and Running
+## Publishing and Running
 Publish Custom function app in azure to run the cmd/forwarder.go file in the function app:
 
 Via the cli:
