@@ -11,7 +11,7 @@ Install dependencies
 go mod tidy
 ```
 
-Run tests
+## Running tests
 
 ### Local Testing Environment
 
