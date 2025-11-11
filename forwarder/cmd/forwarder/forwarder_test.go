@@ -1000,7 +1000,8 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 				}, nil
 			}
 			customNow := func() time.Time {
-				return time.Now()
+				// return a time within 18 hours of fixture log timestamps
+				return time.Date(2025, 4, 11, 10, 0, 0, 0, time.UTC) // April 11, 2025
 			}
 
 			// WHEN
@@ -1013,7 +1014,7 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, azureService, *logItem.Service)
-				assert.Equal(t, "azure.aadiam", *logItem.Ddsource)
+				assert.Equal(t, "azure.activedirectory", *logItem.Ddsource)
 				assert.Contains(t, *logItem.Ddtags, "forwarder:lfo")
 			}
 		}
