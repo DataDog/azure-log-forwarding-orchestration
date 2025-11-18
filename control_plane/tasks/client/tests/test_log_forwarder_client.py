@@ -156,6 +156,8 @@ class TestLogForwarderClient(AsyncTestCase):
                     "location": EAST_US,
                     "public_network_access": "Enabled",
                     "minimum_tls_version": "TLS1_2",
+                    "enable_https_traffic_only": True,
+                    "allow_blob_public_access": False,
                 }
             ),
         )
@@ -230,6 +232,8 @@ class TestLogForwarderClient(AsyncTestCase):
                     "location": NEW_ZEALAND_NORTH,
                     "public_network_access": "Enabled",
                     "minimum_tls_version": "TLS1_2",
+                    "enable_https_traffic_only": True,
+                    "allow_blob_public_access": False,
                 }
             ),
         )
