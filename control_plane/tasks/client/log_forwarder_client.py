@@ -280,6 +280,8 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 location=region,
                 public_network_access=PublicNetworkAccess.ENABLED,
                 minimum_tls_version="TLS1_2",
+                enable_https_traffic_only=True,
+                allow_blob_public_access=False,
             ),
         ), lambda: self.storage_client.storage_accounts.get_properties(self.resource_group, storage_account_name)
 
