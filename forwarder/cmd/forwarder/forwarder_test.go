@@ -571,7 +571,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(egCtx, reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 		err := eg.Wait()
@@ -619,7 +619,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(egCtx, reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -658,7 +658,7 @@ func TestProcessLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsCh)
-			_, _, err := parseLogs(reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
+			_, _, err := parseLogs(egCtx, reader, newBlob(resourceId, containerName), newMockPiiScrubber(ctrl), logsCh)
 			return err
 		})
 
@@ -684,7 +684,7 @@ func TestParseLogs(t *testing.T) {
 		}
 		reader := io.NopCloser(strings.NewReader(content))
 
-		eg, _ := errgroup.WithContext(context.Background())
+		eg, egCtx := errgroup.WithContext(context.Background())
 		var got []*logs.Log
 
 		logsChannel := make(chan *logs.Log, 100)
@@ -698,7 +698,7 @@ func TestParseLogs(t *testing.T) {
 		})
 		eg.Go(func() error {
 			defer close(logsChannel)
-			_, _, err := parseLogs(reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsChannel)
+			_, _, err := parseLogs(egCtx, reader, newBlob(resourceId, "insights-logs-functionapplogs"), newMockPiiScrubber(ctrl), logsChannel)
 			return err
 		})
 		err := eg.Wait()

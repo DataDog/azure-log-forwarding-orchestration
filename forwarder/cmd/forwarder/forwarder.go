@@ -58,7 +58,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
 	}
 
-	processedRawBytes, _, err := parseLogs(content.Reader, blob, piiScrubber, logsChannel)
+	processedRawBytes, _, err := parseLogs(ctx, content.Reader, blob, piiScrubber, logsChannel)
 
 	if processedRawBytes+cursorOffset > blob.ContentLength {
 		// we have processed more bytes than expected
@@ -72,35 +72,54 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	return err
 }
 
-func parseLogs(reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
+func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
 	var processedLogs int64
 
 	var currLog *logs.Log
 	var err error
-	parsedLogsIter, totalBytes, err := logs.Parse(reader, blob, piiScrubber)
-	if err != nil {
-		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
+	parsedLogsIter, totalBytes, parseErr := logs.Parse(reader, blob, piiScrubber)
+	if parseErr != nil {
+		return 0, 0, fmt.Errorf("error parsing logs: %w", parseErr)
 	}
 	for parsedLog := range parsedLogsIter {
+		if ctx.Err() != nil {
+			break // Graceful exit on timeout
+		}
 		if parsedLog.Err != nil {
 			err = fmt.Errorf("error parsing log: %w", parsedLog.Err)
 			break
 		}
 		currLog = parsedLog.ParsedLog
 
-		processedLogs += 1
-		logsChannel <- currLog
+		// Use select for context-aware send
+		select {
+		case logsChannel <- currLog:
+			processedLogs += 1
+		case <-ctx.Done():
+			// Context cancelled during send
+			return int64(*totalBytes), processedLogs, err
+		}
 	}
 	return int64(*totalBytes), processedLogs, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	for logItem := range logsCh {
-		resourceIdCh <- logItem.ResourceId
+		// Use select for context-aware sends to downstream channels
+		select {
+		case resourceIdCh <- logItem.ResourceId:
+		case <-ctx.Done():
+			goto flush
+		}
 		currErr := logsClient.AddLog(ctx, now, logger, logItem)
 		err = errors.Join(err, currErr)
-		resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}
+		select {
+		case resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}:
+		case <-ctx.Done():
+			goto flush
+		}
 	}
+flush:
 	flushErr := logsClient.Flush(ctx)
 	err = errors.Join(err, flushErr)
 	return err
@@ -236,16 +255,31 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 		blob storage.Blob
 		err  error
 	}
-	blobErrorCh := make(chan blobError)
+	blobErrorCh := make(chan blobError, channelSize)
 
 	// Spawn error processing goroutine
 	blobErrors := make(map[string]error)
-	blobErrorEg, _ := errgroup.WithContext(ctx)
+	blobErrorEg, blobErrorCtx := errgroup.WithContext(ctx)
 	blobErrorEg.Go(func() error {
-		for blobErr := range blobErrorCh {
-			blobErrors[blobErr.blob.Name] = blobErr.err
+		for {
+			select {
+			case blobErr, ok := <-blobErrorCh:
+				if !ok {
+					return nil // Channel closed
+				}
+				blobErrors[blobErr.blob.Name] = blobErr.err
+			case <-blobErrorCtx.Done():
+				// Drain any remaining errors before returning
+				for {
+					select {
+					case blobErr := <-blobErrorCh:
+						blobErrors[blobErr.blob.Name] = blobErr.err
+					default:
+						return nil
+					}
+				}
+			}
 		}
-		return nil
 	})
 
 	// Get all the blobs
@@ -265,7 +299,11 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 			downloadEg.Go(func() error {
 				downloadErr := getLogs(downloadCtx, storageClient, cursors, blob, piiScrubber, logCh)
 				if downloadErr != nil {
-					blobErrorCh <- blobError{blob: blob, err: downloadErr}
+					select {
+					case blobErrorCh <- blobError{blob: blob, err: downloadErr}:
+					case <-downloadCtx.Done():
+						// Context cancelled, skip sending error to channel
+					}
 					logger.Warning(fmt.Errorf("error processing blob %s from container %s: %w", blob.Name, c.Name, downloadErr))
 				}
 				return nil
