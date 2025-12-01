@@ -211,7 +211,7 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 type activeDirectoryLog map[string]json.RawMessage
 
 const (
-	azureActiveDirectorySource = "azure.aadiam"
+	azureActiveDirectorySource = "azure.activedirectory"
 	userRiskEventsLogContainer = "insights-logs-userriskevents"
 	riskyUsersLogContainer     = "insights-logs-riskyusers"
 )
