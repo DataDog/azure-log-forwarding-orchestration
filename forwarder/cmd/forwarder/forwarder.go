@@ -331,6 +331,10 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 }
 
 func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
+	// Capture context error at the start - we want to return this even if
+	// DLQ operations succeed with context recovery
+	ctxErr := ctx.Err()
+
 	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
 	if err != nil {
 		return err
@@ -342,7 +346,8 @@ func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log
 		dlq.Add(client.FailedLogs)
 	}
 
-	return dlq.Save(ctx, storageClient, now, logger)
+	saveErr := dlq.Save(ctx, storageClient, now, logger)
+	return errors.Join(ctxErr, saveErr)
 }
 
 func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (error, map[string]error) {
