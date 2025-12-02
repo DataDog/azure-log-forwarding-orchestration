@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -530,6 +531,295 @@ func TestRun(t *testing.T) {
 		// Cursors and metrics should still be saved even after timeout
 		assert.True(t, isCursorSaved, "Cursor should be saved even after timeout")
 		assert.True(t, isMetricSaved, "Metrics should be saved even after timeout")
+	})
+
+	t.Run("processes fast blob but not slow blob on timeout", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testString := "test"
+		validLog := getLogWithContent(testString, 5*time.Minute)
+		expectedBytesForLog := len(validLog)
+
+		containerName := "insights-logs-functionapplogs"
+		containerPage := []*service.ContainerItem{
+			newContainerItem(containerName),
+		}
+
+		// Create two blobs: one fast, one slow
+		fastBlobName := getBlobName("fast-blob")
+		slowBlobName := getBlobName("slow-blob")
+		blobPage := []*container.BlobItem{
+			{
+				Name: &fastBlobName,
+				Properties: &container.BlobProperties{
+					ContentLength: pointer.Get(int64(expectedBytesForLog)),
+					CreationTime:  pointer.Get(time.Now()),
+				},
+			},
+			{
+				Name: &slowBlobName,
+				Properties: &container.BlobProperties{
+					ContentLength: pointer.Get(int64(expectedBytesForLog)),
+					CreationTime:  pointer.Get(time.Now()),
+				},
+			},
+		}
+
+		forwarderTimeout := 100 * time.Millisecond
+		slowDownloadDuration := 5 * time.Second
+
+		ctrl := gomock.NewController(t)
+		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
+
+		containerHandler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
+		containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
+		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
+
+		blobHandler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
+		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
+		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager)
+
+		cursorResp := azblob.DownloadStreamResponse{}
+		cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+		deadLetterQueueResp := azblob.DownloadStreamResponse{}
+		deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
+
+		// Track which blobs were successfully processed
+		var processedBlobs []string
+		var processedBlobsMu sync.Mutex
+
+		mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			if ctx.Err() != nil {
+				return azblob.DownloadStreamResponse{}, ctx.Err()
+			}
+
+			if blobName == cursor.BlobName {
+				return cursorResp, nil
+			}
+			if blobName == deadletterqueue.BlobName {
+				return deadLetterQueueResp, nil
+			}
+			if strings.Contains(blobName, "metrics_") {
+				resp := azblob.DownloadStreamResponse{}
+				resp.Body = io.NopCloser(strings.NewReader(""))
+				return resp, nil
+			}
+
+			// Fast blob returns immediately, slow blob takes a long time
+			if strings.Contains(blobName, "slow-blob") {
+				select {
+				case <-time.After(slowDownloadDuration):
+					// This shouldn't happen - context should cancel first
+					resp := azblob.DownloadStreamResponse{}
+					resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
+					return resp, nil
+				case <-ctx.Done():
+					return azblob.DownloadStreamResponse{}, ctx.Err()
+				}
+			}
+
+			// Fast blob - return immediately and track it
+			processedBlobsMu.Lock()
+			processedBlobs = append(processedBlobs, blobName)
+			processedBlobsMu.Unlock()
+
+			resp := azblob.DownloadStreamResponse{}
+			resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
+			return resp, nil
+		})
+
+		var finalCursors *cursor.Cursors
+		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+			if strings.Contains(blobName, "cursors") {
+				finalCursors = cursor.FromBytes(content, log.NewEntry(nullLogger()))
+			}
+			return azblob.UploadBufferResponse{}, nil
+		}
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(uploadFunc).AnyTimes()
+
+		var resp azblob.CreateContainerResponse
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
+
+		mockPiiScrubber := newMockPiiScrubber(ctrl)
+
+		datadogConfig, logsChan := getDatadogConfig(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("")),
+			}, nil
+		})
+
+		submittedLogs := make([]datadogV2.HTTPLogItem, 0)
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), forwarderTimeout)
+		defer cancel()
+
+		submittedLogsGroup, _ := errgroup.WithContext(timeoutCtx)
+		submittedLogsGroup.Go(func() error {
+			for logItem := range logsChan {
+				submittedLogs = append(submittedLogs, logItem)
+			}
+			return nil
+		})
+
+		customNow := func() time.Time {
+			return time.Now()
+		}
+
+		// WHEN
+		runErr, _ := run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
+		close(logsChan)
+		_ = submittedLogsGroup.Wait()
+
+		// THEN
+		// We expect a timeout error
+		require.Error(t, runErr)
+		assert.Contains(t, runErr.Error(), "context deadline exceeded")
+
+		// Fast blob should have been processed
+		processedBlobsMu.Lock()
+		assert.Len(t, processedBlobs, 1, "Expected exactly one blob to be processed before timeout")
+		if len(processedBlobs) > 0 {
+			assert.Contains(t, processedBlobs[0], "fast-blob", "Fast blob should have been processed")
+		}
+		processedBlobsMu.Unlock()
+
+		// Cursor should be set for fast blob but not slow blob
+		assert.Greater(t, finalCursors.Get(containerName, fastBlobName), int64(0), "Fast blob cursor should be set")
+		assert.Equal(t, int64(0), finalCursors.Get(containerName, slowBlobName), "Slow blob cursor should not be set")
+
+		// We should have received exactly 1 log (from the fast blob)
+		assert.Len(t, submittedLogs, 1, "Should have processed exactly one log from fast blob")
+	})
+
+	t.Run("saves failed logs to DLQ when context times out during datadog submission", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		testString := "timeout-during-submission-test"
+		validLog := getLogWithContent(testString, 5*time.Minute)
+		expectedBytesForLog := len(validLog)
+
+		containerName := "insights-logs-functionapplogs"
+		containerPage := []*service.ContainerItem{
+			newContainerItem(containerName),
+		}
+
+		blobPage := []*container.BlobItem{
+			newBlobItem("timeout-submission-test", int64(expectedBytesForLog), time.Now()),
+		}
+
+		getDownloadResp := func(o *azblob.DownloadStreamOptions) azblob.DownloadStreamResponse {
+			resp := azblob.DownloadStreamResponse{}
+			resp.Body = io.NopCloser(strings.NewReader(string(validLog)))
+			return resp
+		}
+
+		cursorResp := azblob.DownloadStreamResponse{}
+		cursorResp.Body = io.NopCloser(strings.NewReader("{}"))
+
+		deadLetterQueueResp := azblob.DownloadStreamResponse{}
+		deadLetterQueueResp.Body = io.NopCloser(strings.NewReader("[]"))
+
+		var savedDLQContent []byte
+		uploadFunc := func(ctx context.Context, containerName string, blobName string, content []byte, o *azblob.UploadBufferOptions) (azblob.UploadBufferResponse, error) {
+			if blobName == deadletterqueue.BlobName {
+				savedDLQContent = content
+			}
+			return azblob.UploadBufferResponse{}, nil
+		}
+
+		// Datadog submission takes longer than the context timeout
+		datadogSubmissionDuration := 500 * time.Millisecond
+		forwarderTimeout := 100 * time.Millisecond
+
+		logResp := func(req *http.Request) (*http.Response, error) {
+			// Simulate a slow Datadog API call that will be interrupted by context timeout
+			// Check the request's context to properly simulate context cancellation
+			select {
+			case <-time.After(datadogSubmissionDuration):
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(strings.NewReader("")),
+				}, nil
+			case <-req.Context().Done():
+				// Context was cancelled during the "HTTP call"
+				return nil, fmt.Errorf("Post \"https://http-intake.logs.datadoghq.com/api/v2/logs\": %w", req.Context().Err())
+			}
+		}
+
+		customNow := func() time.Time {
+			return time.Now()
+		}
+
+		// Create context with short timeout
+		timeoutCtx, cancel := context.WithTimeout(context.Background(), forwarderTimeout)
+		defer cancel()
+
+		ctrl := gomock.NewController(t)
+		mockClient := storagemocks.NewMockAzureBlobClient(ctrl)
+
+		containerHandler := collections.NewPagingHandler[[]*service.ContainerItem, azblob.ListContainersResponse]([][]*service.ContainerItem{containerPage}, nil, getListContainersResponse)
+		containerPager := runtime.NewPager[azblob.ListContainersResponse](containerHandler)
+		mockClient.EXPECT().NewListContainersPager(gomock.Any()).Return(containerPager)
+
+		blobHandler := collections.NewPagingHandler[[]*container.BlobItem, azblob.ListBlobsFlatResponse]([][]*container.BlobItem{blobPage}, nil, getListBlobsFlatResponse)
+		blobPager := runtime.NewPager[azblob.ListBlobsFlatResponse](blobHandler)
+		mockClient.EXPECT().NewListBlobsFlatPager(gomock.Any(), gomock.Any()).Return(blobPager)
+
+		mockClient.EXPECT().DownloadStream(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(func(ctx context.Context, containerName string, blobName string, o *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
+			if blobName == cursor.BlobName {
+				return cursorResp, nil
+			}
+			if blobName == deadletterqueue.BlobName {
+				return deadLetterQueueResp, nil
+			}
+			if strings.Contains(blobName, "metrics_") {
+				resp := azblob.DownloadStreamResponse{}
+				resp.Body = io.NopCloser(strings.NewReader(""))
+				return resp, nil
+			}
+			return getDownloadResp(o), nil
+		})
+
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(uploadFunc).AnyTimes()
+
+		var resp azblob.CreateContainerResponse
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, gomock.Any()).Return(resp, nil).AnyTimes()
+
+		mockPiiScrubber := newMockPiiScrubber(ctrl)
+
+		datadogConfig, logsChan := getDatadogConfig(logResp)
+
+		submittedLogs := make([]datadogV2.HTTPLogItem, 0)
+		submittedLogsGroup, _ := errgroup.WithContext(timeoutCtx)
+		submittedLogsGroup.Go(func() error {
+			for logItem := range logsChan {
+				submittedLogs = append(submittedLogs, logItem)
+			}
+			return nil
+		})
+
+		// WHEN
+		_, _ = run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
+		close(logsChan)
+		_ = submittedLogsGroup.Wait()
+
+		// THEN
+
+		// DLQ should have been saved with the failed logs
+		require.NotNil(t, savedDLQContent, "Dead letter queue should have been saved")
+		require.Greater(t, len(savedDLQContent), 2, "DLQ should contain logs (not just empty array)")
+
+		// Parse the DLQ content and verify it contains our log
+		var dlqLogs []datadogV2.HTTPLogItem
+		unmarshalErr := json.Unmarshal(savedDLQContent, &dlqLogs)
+		require.NoError(t, unmarshalErr, "DLQ content should be valid JSON")
+		assert.Len(t, dlqLogs, 1, "DLQ should contain exactly one failed log")
+
+		// Verify the log content
+		if len(dlqLogs) > 0 {
+			assert.Contains(t, dlqLogs[0].Message, testString, "DLQ log should contain our test message")
+		}
 	})
 }
 

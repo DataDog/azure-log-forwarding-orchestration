@@ -139,4 +139,37 @@ func TestSaveDLQ(t *testing.T) {
 		// THEN
 		assert.NoError(t, err)
 	})
+
+	t.Run("saves dead letter queue even when context is timed out", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN
+		response := azblob.UploadBufferResponse{}
+		createContainerResponse := azblob.CreateContainerResponse{}
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockAzureBlobClient(ctrl)
+		mockClient.EXPECT().CreateContainer(gomock.Any(), storage.ForwarderContainer, nil).Return(createContainerResponse, nil)
+		mockClient.EXPECT().UploadBuffer(gomock.Any(), storage.ForwarderContainer, deadletterqueue.BlobName, gomock.Any(), gomock.Any()).Return(response, nil)
+
+		client := storage.NewClient(mockClient)
+
+		datadogClient := logmocks.NewMockDatadogLogsSubmitter(ctrl)
+		logsClient := logs.NewClient(datadogClient)
+
+		dlq, err := deadletterqueue.FromBytes(logsClient, []byte("[]"))
+		require.NoError(t, err)
+
+		// Create a context that has already timed out
+		timedOutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+		defer cancel()
+		time.Sleep(10 * time.Millisecond) // Ensure context is expired
+		require.Error(t, timedOutCtx.Err(), "Context should be expired")
+		require.Equal(t, context.DeadlineExceeded, timedOutCtx.Err())
+
+		// WHEN
+		err = dlq.Save(timedOutCtx, client, time.Now, log.NewEntry(log.New()))
+
+		// THEN
+		assert.NoError(t, err, "Save should succeed even with timed out context")
+	})
 }

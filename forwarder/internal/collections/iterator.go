@@ -26,6 +26,9 @@ func New[ReturnType any, PagerType any](
 
 	return func(yield func(ReturnType) bool) {
 		for pager.More() {
+			if ctx.Err() != nil {
+				break // Graceful exit on timeout
+			}
 			resp, err := pager.NextPage(ctx)
 			if err != nil {
 				logger.Error(fmt.Errorf("fetching next page: %w", err))

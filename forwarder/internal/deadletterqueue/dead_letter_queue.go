@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	// 3p
 	log "github.com/sirupsen/logrus"
@@ -35,6 +36,12 @@ type DeadLetterQueue struct {
 
 // Load loads the DeadLetterQueue from the storage client.
 func Load(ctx context.Context, storageClient *storage.Client, logsClient *logs.Client) (*DeadLetterQueue, error) {
+	if ctx.Err() != nil && errors.As(ctx.Err(), &context.DeadlineExceeded) {
+		// Always load DLQ even if timeout occurred
+		loadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = loadCtx
+	}
 	data, err := storageClient.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
 	if err != nil {
 		var notFoundError *storage.NotFoundError
@@ -81,8 +88,15 @@ func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 
 // Save saves the DeadLetterQueue to storage
 func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, now customtime.Now, logger *log.Entry) error {
-	// prune invalid logs
-	d.queue = collections.Filter(d.client.FailedLogs, func(log datadogV2.HTTPLogItem) bool {
+	if ctx.Err() != nil && errors.As(ctx.Err(), &context.DeadlineExceeded) {
+		// Always save DLQ even if timeout occurred
+		saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ctx = saveCtx
+	}
+
+	// prune invalid logs from the queue
+	d.queue = collections.Filter(d.queue, func(log datadogV2.HTTPLogItem) bool {
 		_, valid := logs.ValidateDatadogLog(log, now, logger)
 		return valid
 	})
