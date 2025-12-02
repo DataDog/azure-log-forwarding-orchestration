@@ -91,12 +91,10 @@ func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, pii
 		}
 		currLog = parsedLog.ParsedLog
 
-		// Use select for context-aware send
 		select {
 		case logsChannel <- currLog:
 			processedLogs += 1
 		case <-ctx.Done():
-			// Context cancelled during send
 			return int64(*totalBytes), processedLogs, err
 		}
 	}
@@ -105,7 +103,6 @@ func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, pii
 
 func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
 	for logItem := range logsCh {
-		// Use select for context-aware sends to downstream channels
 		select {
 		case resourceIdCh <- logItem.ResourceId:
 		case <-ctx.Done():
@@ -302,7 +299,6 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 					select {
 					case blobErrorCh <- blobError{blob: blob, err: downloadErr}:
 					case <-downloadCtx.Done():
-						// Context cancelled, skip sending error to channel
 					}
 					logger.Warning(fmt.Errorf("error processing blob %s from container %s: %w", blob.Name, c.Name, downloadErr))
 				}
