@@ -82,7 +82,7 @@ func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, pii
 		return 0, 0, fmt.Errorf("error parsing logs: %w", parseErr)
 	}
 	for parsedLog := range parsedLogsIter {
-		if ctx.Err() != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			break // Graceful exit on timeout
 		}
 		if parsedLog.Err != nil {
@@ -102,21 +102,22 @@ func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, pii
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
+LogChannelLoop:
 	for logItem := range logsCh {
 		select {
 		case resourceIdCh <- logItem.ResourceId:
 		case <-ctx.Done():
-			goto flush
+			break LogChannelLoop
 		}
 		currErr := logsClient.AddLog(ctx, now, logger, logItem)
 		err = errors.Join(err, currErr)
 		select {
 		case resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}:
 		case <-ctx.Done():
-			goto flush
+			break LogChannelLoop
 		}
 	}
-flush:
+
 	flushErr := logsClient.Flush(ctx)
 	err = errors.Join(err, flushErr)
 	return err
@@ -337,7 +338,7 @@ func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log
 
 	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
 	if err != nil {
-		return err
+		return errors.Join(ctxErr, err)
 	}
 
 	dlq.Process(ctx, now, logger)
