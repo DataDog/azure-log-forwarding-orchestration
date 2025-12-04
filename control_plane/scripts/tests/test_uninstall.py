@@ -3,11 +3,12 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
+import concurrent.futures
 import json
 import sys
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch as mock_patch
+from unittest.mock import MagicMock, patch as mock_patch
 
 # Needed to import the uninstall script
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -519,3 +520,113 @@ class TestUninstallScript(TestCase):
 
         with self.assertRaises(ValueError):
             uninstall.first_key_of({})
+
+    # ===== Timeout Tests ===== #
+
+    @mock_patch("uninstall.ThreadPoolExecutor")
+    def test_find_all_control_planes_timeout(self, mock_executor_class):
+        """Test that find_all_control_planes handles timeout gracefully"""
+        # Create a mock future that raises TimeoutError
+        mock_future = MagicMock()
+        mock_future.done.return_value = True
+        mock_future.exception.return_value = None
+        mock_future.result.side_effect = concurrent.futures.TimeoutError()
+
+        mock_executor = MagicMock()
+        mock_executor.__enter__ = MagicMock(return_value=mock_executor)
+        mock_executor.__exit__ = MagicMock(return_value=False)
+        mock_executor.submit.return_value = mock_future
+        mock_executor_class.return_value = mock_executor
+
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
+
+        sub_to_rg, rg_to_lfo_id = uninstall.find_all_control_planes(sub_id_to_name)
+
+        # Should return empty results due to timeout
+        self.assertEqual(dict(sub_to_rg), {})
+        self.assertEqual(dict(rg_to_lfo_id), {})
+        self.log_mock.error.assert_called()
+        # Verify the error message mentions timeout
+        error_calls = [str(call) for call in self.log_mock.error.call_args_list]
+        self.assertTrue(any("Timeout" in call for call in error_calls))
+
+    @mock_patch("uninstall.ThreadPoolExecutor")
+    def test_find_role_assignments_timeout(self, mock_executor_class):
+        """Test that find_role_assignments handles timeout gracefully"""
+        # Create a mock future that raises TimeoutError
+        mock_future = MagicMock()
+        mock_future.done.return_value = True
+        mock_future.exception.return_value = None
+        mock_future.result.side_effect = concurrent.futures.TimeoutError()
+
+        mock_executor = MagicMock()
+        mock_executor.__enter__ = MagicMock(return_value=mock_executor)
+        mock_executor.__exit__ = MagicMock(return_value=False)
+        mock_executor.submit.return_value = mock_future
+        mock_executor_class.return_value = mock_executor
+
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
+        control_plane_ids = {CONTROL_PLANE_ID_1}
+
+        result = uninstall.find_role_assignments(sub_id_to_name, control_plane_ids)
+
+        # Should return empty results due to timeout
+        self.assertEqual(result, {})
+        self.log_mock.error.assert_called()
+        # Verify the error message mentions timeout
+        error_calls = [str(call) for call in self.log_mock.error.call_args_list]
+        self.assertTrue(any("Timeout" in call for call in error_calls))
+
+    @mock_patch("uninstall.ThreadPoolExecutor")
+    def test_find_unknown_role_assignments_timeout(self, mock_executor_class):
+        """Test that find_unknown_role_assignments handles timeout gracefully"""
+        # Create a mock future that raises TimeoutError
+        mock_future = MagicMock()
+        mock_future.done.return_value = True
+        mock_future.exception.return_value = None
+        mock_future.result.side_effect = concurrent.futures.TimeoutError()
+
+        mock_executor = MagicMock()
+        mock_executor.__enter__ = MagicMock(return_value=mock_executor)
+        mock_executor.__exit__ = MagicMock(return_value=False)
+        mock_executor.submit.return_value = mock_future
+        mock_executor_class.return_value = mock_executor
+
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
+
+        result = uninstall.find_unknown_role_assignments(sub_id_to_name)
+
+        # Should return empty results due to timeout
+        self.assertEqual(result, {})
+        self.log_mock.error.assert_called()
+        # Verify the error message mentions timeout
+        error_calls = [str(call) for call in self.log_mock.error.call_args_list]
+        self.assertTrue(any("Timeout" in call for call in error_calls))
+
+    @mock_patch("uninstall.ThreadPoolExecutor")
+    @mock_patch("uninstall.list_resources")
+    def test_find_diagnostic_settings_timeout(self, mock_list_resources, mock_executor_class):
+        """Test that find_diagnostic_settings handles timeout gracefully"""
+        mock_list_resources.return_value = set(MOCK_RESOURCE_IDS)
+
+        # Create a mock future that raises TimeoutError
+        mock_future = MagicMock()
+        mock_future.done.return_value = True
+        mock_future.result.side_effect = concurrent.futures.TimeoutError()
+
+        mock_executor = MagicMock()
+        mock_executor.__enter__ = MagicMock(return_value=mock_executor)
+        mock_executor.__exit__ = MagicMock(return_value=False)
+        mock_executor.submit.return_value = mock_future
+        mock_executor_class.return_value = mock_executor
+
+        control_plane_ids = {CONTROL_PLANE_ID_1, CONTROL_PLANE_ID_2}
+
+        result = uninstall.find_diagnostic_settings(SUB_ID_1, SUB_NAME_1, control_plane_ids)
+
+        # Should return empty results due to timeout on all resources
+        self.assertEqual(result, {})
+        self.log_mock.error.assert_called()
+        # Verify the error message mentions timeout
+        error_calls = [str(call) for call in self.log_mock.error.call_args_list]
+        self.assertTrue(any("Timeout" in call for call in error_calls))
