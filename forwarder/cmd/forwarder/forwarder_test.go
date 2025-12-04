@@ -256,7 +256,7 @@ func mockedRun(t *testing.T, ctx context.Context, containers []*service.Containe
 		return nil
 	})
 
-	runErr, _ := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
+	runErr := run(ctx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
 	close(logsChan)
 	logsErr := submittedLogsGroup.Wait()
 	return submittedLogs, errors.Join(runErr, logsErr)
@@ -667,7 +667,7 @@ func TestRun(t *testing.T) {
 		}
 
 		// WHEN
-		runErr, _ := run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
+		runErr := run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
 		close(logsChan)
 		_ = submittedLogsGroup.Wait()
 
@@ -800,7 +800,7 @@ func TestRun(t *testing.T) {
 		})
 
 		// WHEN
-		_, _ = run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
+		_ = run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
 		close(logsChan)
 		_ = submittedLogsGroup.Wait()
 
@@ -1504,7 +1504,7 @@ func getAzuriteConnectionString(ctx context.Context, container testcontainers.Co
 
 }
 
-func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlobClient, now customtime.Now) ([]datadogV2.HTTPLogItem, error, map[string]error) {
+func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlobClient, now customtime.Now) ([]datadogV2.HTTPLogItem, error) {
 	datadogConfig, logsChan := getDatadogConfig(func(req *http.Request) (*http.Response, error) {
 		if req == nil {
 			return nil, errors.New("request is nil")
@@ -1528,12 +1528,12 @@ func azuriteRun(t *testing.T, ctx context.Context, azBlobClient storage.AzureBlo
 		return nil
 	})
 
-	runErr, blobErrors := run(ctx, nullLogger(), 1, datadogConfig, azBlobClient, mockPiiScrubber, now, versionTag)
+	runErr := run(ctx, nullLogger(), 1, datadogConfig, azBlobClient, mockPiiScrubber, now, versionTag)
 
 	close(logsChan)
 	logsErr := submittedLogsGroup.Wait()
 
-	return submittedLogs, errors.Join(runErr, logsErr), blobErrors
+	return submittedLogs, errors.Join(runErr, logsErr)
 }
 
 var (
@@ -1588,18 +1588,16 @@ func TestRunWithAzurite(t *testing.T) {
 		}
 
 		// Do run A
-		_, err, blobErrors := azuriteRun(t, ctx, azBlobClient, customNow)
+		_, err = azuriteRun(t, ctx, azBlobClient, customNow)
 		require.NoError(t, err)
-		require.Empty(t, blobErrors)
 
 		// Upload the second state
 		_, err = azBlobClient.UploadBuffer(ctx, functionAppContainer, blobName, blobStateB, nil)
 		require.NoError(t, err)
 
 		// Do run B
-		_, err, blobErrors = azuriteRun(t, ctx, azBlobClient, customNow)
+		_, err = azuriteRun(t, ctx, azBlobClient, customNow)
 		require.NoError(t, err)
-		require.Empty(t, blobErrors)
 
 		testcontainers.CleanupContainer(t, azurite)
 		require.NoError(t, err)
