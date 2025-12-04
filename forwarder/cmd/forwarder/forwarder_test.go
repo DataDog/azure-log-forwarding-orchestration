@@ -674,7 +674,7 @@ func TestRun(t *testing.T) {
 		// THEN
 		// We expect a timeout error
 		require.Error(t, timeoutCtx.Err())
-		assert.Contains(t, timeoutCtx.Err(), "context deadline exceeded")
+		assert.Contains(t, fmt.Sprintf("%v", timeoutCtx.Err()), "context deadline exceeded")
 
 		// Fast blob should have been processed
 		processedBlobsMu.Lock()
