@@ -188,7 +188,7 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	return logCount, nil
 }
 
-func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (error, map[string]error) {
+func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
 	start := now()
 
 	var err error
@@ -206,7 +206,7 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	// Download cursors
 	cursors, err := cursor.Load(ctx, storageClient, logger)
 	if err != nil {
-		return err, nil
+		return err
 	}
 
 	channelSize := len(logsClients)
@@ -247,36 +247,6 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	containers := storageClient.GetLogContainers(ctx, logger)
 
 	currNow := now()
-	type blobError struct {
-		blob storage.Blob
-		err  error
-	}
-	blobErrorCh := make(chan blobError, channelSize)
-
-	// Spawn error processing goroutine
-	blobErrors := make(map[string]error)
-	blobErrorEg, blobErrorCtx := errgroup.WithContext(ctx)
-	blobErrorEg.Go(func() error {
-		for {
-			select {
-			case blobErr, ok := <-blobErrorCh:
-				if !ok {
-					return nil // Channel closed
-				}
-				blobErrors[blobErr.blob.Name] = blobErr.err
-			case <-blobErrorCtx.Done():
-				// Drain any remaining errors before returning
-				for {
-					select {
-					case blobErr := <-blobErrorCh:
-						blobErrors[blobErr.blob.Name] = blobErr.err
-					default:
-						return nil
-					}
-				}
-			}
-		}
-	})
 
 	// Get all the blobs
 	downloadEg, downloadCtx := errgroup.WithContext(ctx)
@@ -295,10 +265,6 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 			downloadEg.Go(func() error {
 				downloadErr := getLogs(downloadCtx, storageClient, cursors, blob, piiScrubber, logCh)
 				if downloadErr != nil {
-					select {
-					case blobErrorCh <- blobError{blob: blob, err: downloadErr}:
-					case <-downloadCtx.Done():
-					}
 					logger.Warning(fmt.Errorf("error processing blob %s from container %s: %w", blob.Name, c.Name, downloadErr))
 				}
 				return nil
@@ -314,8 +280,6 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	err = errors.Join(err, logVolumeEg.Wait())
 	close(resourceBytesCh)
 	err = errors.Join(err, logBytesEg.Wait())
-	close(blobErrorCh)
-	err = errors.Join(err, blobErrorEg.Wait())
 
 	// Save cursors
 	cursorErr := cursors.Save(ctx, storageClient)
@@ -326,17 +290,16 @@ func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, log
 	err = errors.Join(err, metricErr)
 
 	logger.Info(fmt.Sprintf("Finished processing %d logs", logCount))
-	return err, blobErrors
+	return err
 }
 
 func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log.Entry, storageClient *storage.Client, logsClient *logs.Client, flushedLogsClients []*logs.Client) error {
-	// Capture context error at the start - we want to return this even if
-	// DLQ operations succeed with context recovery
-	ctxErr := ctx.Err()
+	loadAndSaveCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	dlq, err := deadletterqueue.Load(ctx, storageClient, logsClient)
+	dlq, err := deadletterqueue.Load(loadAndSaveCtx, storageClient, logsClient)
 	if err != nil {
-		return errors.Join(ctxErr, err)
+		return err
 	}
 
 	dlq.Process(ctx, now, logger)
@@ -345,11 +308,10 @@ func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log
 		dlq.Add(client.FailedLogs)
 	}
 
-	saveErr := dlq.Save(ctx, storageClient, now, logger)
-	return errors.Join(ctxErr, saveErr)
+	return dlq.Save(loadAndSaveCtx, storageClient, now, logger)
 }
 
-func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (error, map[string]error) {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
 	start := time.Now()
 
 	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
@@ -375,7 +337,7 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadog
 		logsClients = append(logsClients, logs.NewClient(datadogLogsClient))
 	}
 
-	processErr, blobErrors := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now, versionTag)
+	processErr := fetchAndProcessLogs(ctx, storageClient, logsClients, logger, piiScrubber, now, versionTag)
 
 	dlqErr := processDeadLetterQueue(ctx, now, logger, storageClient, logs.NewClient(datadogLogsClient), logsClients)
 
@@ -387,7 +349,7 @@ func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadog
 		flushErr = hookClient.Flush(ctx)
 	}
 
-	return errors.Join(processErr, dlqErr, flushErr), blobErrors
+	return errors.Join(processErr, dlqErr, flushErr)
 }
 
 func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfig, error) {
@@ -481,7 +443,7 @@ func main() {
 		}
 	}
 
-	err, _ = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
+	err = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
 
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error while running: %w", err).Error())
