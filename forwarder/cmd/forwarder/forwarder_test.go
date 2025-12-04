@@ -516,13 +516,13 @@ func TestRun(t *testing.T) {
 		}
 
 		// WHEN
-		_, err := mockedRun(t, timeoutCtx, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
+		_, _ = mockedRun(t, timeoutCtx, containerPage, blobPage, getDownloadResp, cursorResp, deadLetterQueueResp, uploadFunc, logResp, customNow)
 
 		elapsed := time.Since(startTime)
 
 		// THEN
-		require.Error(t, err, "Expected a timeout error")
-		assert.Contains(t, err.Error(), "context deadline exceeded", "Expected deadline exceeded error")
+		require.Error(t, timeoutCtx.Err(), "Expected a timeout error")
+		assert.Contains(t, fmt.Sprintf("%v", timeoutCtx.Err()), "context deadline exceeded", "Expected deadline exceeded error")
 
 		// Test should complete shortly after timeout
 		maxExpectedDuration := forwarderTimeout + 500*time.Millisecond
@@ -667,14 +667,14 @@ func TestRun(t *testing.T) {
 		}
 
 		// WHEN
-		runErr := run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
+		_ = run(timeoutCtx, nullLogger(), 1, datadogConfig, mockClient, mockPiiScrubber, customNow, versionTag)
 		close(logsChan)
 		_ = submittedLogsGroup.Wait()
 
 		// THEN
 		// We expect a timeout error
-		require.Error(t, runErr)
-		assert.Contains(t, runErr.Error(), "context deadline exceeded")
+		require.Error(t, timeoutCtx.Err())
+		assert.Contains(t, timeoutCtx.Err(), "context deadline exceeded")
 
 		// Fast blob should have been processed
 		processedBlobsMu.Lock()
