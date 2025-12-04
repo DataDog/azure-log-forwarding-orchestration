@@ -17,6 +17,7 @@
 #                         Specify control plane ID to search for. If specified, only this control plane ID will be searched for artifacts
 
 import argparse
+import concurrent.futures
 import json
 import subprocess
 from collections import defaultdict
@@ -241,6 +242,7 @@ ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in 
 PROGRESS_BAR_LENGTH: Final = 40
 MAX_RETRIES = 7
 RESOURCE_GROUP_DELETION_POLLING_DELAY = 5  # seconds
+MAX_WAIT_TIME = 30  # seconds
 
 # https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/request-limits-and-throttling#migrating-to-regional-throttling-and-token-bucket-algorithm
 THREAD_POOL_SIZE = 100
@@ -544,7 +546,11 @@ def find_all_control_planes(
             log.error(f"Unexpected error searching for control planes in {subs_to_search[sub_id]} ({sub_id}): {e}")
             continue
 
-        control_plane_rg_to_storage_acct_name = control_planes_future.result()
+        try:
+            control_plane_rg_to_storage_acct_name = control_planes_future.result(timeout=MAX_WAIT_TIME)
+        except concurrent.futures.TimeoutError:
+            log.error(f"Timeout searching for control planes in subscription {sub_id}")
+            continue
 
         for resource_group_name, storage_account_name in control_plane_rg_to_storage_acct_name.items():
             sub_to_control_plane_rg[sub_id].add(resource_group_name)
@@ -638,7 +644,13 @@ def find_role_assignments(sub_id_to_name: dict[str, str], control_plane_ids: set
                 f"Unexpected error searching for role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {future.exception()}"
             )
             continue
-        role_assignment = future.result()
+
+        try:
+            role_assignment = future.result(timeout=MAX_WAIT_TIME)
+        except concurrent.futures.TimeoutError:
+            log.error(f"Timeout searching for role assignments in subscription {sub_id}")
+            continue
+
         role_assigment_json = json.loads(role_assignment)
         if role_assigment_json:
             log.info(f"Found {len(role_assigment_json)} role assignment(s) in '{sub_id_to_name[sub_id]}' ({sub_id})")
@@ -669,7 +681,13 @@ def find_unknown_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, l
                 f"Unexpected error searching for 'Unknown' role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {future.exception()}"
             )
             continue
-        unknown_role_assignment = future.result()
+
+        try:
+            unknown_role_assignment = future.result(timeout=MAX_WAIT_TIME)
+        except concurrent.futures.TimeoutError:
+            log.error(f"Timeout searching for 'Unknown' role assignments in subscription {sub_id}")
+            continue
+
         unknown_role_assignment_json = json.loads(unknown_role_assignment)
         if unknown_role_assignment_json:
             log.info(
@@ -723,7 +741,12 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
         progress_spinner(resource_count, lambda: sum(f.done() for f in ds_futures))
 
     for resource_id, ds_future in zip(resource_ids, ds_futures):
-        ds_names = json.loads(ds_future.result())
+        try:
+            ds_names = json.loads(ds_future.result(timeout=MAX_WAIT_TIME))
+        except concurrent.futures.TimeoutError:
+            log.error(f"Timeout searching for diagnostic settings in resource {resource_id}")
+            continue
+
         for ds_name in ds_names:
             resource_ds_map[resource_id].add(ds_name)
             ds_count += 1
