@@ -76,15 +76,13 @@ func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, pii
 	var processedLogs int64
 
 	var currLog *logs.Log
-	var err error
-	parsedLogsIter, totalBytes, parseErr := logs.Parse(reader, blob, piiScrubber)
-	if parseErr != nil {
-		return 0, 0, fmt.Errorf("error parsing logs: %w", parseErr)
+
+	parsedLogsIter, totalBytes, err := logs.Parse(reader, blob, piiScrubber)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing logs: %w", err)
 	}
+
 	for parsedLog := range parsedLogsIter {
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			break // Graceful exit on timeout
-		}
 		if parsedLog.Err != nil {
 			err = fmt.Errorf("error parsing log: %w", parsedLog.Err)
 			break
