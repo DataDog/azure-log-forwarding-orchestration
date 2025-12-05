@@ -81,8 +81,8 @@ func (d *DeadLetterQueue) Add(logs []datadogV2.HTTPLogItem) {
 
 // Save saves the DeadLetterQueue to storage
 func (d *DeadLetterQueue) Save(ctx context.Context, client *storage.Client, now customtime.Now, logger *log.Entry) error {
-	// prune invalid logs
-	d.queue = collections.Filter(d.client.FailedLogs, func(log datadogV2.HTTPLogItem) bool {
+	// prune invalid logs from the queue
+	d.queue = collections.Filter(d.queue, func(log datadogV2.HTTPLogItem) bool {
 		_, valid := logs.ValidateDatadogLog(log, now, logger)
 		return valid
 	})
@@ -104,13 +104,15 @@ func (d *DeadLetterQueue) Process(ctx context.Context, now customtime.Now, logge
 	for _, datadogLog := range d.queue {
 		addLogErr := d.client.AddRawLog(ctx, now, logger, datadogLog)
 		if addLogErr != nil && !errors.Is(addLogErr, logs.ErrInvalidLog) {
-			errors.Join(err, addLogErr)
+			err = errors.Join(err, addLogErr)
 		}
 	}
 	flushErr := d.client.Flush(ctx)
-	errors.Join(err, flushErr)
+	err = errors.Join(err, flushErr)
 	if err != nil {
 		logger.Errorf("failed to process dead letter queue: %v", err)
-		d.queue = d.client.FailedLogs
 	}
+	// Always update queue to only contain items that failed to be re-sent.
+	// If all items were sent successfully, this will be empty.
+	d.queue = d.client.FailedLogs
 }
