@@ -143,7 +143,8 @@ func (f FunctionAppParser) Parse(scanner *bufio.Scanner, blob storage.Blob, piiS
 				return
 			}
 
-			// Note that function app logs do not have parsable resource IDs that we can get a log source from.
+			// Note that function apps with a domain name set produce logs that do not have parsable resource IDs that
+			// we can get a log source from. Set it explicitly.
 			if len(currLog.Source) == 0 {
 				currLog.Source = functionAppSource
 				currLog.Tags = append(currLog.Tags, "source:"+functionAppSource)
