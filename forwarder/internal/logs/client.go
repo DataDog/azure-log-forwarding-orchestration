@@ -35,6 +35,7 @@ const (
 	newlineBytes = 1
 
 	functionAppContainer = "insights-logs-functionapplogs"
+	functionAppSource    = "azure.web"
 )
 
 // Client is a client for submitting logs to Datadog.

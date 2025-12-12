@@ -103,12 +103,14 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, functionAppContainer), MockScrubber(t, functionAppLogData))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob("bad-resource-id", functionAppContainer), MockScrubber(t, functionAppLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
 			require.NotEqual(t, "", currLog.Category)
 			require.NotEqual(t, resourceId, currLog.ResourceId)
+			assert.Equal(t, "azure.web", parsedLog.ParsedLog.Source)
+			assert.Contains(t, parsedLog.ParsedLog.Tags, "source:azure.web")
 			require.False(t, currLog.Time.IsZero())
 			got += 1
 		}
