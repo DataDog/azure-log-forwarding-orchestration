@@ -61,6 +61,14 @@ variable "storage_account_retention_days" {
   }
 }
 
+variable "user_assigned_identity_client_id" {
+  description = <<-EOT
+    Client ID of the User-Assigned Managed Identity.
+    Used by Azure SDK to identify which managed identity to use for authentication.
+  EOT
+  type        = string
+}
+
 variable "datadog_api_key" {
   description = "Datadog API Key"
   type        = string
@@ -218,6 +226,14 @@ resource "azurerm_container_app_job" "forwarder" {
       env {
         name        = "AzureWebJobsStorage"
         secret_name = "storage-connection-string"
+      }
+      env {
+        name  = "AzureWebJobsStorage__accountUrl"
+        value = "https://${azurerm_storage_account.forwarder_storage.name}.blob.core.windows.net/"
+      }
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = var.user_assigned_identity_client_id
       }
       env {
         name        = "DD_API_KEY"

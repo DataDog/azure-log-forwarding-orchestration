@@ -10,17 +10,19 @@ import (
 
 // Environment variable names
 const (
-	ApmEnabled          = "DD_APM_ENABLED"
-	AzureWebJobsStorage = "AzureWebJobsStorage"
-	ControlPlaneId      = "CONTROL_PLANE_ID"
-	ConfigId            = "CONFIG_ID"
-	DdApiKey            = "DD_API_KEY"
-	ForceProfile        = "DD_FORCE_PROFILE"
-	DdSite              = "DD_SITE"
-	TelemetryEnabled    = "DD_TELEMETRY"
-	NumGoroutines       = "NUM_GOROUTINES"
-	PiiScrubberRules    = "PII_SCRUBBER_RULES"
-	VersionTag          = "VERSION_TAG"
+	ApmEnabled                    = "DD_APM_ENABLED"
+	AzureWebJobsStorage           = "AzureWebJobsStorage"
+	AzureWebJobsStorageAccountURL = "AzureWebJobsStorage__accountUrl"
+	AzureClientID                 = "AZURE_CLIENT_ID"
+	ControlPlaneId                = "CONTROL_PLANE_ID"
+	ConfigId                      = "CONFIG_ID"
+	DdApiKey                      = "DD_API_KEY"
+	ForceProfile                  = "DD_FORCE_PROFILE"
+	DdSite                        = "DD_SITE"
+	TelemetryEnabled              = "DD_TELEMETRY"
+	NumGoroutines                 = "NUM_GOROUTINES"
+	PiiScrubberRules              = "PII_SCRUBBER_RULES"
+	VersionTag                    = "VERSION_TAG"
 )
 
 func Get(envVar string) string {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	// 3p
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
@@ -406,10 +407,53 @@ func main() {
 	}
 
 	// Initialize storage client
+	// Support both managed identity and connection string authentication
+	var azBlobClient *azblob.Client
+	storageAccountURL := environment.Get(environment.AzureWebJobsStorageAccountURL)
 	storageAccountConnectionString := environment.Get(environment.AzureWebJobsStorage)
-	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
-	if err != nil {
-		logger.Fatal(fmt.Errorf("error creating azure blob client: %w", err).Error())
+
+	if storageAccountURL != "" {
+		// Use managed identity authentication (preferred)
+		logger.Info("Using managed identity authentication for Azure Storage")
+
+		clientID := environment.Get(environment.AzureClientID)
+
+		if clientID != "" {
+			// Use user-assigned managed identity
+			logger.Info(fmt.Sprintf("Using user-assigned managed identity with client ID: %s", clientID))
+			opts := &azidentity.ManagedIdentityCredentialOptions{
+				ID: azidentity.ClientID(clientID),
+			}
+			cred, credErr := azidentity.NewManagedIdentityCredential(opts)
+			if credErr != nil {
+				logger.Fatal(fmt.Errorf("error creating user-assigned managed identity credential: %w", credErr).Error())
+				return
+			}
+			azBlobClient, err = azblob.NewClient(storageAccountURL, cred, nil)
+		} else {
+			// Use system-assigned managed identity or other default credential chain
+			logger.Info("Using default Azure credential chain (system-assigned MI or other)")
+			cred, credErr := azidentity.NewDefaultAzureCredential(nil)
+			if credErr != nil {
+				logger.Fatal(fmt.Errorf("error creating Azure credential: %w", credErr).Error())
+				return
+			}
+			azBlobClient, err = azblob.NewClient(storageAccountURL, cred, nil)
+		}
+		if err != nil {
+			logger.Fatal(fmt.Errorf("error creating azure blob client with managed identity: %w", err).Error())
+			return
+		}
+	} else if storageAccountConnectionString != "" {
+		// Fallback to connection string authentication (legacy)
+		logger.Warning("Using connection string authentication for Azure Storage (consider migrating to managed identity)")
+		azBlobClient, err = azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+		if err != nil {
+			logger.Fatal(fmt.Errorf("error creating azure blob client: %w", err).Error())
+			return
+		}
+	} else {
+		logger.Fatal("error: neither AzureWebJobsStorage__accountUrl nor AzureWebJobsStorage environment variables are set")
 		return
 	}
 
