@@ -267,6 +267,15 @@ resource "azurerm_container_app_job" "forwarder" {
   tags = var.tags
 }
 
+# RBAC Role Assignments
+resource "azurerm_role_assignment" "forwarder_storage_access" {
+  scope                = azurerm_storage_account.forwarder_storage.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = var.user_assigned_identity_principal_id
+
+  depends_on = [azurerm_container_app_job.forwarder]
+}
+
 # Outputs
 output "storage_account_name" {
   description = "Name of the created storage account"
