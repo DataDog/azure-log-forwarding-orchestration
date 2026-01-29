@@ -65,6 +65,9 @@ var (
 
 	//go:embed fixtures/logs_with_level_as_int_or_string.json
 	logsWithLevelAsIntOrStringData []byte
+
+	//go:embed fixtures/large_logs_buffer_test.json
+	largeLogsBufferTestData []byte
 )
 
 func TestParseLogs(t *testing.T) {
@@ -333,4 +336,36 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
 		})
 	}
+}
+
+// Regression [CLOUDS-7233]: Because of a shared reference to the internal scanner buffer,
+// memory corruption would trigger under a particular set of circumstances
+func TestParseLargeLogsBufferReuse(t *testing.T) {
+	t.Parallel()
+
+	// GIVEN: The set of circumstances triggering the bug:
+	// - logs large enough to force buffer overwriting
+	// - pii scrubber rules are not set
+	reader := bytes.NewReader(largeLogsBufferTestData)
+	closer := io.NopCloser(reader)
+	blob := newBlob("/SUBSCRIPTIONS/TEST-SUB/RESOURCEGROUPS/TEST-RG/PROVIDERS/MICROSOFT.TEST/TEST", "insights-logs-test")
+	scrubber := logs.NewPiiScrubber(nil)
+
+	// WHEN: Parsed via logs.Parse()
+	parsedLogsIter, _, err := logs.Parse(closer, blob, scrubber)
+	require.NoError(t, err)
+
+	var collectedLogs []*logs.Log
+	for response := range parsedLogsIter {
+		require.NoError(t, response.Err)
+		collectedLogs = append(collectedLogs, response.ParsedLog)
+	}
+
+	// THEN: Make sure logs aren't corrupted/malformed
+	firstLogContent := string(collectedLogs[0].Content)
+	assert.Contains(t, firstLogContent, "FIRST_LOG_MARKER", "First log Content should contain FIRST_LOG_MARKER")
+	assert.NotContains(t, firstLogContent, "SECOND_LOG_MARKER", "First log Content should NOT contain SECOND_LOG_MARKER (buffer reuse corruption)")
+
+	secondLogContent := string(collectedLogs[1].Content)
+	assert.Contains(t, secondLogContent, "SECOND_LOG_MARKER", "Second log Content should contain SECOND_LOG_MARKER")
 }
