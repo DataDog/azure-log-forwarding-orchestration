@@ -89,7 +89,7 @@ func NewLog(logBytes []byte, blob storage.Blob, scrubber Scrubber, originalSize 
 	blobNameResourceId := blob.ResourceId()
 	currLog.blobResourceId = blobNameResourceId
 	currLog.byteSize = originalSize
-	currLog.raw = logBytes
+	currLog.raw = slices.Clone(logBytes)
 	currLog.Container = blob.Container.Name
 	currLog.Blob = blob.Name
 
