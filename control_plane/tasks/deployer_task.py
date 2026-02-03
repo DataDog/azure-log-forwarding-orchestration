@@ -68,7 +68,12 @@ class DeployerTask(Task):
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
-        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
+        # Use credentials for non-public storage accounts (e.g., personal environments)
+        # The public Datadog storage allows anonymous access, but private storage accounts require authentication
+        if storage_account_url != PUBLIC_STORAGE_ACCOUNT_URL:
+            self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER, credential=self.credential)
+        else:
+            self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
 

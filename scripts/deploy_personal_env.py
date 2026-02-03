@@ -4,6 +4,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
+from datetime import datetime, timedelta, timezone
 from hashlib import md5
 from json import dumps, loads
 from os import environ
@@ -18,8 +19,7 @@ from urllib.parse import quote
 from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
-from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, generate_container_sas, ContainerSasPermissions
 
 # constants
 CONTAINER_NAME = "lfo"
@@ -102,17 +102,20 @@ if availability_result.name_available:
     poller = storage_client.storage_accounts.begin_create(
         resource_group_name,
         storage_account_name,
-        {"location": LOCATION, "kind": "StorageV2", "sku": {"name": "Standard_LRS"}},
+        {
+            "location": LOCATION,
+            "kind": "StorageV2",
+            "sku": {"name": "Standard_LRS"},
+            "properties": {
+                "supportsHttpsTrafficOnly": True,  # Required by policy
+                "allowBlobPublicAccess": False,  # Required by policy - use authenticated access instead
+                "minimumTlsVersion": "TLS1_2",
+            },
+        },
     )
 
     account_result = poller.result()
     print(f"Created storage account {account_result.name}")
-
-    # set the allow_blob_public_access settings
-    public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
-    storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
-    print(f"Enabled public access for storage account {storage_account_name}. Waiting for settings to take effect...")
-    sleep(20)  # wait for storage account setting to propagate
 
 
 # get connection string
@@ -126,11 +129,9 @@ container_client = blob_service_client.get_container_client(CONTAINER_NAME)
 # if container does not exist, create it
 if not container_client.exists():
     try:
-        container_client = blob_service_client.create_container(CONTAINER_NAME, public_access="container")
+        container_client = blob_service_client.create_container(CONTAINER_NAME)
     except Exception as e:
-        print(
-            f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
-        )
+        print(f"Error creating storage container {CONTAINER_NAME}.")
         raise SystemExit(1) from e
     print(f"Created storage container {CONTAINER_NAME}")
 
@@ -155,6 +156,9 @@ if not acr_list or container_registry_name not in acr_list:
     sleep(20)
 
 
+# short commit sha (needed for versioning even if skipping docker)
+commit_sha = run("git rev-parse --short HEAD", cwd=lfo_dir)
+
 if not SKIP_DOCKER:
     # login to ACR
     login_output = run(
@@ -162,9 +166,6 @@ if not SKIP_DOCKER:
         cwd=lfo_dir,
     )
     print(login_output)
-
-    # short commit sha
-    commit_sha = run("git rev-parse --short HEAD", cwd=lfo_dir)
 
     # build and push deployer
     run(
@@ -199,6 +200,16 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         + f"https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
     )
     api_key = environ["DD_API_KEY"]
+
+    # Generate a SAS token for the container (needed because anonymous blob access is disabled)
+    sas_token = generate_container_sas(
+        account_name=storage_account_name,
+        container_name=CONTAINER_NAME,
+        account_key=keys.keys[0].value,
+        permission=ContainerSasPermissions(read=True),
+        expiry=datetime.now(timezone.utc) + timedelta(hours=1),  # 1 hour should be enough for deployment
+    )
+
     params = {
         "monitoredSubscriptions": dumps([subscription_id]),
         "controlPlaneLocation": LOCATION,
@@ -211,6 +222,7 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
+        "storageAccountSasToken": sas_token,
         "logLevel": "DEBUG",
     }
     run(
@@ -224,6 +236,30 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         ],
         cwd=lfo_dir,
     )
+
+    # Grant the deployer task's managed identity access to the staging storage account
+    # This is needed because we can't use anonymous blob access (blocked by policy)
+    print("Granting deployer task access to staging storage account...")
+    deployer_jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
+    deployer_job = next((job for job in deployer_jobs if "deployer-task" in job.get("name", "")), None)
+    if deployer_job:
+        deployer_principal_id = deployer_job.get("identity", {}).get("principalId")
+        storage_account_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
+        if deployer_principal_id:
+            run(
+                [
+                    "az", "role", "assignment", "create",
+                    "--assignee", deployer_principal_id,
+                    "--role", "Storage Blob Data Reader",
+                    "--scope", storage_account_id,
+                ],
+                cwd=lfo_dir,
+            )
+            print(f"Granted Storage Blob Data Reader role to deployer task on {storage_account_name}")
+        else:
+            print("Warning: Could not find deployer task principal ID. Manual role assignment may be needed.")
+    else:
+        print("Warning: Could not find deployer task. Manual role assignment may be needed.")
 else:
     # execute deployer
     jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))

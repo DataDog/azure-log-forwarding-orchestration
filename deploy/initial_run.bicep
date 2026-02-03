@@ -11,6 +11,9 @@ param forwarderImage string
 param piiScrubberRules string
 param resourceTagFilters string
 param storageAccountUrl string
+@secure()
+@description('Optional SAS token for accessing blobs when anonymous access is disabled')
+param storageAccountSasToken string = ''
 
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing = {
   name: storageAccountName
@@ -48,7 +51,7 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'RESOURCE_TAG_FILTERS', value: resourceTagFilters }
     ]
     azCliVersion: '2.67.0'
-    primaryScriptUri: '${storageAccountUrl}/lfo/initial_run.sh'
+    primaryScriptUri: empty(storageAccountSasToken) ? '${storageAccountUrl}/lfo/initial_run.sh' : '${storageAccountUrl}/lfo/initial_run.sh?${storageAccountSasToken}'
     timeout: 'PT30M'
     retentionInterval: 'PT1H'
     cleanupPreference: 'OnSuccess'
