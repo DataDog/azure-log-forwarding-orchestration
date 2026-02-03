@@ -53,7 +53,7 @@ class DummyTask(Task):
 class TestTask(TaskTestCase):
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
-        self.cred = self.patch_path("tasks.task.DefaultAzureCredential").return_value
+        self.cred = self.patch_path("tasks.common.DefaultAzureCredential").return_value
         basicConfig(level=INFO)
         task_module.TELEMETRY_ENABLED = False
 
