@@ -15,7 +15,7 @@ from uuid import uuid4
 from azure.identity.aio import DefaultAzureCredential
 
 # project
-from cache.env import CONTROL_PLANE_REGION_SETTING
+from cache.env import AZURE_AUTHORITY_SETTING, CONTROL_PLANE_REGION_SETTING
 
 log = getLogger(__name__)
 
@@ -94,8 +94,6 @@ AZURE_PUBLIC_AUTHORITY: Final = "login.microsoftonline.com"
 AZURE_GOV_AUTHORITY: Final = "login.microsoftonline.us"
 AZURE_CHINA_AUTHORITY: Final = "login.chinacloudapi.cn"
 
-# Environment variable for Azure authority URL (set by Bicep using environment() function)
-AZURE_AUTHORITY_SETTING: Final = "AZURE_AUTHORITY"
 
 
 def get_authority_for_region(region: str) -> str:

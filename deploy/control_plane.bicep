@@ -36,6 +36,7 @@ var RESOURCE_TAG_FILTERS_SETTING = 'RESOURCE_TAG_FILTERS'
 var PII_SCRUBBER_RULES_SETTING = 'PII_SCRUBBER_RULES'
 var STORAGE_ACCOUNT_URL_SETTING = 'STORAGE_ACCOUNT_URL'
 var LOG_LEVEL_SETTING = 'LOG_LEVEL'
+var AZURE_AUTHORITY_SETTING = 'AZURE_AUTHORITY'
 
 // Secret Names
 var DD_API_KEY_SECRET = 'dd-api-key'
@@ -96,6 +97,7 @@ var commonAppSettings = [
   { name: DD_SITE_SETTING, value: datadogSite }
   { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
   { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
+  { name: AZURE_AUTHORITY_SETTING, value: environment().authentication.loginEndpoint }
   { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
   { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
   { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'python' }
@@ -218,6 +220,7 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: RESOURCE_GROUP_SETTING, value: controlPlaneResourceGroupName }
             { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
             { name: CONTROL_PLANE_REGION_SETTING, value: controlPlaneLocation }
+            { name: AZURE_AUTHORITY_SETTING, value: environment().authentication.loginEndpoint }
             { name: DD_API_KEY_SETTING, secretRef: DD_API_KEY_SECRET }
             { name: DD_SITE_SETTING, value: datadogSite }
             { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
