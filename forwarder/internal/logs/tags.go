@@ -20,7 +20,7 @@ var (
 		"forwarder:lfo",
 		"control_plane_id:" + environment.Get(environment.ControlPlaneId),
 		"config_id:" + environment.Get(environment.ConfigId),
-		"forwarder-version:" + environment.Get(environment.VersionTag),
+		"forwarder_version:" + environment.Get(environment.VersionTag),
 	}
 )
 
