@@ -16,7 +16,6 @@ from typing import Any, Self
 from uuid import uuid4
 
 # 3p
-from azure.identity.aio import DefaultAzureCredential
 from datadog.dogstatsd.base import statsd
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.logs_api import LogsApi
