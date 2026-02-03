@@ -35,14 +35,8 @@ class TaskTestCase(AsyncTestCase):
         return self.patch_path(f"tasks.{self.TASK_NAME}.{obj}", **kwargs)
 
     def setUp(self) -> None:
-<<<<<<< Updated upstream
-        cred_mock = self.patch_path("tasks.common.DefaultAzureCredential", return_value=AsyncMockClient())
-        self.credential = cred_mock.return_value
-        self.credential.side_effect = AsyncMock
-=======
         self.credential = AsyncMockClient()
         self.patch_path("tasks.task.create_credential", return_value=self.credential)
->>>>>>> Stashed changes
         self.datadog_api_client = self.patch_path("tasks.task.AsyncApiClient", return_value=AsyncMockClient())
         self.datadog_logs_api = self.patch_path("tasks.task.LogsApi", return_value=AsyncMock())
         self.statsd = self.patch_path("tasks.task.statsd")

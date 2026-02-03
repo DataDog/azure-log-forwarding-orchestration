@@ -15,14 +15,9 @@ from uuid import uuid4
 from azure.identity.aio import DefaultAzureCredential
 
 # project
-<<<<<<< Updated upstream
-from cache.env import CONTROL_PLANE_REGION_SETTING, get_config_option
-=======
-from cache.common import read_cache, write_cache
 from cache.env import CONTROL_PLANE_REGION_SETTING
 
 log = getLogger(__name__)
->>>>>>> Stashed changes
 
 LFO_METRIC_PREFIX = "azure.lfo."
 CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
@@ -94,45 +89,20 @@ def is_azure_china(region: str) -> bool:
     return region.lower().startswith("china")
 
 
-<<<<<<< Updated upstream
-def get_authority_for_region(region: str) -> str | None:
-=======
 # Authority endpoints for different Azure clouds
 AZURE_PUBLIC_AUTHORITY: Final = "login.microsoftonline.com"
 AZURE_GOV_AUTHORITY: Final = "login.microsoftonline.us"
 AZURE_CHINA_AUTHORITY: Final = "login.chinacloudapi.cn"
 
-# Cache blob name for storing detected authority
-AUTHORITY_CACHE_BLOB: Final = "authority.txt"
-
-# Order to probe clouds when detecting authority
-AUTHORITIES_TO_PROBE: Final = (AZURE_PUBLIC_AUTHORITY, AZURE_GOV_AUTHORITY, AZURE_CHINA_AUTHORITY)
+# Environment variable for Azure authority URL (set by Bicep using environment() function)
+AZURE_AUTHORITY_SETTING: Final = "AZURE_AUTHORITY"
 
 
 def get_authority_for_region(region: str) -> str:
->>>>>>> Stashed changes
     """Return the appropriate Azure authority based on the region.
 
     - Azure Government (usgov*) -> login.microsoftonline.us
     - Azure China (china*) -> login.chinacloudapi.cn
-<<<<<<< Updated upstream
-    - Azure Public (all others) -> None (use default)
-    """
-    if is_azure_gov(region):
-        return "login.microsoftonline.us"
-    if is_azure_china(region):
-        return "login.chinacloudapi.cn"
-    return None
-
-
-def create_credential() -> DefaultAzureCredential:
-    """Create a DefaultAzureCredential with the appropriate authority for the current region."""
-    region = get_config_option(CONTROL_PLANE_REGION_SETTING)
-    authority = get_authority_for_region(region)
-    if authority:
-        return DefaultAzureCredential(authority=authority)
-    return DefaultAzureCredential()
-=======
     - Azure Public (all others) -> login.microsoftonline.com
     """
     if is_azure_gov(region):
@@ -145,76 +115,23 @@ def create_credential() -> DefaultAzureCredential:
 def create_credential() -> DefaultAzureCredential:
     """Create a DefaultAzureCredential with the appropriate authority for the current environment.
 
-    Uses CONTROL_PLANE_REGION if set to determine the authority, otherwise defaults to public cloud.
-    For auto-detection when region is not set, use create_credential_with_probing() instead.
+    Authority is determined by (in order of priority):
+    1. AZURE_AUTHORITY environment variable (set by Bicep using environment() function)
+    2. CONTROL_PLANE_REGION environment variable (if set, derives authority from region)
+    3. Default to public cloud (login.microsoftonline.com) for backward compatibility
     """
-    region = environ.get(CONTROL_PLANE_REGION_SETTING)
-    authority = get_authority_for_region(region) if region else AZURE_PUBLIC_AUTHORITY
-    return DefaultAzureCredential(authority=authority)
+    # First, check for explicit authority URL from Bicep
+    authority = environ.get(AZURE_AUTHORITY_SETTING)
+    if authority:
+        return DefaultAzureCredential(authority=authority)
 
-
-async def _probe_authority(authority: str) -> bool:
-    """Try to authenticate with the given authority and check if we can list subscriptions.
-
-    Returns True if at least one subscription is found, False otherwise.
-    """
-    # Import here to avoid import errors when the package isn't installed (e.g., in tests)
-    from azure.mgmt.subscription.aio import SubscriptionClient
-
-    try:
-        credential = DefaultAzureCredential(authority=authority)
-        async with credential:
-            async with SubscriptionClient(credential) as sub_client:
-                async for _ in sub_client.subscriptions.list():
-                    # Found at least one subscription - this cloud works
-                    log.info("Successfully detected Azure cloud with authority: %s", authority)
-                    return True
-        log.debug("No subscriptions found with authority: %s", authority)
-        return False
-    except Exception as e:
-        log.debug("Failed to authenticate with authority %s: %s", authority, e)
-        return False
-
-
-async def _detect_and_cache_authority() -> str:
-    """Probe each Azure cloud until we find one with subscriptions, then cache the result.
-
-    Returns the detected authority.
-    """
-    for authority in AUTHORITIES_TO_PROBE:
-        if await _probe_authority(authority):
-            await write_cache(AUTHORITY_CACHE_BLOB, authority)
-            return authority
-
-    # Fallback to public cloud if nothing worked
-    log.warning("Could not detect Azure cloud, falling back to public cloud")
-    await write_cache(AUTHORITY_CACHE_BLOB, AZURE_PUBLIC_AUTHORITY)
-    return AZURE_PUBLIC_AUTHORITY
-
-
-async def create_credential_with_probing() -> DefaultAzureCredential:
-    """Create a DefaultAzureCredential, probing for the correct cloud if region is not set.
-
-    Authority detection priority:
-    1. CONTROL_PLANE_REGION environment variable (if set)
-    2. Cached authority from blob storage (from previous detection)
-    3. Probe public -> government -> China clouds until subscriptions are found
-    """
-    # If region is explicitly set, use it directly
+    # Fall back to deriving from region if available
     region = environ.get(CONTROL_PLANE_REGION_SETTING)
     if region:
         return DefaultAzureCredential(authority=get_authority_for_region(region))
 
-    # Check for cached authority
-    cached_authority = await read_cache(AUTHORITY_CACHE_BLOB)
-    if cached_authority and cached_authority in AUTHORITIES_TO_PROBE:
-        log.debug("Using cached authority: %s", cached_authority)
-        return DefaultAzureCredential(authority=cached_authority)
-
-    # Probe and cache the authority
-    detected_authority = await _detect_and_cache_authority()
-    return DefaultAzureCredential(authority=detected_authority)
->>>>>>> Stashed changes
+    # Default to public cloud for backward compatibility with existing deployments
+    return DefaultAzureCredential(authority=AZURE_PUBLIC_AUTHORITY)
 
 
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
