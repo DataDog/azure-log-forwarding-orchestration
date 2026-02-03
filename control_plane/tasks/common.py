@@ -10,6 +10,12 @@ from math import inf
 from typing import Final, Protocol, TypeVar
 from uuid import uuid4
 
+# 3p
+from azure.identity.aio import DefaultAzureCredential
+
+# project
+from cache.env import CONTROL_PLANE_REGION_SETTING, get_config_option
+
 LFO_METRIC_PREFIX = "azure.lfo."
 CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
 FORWARDER_METRIC_PREFIX = LFO_METRIC_PREFIX + "forwarder."
@@ -73,7 +79,34 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
 
 # https://learn.microsoft.com/en-us/azure/azure-government/compare-azure-government-global-azure
 def is_azure_gov(region: str) -> bool:
-    return region.startswith("usgov")
+    return region.lower().startswith("usgov")
+
+
+def is_azure_china(region: str) -> bool:
+    return region.lower().startswith("china")
+
+
+def get_authority_for_region(region: str) -> str | None:
+    """Return the appropriate Azure authority based on the region.
+
+    - Azure Government (usgov*) -> login.microsoftonline.us
+    - Azure China (china*) -> login.chinacloudapi.cn
+    - Azure Public (all others) -> None (use default)
+    """
+    if is_azure_gov(region):
+        return "login.microsoftonline.us"
+    if is_azure_china(region):
+        return "login.chinacloudapi.cn"
+    return None
+
+
+def create_credential() -> DefaultAzureCredential:
+    """Create a DefaultAzureCredential with the appropriate authority for the current region."""
+    region = get_config_option(CONTROL_PLANE_REGION_SETTING)
+    authority = get_authority_for_region(region)
+    if authority:
+        return DefaultAzureCredential(authority=authority)
+    return DefaultAzureCredential()
 
 
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover
