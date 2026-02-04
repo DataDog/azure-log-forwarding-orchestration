@@ -95,7 +95,6 @@ AZURE_GOV_AUTHORITY: Final = "login.microsoftonline.us"
 AZURE_CHINA_AUTHORITY: Final = "login.chinacloudapi.cn"
 
 
-
 def get_authority_for_region(region: str) -> str:
     """Return the appropriate Azure authority based on the region.
 
