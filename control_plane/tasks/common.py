@@ -5,10 +5,19 @@
 # stdlib
 from collections.abc import Iterable, Mapping
 from datetime import datetime
-from logging import Logger
+from logging import Logger, getLogger
 from math import inf
+from os import environ
 from typing import Final, Protocol, TypeVar
 from uuid import uuid4
+
+# 3p
+from azure.identity.aio import DefaultAzureCredential
+
+# project
+from cache.env import AZURE_AUTHORITY_SETTING, CONTROL_PLANE_REGION_SETTING
+
+log = getLogger(__name__)
 
 LFO_METRIC_PREFIX = "azure.lfo."
 CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
@@ -73,7 +82,53 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
 
 # https://learn.microsoft.com/en-us/azure/azure-government/compare-azure-government-global-azure
 def is_azure_gov(region: str) -> bool:
-    return region.startswith("usgov")
+    return region.lower().startswith("usgov")
+
+
+def is_azure_china(region: str) -> bool:
+    return region.lower().startswith("china")
+
+
+# Authority endpoints for different Azure clouds
+AZURE_PUBLIC_AUTHORITY: Final = "login.microsoftonline.com"
+AZURE_GOV_AUTHORITY: Final = "login.microsoftonline.us"
+AZURE_CHINA_AUTHORITY: Final = "login.chinacloudapi.cn"
+
+
+def get_authority_for_region(region: str) -> str:
+    """Return the appropriate Azure authority based on the region.
+
+    - Azure Government (usgov*) -> login.microsoftonline.us
+    - Azure China (china*) -> login.chinacloudapi.cn
+    - Azure Public (all others) -> login.microsoftonline.com
+    """
+    if is_azure_gov(region):
+        return AZURE_GOV_AUTHORITY
+    if is_azure_china(region):
+        return AZURE_CHINA_AUTHORITY
+    return AZURE_PUBLIC_AUTHORITY
+
+
+def create_credential() -> DefaultAzureCredential:
+    """Create a DefaultAzureCredential with the appropriate authority for the current environment.
+
+    Authority is determined by (in order of priority):
+    1. AZURE_AUTHORITY environment variable (set by Bicep using environment() function)
+    2. CONTROL_PLANE_REGION environment variable (if set, derives authority from region)
+    3. Default to public cloud (login.microsoftonline.com) for backward compatibility
+    """
+    # First, check for explicit authority URL from Bicep
+    authority = environ.get(AZURE_AUTHORITY_SETTING)
+    if authority:
+        return DefaultAzureCredential(authority=authority)
+
+    # Fall back to deriving from region if available
+    region = environ.get(CONTROL_PLANE_REGION_SETTING)
+    if region:
+        return DefaultAzureCredential(authority=get_authority_for_region(region))
+
+    # Default to public cloud for backward compatibility with existing deployments
+    return DefaultAzureCredential(authority=AZURE_PUBLIC_AUTHORITY)
 
 
 def get_event_hub_name(config_id: str) -> str:  # pragma: no cover

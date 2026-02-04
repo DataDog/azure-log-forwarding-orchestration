@@ -16,7 +16,6 @@ from typing import Any, Self
 from uuid import uuid4
 
 # 3p
-from azure.identity.aio import DefaultAzureCredential
 from datadog.dogstatsd.base import statsd
 from datadog_api_client import AsyncApiClient, Configuration
 from datadog_api_client.v2.api.logs_api import LogsApi
@@ -32,7 +31,7 @@ from cache.env import (
     LOG_LEVEL_SETTING,
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
-from tasks.common import CONTROL_PLANE_METRIC_PREFIX, now
+from tasks.common import CONTROL_PLANE_METRIC_PREFIX, create_credential, now
 from tasks.telemetry import TELEMETRY_ENABLED
 from tasks.version import VERSION
 
@@ -83,7 +82,7 @@ class Task(AbstractAsyncContextManager["Task"]):
     NAME: str
 
     def __init__(self, execution_id: str | None = "", is_initial_run: bool = False) -> None:
-        self.credential = DefaultAzureCredential()
+        self.credential = create_credential()
 
         # Telemetry Logic
         self.start_time = time()
