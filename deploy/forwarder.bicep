@@ -15,7 +15,7 @@ param jobName string = 'datadog-log-forwarder'
 @description('Name of the Log Storage Account')
 @minLength(3)
 @maxLength(24)
-param storageAccountName string = 'datadoglogstorage'
+param storageAccountName string = 'ddlog${uniqueString(resourceGroup().id)}'
 
 @description('The SKU of the storage account')
 @allowed([
