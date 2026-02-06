@@ -379,6 +379,7 @@ def deploy_to_vm(
 ) -> None:
     """Deploy forwarder to VM via SSH."""
     print(f"Deploying to VM at {vm_ip}")
+    print(f"Using DD_SITE: {dd_site}")
 
     # Prepare environment variables
     env_vars = {
@@ -496,10 +497,17 @@ def main():
         print("Error: CONFIG_ID environment variable is required")
         sys.exit(1)
 
+    # Get DD_SITE from environment (should be set in ~/.profile)
+    dd_site = os.getenv("DD_SITE", "datadoghq.com")
+    if not os.getenv("DD_SITE"):
+        print("Warning: DD_SITE not found in environment, using default: datadoghq.com")
+        print("         To set DD_SITE, add 'export DD_SITE=\"datadoghq.com\"' to ~/.profile and source it")
+    else:
+        print(f"Using DD_SITE from environment: {dd_site}")
+
     # Get configuration
     username = os.getenv("USER", "unknown")
     base_name = args.base_name or os.getenv("LFO_VM_BASE_NAME", f"lfo{username}vm")
-    dd_site = os.getenv("DD_SITE", "datadoghq.com")
 
     # Get version tag
     version_tag = get_version_tag()
@@ -621,6 +629,42 @@ def main():
     print(f"Loggy deployed successfully to {function_app_name}")
     print(f"Function app URL: https://{function_app_name}.azurewebsites.net")
 
+    # Configure diagnostic settings for loggy to send logs to the storage account
+    print(f"\nConfiguring diagnostic settings for {function_app_name} to forward logs to storage account...")
+    function_app_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Web/sites/{function_app_name}"
+    storage_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
+
+    # Create diagnostic setting to send all logs to storage account
+    diagnostic_setting_name = "datadog-lfo"
+
+    # First check if diagnostic setting already exists
+    existing_settings = run(
+        f"az monitor diagnostic-settings list --resource {function_app_resource_id} --output json",
+        capture_output=True,
+        check=False
+    )
+
+    if existing_settings and diagnostic_setting_name not in existing_settings:
+        try:
+            # Create diagnostic setting with all available log categories
+            run(
+                f'az monitor diagnostic-settings create '
+                f'--name {diagnostic_setting_name} '
+                f'--resource {function_app_resource_id} '
+                f'--storage-account {storage_resource_id} '
+                f'--logs \'[{{"categoryGroup": "allLogs", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\' '
+                f'--metrics \'[{{"category": "AllMetrics", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\'',
+                capture_output=False
+            )
+            print(f"✅ Diagnostic settings configured - logs will be forwarded to {storage_account_name}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not configure diagnostic settings: {e}")
+            print(f"You may need to manually configure diagnostic settings for {function_app_name}")
+            print(f"To do this manually, run:")
+            print(f"  az monitor diagnostic-settings create --name {diagnostic_setting_name} --resource {function_app_resource_id} --storage-account {storage_resource_id} --logs '[{{\"categoryGroup\": \"allLogs\", \"enabled\": true}}]'")
+    else:
+        print(f"✅ Diagnostic settings already configured for {function_app_name}")
+
     print("\n✅ Deployment completed successfully!")
     print(
         f"\nStorage Account Resource ID:\n  /subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
@@ -632,14 +676,26 @@ def main():
     print(f"Check logs: ssh azureuser@{vm_ip} 'sudo journalctl -u datadog-forwarder -f'")
     print(f"Check timer: ssh azureuser@{vm_ip} 'sudo systemctl status datadog-forwarder.timer'")
 
+    # Get function key
+    try:
+        function_key_result = run(
+            f"az functionapp function keys list --name {function_app_name} --resource-group {resource_group_name} --function-name CustomLog --query default -o tsv",
+            capture_output=True,
+            text=True,
+            shell=True,
+        )
+        function_key = function_key_result.stdout.strip()
+    except Exception:
+        function_key = "Unable to get function key - check Azure portal"
+
     print("\n🚀 Test Loggy with Requesty:")
     print("# First, build requesty if you haven't already:")
     print("cd requesty && go build -o requesty cmd/requesty/main.go && cd ..")
     print("# Then test your loggy deployment:")
-    print(f"./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -duration 30s -rps 10")
+    print(f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 30s -rps 10')
     print("# Or with variety mode for fun messages:")
     print(
-        f"./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -duration 60s -rps 50 -variety"
+        f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 60s -rps 50 -variety'
     )
 
 

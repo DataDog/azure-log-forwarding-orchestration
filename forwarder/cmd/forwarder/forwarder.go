@@ -428,31 +428,22 @@ func main() {
 
 	datadogConfig := datadog.NewConfiguration()
 
-	// Explicitly set the site from DD_SITE for all operations
-	servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
-	if len(servers) > 0 {
-		server := servers[0]
-		siteVar := server.Variables["site"]
-
-		// Set the default value to the DD_SITE we already determined
-		siteVar.DefaultValue = ddSite
-
-		// If telemetry is enabled, add staging to allowed values but keep using DD_SITE
-		if environment.Enabled(environment.TelemetryEnabled) {
+	// Only add staging to allowed values if DD_SITE is empty or staging
+	// This prevents routing issues when DD_TELEMETRY=true with production DD_SITE
+	if environment.Enabled(environment.TelemetryEnabled) && (ddSite == "" || ddSite == logs.DatadogStagingSite) {
+		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
+		if len(servers) > 0 {
+			server := servers[0]
+			siteVar := server.Variables["site"]
 			enumValues := siteVar.EnumValues
 			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
 				enumValues = append(enumValues, logs.DatadogStagingSite)
 			}
-			// Also ensure the current DD_SITE is in the enum values
-			if !slices.Contains(enumValues, ddSite) {
-				enumValues = append(enumValues, ddSite)
-			}
 			siteVar.EnumValues = enumValues
+			server.Variables["site"] = siteVar
+			servers[0] = server
+			datadogConfig.OperationServers["v2.LogsApi.SubmitLog"] = servers
 		}
-
-		server.Variables["site"] = siteVar
-		servers[0] = server
-		datadogConfig.OperationServers["v2.LogsApi.SubmitLog"] = servers
 	}
 
 	err = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
