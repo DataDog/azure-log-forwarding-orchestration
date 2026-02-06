@@ -10,7 +10,6 @@ from os import environ
 from uuid import uuid4
 
 # 3p
-from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 
 # project
@@ -24,6 +23,7 @@ from cache.env import (
     get_config_option,
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
+from tasks.common import create_credential
 from tasks.diagnostic_settings_task import DiagnosticSettingsTask
 from tasks.resources_task import RESOURCE_CACHE_BLOB, ResourcesTask
 from tasks.scaling_task import ScalingTask
@@ -32,7 +32,7 @@ from tasks.version import VERSION
 
 async def start_deployer() -> None:
     async with (
-        DefaultAzureCredential() as cred,
+        create_credential() as cred,
         ContainerAppsAPIClient(cred, get_config_option(SUBSCRIPTION_ID_SETTING)) as client,
     ):
         await client.jobs.begin_start(

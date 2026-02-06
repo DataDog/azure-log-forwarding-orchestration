@@ -19,7 +19,7 @@ class TestMain(AsyncTestCase):
         super().setUp()
         environ["RESOURCE_GROUP"] = "test_resource_group"
         self.is_initial_deploy = self.patch_path("scripts.initial_run.is_initial_deploy")
-        self.default_credential = self.patch_path("scripts.initial_run.DefaultAzureCredential")
+        self.create_credential = self.patch_path("scripts.initial_run.create_credential")
         self.container_apps_client = AsyncMockClient()
         self.patch_path("scripts.initial_run.ContainerAppsAPIClient", return_value=self.container_apps_client)
         self.get_config_option = self.patch_path("scripts.initial_run.get_config_option")
@@ -48,7 +48,7 @@ class TestMain(AsyncTestCase):
         # THEN
         self.container_apps_client.jobs.begin_start.assert_awaited_once()
         self.assertTrue(self.get_config_option.called)
-        self.assertTrue(self.default_credential.called)
+        self.assertTrue(self.create_credential.called)
 
         self.resources_task.run.assert_awaited_once()
         self.scaling_task.run.assert_awaited()
