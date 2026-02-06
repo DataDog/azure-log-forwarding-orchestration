@@ -39,6 +39,13 @@ Deploys a complete personal forwarder environment.
 - Sets up systemd timer for automatic execution
 - **Required Env**: `DD_API_KEY`, `DD_SITE`
 
+### 🧹 cleanup-personal-env
+Deletes your entire personal forwarder environment.
+- Removes the resource group and ALL contained resources
+- Shows all resources before deletion
+- Requires double confirmation for safety
+- Cannot be undone
+
 ### 🔄 update-forwarder-binary
 Builds and deploys updated forwarder code to your VM.
 - Rebuilds binary from current source
@@ -121,6 +128,12 @@ export CONTROL_PLANE_ID="d0105e57d837"
 2. skill: view-forwarder-logs          # See detailed logs
 3. skill: manage-forwarder config      # Check configuration
 4. skill: manage-forwarder trigger     # Force immediate run
+```
+
+### Cleanup Environment
+```
+1. skill: discover-environment         # Verify what will be deleted
+2. skill: cleanup-personal-env         # Delete everything
 ```
 
 ## Resource Naming
