@@ -1,0 +1,41 @@
+# Datadog Azure Log Forwarder Environment Configuration
+# This file is sourced by the systemd service
+
+# Azure Storage Connection
+# Required: Connection string for Azure Storage account
+AzureWebJobsStorage="${AZURE_STORAGE_CONNECTION_STRING}"
+
+# Datadog Configuration
+# Required: Datadog API key for authentication
+DD_API_KEY="${DD_API_KEY}"
+
+# Optional: Datadog site (defaults to datadoghq.com)
+# Other options: datadoghq.eu, us3.datadoghq.com, us5.datadoghq.com, ap1.datadoghq.com, ddog-gov.com
+DD_SITE="${DD_SITE:-datadoghq.com}"
+
+# Forwarder Configuration
+# Required: Control plane identifier
+CONTROL_PLANE_ID="${CONTROL_PLANE_ID}"
+
+# Required: Configuration identifier
+CONFIG_ID="${CONFIG_ID}"
+
+# Optional: Number of concurrent goroutines for processing (defaults to 10)
+NUM_GOROUTINES="${NUM_GOROUTINES:-10}"
+
+# Version tag from git commit (auto-populated during deployment)
+# Format: <short-sha> or <short-sha>-dirty
+VERSION_TAG="${VERSION_TAG}"
+
+# Optional: Enable Datadog telemetry (defaults to true)
+DD_TELEMETRY="${DD_TELEMETRY:-true}"
+
+# Optional: Enable APM tracing (defaults to false)
+DD_APM_ENABLED="${DD_APM_ENABLED:-false}"
+
+# Optional: PII scrubber rules in JSON format
+# Example: '{"rules":[{"pattern":"[0-9]{3}-[0-9]{2}-[0-9]{4}","replacement":"XXX-XX-XXXX"}]}'
+PII_SCRUBBER_RULES="${PII_SCRUBBER_RULES}"
+
+# Optional: Additional environment variables can be added here
+# They will be available to the forwarder process
