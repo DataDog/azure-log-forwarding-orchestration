@@ -605,65 +605,106 @@ def main():
     if not app_exists:
         print(f"Creating function app {function_app_name}...")
 
-        # Create App Service Plan if it doesn't exist
-        plan_name = f"{base_name}-plan"
-        run(
-            f"az appservice plan create --name {plan_name} --resource-group {resource_group_name} --location eastus --sku B1 --is-linux",
-            capture_output=False,
-        )
+        # Try to create with consumption plan first (no quota needed)
+        try:
+            print("Attempting to create function app with consumption plan...")
+            run(
+                f"az functionapp create --name {function_app_name} --storage-account {storage_account_name} --resource-group {resource_group_name} --consumption-plan-location eastus --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux --https-only true",
+                capture_output=False,
+                check=True,
+            )
+            print(f"Function app {function_app_name} created with consumption plan")
+        except Exception as e:
+            print(f"Consumption plan creation failed: {e}")
+            print("Attempting to create function app with Basic (B1) app service plan...")
 
-        # Create function app
-        run(
-            f"az functionapp create --name {function_app_name} --storage-account {storage_account_name} --resource-group {resource_group_name} --plan {plan_name} --runtime python --runtime-version 3.11 --functions-version 4 --os-type linux --https-only",
-            capture_output=False,
-        )
+            # Try with B1 plan as fallback
+            try:
+                plan_name = f"{base_name}-plan"
+                # Create App Service Plan
+                run(
+                    f"az appservice plan create --name {plan_name} --resource-group {resource_group_name} --location eastus --sku B1 --is-linux",
+                    capture_output=False,
+                    check=True,
+                )
 
-        print(f"Function app {function_app_name} created")
+                # Create function app
+                run(
+                    f"az functionapp create --name {function_app_name} --storage-account {storage_account_name} --resource-group {resource_group_name} --plan {plan_name} --runtime python --runtime-version 3.11 --functions-version 4 --os-type linux --https-only",
+                    capture_output=False,
+                    check=True,
+                )
+                print(f"Function app {function_app_name} created with B1 app service plan")
+            except Exception as e2:
+                print(f"WARNING: Could not create function app: {e2}")
+                print(
+                    "The forwarder will still work, but you won't be able to generate test logs via the function app."
+                )
     else:
         print(f"Function app {function_app_name} already exists")
 
-    # Deploy loggy code
-    print(f"Deploying loggy code to {function_app_name}...")
-    loggy_path = Path(__file__).parent.parent / "loggy"
-    run(f"func azure functionapp publish {function_app_name} --python", capture_output=False, cwd=str(loggy_path))
-    print(f"Loggy deployed successfully to {function_app_name}")
-    print(f"Function app URL: https://{function_app_name}.azurewebsites.net")
+    # Check again if function app was created successfully
+    existing_apps_output = run(f"az functionapp list --resource-group {resource_group_name} --output json")
+    existing_apps = json.loads(existing_apps_output if existing_apps_output else "[]")
+    app_exists = any(app.get("name") == function_app_name for app in existing_apps)
 
-    # Configure diagnostic settings for loggy to send logs to the storage account
-    print(f"\nConfiguring diagnostic settings for {function_app_name} to forward logs to storage account...")
-    function_app_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Web/sites/{function_app_name}"
-    storage_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
-
-    # Create diagnostic setting to send all logs to storage account
-    diagnostic_setting_name = "datadog-lfo"
-
-    # First check if diagnostic setting already exists
-    existing_settings = run(
-        f"az monitor diagnostic-settings list --resource {function_app_resource_id} --output json",
-        capture_output=True,
-        check=False
-    )
-
-    if existing_settings and diagnostic_setting_name not in existing_settings:
+    if app_exists:
+        # Deploy loggy code
+        print(f"Deploying loggy code to {function_app_name}...")
         try:
-            # Create diagnostic setting with all available log categories
+            loggy_path = Path(__file__).parent.parent / "loggy"
             run(
-                f'az monitor diagnostic-settings create '
-                f'--name {diagnostic_setting_name} '
-                f'--resource {function_app_resource_id} '
-                f'--storage-account {storage_resource_id} '
-                f'--logs \'[{{"categoryGroup": "allLogs", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\' '
-                f'--metrics \'[{{"category": "AllMetrics", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\'',
-                capture_output=False
+                f"func azure functionapp publish {function_app_name} --python",
+                capture_output=False,
+                cwd=str(loggy_path),
             )
-            print(f"✅ Diagnostic settings configured - logs will be forwarded to {storage_account_name}")
+            print(f"Loggy deployed successfully to {function_app_name}")
+            print(f"Function app URL: https://{function_app_name}.azurewebsites.net")
         except Exception as e:
-            print(f"⚠️ Warning: Could not configure diagnostic settings: {e}")
-            print(f"You may need to manually configure diagnostic settings for {function_app_name}")
-            print(f"To do this manually, run:")
-            print(f"  az monitor diagnostic-settings create --name {diagnostic_setting_name} --resource {function_app_resource_id} --storage-account {storage_resource_id} --logs '[{{\"categoryGroup\": \"allLogs\", \"enabled\": true}}]'")
+            print(f"WARNING: Could not deploy loggy code: {e}")
+            print("The function app exists but code deployment failed. You may need to deploy manually.")
     else:
-        print(f"✅ Diagnostic settings already configured for {function_app_name}")
+        print(f"WARNING: Function app {function_app_name} was not created.")
+        print("The forwarder will still work, but you won't be able to generate test logs via the function app.")
+
+    # Configure diagnostic settings for loggy to send logs to the storage account (only if function app exists)
+    if app_exists:
+        print(f"\nConfiguring diagnostic settings for {function_app_name} to forward logs to storage account...")
+        function_app_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Web/sites/{function_app_name}"
+        storage_resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
+
+        # Create diagnostic setting to send all logs to storage account
+        diagnostic_setting_name = "datadog-lfo"
+
+        # First check if diagnostic setting already exists
+        existing_settings = run(
+            f"az monitor diagnostic-settings list --resource {function_app_resource_id} --output json",
+            capture_output=True,
+            check=False,
+        )
+
+        if existing_settings and diagnostic_setting_name not in existing_settings:
+            try:
+                # Create diagnostic setting with all available log categories
+                run(
+                    f"az monitor diagnostic-settings create "
+                    f"--name {diagnostic_setting_name} "
+                    f"--resource {function_app_resource_id} "
+                    f"--storage-account {storage_resource_id} "
+                    f'--logs \'[{{"categoryGroup": "allLogs", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\' '
+                    f'--metrics \'[{{"category": "AllMetrics", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\'',
+                    capture_output=False,
+                )
+                print(f"✅ Diagnostic settings configured - logs will be forwarded to {storage_account_name}")
+            except Exception as e:
+                print(f"⚠️ Warning: Could not configure diagnostic settings: {e}")
+                print(f"You may need to manually configure diagnostic settings for {function_app_name}")
+                print("To do this manually, run:")
+                print(
+                    f'  az monitor diagnostic-settings create --name {diagnostic_setting_name} --resource {function_app_resource_id} --storage-account {storage_resource_id} --logs \'[{{"categoryGroup": "allLogs", "enabled": true}}]\''
+                )
+        else:
+            print(f"✅ Diagnostic settings already configured for {function_app_name}")
 
     print("\n✅ Deployment completed successfully!")
     print(
@@ -692,7 +733,9 @@ def main():
     print("# First, build requesty if you haven't already:")
     print("cd requesty && go build -o requesty cmd/requesty/main.go && cd ..")
     print("# Then test your loggy deployment:")
-    print(f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 30s -rps 10')
+    print(
+        f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 30s -rps 10'
+    )
     print("# Or with variety mode for fun messages:")
     print(
         f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 60s -rps 50 -variety'
