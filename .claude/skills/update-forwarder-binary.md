@@ -19,24 +19,25 @@ This skill rebuilds the forwarder binary from the current code and deploys it to
 ## Implementation
 
 ```bash
-# Discover environment
-USERNAME="${USER:-unknown}"
-BASE_NAME="${LFO_VM_BASE_NAME:-lfo${USERNAME}vm}"
-RESOURCE_GROUP="${BASE_NAME}rg"
+# Source common discovery functions
+SCRIPT_DIR="$(dirname "$0")"
+source "${SCRIPT_DIR}/common-discovery.sh"
 
-# Try to get VM IP from environment or discover it
-if [ -z "$LFO_VM_IP" ]; then
-    echo "🔍 Discovering VM IP..."
-    VM_NAME=$(az vm list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv 2>/dev/null)
-    if [ -z "$VM_NAME" ]; then
-        echo "❌ No VM found in resource group $RESOURCE_GROUP"
-        echo "   Run 'discover-environment' skill first or deploy your environment"
-        exit 1
-    fi
-    VM_IP=$(az vm list-ip-addresses --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
-            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
-else
-    VM_IP="$LFO_VM_IP"
+# Discover resources
+echo "🔍 Discovering Azure resources..."
+if ! discover_resources; then
+    echo "❌ Failed to discover resources. Please run 'discover-environment' skill first."
+    exit 1
+fi
+
+# Configuration from discovered resources
+VM_IP="${LFO_VM_IP}"
+STORAGE_CONNECTION="${LFO_STORAGE_CONNECTION_STRING}"
+
+# Validate we have the VM IP
+if [ -z "$VM_IP" ]; then
+    echo "❌ VM IP not found. Please ensure VM is deployed and running."
+    exit 1
 fi
 
 echo "🎯 Target VM: $VM_IP"
@@ -76,6 +77,7 @@ EOF
 ```
 
 ## Notes
-- The VM IP is currently hardcoded to 20.85.216.189
+- VM IP is automatically discovered based on your username or LFO_VM_BASE_NAME
 - Requires SSH access to the VM
 - The forwarder runs on a systemd timer every minute
+- Storage connection is automatically discovered from your resources

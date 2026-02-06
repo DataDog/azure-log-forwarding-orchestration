@@ -13,8 +13,25 @@ Use this skill to check forwarder execution logs, debug issues, and monitor proc
 ## Implementation
 
 ```bash
-# Configuration
-VM_IP="20.85.216.189"
+# Source common discovery functions
+SCRIPT_DIR="$(dirname "$0")"
+source "${SCRIPT_DIR}/common-discovery.sh"
+
+# Discover resources
+echo "🔍 Discovering Azure resources..."
+if ! discover_resources; then
+    echo "❌ Failed to discover resources. Please run 'discover-environment' skill first."
+    exit 1
+fi
+
+# Configuration from discovered resources
+VM_IP="${LFO_VM_IP}"
+
+# Validate we have the VM IP
+if [ -z "$VM_IP" ]; then
+    echo "❌ VM IP not found. Please ensure VM is deployed and running."
+    exit 1
+fi
 
 # Parameters with defaults
 LINES="${LINES:-30}"
@@ -87,3 +104,4 @@ FILTER="Finished processing" ./view-forwarder-logs.md
 - The forwarder runs every minute via systemd timer
 - Logs are managed by systemd journal
 - Use `FOLLOW=true` for real-time monitoring during testing
+- VM IP is automatically discovered based on your username or LFO_VM_BASE_NAME

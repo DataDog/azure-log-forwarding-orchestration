@@ -13,25 +13,45 @@ Use this skill to generate test logs that will be processed by the forwarder. Yo
 ## Implementation
 
 ```bash
-# Configuration
-FUNCTION_APP_NAME="lfoms1829-loggy"
-# Function key should be set as environment variable or retrieved dynamically
-FUNCTION_KEY="${AZURE_FUNCTION_KEY:-}"
+# Source common discovery functions
+SCRIPT_DIR="$(dirname "$0")"
+source "${SCRIPT_DIR}/common-discovery.sh"
+
+# Discover resources
+echo "🔍 Discovering Azure resources..."
+if ! discover_resources; then
+    echo "❌ Failed to discover resources. Please run 'discover-environment' skill first."
+    exit 1
+fi
+
+# Configuration from discovered resources
+FUNCTION_APP_NAME="${LFO_FUNCTION_APP}"
+FUNCTION_KEY="${LFO_FUNCTION_KEY}"
+VM_IP="${LFO_VM_IP}"
 REQUESTY_PATH="/Users/matt.spurlin/go/src/github.com/DataDog/azure-log-forwarding-orchestration/requesty"
 
-# If function key not set, try to get it dynamically
+# Validate we have the required resources
+if [ -z "$FUNCTION_APP_NAME" ]; then
+    echo "❌ Function app not found. Please deploy environment first."
+    exit 1
+fi
+
 if [ -z "$FUNCTION_KEY" ]; then
-    echo "Retrieving function key..."
-    RESOURCE_GROUP="rg-lfoms1829"
-    KEY_RESPONSE=$(az functionapp function keys list \
-        --resource-group "${RESOURCE_GROUP}" \
+    echo "⚠️  Function key not found. Trying to retrieve it..."
+    FUNCTION_KEY=$(az functionapp function keys list \
+        --resource-group "${LFO_RESOURCE_GROUP}" \
         --name "${FUNCTION_APP_NAME}" \
-        --function-name "CustomLog" 2>/dev/null || echo '{}')
-    FUNCTION_KEY=$(echo "$KEY_RESPONSE" | jq -r '.default // empty')
+        --function-name "CustomLog" \
+        --query "default" -o tsv 2>/dev/null || echo "")
 
     if [ -z "$FUNCTION_KEY" ]; then
-        echo "Warning: Could not retrieve function key. Set AZURE_FUNCTION_KEY environment variable."
+        echo "❌ Could not retrieve function key. Please check Azure permissions."
+        exit 1
     fi
+fi
+
+if [ -z "$VM_IP" ]; then
+    echo "⚠️  VM IP not found. Forwarder trigger will be skipped."
 fi
 
 # Parameters with defaults
@@ -79,14 +99,18 @@ echo "⏳ Waiting 10 seconds for logs to be written to storage..."
 sleep 10
 
 # Trigger forwarder to process the logs
-echo "🔄 Triggering forwarder to process logs..."
-ssh -o StrictHostKeyChecking=no azureuser@20.85.216.189 "sudo systemctl start datadog-forwarder.service"
+if [ -n "$VM_IP" ]; then
+    echo "🔄 Triggering forwarder to process logs..."
+    ssh -o StrictHostKeyChecking=no azureuser@${VM_IP} "sudo systemctl start datadog-forwarder.service"
 
-# Check results
-sleep 3
-echo ""
-echo "📊 Checking forwarder results:"
-ssh -o StrictHostKeyChecking=no azureuser@20.85.216.189 "sudo journalctl -u datadog-forwarder -n 5 --no-pager | grep 'Finished processing'"
+    # Check results
+    sleep 3
+    echo ""
+    echo "📊 Checking forwarder results:"
+    ssh -o StrictHostKeyChecking=no azureuser@${VM_IP} "sudo journalctl -u datadog-forwarder -n 5 --no-pager | grep 'Finished processing'"
+else
+    echo "⚠️  Skipping forwarder trigger (VM IP not found)"
+fi
 ```
 
 ## Examples
