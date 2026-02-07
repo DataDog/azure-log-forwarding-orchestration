@@ -23,6 +23,8 @@ import (
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
@@ -395,6 +397,37 @@ func main() {
 
 	log.SetFormatter(&log.JSONFormatter{})
 	logger := log.New()
+
+	// Initialize APM and Profiling when enabled
+	if environment.APMEnabled() {
+		// Initialize tracer for APM
+		tracer.Start(
+			tracer.WithService(environment.Get(environment.DdService)),
+			tracer.WithEnv(environment.Get(environment.DdEnv)),
+			tracer.WithServiceVersion(environment.Get(environment.DdVersion)),
+		)
+		defer tracer.Stop()
+
+		// Initialize profiler
+		err := profiler.Start(
+			profiler.WithService(environment.Get(environment.DdService)),
+			profiler.WithEnv(environment.Get(environment.DdEnv)),
+			profiler.WithVersion(environment.Get(environment.DdVersion)),
+			profiler.WithProfileTypes(
+				profiler.CPUProfile,
+				profiler.HeapProfile,
+				profiler.BlockProfile,
+				profiler.MutexProfile,
+				profiler.GoroutineProfile,
+			),
+		)
+		if err != nil {
+			logger.Warnf("Failed to start profiler: %v", err)
+		} else {
+			logger.Info("APM and Profiling enabled successfully")
+			defer profiler.Stop()
+		}
+	}
 
 	goroutineString := environment.Get(environment.NumGoroutines)
 	if goroutineString == "" {

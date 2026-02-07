@@ -391,7 +391,10 @@ def deploy_to_vm(
         "VERSION_TAG": version_tag,
         "NUM_GOROUTINES": os.getenv("NUM_GOROUTINES", "10"),
         "DD_TELEMETRY": os.getenv("DD_TELEMETRY", "true"),
-        "DD_APM_ENABLED": os.getenv("DD_APM_ENABLED", "false"),
+        "DD_APM_ENABLED": os.getenv("DD_APM_ENABLED", "true"),
+        "DD_ENV": os.getenv("DD_ENV", "personal"),
+        "DD_SERVICE": os.getenv("DD_SERVICE", "azure-log-forwarder"),
+        "DD_VERSION": os.getenv("DD_VERSION", version_tag),
         "PII_SCRUBBER_RULES": os.getenv("PII_SCRUBBER_RULES", ""),
     }
 

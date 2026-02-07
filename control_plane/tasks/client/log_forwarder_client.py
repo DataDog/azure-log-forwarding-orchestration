@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
 from logging import Logger
+from os import environ
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
 
@@ -68,8 +69,12 @@ from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     DD_API_KEY_SECRET,
     DD_API_KEY_SETTING,
+    DD_APM_ENABLED_SETTING,
+    DD_ENV_SETTING,
+    DD_SERVICE_SETTING,
     DD_SITE_SETTING,
     DD_TELEMETRY_SETTING,
+    DD_VERSION_SETTING,
     FORWARDER_IMAGE_SETTING,
     PII_SCRUBBER_RULES_SETTING,
     STORAGE_CONNECTION_SETTING,
@@ -377,6 +382,10 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
             EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_rules_json),
             EnvironmentVar(name=DD_TELEMETRY_SETTING, value=str(TELEMETRY_ENABLED).lower()),
+            EnvironmentVar(name=DD_APM_ENABLED_SETTING, value=environ.get(DD_APM_ENABLED_SETTING, "false")),
+            EnvironmentVar(name=DD_ENV_SETTING, value=environ.get(DD_ENV_SETTING, "production")),
+            EnvironmentVar(name=DD_SERVICE_SETTING, value=environ.get(DD_SERVICE_SETTING, "azure-log-forwarder")),
+            EnvironmentVar(name=DD_VERSION_SETTING, value=environ.get(DD_VERSION_SETTING, "latest")),
         ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:

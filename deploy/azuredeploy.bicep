@@ -16,6 +16,14 @@ param resourceTagFilters string = ''
 @description('YAML formatted list of PII Scrubber Rules')
 param piiScrubberRules string = ''
 param datadogTelemetry bool = false
+@description('Enable Datadog APM tracing')
+param datadogApmEnabled string = 'true'
+@description('Datadog APM environment name')
+param datadogEnv string = 'personal'
+@description('Datadog APM service name')
+param datadogService string = 'azure-log-forwarder'
+@description('Datadog APM service version')
+param datadogVersion string = 'latest'
 param logLevel string = 'INFO'
 
 param imageRegistry string = 'datadoghq.azurecr.io'
@@ -71,6 +79,10 @@ module controlPlane './control_plane.bicep' = {
     datadogApiKey: datadogApiKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
+    datadogApmEnabled: datadogApmEnabled
+    datadogEnv: datadogEnv
+    datadogService: datadogService
+    datadogVersion: datadogVersion
     resourceTagFilters: resourceTagFilters
     piiScrubberRules: piiScrubberRules
     imageRegistry: imageRegistry
@@ -114,6 +126,10 @@ module initialRun './initial_run.bicep' = {
     datadogApiKey: datadogApiKey
     datadogSite: datadogSite
     datadogTelemetry: datadogTelemetry
+    datadogApmEnabled: datadogApmEnabled
+    datadogEnv: datadogEnv
+    datadogService: datadogService
+    datadogVersion: datadogVersion
     logLevel: logLevel
     monitoredSubscriptions: monitoredSubscriptions
     piiScrubberRules: piiScrubberRules
