@@ -1,7 +1,7 @@
 ---
 name: deploy
 description: Deploy a complete personal forwarder environment
-argument-hint: [vm|container-app|both] [--base-name=<name>]
+argument-hint: [vm|container-app|both] [--base-name=<name>] [--skip-agent]
 ---
 
 # Deploy Personal Forwarder Environment
@@ -24,6 +24,7 @@ This command deploys your personal Azure environment for testing the log forward
 # Default values
 DEPLOYMENT_TYPE="vm"
 BASE_NAME=""
+SKIP_AGENT=""
 REPO_ROOT="${REPO_ROOT:-/Users/matt.spurlin/go/src/github.com/DataDog/azure-log-forwarding-orchestration}"
 
 # Parse arguments
@@ -37,8 +38,12 @@ while [[ $# -gt 0 ]]; do
             BASE_NAME="${1#*=}"
             shift
             ;;
+        --skip-agent)
+            SKIP_AGENT="--skip-agent"
+            shift
+            ;;
         --help)
-            echo "Usage: /deploy [vm|container-app|both] [--base-name=<name>]"
+            echo "Usage: /deploy [vm|container-app|both] [--base-name=<name>] [--skip-agent]"
             echo ""
             echo "Arguments:"
             echo "  vm              Deploy VM-based forwarder (default)"
@@ -47,11 +52,13 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Options:"
             echo "  --base-name=NAME   Override default base name (default: lfo<username>vm)"
+            echo "  --skip-agent       Skip Datadog Agent installation (agent is installed by default)"
             echo ""
             echo "Examples:"
-            echo "  /deploy                    # Deploy VM (default)"
+            echo "  /deploy                    # Deploy VM with agent (default)"
             echo "  /deploy container-app      # Deploy Container App"
-            echo "  /deploy vm --base-name=test1   # Deploy VM with custom name"
+            echo "  /deploy vm --skip-agent    # Deploy VM without agent"
+            echo "  /deploy vm --base-name=test1   # Deploy VM with custom name and agent"
             exit 0
             ;;
         *)
@@ -117,11 +124,13 @@ case "$DEPLOYMENT_TYPE" in
 
         # Run deployment script
         cd "$REPO_ROOT"
-        python scripts/deploy_personal_forwarder_vm.py
+        python scripts/deploy_personal_forwarder_vm.py $SKIP_AGENT
 
         # Get VM IP for convenience
         USERNAME="${USER:-unknown}"
-        BASE_NAME="${LFO_VM_BASE_NAME:-lfo${USERNAME}vm}"
+        # Remove dots from username for Azure resource naming
+        CLEAN_USERNAME="${USERNAME//./}"
+        BASE_NAME="${LFO_VM_BASE_NAME:-lfo${CLEAN_USERNAME}vm}"
         RESOURCE_GROUP="${BASE_NAME}rg"
 
         VM_NAME=$(az vm list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv 2>/dev/null)
@@ -154,7 +163,7 @@ case "$DEPLOYMENT_TYPE" in
         echo "Now deploying VM..."
         export CONFIG_ID="${CONFIG_ID:-forwarder-vm-config}"
         export CONTROL_PLANE_ID="${CONTROL_PLANE_ID:-d0105e57d837}"
-        python scripts/deploy_personal_forwarder_vm.py
+        python scripts/deploy_personal_forwarder_vm.py $SKIP_AGENT
         ;;
 
     *)
@@ -175,9 +184,12 @@ echo "4. Check logs in Datadog: https://app.datadoghq.com/logs"
 ## Examples
 
 ```bash
-# Deploy VM-based forwarder (recommended)
+# Deploy VM-based forwarder with Datadog Agent (recommended)
 /deploy
 /deploy vm
+
+# Deploy VM without agent
+/deploy vm --skip-agent
 
 # Deploy container app version
 /deploy container-app
@@ -185,13 +197,18 @@ echo "4. Check logs in Datadog: https://app.datadoghq.com/logs"
 # Deploy both
 /deploy both
 
-# Use custom base name
+# Use custom base name (with agent)
 /deploy vm --base-name=mytestenv
+
+# Custom name without agent
+/deploy vm --base-name=mytestenv --skip-agent
 ```
 
 ## Notes
 - VM deployment is recommended for development
 - Creates all Azure resources automatically
-- Configures Datadog integration
+- Installs Datadog Agent by default for full observability (use --skip-agent to disable)
+- Configures Datadog integration with metrics, logs, and process monitoring
 - Sets up systemd timer for periodic execution
 - Deploys Loggy function app for testing
+- Agent APM receiver is ready for traces when APM code is merged

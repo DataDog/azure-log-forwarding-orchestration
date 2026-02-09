@@ -34,6 +34,34 @@ else
     echo "Azure CLI already installed"
 fi
 
+# Install Datadog Agent if requested
+if [[ "${INSTALL_DD_AGENT:-false}" == "true" ]]; then
+    echo "Installing Datadog Agent..."
+    if [[ -f ~/deployment/install_datadog_agent.sh ]]; then
+        # Pass through environment variables needed for agent configuration
+        export DD_API_KEY="${DD_API_KEY}"
+        export DD_SITE="${DD_SITE}"
+        export DD_ENV="${DD_ENV:-personal-dev}"
+        export DD_SERVICE="${DD_SERVICE:-azure-log-forwarder}"
+        export DD_HOSTNAME="${DD_HOSTNAME:-$(hostname)}"
+        export INSTALL_AGENT="true"
+
+        # Run the agent installation script
+        sudo -E bash ~/deployment/install_datadog_agent.sh
+
+        if [[ $? -eq 0 ]]; then
+            echo "✅ Datadog Agent installed successfully"
+        else
+            echo "⚠️  Datadog Agent installation failed, continuing with setup..."
+        fi
+    else
+        echo "⚠️  Datadog Agent installation script not found at ~/deployment/install_datadog_agent.sh"
+        echo "    Skipping agent installation..."
+    fi
+else
+    echo "Skipping Datadog Agent installation (INSTALL_DD_AGENT not set to true)"
+fi
+
 # Install systemd service file
 if [ -f ~/deployment/datadog-forwarder.service ]; then
     echo "Installing systemd service..."

@@ -104,6 +104,22 @@ if [ "$ERRORS_ONLY" = "true" ]; then
             "sudo journalctl -u datadog-forwarder -p warning --since '1 hour ago' --no-pager | tail -10"
     fi
 
+    # Check Datadog Agent if installed
+    AGENT_INSTALLED=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        "command -v datadog-agent" 2>/dev/null)
+
+    if [ ! -z "$AGENT_INSTALLED" ]; then
+        echo ""
+        AGENT_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "sudo systemctl is-active datadog-agent" 2>/dev/null)
+
+        if [ "$AGENT_STATUS" != "active" ]; then
+            echo "⚠️  Datadog Agent is not active: $AGENT_STATUS"
+        else
+            echo "✅ Datadog Agent is active"
+        fi
+    fi
+
     exit 0
 fi
 
@@ -144,10 +160,65 @@ echo "💾 Blob Processing:"
 ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
     "sudo journalctl -u datadog-forwarder --no-pager | grep -E 'processing blob|container' | tail -5"
 
+# Check Datadog Agent status (if installed)
+echo ""
+echo "🐶 Datadog Agent Status:"
+AGENT_INSTALLED=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    "command -v datadog-agent" 2>/dev/null)
+
+if [ ! -z "$AGENT_INSTALLED" ]; then
+    AGENT_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        "sudo systemctl is-active datadog-agent" 2>/dev/null)
+
+    if [ "$AGENT_STATUS" = "active" ]; then
+        echo "✅ Agent is running"
+
+        # Get agent version
+        AGENT_VERSION=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "sudo datadog-agent version 2>/dev/null | grep 'Agent' | head -1" 2>/dev/null)
+        if [ ! -z "$AGENT_VERSION" ]; then
+            echo "   Version: $AGENT_VERSION"
+        fi
+
+        # Check agent connectivity
+        AGENT_HEALTH=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "sudo datadog-agent health 2>/dev/null | grep -E '(API|Forwarder)' | head -2" 2>/dev/null)
+        if [ ! -z "$AGENT_HEALTH" ]; then
+            echo "   Health:"
+            echo "$AGENT_HEALTH" | sed 's/^/     /'
+        fi
+
+        # Check APM status
+        APM_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "sudo datadog-agent status 2>/dev/null | grep -A 2 'APM Agent' | tail -2" 2>/dev/null)
+        if [ ! -z "$APM_STATUS" ]; then
+            echo "   APM Receiver: Listening on localhost:8126"
+        fi
+
+        # Show collected metrics count
+        METRICS_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "sudo datadog-agent status 2>/dev/null | grep 'Metrics' | grep -oE '[0-9]+' | head -1" 2>/dev/null)
+        if [ ! -z "$METRICS_COUNT" ]; then
+            echo "   Metrics collected: $METRICS_COUNT"
+        fi
+    else
+        echo "⚠️  Agent installed but not running (status: $AGENT_STATUS)"
+        echo "   To start: ssh azureuser@${LFO_VM_IP} 'sudo systemctl start datadog-agent'"
+    fi
+else
+    echo "ℹ️  Agent not installed"
+    echo "   To install: Re-deploy (agent is installed by default)"
+    echo "   Note: Use --skip-agent flag only if you don't want the agent"
+fi
+
 echo ""
 echo "🔗 Datadog Links:"
 echo "   Logs: https://app.datadoghq.com/logs?query=service%3Aazure-log-forwarder"
 echo "   Search: https://app.datadoghq.com/logs?query=%40azure.resource_name%3A${LFO_VM_BASE_NAME}*"
+if [ ! -z "$AGENT_INSTALLED" ] && [ "$AGENT_STATUS" = "active" ]; then
+    echo "   Infrastructure: https://app.datadoghq.com/infrastructure?host=${LFO_VM_BASE_NAME}"
+    echo "   Processes: https://app.datadoghq.com/process?hostname=${LFO_VM_BASE_NAME}"
+fi
 ```
 
 ## Examples

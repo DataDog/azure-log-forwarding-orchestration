@@ -31,7 +31,8 @@ from azure.storage.blob import BlobServiceClient
 
 # Configuration
 LOCATION = "eastus"
-VM_SIZE = "Standard_B2s"  # 2 vCPUs, 4GB RAM - matches container app specs
+# VM_SIZE = "Standard_B2s"  # 2 vCPUs, 4GB RAM - matches container app specs
+VM_SIZE = "Standard_D2ds_v4"  # 2 vCPUs, 8GB RAM - alternative due to capacity issues
 VM_IMAGE = {
     "publisher": "Canonical",
     "offer": "0001-com-ubuntu-server-jammy",
@@ -376,10 +377,13 @@ def deploy_to_vm(
     control_plane_id: str,
     config_id: str,
     dd_site: str = "datadoghq.com",
+    install_agent: bool = False,
 ) -> None:
     """Deploy forwarder to VM via SSH."""
     print(f"Deploying to VM at {vm_ip}")
     print(f"Using DD_SITE: {dd_site}")
+    if install_agent:
+        print("Datadog Agent installation requested")
 
     # Prepare environment variables
     env_vars = {
@@ -393,6 +397,11 @@ def deploy_to_vm(
         "DD_TELEMETRY": os.getenv("DD_TELEMETRY", "true"),
         "DD_APM_ENABLED": os.getenv("DD_APM_ENABLED", "false"),
         "PII_SCRUBBER_RULES": os.getenv("PII_SCRUBBER_RULES", ""),
+        # Add environment variables for agent configuration
+        "DD_ENV": os.getenv("DD_ENV", "personal-dev"),
+        "DD_SERVICE": os.getenv("DD_SERVICE", "azure-log-forwarder"),
+        "DD_TRACE_AGENT_URL": "http://localhost:8126",
+        "DD_LOGS_INJECTION": "true",
     }
 
     # Copy deployment scripts to VM
@@ -406,10 +415,17 @@ def deploy_to_vm(
 
     # Copy scripts
     print("Copying deployment scripts to VM...")
-    for script in ["initial_setup.sh", "deploy.sh", "update.sh", "rollback.sh"]:
+    scripts_to_copy = ["initial_setup.sh", "deploy.sh", "update.sh", "rollback.sh"]
+    if install_agent:
+        scripts_to_copy.append("install_datadog_agent.sh")
+
+    for script in scripts_to_copy:
         script_path = script_dir / script
         if script_path.exists():
             run(f"scp -o StrictHostKeyChecking=no {script_path} azureuser@{vm_ip}:deployment/", capture_output=False)
+        elif script == "install_datadog_agent.sh" and install_agent:
+            print(f"Warning: Agent installation script not found at {script_path}")
+            print("Agent installation will be skipped.")
 
     # Copy systemd files
     configs_dir = Path(__file__).parent.parent / "configs" / "systemd"
@@ -420,13 +436,28 @@ def deploy_to_vm(
 
     # Run initial setup
     print("Running initial setup on VM...")
+
+    # Prepare initial setup command with environment variables if agent installation is requested
+    if install_agent:
+        setup_cmd = (
+            f"chmod +x $HOME/deployment/*.sh && "
+            f"INSTALL_DD_AGENT=true "
+            f"DD_API_KEY='{dd_api_key}' "
+            f"DD_SITE='{dd_site}' "
+            f"DD_ENV='{env_vars['DD_ENV']}' "
+            f"DD_SERVICE='{env_vars['DD_SERVICE']}' "
+            f"$HOME/deployment/initial_setup.sh"
+        )
+    else:
+        setup_cmd = "chmod +x $HOME/deployment/*.sh && $HOME/deployment/initial_setup.sh"
+
     run(
         [
             "ssh",
             "-o",
             "StrictHostKeyChecking=no",
             f"azureuser@{vm_ip}",
-            "chmod +x $HOME/deployment/*.sh && $HOME/deployment/initial_setup.sh",
+            setup_cmd,
         ],
         capture_output=False,
     )
@@ -479,6 +510,9 @@ def main():
     parser.add_argument("--skip-upload", action="store_true", help="Skip uploading to storage")
     parser.add_argument("--skip-deploy", action="store_true", help="Skip deployment to VM")
     parser.add_argument("--subscription-id", default=None, help="Azure subscription ID")
+    parser.add_argument(
+        "--skip-agent", action="store_true", help="Skip Datadog Agent installation (agent is installed by default)"
+    )
     args = parser.parse_args()
 
     # Check required environment variables
@@ -510,6 +544,8 @@ def main():
     # Remove dots from username for Azure resource naming
     clean_username = username.replace(".", "")
     base_name = args.base_name or os.getenv("LFO_VM_BASE_NAME", f"lfo{clean_username}vm")
+    # Ensure base_name has no dots (in case it came from env var or args)
+    base_name = base_name.replace(".", "")
 
     # Get version tag
     version_tag = get_version_tag()
@@ -595,7 +631,16 @@ def main():
         print("Waiting for VM to be fully ready...")
         time.sleep(30)
 
-        deploy_to_vm(vm_ip, connection_string, version_tag, dd_api_key, control_plane_id, config_id, dd_site)
+        deploy_to_vm(
+            vm_ip,
+            connection_string,
+            version_tag,
+            dd_api_key,
+            control_plane_id,
+            config_id,
+            dd_site,
+            install_agent=not args.skip_agent,  # Install by default unless skipped
+        )
 
     # Deploy loggy function app
     print("\n=== Deploying Loggy Function App ===")

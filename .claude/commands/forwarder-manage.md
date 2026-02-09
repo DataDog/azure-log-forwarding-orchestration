@@ -1,7 +1,7 @@
 ---
 name: forwarder-manage
-description: Control the forwarder service (start/stop/restart/trigger)
-argument-hint: <action> [start|stop|restart|trigger|status|config|logs|update-env]
+description: Control the forwarder service (start/stop/restart/trigger/status)
+argument-hint: <action> [start|stop|restart|trigger|status|config|logs|update-env|agent-*]
 ---
 
 # Manage Forwarder Service
@@ -23,20 +23,29 @@ ACTION="${1:-status}"
 if [ "$ACTION" = "--help" ] || [ "$ACTION" = "-h" ]; then
     echo "Usage: /forwarder-manage <action>"
     echo ""
-    echo "Actions:"
-    echo "  start       Start the forwarder timer"
-    echo "  stop        Stop the forwarder timer and service"
-    echo "  restart     Restart the forwarder timer"
-    echo "  trigger     Trigger an immediate forwarder run"
-    echo "  status      Show forwarder status (default)"
-    echo "  logs        Show recent forwarder logs"
-    echo "  config      Display forwarder configuration"
-    echo "  update-env  Instructions for updating environment variables"
+    echo "Forwarder Actions:"
+    echo "  start         Start the forwarder timer"
+    echo "  stop          Stop the forwarder timer and service"
+    echo "  restart       Restart the forwarder timer"
+    echo "  trigger       Trigger an immediate forwarder run"
+    echo "  status        Show forwarder status (default)"
+    echo "  logs          Show recent forwarder logs"
+    echo "  config        Display forwarder configuration"
+    echo "  update-env    Instructions for updating environment variables"
+    echo ""
+    echo "Datadog Agent Actions:"
+    echo "  agent-status  Show Datadog Agent status"
+    echo "  agent-start   Start the Datadog Agent"
+    echo "  agent-stop    Stop the Datadog Agent"
+    echo "  agent-restart Restart the Datadog Agent"
+    echo "  agent-logs    Show recent Datadog Agent logs"
+    echo "  agent-config  Check Datadog Agent configuration"
     echo ""
     echo "Examples:"
     echo "  /forwarder-manage status"
     echo "  /forwarder-manage trigger"
     echo "  /forwarder-manage restart"
+    echo "  /forwarder-manage agent-status"
     exit 0
 fi
 
@@ -147,10 +156,136 @@ EOF
 EOF
         ;;
 
+    agent-status)
+        echo "🐶 Datadog Agent status:"
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "command -v datadog-agent" 2>/dev/null)
+
+        if [ -z "$AGENT_INSTALLED" ]; then
+            echo "❌ Datadog Agent is not installed"
+            echo "   To install: Re-deploy (agent is installed by default)"
+            echo "   Note: Use --skip-agent flag only if you don't want the agent"
+            exit 1
+        fi
+
+        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+            echo "Service status:"
+            sudo systemctl status datadog-agent --no-pager | head -15
+            echo ""
+            echo "Agent health:"
+            sudo datadog-agent health
+            echo ""
+            echo "Agent configuration check:"
+            sudo datadog-agent configcheck
+EOF
+        ;;
+
+    agent-start)
+        echo "▶️  Starting Datadog Agent..."
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "command -v datadog-agent" 2>/dev/null)
+
+        if [ -z "$AGENT_INSTALLED" ]; then
+            echo "❌ Datadog Agent is not installed"
+            echo "   To install: Re-deploy (agent is installed by default)"
+            echo "   Note: Use --skip-agent flag only if you don't want the agent"
+            exit 1
+        fi
+
+        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+            sudo systemctl start datadog-agent
+            sudo systemctl enable datadog-agent
+            echo "Agent started and enabled"
+            sleep 3
+            sudo systemctl status datadog-agent --no-pager | head -5
+EOF
+        ;;
+
+    agent-stop)
+        echo "⏹️  Stopping Datadog Agent..."
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "command -v datadog-agent" 2>/dev/null)
+
+        if [ -z "$AGENT_INSTALLED" ]; then
+            echo "❌ Datadog Agent is not installed"
+            exit 1
+        fi
+
+        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+            sudo systemctl stop datadog-agent
+            echo "Agent stopped"
+EOF
+        ;;
+
+    agent-restart)
+        echo "🔄 Restarting Datadog Agent..."
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "command -v datadog-agent" 2>/dev/null)
+
+        if [ -z "$AGENT_INSTALLED" ]; then
+            echo "❌ Datadog Agent is not installed"
+            echo "   To install: Re-deploy (agent is installed by default)"
+            echo "   Note: Use --skip-agent flag only if you don't want the agent"
+            exit 1
+        fi
+
+        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+            sudo systemctl restart datadog-agent
+            echo "Agent restarted"
+            sleep 3
+            sudo systemctl status datadog-agent --no-pager | head -5
+EOF
+        ;;
+
+    agent-logs)
+        echo "📜 Showing recent Datadog Agent logs..."
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "command -v datadog-agent" 2>/dev/null)
+
+        if [ -z "$AGENT_INSTALLED" ]; then
+            echo "❌ Datadog Agent is not installed"
+            exit 1
+        fi
+
+        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "sudo journalctl -u datadog-agent -n 50 --no-pager"
+        ;;
+
+    agent-config)
+        echo "⚙️  Datadog Agent configuration:"
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+            "command -v datadog-agent" 2>/dev/null)
+
+        if [ -z "$AGENT_INSTALLED" ]; then
+            echo "❌ Datadog Agent is not installed"
+            echo "   To install: Re-deploy (agent is installed by default)"
+            echo "   Note: Use --skip-agent flag only if you don't want the agent"
+            exit 1
+        fi
+
+        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+            echo "Main configuration:"
+            sudo grep -E "^(api_key|site|hostname|env|tags)" /etc/datadog-agent/datadog.yaml | head -20
+            echo ""
+            echo "APM configuration:"
+            sudo grep -E "apm_config:" -A 5 /etc/datadog-agent/datadog.yaml
+            echo ""
+            echo "Logs configuration:"
+            sudo grep -E "logs_enabled:" /etc/datadog-agent/datadog.yaml
+            if [ -f /etc/datadog-agent/conf.d/logs.d/forwarder.yaml ]; then
+                echo ""
+                echo "Forwarder log collection:"
+                sudo cat /etc/datadog-agent/conf.d/logs.d/forwarder.yaml
+            fi
+EOF
+        ;;
+
     *)
         echo "❌ Unknown action: $ACTION"
         echo ""
-        echo "Valid actions are: start, stop, restart, trigger, status, logs, config, update-env"
+        echo "Valid actions are:"
+        echo "  Forwarder: start, stop, restart, trigger, status, logs, config, update-env"
+        echo "  Agent: agent-status, agent-start, agent-stop, agent-restart, agent-logs, agent-config"
         echo "Use '/forwarder-manage --help' for more information"
         exit 1
         ;;
@@ -160,26 +295,22 @@ esac
 ## Examples
 
 ```bash
-# Check status
-/forwarder-manage status
+# Forwarder operations
+/forwarder-manage status        # Check forwarder status
+/forwarder-manage start         # Start the timer
+/forwarder-manage stop          # Stop everything
+/forwarder-manage trigger       # Trigger immediate run
+/forwarder-manage logs          # View forwarder logs
+/forwarder-manage config        # Check forwarder configuration
+/forwarder-manage update-env    # Update environment variables
 
-# Start the timer
-/forwarder-manage start
-
-# Stop everything
-/forwarder-manage stop
-
-# Trigger immediate run
-/forwarder-manage trigger
-
-# View logs
-/forwarder-manage logs
-
-# Check configuration
-/forwarder-manage config
-
-# Update environment variables
-/forwarder-manage update-env
+# Datadog Agent operations (if installed)
+/forwarder-manage agent-status  # Check agent status
+/forwarder-manage agent-start   # Start the agent
+/forwarder-manage agent-stop    # Stop the agent
+/forwarder-manage agent-restart # Restart the agent
+/forwarder-manage agent-logs    # View agent logs
+/forwarder-manage agent-config  # Check agent configuration
 ```
 
 ## Notes
@@ -187,3 +318,5 @@ esac
 - Use 'trigger' for immediate execution during testing
 - Configuration changes require timer restart
 - The default action is 'status' if none provided
+- Datadog Agent commands are only available if agent is installed (use --install-agent flag during deployment)
+- Agent provides metrics, logs, process monitoring, and APM receiver for the forwarder
