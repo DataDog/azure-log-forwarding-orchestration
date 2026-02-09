@@ -51,6 +51,18 @@ param datadogApiKey string
 ])
 param datadogSite string = 'datadoghq.com'
 
+@description('Enable Datadog APM tracing')
+param datadogApmEnabled string = 'true'
+
+@description('Datadog APM environment name')
+param datadogEnv string = 'production'
+
+@description('Datadog APM service name')
+param datadogService string = 'azure-log-forwarder'
+
+@description('Datadog APM service version')
+param datadogVersion string = 'latest'
+
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
   location: resourceGroup().location
@@ -142,6 +154,10 @@ resource forwarder 'Microsoft.App/jobs@2023-05-01' = {
             { name: 'AzureWebJobsStorage', secretRef: 'storage-connection-string' }
             { name: 'DD_API_KEY', secretRef: 'dd-api-key' }
             { name: 'DD_SITE', value: datadogSite }
+            { name: 'DD_APM_ENABLED', value: datadogApmEnabled }
+            { name: 'DD_ENV', value: datadogEnv }
+            { name: 'DD_SERVICE', value: datadogService }
+            { name: 'DD_VERSION', value: datadogVersion }
             { name: 'CONTROL_PLANE_ID', value: 'none' }
             { name: 'CONFIG_ID', value: resourceId('Microsoft.App/jobs', jobName) }
           ]

@@ -16,6 +16,10 @@ param datadogSite string
 param piiScrubberRules string
 param resourceTagFilters string
 param datadogTelemetry bool
+param datadogApmEnabled string = 'true'
+param datadogEnv string = 'personal'
+param datadogService string = 'azure-log-forwarder'
+param datadogVersion string = 'latest'
 param logLevel string
 
 var deployerTaskImage = '${imageRegistry}/deployer:latest'
@@ -26,6 +30,10 @@ var STORAGE_CONNECTION_SETTING = 'AzureWebJobsStorage'
 var DD_SITE_SETTING = 'DD_SITE'
 var DD_API_KEY_SETTING = 'DD_API_KEY'
 var DD_TELEMETRY_SETTING = 'DD_TELEMETRY'
+var DD_APM_ENABLED_SETTING = 'DD_APM_ENABLED'
+var DD_ENV_SETTING = 'DD_ENV'
+var DD_SERVICE_SETTING = 'DD_SERVICE'
+var DD_VERSION_SETTING = 'DD_VERSION'
 var FORWARDER_IMAGE_SETTING = 'FORWARDER_IMAGE'
 var SUBSCRIPTION_ID_SETTING = 'SUBSCRIPTION_ID'
 var RESOURCE_GROUP_SETTING = 'RESOURCE_GROUP'
@@ -96,6 +104,10 @@ var commonAppSettings = [
   { name: DD_API_KEY_SETTING, value: datadogApiKey }
   { name: DD_SITE_SETTING, value: datadogSite }
   { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
+  { name: DD_APM_ENABLED_SETTING, value: datadogApmEnabled }
+  { name: DD_ENV_SETTING, value: datadogEnv }
+  { name: DD_SERVICE_SETTING, value: datadogService }
+  { name: DD_VERSION_SETTING, value: datadogVersion }
   { name: CONTROL_PLANE_ID_SETTING, value: controlPlaneId }
   { name: AZURE_AUTHORITY_SETTING, value: environment().authentication.loginEndpoint }
   { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
@@ -224,6 +236,10 @@ resource deployerTask 'Microsoft.App/jobs@2024-03-01' = {
             { name: DD_API_KEY_SETTING, secretRef: DD_API_KEY_SECRET }
             { name: DD_SITE_SETTING, value: datadogSite }
             { name: DD_TELEMETRY_SETTING, value: datadogTelemetry ? 'true' : 'false' }
+            { name: DD_APM_ENABLED_SETTING, value: datadogApmEnabled }
+            { name: DD_ENV_SETTING, value: datadogEnv }
+            { name: DD_SERVICE_SETTING, value: datadogService }
+            { name: DD_VERSION_SETTING, value: datadogVersion }
             { name: STORAGE_ACCOUNT_URL_SETTING, value: storageAccountUrl }
             { name: LOG_LEVEL_SETTING, value: logLevel }
           ]

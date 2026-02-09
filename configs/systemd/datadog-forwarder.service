@@ -1,0 +1,31 @@
+[Unit]
+Description=Datadog Azure Log Forwarder
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ddforwarder
+Group=ddforwarder
+EnvironmentFile=/etc/datadog-forwarder/environment
+ExecStart=/opt/datadog-forwarder/current/forwarder
+StandardOutput=journal
+StandardError=journal
+Restart=no
+TimeoutStartSec=45s
+SuccessExitStatus=0
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/datadog-forwarder /var/lib/ddforwarder
+
+# Resource limits (similar to container app)
+CPUQuota=200%
+MemoryMax=4G
+MemorySwapMax=0
+
+[Install]
+WantedBy=multi-user.target

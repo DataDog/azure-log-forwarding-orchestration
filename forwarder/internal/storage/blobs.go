@@ -21,9 +21,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/collections"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
 // LookBackPeriod defines the period of time from now that we would look back for logs
@@ -91,6 +93,16 @@ func NewBlob(container Container, item *container.BlobItem) Blob {
 
 // ListBlobs returns an iterator over a sequence of blobs in a container.
 func (c *Client) ListBlobs(ctx context.Context, storageContainer Container, logger *log.Entry) iter.Seq[Blob] {
+	// Create span for list blobs operation
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "storage.Client.ListBlobs")
+		defer func() {
+			span.SetTag("azure.container.name", storageContainer.Name)
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	blobPager := c.azBlobClient.NewListBlobsFlatPager(storageContainer.Name, &azblob.ListBlobsFlatOptions{
 		Include: azblob.ListBlobsInclude{Snapshots: true, Versions: true},
 	})
@@ -107,6 +119,26 @@ func (c *Client) ListBlobs(ctx context.Context, storageContainer Container, logg
 
 // DownloadBlob downloads a blob from a container.
 func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobName string) ([]byte, error) {
+	// Create span for download blob operation
+	var buffer []byte
+	var err error
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadBlob")
+		defer func() {
+			span.SetTag("azure.container.name", containerName)
+			span.SetTag("azure.blob.name", blobName)
+			if buffer != nil {
+				span.SetTag("azure.blob.size", len(buffer))
+			}
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	resp, err := c.azBlobClient.DownloadStream(ctx, containerName, blobName, nil)
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) && respErr.StatusCode == 404 {
@@ -119,6 +151,7 @@ func (c *Client) DownloadBlob(ctx context.Context, containerName string, blobNam
 	}
 	buffer, readErr := io.ReadAll(resp.Body)
 	if readErr != nil {
+		err = readErr
 		return nil, fmt.Errorf("error reading existing blob %s: %w", blobName, readErr)
 	}
 
@@ -137,8 +170,25 @@ func getUploadBufferOptions() *azblob.UploadBufferOptions {
 
 // UploadBlob uploads a blob to a container.
 func (c *Client) UploadBlob(ctx context.Context, containerName string, blobName string, content []byte) error {
+	// Create span for upload blob operation
+	var err error
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "storage.Client.UploadBlob")
+		defer func() {
+			span.SetTag("azure.container.name", containerName)
+			span.SetTag("azure.blob.name", blobName)
+			span.SetTag("azure.blob.size", len(content))
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	// create container if needed
-	err := c.CreateContainer(ctx, containerName)
+	err = c.CreateContainer(ctx, containerName)
 	if err != nil {
 		return fmt.Errorf("error creating container %s: %w", containerName, err)
 	}

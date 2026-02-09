@@ -5,6 +5,10 @@ param storageAccountName string
 param datadogApiKey string
 param datadogSite string
 param datadogTelemetry bool
+param datadogApmEnabled string = 'true'
+param datadogEnv string = 'personal'
+param datadogService string = 'azure-log-forwarder'
+param datadogVersion string = 'latest'
 param logLevel string
 param monitoredSubscriptions string
 param forwarderImage string
@@ -37,6 +41,10 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'DD_API_KEY', secureValue: datadogApiKey }
       { name: 'DD_SITE', value: datadogSite }
       { name: 'DD_TELEMETRY', value: datadogTelemetry ? 'true' : 'false' }
+      { name: 'DD_APM_ENABLED', value: datadogApmEnabled }
+      { name: 'DD_ENV', value: datadogEnv }
+      { name: 'DD_SERVICE', value: datadogService }
+      { name: 'DD_VERSION', value: datadogVersion }
       { name: 'CONTROL_PLANE_ID', value: controlPlaneId }
       { name: 'FORWARDER_IMAGE', value: forwarderImage }
       { name: 'CONTROL_PLANE_REGION', value: resourceGroup().location }

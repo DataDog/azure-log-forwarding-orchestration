@@ -199,6 +199,16 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         + f"https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F{quote(resource_group_name, safe='')}"
     )
     api_key = environ["DD_API_KEY"]
+    # Get DD_SITE from environment (should be set in ~/.profile)
+    dd_site = environ.get("DD_SITE", "datadoghq.com")
+    if not environ.get("DD_SITE"):
+        print("Warning: DD_SITE not found in environment, using default: datadoghq.com")
+        print("         To set DD_SITE, add 'export DD_SITE=\"datadoghq.com\"' to ~/.profile and source it")
+    else:
+        print(f"Using DD_SITE from environment: {dd_site}")
+
+    # Set resource tag filter to only monitor resources with our specific tag
+    tag_filter = f"{lfo_base_name}:true"
     params = {
         "monitoredSubscriptions": dumps([subscription_id]),
         "controlPlaneLocation": LOCATION,
@@ -206,9 +216,13 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         "controlPlaneResourceGroupName": resource_group_name,
         "datadogApiKey": api_key,
         "datadogTelemetry": "true",
+        "datadogApmEnabled": environ.get("DD_APM_ENABLED", "true"),
+        "datadogEnv": environ.get("DD_ENV", "personal"),
+        "datadogService": environ.get("DD_SERVICE", "azure-log-forwarder"),
+        "datadogVersion": environ.get("DD_VERSION", commit_sha[:7]),
         "piiScrubberRules": environ.get("PII_SCRUBBER_RULES", ""),
-        "resourceTagFilters": environ.get("RESOURCE_TAG_FILTERS", ""),
-        "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
+        "resourceTagFilters": environ.get("RESOURCE_TAG_FILTERS", tag_filter),
+        "datadogSite": dd_site,
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
         "logLevel": "DEBUG",
@@ -240,3 +254,68 @@ else:
 
     run(f"az containerapp job start --resource-group {resource_group_name} --name {deployer_job}")
     print(f"Deployer job {deployer_job} executed! In a minute or two, all tasks will be redeployed.")
+
+# Deploy loggy function app
+print("\n=== Deploying Loggy Function App ===")
+function_app_name = get_name(f"{lfo_base_name}-loggy", FUNCTION_APP_MAX_LENGTH)
+
+# Check if function app exists
+existing_apps = loads(run(f"az functionapp list --resource-group {resource_group_name} --output json"))
+app_exists = any(app.get("name") == function_app_name for app in existing_apps)
+
+if not app_exists:
+    print(f"Creating function app {function_app_name}...")
+
+    # Create App Service Plan if it doesn't exist
+    plan_name = f"{lfo_base_name}-plan"
+    run(
+        f"az appservice plan create --name {plan_name} --resource-group {resource_group_name} --location {LOCATION} --sku B1 --is-linux"
+    )
+
+    # Create function app with tags
+    run(
+        f"az functionapp create --name {function_app_name} --storage-account {storage_account_name} --resource-group {resource_group_name} --plan {plan_name} --runtime python --runtime-version 3.11 --functions-version 4 --os-type linux --https-only --tags {lfo_base_name}=true"
+    )
+
+    print(f"Function app {function_app_name} created with tag {lfo_base_name}:true")
+else:
+    print(f"Function app {function_app_name} already exists")
+    # Update tags on existing function app
+    run(
+        f"az functionapp update --name {function_app_name} --resource-group {resource_group_name} --set tags.{lfo_base_name}=true"
+    )
+    print(f"Updated function app {function_app_name} with tag {lfo_base_name}:true")
+
+# Deploy loggy code
+print(f"Deploying loggy code to {function_app_name}...")
+loggy_path = f"{lfo_dir}/loggy"
+run(f"func azure functionapp publish {function_app_name} --python", cwd=loggy_path)
+print(f"Loggy deployed successfully to {function_app_name}")
+print(f"Function app URL: https://{function_app_name}.azurewebsites.net")
+
+# Output resource filtering information
+print("\n📋 Resource Tag Filtering Configuration:")
+print(f"  Filter: {lfo_base_name}:true")
+print(f"  Only resources tagged with '{lfo_base_name}:true' will be monitored by LFO")
+print("  Loggy function app has been tagged accordingly")
+
+# Get function key
+try:
+    function_key = run(
+        f"az functionapp function keys list --name {function_app_name} --resource-group {resource_group_name} --function-name CustomLog --query default -o tsv"
+    )
+except Exception:
+    function_key = "Unable to get function key - check Azure portal"
+
+# Output requesty test commands
+print("\n🚀 Test Loggy with Requesty:")
+print("# First, build requesty if you haven't already:")
+print("cd requesty && go build -o requesty cmd/requesty/main.go && cd ..")
+print("# Then test your loggy deployment:")
+print(
+    f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 30s -rps 10'
+)
+print("# Or with variety mode for fun messages:")
+print(
+    f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 60s -rps 50 -variety'
+)
