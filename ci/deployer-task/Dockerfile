@@ -3,9 +3,10 @@ FROM registry.ddbuild.io/images/mirror/python:3.11.5-alpine3.18
 RUN mkdir /app
 WORKDIR /app
 # Download dependencies
-RUN pip install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip wheel
+RUN echo "setuptools<70" > /tmp/constraints.txt
 COPY ./pyproject.toml ./pyproject.toml
-RUN python3.11 -m pip install --no-build-isolation -e '.[deployer_task]'
+RUN PIP_CONSTRAINT=/tmp/constraints.txt python3.11 -m pip install -e '.[deployer_task]'
 
 # Copy the code into the container
 COPY ./cache ./cache
