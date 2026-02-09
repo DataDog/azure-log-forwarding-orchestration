@@ -14,8 +14,10 @@ import (
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
@@ -57,6 +59,19 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 
 // AddLog adds a log to the buffer for future submission.
 func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Entry, log *Log) (err error) {
+	// Create span for add log operation
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "logs.Client.AddLog")
+		defer func() {
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	if !log.Validate(now, logger) {
 		return nil
 	}
@@ -75,6 +90,20 @@ func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Ent
 
 // AddRawLog adds a datadog log to the buffer for future submission.
 func (c *Client) AddRawLog(ctx context.Context, now customtime.Now, logger *log.Entry, log datadogV2.HTTPLogItem) error {
+	// Create span for add raw log operation
+	var err error
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "logs.Client.AddRawLog")
+		defer func() {
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	rawBytes, err := log.MarshalJSON()
 	if err != nil {
 		logger.WithError(err).Warning("Failed to marshal log")
@@ -94,6 +123,22 @@ func (c *Client) AddRawLog(ctx context.Context, now customtime.Now, logger *log.
 
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
+	// Create span for flush operation
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "logs.Client.Flush")
+		defer func() {
+			span.SetTag("logs.buffer.count", len(c.logsBuffer))
+			span.SetTag("logs.buffer.size", c.currentSize)
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+				span.SetTag("logs.failed.count", len(c.FailedLogs))
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	if len(c.logsBuffer) > 0 {
 		option := datadogV2.SubmitLogOptionalParameters{
 			ContentEncoding: pointer.Get(datadogV2.CONTENTENCODING_GZIP),

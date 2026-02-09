@@ -14,9 +14,11 @@ import (
 	"time"
 
 	// 3p
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	log "github.com/sirupsen/logrus"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
@@ -66,6 +68,20 @@ func (c *Cursors) JSONBytes() ([]byte, error) {
 
 // Save saves the cursors to storage
 func (c *Cursors) Save(ctx context.Context, client *storage.Client) error {
+	// Create span for cursor save operation
+	var err error
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "cursor.Save")
+		defer func() {
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	if ctx.Err() != nil && ctx.Err() == context.DeadlineExceeded {
 		// Always save cursors - use a new context if error/timeout occurred already
 		cursorSaveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -96,6 +112,20 @@ func New(data map[string]int64) *Cursors {
 
 // Load loads the cursors from the storage client.
 func Load(ctx context.Context, client *storage.Client, logger *log.Entry) (*Cursors, error) {
+	// Create span for cursor load operation
+	var err error
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "cursor.Load")
+		defer func() {
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	data, err := client.DownloadBlob(ctx, storage.ForwarderContainer, BlobName)
 	if err != nil {
 		var notFoundError *storage.NotFoundError

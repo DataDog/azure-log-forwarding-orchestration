@@ -12,6 +12,10 @@ import (
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
 
 // BlobSegment represents a segment of a blob that could be partial or full
@@ -25,6 +29,20 @@ type BlobSegment struct {
 
 // DownloadSegment downloads a segment of a blob starting from an offset
 func (c *Client) DownloadSegment(ctx context.Context, blob Blob, offset int64, contentLength int64) (BlobSegment, error) {
+	// Create span for download segment operation
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "storage.Client.DownloadSegment")
+		defer func() {
+			span.SetTag("azure.container.name", blob.Container.Name)
+			span.SetTag("azure.blob.name", blob.Name)
+			span.SetTag("azure.blob.offset", offset)
+			span.SetTag("azure.blob.content_length", contentLength)
+			span.SetTag("azure.blob.segment_size", contentLength-offset)
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	options := &azblob.DownloadStreamOptions{
 		Range: azblob.HTTPRange{
 			Offset: offset,

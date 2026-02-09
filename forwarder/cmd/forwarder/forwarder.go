@@ -23,8 +23,8 @@ import (
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadog"
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/profiler"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/profiler"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
@@ -75,6 +75,17 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 }
 
 func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
+	// Create span for log parsing
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "logs.Parse")
+		defer func() {
+			span.SetTag("azure.container.name", blob.Container.Name)
+			span.SetTag("azure.blob.name", blob.Name)
+			span.Finish()
+		}()
+		ctx = spanCtx
+	}
+
 	var processedLogs int64
 
 	var currLog *logs.Log
@@ -190,10 +201,19 @@ func writeMetrics(ctx context.Context, storageClient *storage.Client, resourceVo
 	return logCount, nil
 }
 
-func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
+func fetchAndProcessLogs(ctx context.Context, storageClient *storage.Client, logsClients []*logs.Client, logger *log.Entry, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (err error) {
 	start := now()
 
-	var err error
+	// Create processing span
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "forwarder.fetchAndProcessLogs")
+		defer func() {
+			span.SetTag("logs.clients.count", len(logsClients))
+			span.SetTag("version.tag", versionTag)
+			span.Finish(tracer.WithError(err))
+		}()
+		ctx = spanCtx
+	}
 
 	defer func() {
 		for _, logsClient := range logsClients {
@@ -313,8 +333,19 @@ func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log
 	return dlq.Save(loadAndSaveCtx, storageClient, now, logger)
 }
 
-func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
+func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) (err error) {
 	start := time.Now()
+
+	// Create orchestration span for run
+	if environment.APMEnabled() {
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "forwarder.run")
+		defer func() {
+			span.SetTag("goroutine.count", goroutineCount)
+			span.SetTag("version.tag", versionTag)
+			span.Finish(tracer.WithError(err))
+		}()
+		ctx = spanCtx
+	}
 
 	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
@@ -427,6 +458,18 @@ func main() {
 			logger.Info("APM and Profiling enabled successfully")
 			defer profiler.Stop()
 		}
+
+		// Create root span for main
+		span, spanCtx := tracer.StartSpanFromContext(ctx, "forwarder.main")
+		defer func() {
+			if err != nil {
+				span.SetTag("error", true)
+				span.SetTag("error.message", err.Error())
+			}
+			span.Finish()
+		}()
+		span.SetTag("run_id", environment.Get(environment.RunId))
+		ctx = spanCtx
 	}
 
 	goroutineString := environment.Get(environment.NumGoroutines)
