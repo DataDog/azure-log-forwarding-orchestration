@@ -25,7 +25,7 @@ RUN curl -sL https://aka.ms/InstallAzureCLIDeb | bash
 RUN python3.11 -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 COPY ./control_plane /control_plane_deps
-RUN pip install --upgrade pip
+RUN pip install --upgrade pip setuptools wheel
 RUN pip install './control_plane_deps[dev]'
 
 # Install deps for forwarder
