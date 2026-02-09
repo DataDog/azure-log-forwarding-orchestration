@@ -5,7 +5,7 @@ WORKDIR /app
 # Download dependencies
 RUN pip install --upgrade pip setuptools wheel
 COPY ./pyproject.toml ./pyproject.toml
-RUN python3.11 -m pip install -e '.[deployer_task]'
+RUN python3.11 -m pip install --no-build-isolation -e '.[deployer_task]'
 
 # Copy the code into the container
 COPY ./cache ./cache
