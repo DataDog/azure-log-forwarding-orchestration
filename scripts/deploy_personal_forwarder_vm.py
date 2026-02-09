@@ -510,7 +510,9 @@ def main():
 
     # Get configuration
     username = os.getenv("USER", "unknown")
-    base_name = args.base_name or os.getenv("LFO_VM_BASE_NAME", f"lfo{username}vm")
+    # Remove dots from username for Azure resource naming
+    clean_username = username.replace(".", "")
+    base_name = args.base_name or os.getenv("LFO_VM_BASE_NAME", f"lfo{clean_username}vm")
 
     # Get version tag
     version_tag = get_version_tag()
@@ -538,7 +540,9 @@ def main():
 
     # Generate resource names
     resource_group_name = get_name(f"{base_name}rg", 90)
-    storage_account_name = get_name(f"{base_name}storage".replace("-", "").lower(), 24)
+    # Storage account names can't contain dots, so remove them
+    storage_base = base_name.replace(".", "").replace("-", "").lower()
+    storage_account_name = get_name(f"{storage_base}storage", 24)
     vm_name = get_name(f"{base_name}", 64)
 
     print("Resource names:")
