@@ -24,7 +24,7 @@ CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
 FORWARDER_METRIC_PREFIX = LFO_METRIC_PREFIX + "forwarder."
 
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
-CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "ddlfocontrol"
+CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
 SCALING_TASK_PREFIX: Final = "scaling-task-"
 RESOURCES_TASK_PREFIX: Final = "resources-task-"
 DIAGNOSTIC_SETTINGS_TASK_PREFIX: Final = "diagnostic-settings-task-"
