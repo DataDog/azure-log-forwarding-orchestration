@@ -1,4 +1,8 @@
 #!/bin/bash
+# Unless explicitly stated otherwise all files in this repository are licensed under the Apache-2 License.
+
+# This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2026 Datadog, Inc.
+
 # Install and configure Datadog Agent for personal forwarder VM
 # This script installs the Datadog Agent and configures it for monitoring the azure-log-forwarder
 
