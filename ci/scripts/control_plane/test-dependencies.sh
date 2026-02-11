@@ -15,7 +15,10 @@ test_task() {
     /venv/bin/uv --quiet --no-python-downloads venv --python 3.11 ./test_venv
     source ./test_venv/bin/activate
 
-    /venv/bin/uv --quiet pip install ".[$task_name]"
+    # Constrain setuptools to <70 to ensure pkg_resources is available for aiosonic
+    # --build-constraint applies to packages in build isolation environments (where setup.py runs)
+    echo "setuptools<70" > /tmp/constraints.txt
+    /venv/bin/uv --quiet pip install --build-constraint /tmp/constraints.txt ".[$task_name]"
 
     task_name_const="${task_name^^}_NAME"
     python -c "from tasks.$task_name import $task_name_const; print($task_name_const, 'successfully imported')"

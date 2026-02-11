@@ -71,7 +71,9 @@ class DeployerTask(Task):
         # Use credentials for non-public storage accounts (e.g., personal environments)
         # The public Datadog storage allows anonymous access, but private storage accounts require authentication
         if storage_account_url != PUBLIC_STORAGE_ACCOUNT_URL:
-            self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER, credential=self.credential)
+            self.public_storage_client = ContainerClient(
+                storage_account_url, TASKS_CONTAINER, credential=self.credential
+            )
         else:
             self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()

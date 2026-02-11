@@ -49,6 +49,8 @@ resource initialRun 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'MONITORED_SUBSCRIPTIONS', value: monitoredSubscriptions }
       { name: 'PII_SCRUBBER_RULES', value: piiScrubberRules }
       { name: 'RESOURCE_TAG_FILTERS', value: resourceTagFilters }
+      { name: 'STORAGE_ACCOUNT_URL', value: storageAccountUrl }
+      { name: 'STORAGE_ACCOUNT_SAS_TOKEN', secureValue: storageAccountSasToken }
     ]
     azCliVersion: '2.67.0'
     primaryScriptUri: empty(storageAccountSasToken) ? '${storageAccountUrl}/lfo/initial_run.sh' : '${storageAccountUrl}/lfo/initial_run.sh?${storageAccountSasToken}'

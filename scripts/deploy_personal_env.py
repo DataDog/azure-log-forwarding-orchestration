@@ -242,20 +242,32 @@ if initial_deploy or FORCE_ARM_DEPLOY:
     print("Granting deployer task access to staging storage account...")
     deployer_jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
     deployer_job = next((job for job in deployer_jobs if "deployer-task" in job.get("name", "")), None)
+    deployer_job_name = deployer_job.get("name") if deployer_job else None
     if deployer_job:
         deployer_principal_id = deployer_job.get("identity", {}).get("principalId")
         storage_account_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
         if deployer_principal_id:
-            run(
-                [
-                    "az", "role", "assignment", "create",
-                    "--assignee", deployer_principal_id,
-                    "--role", "Storage Blob Data Reader",
-                    "--scope", storage_account_id,
-                ],
-                cwd=lfo_dir,
-            )
-            print(f"Granted Storage Blob Data Reader role to deployer task on {storage_account_name}")
+            try:
+                run(
+                    [
+                        "az", "role", "assignment", "create",
+                        "--assignee", deployer_principal_id,
+                        "--role", "Storage Blob Data Contributor",
+                        "--scope", storage_account_id,
+                    ],
+                    cwd=lfo_dir,
+                )
+                print(f"Granted Storage Blob Data Contributor role to deployer task on {storage_account_name}")
+            except Exception:
+                # Role assignment may already exist from a previous deployment
+                print(f"Storage Blob Data Contributor role already exists or could not be assigned on {storage_account_name}")
+
+            # The deployer task was started by initial_run.sh before the role assignment was granted.
+            # Wait for role propagation and trigger the deployer again to ensure it runs with proper permissions.
+            print("Waiting for role assignment to propagate...")
+            sleep(10)
+            print(f"Starting deployer task {deployer_job_name} (with role assignment now in place)...")
+            run(f"az containerapp job start --name {deployer_job_name} --resource-group {resource_group_name}")
         else:
             print("Warning: Could not find deployer task principal ID. Manual role assignment may be needed.")
     else:
