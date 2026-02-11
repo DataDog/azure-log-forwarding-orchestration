@@ -1,0 +1,75 @@
+# Datadog Agent Configuration Template for Azure Log Forwarder VM
+# This template shows the configuration deployed to personal forwarder VMs
+# Actual values are substituted from environment variables during deployment
+
+# API Configuration
+api_key: ${DD_API_KEY}
+site: ${DD_SITE}
+
+# Host identification
+hostname: ${DD_HOSTNAME}
+
+# Environment tags
+tags:
+  - env:${DD_ENV}
+  - service:${DD_SERVICE}
+  - team:${USER}
+  - deployment:personal-forwarder
+  - managed_by:azure-log-forwarding-orchestration
+
+# Logs configuration
+logs_enabled: true
+logs_config:
+  container_collect_all: false
+  processing_rules:
+    - type: multi_line
+      name: forwarder_multiline
+      pattern: '^\d{4}-\d{2}-\d{2}'
+
+# APM Configuration (ready for traces when APM code is merged)
+apm_config:
+  enabled: true
+  apm_non_local_traffic: false  # Only accept traces from localhost
+  apm_dd_url: https://trace.agent.${DD_SITE}
+  env: ${DD_ENV}
+
+# Process Agent Configuration
+process_config:
+  enabled: true
+  process_collection:
+    enabled: true
+  process_discovery:
+    enabled: true
+
+# System probe (for network monitoring)
+system_probe_config:
+  enabled: false  # Enable if needed for network monitoring
+
+# Compliance/security monitoring
+compliance_config:
+  enabled: false
+
+# Runtime security
+runtime_security_config:
+  enabled: false
+
+# Enable health metrics
+health_metrics_enabled: true
+
+# Set logging level
+log_level: info
+log_file: /var/log/datadog-agent/agent.log
+
+# DogStatsD configuration
+use_dogstatsd: true
+dogstatsd_port: 8125
+dogstatsd_non_local_traffic: false
+
+# Performance tuning
+check_runners: 4
+forwarder_num_workers: 2
+forwarder_timeout: 60
+
+# Container monitoring (disabled as we're not using containers)
+docker_labels_as_tags: {}
+kubernetes_collect_metadata_tags: false

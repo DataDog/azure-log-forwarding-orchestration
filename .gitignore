@@ -113,3 +113,9 @@ terraform.rc
 # Terraform lock file
 **/.terraform.lock.hcl
 /.envrc.local
+
+# Binary files
+forwarder/forwarder
+forwarder/forwarder-linux-*
+forwarder/*.test
+forwarder/*.prof

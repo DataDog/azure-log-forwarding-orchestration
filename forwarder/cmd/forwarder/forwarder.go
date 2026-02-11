@@ -428,18 +428,21 @@ func main() {
 
 	datadogConfig := datadog.NewConfiguration()
 
-	if environment.Enabled(environment.TelemetryEnabled) {
-		// enable submission to staging
+	// Only add staging to allowed values if DD_SITE is empty or staging
+	// This prevents routing issues when DD_TELEMETRY=true with production DD_SITE
+	if environment.Enabled(environment.TelemetryEnabled) && (ddSite == "" || ddSite == logs.DatadogStagingSite) {
 		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
 		if len(servers) > 0 {
 			server := servers[0]
-			site := server.Variables["site"]
-			enumValues := site.EnumValues
+			siteVar := server.Variables["site"]
+			enumValues := siteVar.EnumValues
 			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
 				enumValues = append(enumValues, logs.DatadogStagingSite)
 			}
-			site.EnumValues = enumValues
-			server.Variables["site"] = site
+			siteVar.EnumValues = enumValues
+			server.Variables["site"] = siteVar
+			servers[0] = server
+			datadogConfig.OperationServers["v2.LogsApi.SubmitLog"] = servers
 		}
 	}
 
