@@ -1,10 +1,10 @@
 {
-  "recommendations": [
-    "ms-azuretools.vscode-azurefunctions",
-    "ms-python.python",
-    "bencoleman.armview",
-    "msazurermtools.azurerm-vscode-tools",
-    "azurite.azurite",
-    "charliermarsh.ruff"
-  ]
+    "recommendations": [
+        "ms-python.python",
+        "bencoleman.armview",
+        "msazurermtools.azurerm-vscode-tools",
+        "ms-azuretools.vscode-azurefunctions",
+        "azurite.azurite",
+        "charliermarsh.ruff"
+    ]
 }
