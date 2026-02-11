@@ -1,7 +1,7 @@
 ---
 name: deploy
 description: Deploy a complete personal forwarder environment
-argument-hint: [vm|container-app|both] [--base-name=<name>] [--skip-agent]
+argument-hint: [forwarder|lfo] [--base-name=<name>] [--skip-agent]
 ---
 
 # Deploy Personal Forwarder Environment
@@ -22,7 +22,7 @@ This command deploys your personal Azure environment for testing the log forward
 #!/bin/bash
 
 # Default values
-DEPLOYMENT_TYPE="vm"
+DEPLOYMENT_TYPE="forwarder"
 BASE_NAME=""
 SKIP_AGENT=""
 REPO_ROOT="${REPO_ROOT:-/Users/matt.spurlin/go/src/github.com/DataDog/azure-log-forwarding-orchestration}"
@@ -30,7 +30,7 @@ REPO_ROOT="${REPO_ROOT:-/Users/matt.spurlin/go/src/github.com/DataDog/azure-log-
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        vm|container-app|both)
+        forwarder|lfo)
             DEPLOYMENT_TYPE="$1"
             shift
             ;;
@@ -43,22 +43,21 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --help)
-            echo "Usage: /deploy [vm|container-app|both] [--base-name=<name>] [--skip-agent]"
+            echo "Usage: /deploy [forwarder|lfo] [--base-name=<name>] [--skip-agent]"
             echo ""
             echo "Arguments:"
-            echo "  vm              Deploy VM-based forwarder (default)"
-            echo "  container-app   Deploy Container App-based forwarder"
-            echo "  both            Deploy both VM and Container App"
+            echo "  forwarder       Deploy the forwarder to a VM (default)"
+            echo "  lfo             Deploy the full LFO orchestration environment"
             echo ""
             echo "Options:"
             echo "  --base-name=NAME   Override default base name (default: lfo<username>vm)"
             echo "  --skip-agent       Skip Datadog Agent installation (agent is installed by default)"
             echo ""
             echo "Examples:"
-            echo "  /deploy                    # Deploy VM with agent (default)"
-            echo "  /deploy container-app      # Deploy Container App"
-            echo "  /deploy vm --skip-agent    # Deploy VM without agent"
-            echo "  /deploy vm --base-name=test1   # Deploy VM with custom name and agent"
+            echo "  /deploy                        # Deploy forwarder (default)"
+            echo "  /deploy lfo                    # Deploy LFO environment"
+            echo "  /deploy forwarder --skip-agent # Deploy forwarder without agent"
+            echo "  /deploy forwarder --base-name=test1  # Deploy forwarder with custom name"
             exit 0
             ;;
         *)
@@ -114,8 +113,8 @@ fi
 
 # Deploy based on type
 case "$DEPLOYMENT_TYPE" in
-    vm)
-        echo "📦 Deploying VM-based forwarder..."
+    forwarder)
+        echo "📦 Deploying forwarder..."
         echo ""
 
         # Required environment variables
@@ -144,31 +143,16 @@ case "$DEPLOYMENT_TYPE" in
         fi
         ;;
 
-    container-app)
-        echo "📦 Deploying Container App-based forwarder..."
+    lfo)
+        echo "📦 Deploying LFO orchestration environment..."
         echo ""
         cd "$REPO_ROOT"
         python scripts/deploy_personal_env.py
-        ;;
-
-    both)
-        echo "📦 Deploying both VM and Container App..."
-        echo ""
-
-        # Deploy container app first
-        cd "$REPO_ROOT"
-        python scripts/deploy_personal_env.py
-
-        echo ""
-        echo "Now deploying VM..."
-        export CONFIG_ID="${CONFIG_ID:-forwarder-vm-config}"
-        export CONTROL_PLANE_ID="${CONTROL_PLANE_ID:-d0105e57d837}"
-        python scripts/deploy_personal_forwarder_vm.py $SKIP_AGENT
         ;;
 
     *)
         echo "❌ Invalid deployment type: $DEPLOYMENT_TYPE"
-        echo "   Use: vm, container-app, or both"
+        echo "   Use: forwarder or lfo"
         exit 1
         ;;
 esac
@@ -184,24 +168,21 @@ echo "4. Check logs in Datadog: https://app.datadoghq.com/logs"
 ## Examples
 
 ```bash
-# Deploy VM-based forwarder with Datadog Agent (recommended)
+# Deploy forwarder with Datadog Agent (recommended)
 /deploy
-/deploy vm
+/deploy forwarder
 
-# Deploy VM without agent
-/deploy vm --skip-agent
+# Deploy forwarder without agent
+/deploy forwarder --skip-agent
 
-# Deploy container app version
-/deploy container-app
-
-# Deploy both
-/deploy both
+# Deploy LFO orchestration environment
+/deploy lfo
 
 # Use custom base name (with agent)
-/deploy vm --base-name=mytestenv
+/deploy forwarder --base-name=mytestenv
 
 # Custom name without agent
-/deploy vm --base-name=mytestenv --skip-agent
+/deploy forwarder --base-name=mytestenv --skip-agent
 ```
 
 ## Notes

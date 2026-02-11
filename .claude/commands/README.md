@@ -14,14 +14,14 @@ This directory contains Claude commands for managing personal Azure Log Forwarde
 
 ### Environment Management
 
-#### `/deploy [vm|container-app|both] [--base-name=<name>]`
-Deploy a complete personal forwarder environment with VM, storage, and function app.
+#### `/deploy [forwarder|lfo] [--base-name=<name>]`
+Deploy a personal forwarder or the full LFO orchestration environment.
 
 **Examples:**
 ```bash
-/deploy                          # Deploy VM (default)
-/deploy container-app            # Deploy Container App
-/deploy vm --base-name=test1     # Deploy VM with custom name
+/deploy                          # Deploy forwarder (default)
+/deploy lfo                      # Deploy LFO orchestration environment
+/deploy forwarder --base-name=test1  # Deploy forwarder with custom name
 ```
 
 #### `/cleanup [--force]`
