@@ -63,9 +63,12 @@ go-spew,https://github.com/davecgh/go-spew,ISC,Copyright (c) 2012-2016 Dave Coll
 godebug,https://github.com/kylelemons/godebug,Apache-2,Copyright (c) Kyle Lemons
 goja,https://github.com/dop251/goja,MIT,Copyright (c) 2016 Dmitry Panov
 goja_nodejs,https://github.com/dop251/goja_nodejs,MIT,Copyright (c) 2016 Dmitry Panov
+h2,https://pypi.org/project/h2/,MIT,Copyright (c) 2015-2020 Cory Benfield and contributors
 goldmark,https://github.com/yuin/goldmark,MIT,Copyright (c) 2019 Yusuke Inuzuka
 goleak,https://github.com/uber-go/goleak,MIT,"Copyright (c) 2018 Uber Technologies, Inc."
 gomega,https://github.com/bsm/gomega,MIT,Copyright (c) 2013-2014 Onsi Fakhouri
+hpack,https://pypi.org/project/hpack/,MIT,Copyright (c) 2014 Cory Benfield
+hyperframe,https://pypi.org/project/hyperframe/,MIT,Copyright (c) 2014 Cory Benfield
 idna,https://pypi.org/project/idna/,BSD-3-Clause,"Copyright (c) 2013-2024, Kim Davies and contributors"
 internal,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/resourcemanager/internal,MIT,Copyright (c) Microsoft Corporation
 internal,https://github.com/Azure/azure-sdk-for-go/tree/main/sdk/internal,MIT,Copyright (c) Microsoft Corporation
@@ -86,6 +89,7 @@ net,https://go.googlesource.com/net,BSD-3-Clause,Copyright 2009 The Go Authors.
 oauth2,https://cs.opensource.google/go/x/oauth2,BSD-3-Clause,Copyright 2009 The Go Authors.
 oauthlib,https://pypi.org/project/oauthlib/,BSD-3-Clause,Copyright (c) 2019 The OAuthlib Community
 objx,https://github.com/stretchr/objx,MIT,"Copyright (c) 2014 Stretchr, Inc. Copyright (c) 2017-2018 objx contributors."
+onecache,https://pypi.org/project/onecache/,MIT,Copyright (c) Johanderson Mogollon
 opentelemetry-api,https://pypi.org/project/opentelemetry-api/,Apache-2.0,"Copyright OpenTelemetry Authors"
 opentracing,https://pypi.org/project/opentracing/,Apache-2.0,Copyright (c) The OpenTracing Authors
 pprof,github.com/google/pprof,Apache-2.0,Copyright (c) Google Inc.
