@@ -200,13 +200,20 @@ def create_network_resources(network_client: NetworkManagementClient, resource_g
     print(f"Creating network security group: {nsg_name}")
 
     # Auto-detect deployer IP to restrict SSH access
-    ssh_source_prefix = "*"
-    try:
-        my_ip = urllib.request.urlopen("https://ifconfig.me", timeout=5).read().decode().strip()
-        ssh_source_prefix = f"{my_ip}/32"
-        print(f"Restricting SSH access to deployer IP: {ssh_source_prefix}")
-    except Exception:
-        print("WARNING: Could not detect deployer IP, allowing SSH from any source")
+    ssh_source_prefix = os.getenv("SSH_ALLOWED_IP")
+    if ssh_source_prefix:
+        if "/" not in ssh_source_prefix:
+            ssh_source_prefix = f"{ssh_source_prefix}/32"
+        print(f"Using SSH_ALLOWED_IP: {ssh_source_prefix}")
+    else:
+        try:
+            my_ip = urllib.request.urlopen("https://ifconfig.me", timeout=5).read().decode().strip()
+            ssh_source_prefix = f"{my_ip}/32"
+            print(f"Restricting SSH access to deployer IP: {ssh_source_prefix}")
+        except Exception:
+            print("ERROR: Could not detect deployer IP and SSH_ALLOWED_IP env var is not set.")
+            print("       Set SSH_ALLOWED_IP=<your-ip> and re-run, or fix network connectivity.")
+            sys.exit(1)
 
     nsg_params = {
         "location": LOCATION,
@@ -451,35 +458,7 @@ def deploy_to_vm(
                 capture_output=False,
             )
 
-    # Run initial setup
-    print("Running initial setup on VM...")
-
-    # Prepare initial setup command with environment variables if agent installation is requested
-    if install_agent:
-        setup_cmd = (
-            f"chmod +x $HOME/deployment/*.sh && "
-            f"INSTALL_DD_AGENT=true "
-            f"DD_API_KEY='{dd_api_key}' "
-            f"DD_SITE='{dd_site}' "
-            f"DD_ENV='{env_vars['DD_ENV']}' "
-            f"DD_SERVICE='{env_vars['DD_SERVICE']}' "
-            f"$HOME/deployment/initial_setup.sh"
-        )
-    else:
-        setup_cmd = "chmod +x $HOME/deployment/*.sh && $HOME/deployment/initial_setup.sh"
-
-    run(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=accept-new",
-            f"azureuser@{vm_ip}",
-            setup_cmd,
-        ],
-        capture_output=False,
-    )
-
-    # Create environment file with restricted permissions
+    # Write environment file before initial_setup.sh so it can source DD_API_KEY/DD_SITE
     env_content = "\n".join([f'{k}="{v}"' for k, v in env_vars.items() if v])
     env_fd = tempfile.NamedTemporaryFile(mode="w", suffix="-forwarder-env", delete=False)
     env_file = env_fd.name
@@ -500,6 +479,31 @@ def deploy_to_vm(
                 "StrictHostKeyChecking=accept-new",
                 f"azureuser@{vm_ip}",
                 "sudo mv $HOME/deployment/environment /etc/datadog-forwarder/environment && sudo chmod 600 /etc/datadog-forwarder/environment",
+            ],
+            capture_output=False,
+        )
+
+        # Run initial setup (sources env file for DD_API_KEY/DD_SITE if installing agent)
+        print("Running initial setup on VM...")
+
+        if install_agent:
+            setup_cmd = (
+                f"chmod +x $HOME/deployment/*.sh && "
+                f"INSTALL_DD_AGENT=true "
+                f"DD_ENV='{env_vars['DD_ENV']}' "
+                f"DD_SERVICE='{env_vars['DD_SERVICE']}' "
+                f"$HOME/deployment/initial_setup.sh"
+            )
+        else:
+            setup_cmd = "chmod +x $HOME/deployment/*.sh && $HOME/deployment/initial_setup.sh"
+
+        run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                f"azureuser@{vm_ip}",
+                setup_cmd,
             ],
             capture_output=False,
         )
@@ -648,9 +652,34 @@ def main():
 
     # Deploy to VM
     if not args.skip_deploy:
-        # Wait a bit for VM to be fully ready
-        print("Waiting for VM to be fully ready...")
-        time.sleep(30)
+        # Poll SSH readiness instead of blind sleep
+        print("Waiting for VM to be ready for SSH...")
+        max_wait = 120
+        waited = 0
+        while waited < max_wait:
+            try:
+                run(
+                    [
+                        "ssh",
+                        "-o",
+                        "StrictHostKeyChecking=accept-new",
+                        "-o",
+                        "ConnectTimeout=5",
+                        "-o",
+                        "BatchMode=yes",
+                        f"azureuser@{vm_ip}",
+                        "true",
+                    ],
+                )
+                print(f"SSH ready after {waited}s")
+                break
+            except subprocess.CalledProcessError:
+                waited += 5
+                if waited < max_wait:
+                    time.sleep(5)
+        else:
+            print(f"ERROR: VM not reachable via SSH after {max_wait}s")
+            sys.exit(1)
 
         deploy_to_vm(
             vm_ip,
@@ -821,7 +850,18 @@ def main():
         except subprocess.CalledProcessError:
             existing_settings = ""
 
-        if existing_settings and diagnostic_setting_name not in existing_settings:
+        has_setting = False
+        if existing_settings:
+            try:
+                settings_data = json.loads(existing_settings)
+                has_setting = any(
+                    s.get("name") == diagnostic_setting_name
+                    for s in (settings_data if isinstance(settings_data, list) else settings_data.get("value", []))
+                )
+            except (json.JSONDecodeError, TypeError):
+                has_setting = False
+
+        if existing_settings and not has_setting:
             logs_json = json.dumps(
                 [{"categoryGroup": "allLogs", "enabled": True, "retentionPolicy": {"days": 7, "enabled": True}}]
             )

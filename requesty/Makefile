@@ -7,6 +7,7 @@ BUILD_DIR=build
 GO=go
 GOFLAGS=-v
 LDFLAGS=-ldflags "-s -w"
+LOGGY_URL ?= https://lfoms1829vm-loggy.azurewebsites.net
 
 # Version info
 VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -135,12 +136,12 @@ cross-compile: deps
 ## Run the tool with example parameters
 run: build
 	@echo "$(GREEN)Running $(BINARY_NAME) with test parameters...$(NC)"
-	$(BUILD_DIR)/$(BINARY_NAME) -url https://lfoms1829vm-loggy.azurewebsites.net/api/CustomLog -duration 10s -rps 5
+	$(BUILD_DIR)/$(BINARY_NAME) -url $(LOGGY_URL)/api/CustomLog -duration 10s -rps 5
 
 ## Quick build and run
 quick: build
 	@echo "$(GREEN)Quick test run...$(NC)"
-	$(BUILD_DIR)/$(BINARY_NAME) -url https://lfoms1829vm-loggy.azurewebsites.net/api/HttpTrigger -duration 5s -rps 2
+	$(BUILD_DIR)/$(BINARY_NAME) -url $(LOGGY_URL)/api/HttpTrigger -duration 5s -rps 2
 
 ## Docker build
 docker:

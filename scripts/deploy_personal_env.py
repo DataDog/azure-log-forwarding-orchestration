@@ -277,7 +277,9 @@ if not app_exists:
 else:
     print(f"Function app {function_app_name} already exists")
     # Update tags on existing function app
-    run(f"az functionapp update --name {function_app_name} --resource-group {resource_group_name} --set tags.{lfo_base_name}=true")
+    run(
+        f"az functionapp update --name {function_app_name} --resource-group {resource_group_name} --set tags.{lfo_base_name}=true"
+    )
     print(f"Updated function app {function_app_name} with tag {lfo_base_name}:true")
 
 # Deploy loggy code
@@ -288,15 +290,17 @@ print(f"Loggy deployed successfully to {function_app_name}")
 print(f"Function app URL: https://{function_app_name}.azurewebsites.net")
 
 # Output resource filtering information
-print(f"\n📋 Resource Tag Filtering Configuration:")
+print("\n📋 Resource Tag Filtering Configuration:")
 print(f"  Filter: {lfo_base_name}:true")
 print(f"  Only resources tagged with '{lfo_base_name}:true' will be monitored by LFO")
-print(f"  Loggy function app has been tagged accordingly")
+print("  Loggy function app has been tagged accordingly")
 
 # Get function key
 try:
-    function_key = run(f"az functionapp function keys list --name {function_app_name} --resource-group {resource_group_name} --function-name CustomLog --query default -o tsv")
-except:
+    function_key = run(
+        f"az functionapp function keys list --name {function_app_name} --resource-group {resource_group_name} --function-name CustomLog --query default -o tsv"
+    )
+except Exception:
     function_key = "Unable to get function key - check Azure portal"
 
 # Output requesty test commands
@@ -304,7 +308,9 @@ print("\n🚀 Test Loggy with Requesty:")
 print("# First, build requesty if you haven't already:")
 print("cd requesty && go build -o requesty cmd/requesty/main.go && cd ..")
 print("# Then test your loggy deployment:")
-print(f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 30s -rps 10')
+print(
+    f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 30s -rps 10'
+)
 print("# Or with variety mode for fun messages:")
 print(
     f'./requesty/requesty -url https://{function_app_name}.azurewebsites.net/api/CustomLog -key "{function_key}" -duration 60s -rps 50 -variety'

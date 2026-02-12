@@ -96,8 +96,7 @@ if [ ! -f "${NEW_BINARY_PATH}" ]; then
     sudo chown -R ddforwarder:ddforwarder "${BINARY_DIR}"
 
     # Download binary
-    export AZURE_STORAGE_CONNECTION_STRING="${CONNECTION_STRING}"
-
+    AZURE_STORAGE_CONNECTION_STRING="${CONNECTION_STRING}" \
     az storage blob download \
         --container-name forwarder \
         --name "${NEW_VERSION}/forwarder-linux-amd64" \
@@ -105,6 +104,7 @@ if [ ! -f "${NEW_BINARY_PATH}" ]; then
         --no-progress
 
     # Download checksum
+    AZURE_STORAGE_CONNECTION_STRING="${CONNECTION_STRING}" \
     az storage blob download \
         --container-name forwarder \
         --name "${NEW_VERSION}/forwarder-linux-amd64.sha256" \

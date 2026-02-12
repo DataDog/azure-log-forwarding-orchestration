@@ -33,9 +33,9 @@ sudo chown -R ddforwarder:ddforwarder "${BINARY_DIR}"
 
 # Download binary from Azure Storage
 echo "Downloading binary from Azure Storage..."
-export AZURE_STORAGE_CONNECTION_STRING="${CONNECTION_STRING}"
 
 # Download the binary
+AZURE_STORAGE_CONNECTION_STRING="${CONNECTION_STRING}" \
 az storage blob download \
     --container-name forwarder \
     --name "${VERSION}/forwarder-linux-amd64" \
@@ -43,6 +43,7 @@ az storage blob download \
     --no-progress
 
 # Download checksum
+AZURE_STORAGE_CONNECTION_STRING="${CONNECTION_STRING}" \
 az storage blob download \
     --container-name forwarder \
     --name "${VERSION}/forwarder-linux-amd64.sha256" \

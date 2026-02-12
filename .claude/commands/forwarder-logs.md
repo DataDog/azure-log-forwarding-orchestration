@@ -98,7 +98,7 @@ else
     if [ -n "$FILTER" ]; then
         echo "Showing last $LINES lines matching: $FILTER"
         ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
-            "sudo journalctl -u datadog-forwarder -n $LINES --no-pager | grep -i '$FILTER'"
+            "sudo journalctl -u datadog-forwarder -n $LINES --no-pager | grep -Fi '$FILTER'"
     else
         echo "Showing last $LINES lines:"
         ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \

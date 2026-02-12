@@ -98,7 +98,11 @@ OS=$(detect_os)
 # Go Installation
 # ============================================================================
 install_go() {
-    local GO_VERSION="1.25.3"
+    local GO_VERSION
+    GO_VERSION=$(grep '^go ' "$REPO_ROOT/forwarder/go.mod" | awk '{print $2}')
+    if [[ -z "$GO_VERSION" ]]; then
+        GO_VERSION="1.25.3"
+    fi
 
     if check_command go; then
         local current_version

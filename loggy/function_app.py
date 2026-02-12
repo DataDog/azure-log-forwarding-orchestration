@@ -31,7 +31,7 @@ def http(req: func.HttpRequest) -> str:
 
 
 @app.function_name(name="CustomLog")
-@app.route(route="CustomLog", methods=["GET", "POST"])
+@app.route(route="CustomLog", methods=["GET", "POST"], auth_level=func.AuthLevel.FUNCTION)
 def custom_log(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP trigger that allows custom log messages and log levels."""
 
@@ -42,13 +42,13 @@ def custom_log(req: func.HttpRequest) -> func.HttpResponse:
         req_body = {}
 
     # Get message from query params or body
-    message = req.params.get('message') or req_body.get('message', 'Custom log entry')
-    level = req.params.get('level') or req_body.get('level', 'info')
-    count = int(req.params.get('count') or req_body.get('count', 1))
-
-    # Validate count
-    if count > 100:
-        count = 100  # Limit to prevent abuse
+    message = req.params.get("message") or req_body.get("message", "Custom log entry")
+    level = req.params.get("level") or req_body.get("level", "info")
+    try:
+        count = int(req.params.get("count") or req_body.get("count", 1))
+    except (ValueError, TypeError):
+        count = 1
+    count = max(1, min(count, 100))
 
     # Generate logs based on level
     responses = []
@@ -56,30 +56,21 @@ def custom_log(req: func.HttpRequest) -> func.HttpResponse:
         log_id = str(uuid.uuid4())
         full_message = f"[{i+1}/{count}] Request ID: {log_id} - {message}"
 
-        if level.lower() == 'debug':
+        if level.lower() == "debug":
             logging.debug(full_message)
-        elif level.lower() == 'warning':
+        elif level.lower() == "warning":
             logging.warning(full_message)
-        elif level.lower() == 'error':
+        elif level.lower() == "error":
             logging.error(full_message)
-        elif level.lower() == 'critical':
+        elif level.lower() == "critical":
             logging.critical(full_message)
         else:
             logging.info(full_message)
 
-        responses.append({
-            'index': i + 1,
-            'id': log_id,
-            'level': level,
-            'message': full_message
-        })
+        responses.append({"index": i + 1, "id": log_id, "level": level, "message": full_message})
 
     return func.HttpResponse(
-        body=json.dumps({
-            'status': 'success',
-            'logs_generated': count,
-            'logs': responses
-        }),
+        body=json.dumps({"status": "success", "logs_generated": count, "logs": responses}),
         status_code=200,
-        headers={'Content-Type': 'application/json'}
+        headers={"Content-Type": "application/json"},
     )

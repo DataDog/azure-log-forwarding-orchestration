@@ -6,7 +6,7 @@ instances:
   # Monitor the main forwarder process
   - name: azure-log-forwarder
     search_string:
-      - "forwarder"
+      - "/opt/datadog-forwarder"
     exact_match: false
     thresholds:
       # Alert if process count is outside expected range

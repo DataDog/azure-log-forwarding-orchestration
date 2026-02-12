@@ -42,18 +42,20 @@ fi
 if [[ "${INSTALL_DD_AGENT:-false}" == "true" ]]; then
     echo "Installing Datadog Agent..."
     if [[ -f ~/deployment/install_datadog_agent.sh ]]; then
-        # Pass through environment variables needed for agent configuration
-        export DD_API_KEY="${DD_API_KEY}"
-        export DD_SITE="${DD_SITE}"
+        # Source the env file for DD_API_KEY and DD_SITE (written by deploy script)
+        if [[ -f /etc/datadog-forwarder/environment ]]; then
+            set -a
+            # shellcheck disable=SC1091
+            source /etc/datadog-forwarder/environment
+            set +a
+        fi
         export DD_ENV="${DD_ENV:-personal-dev}"
         export DD_SERVICE="${DD_SERVICE:-azure-log-forwarder}"
         export DD_HOSTNAME="${DD_HOSTNAME:-$(hostname)}"
         export INSTALL_AGENT="true"
 
         # Run the agent installation script
-        sudo -E bash ~/deployment/install_datadog_agent.sh
-
-        if [[ $? -eq 0 ]]; then
+        if sudo -E bash ~/deployment/install_datadog_agent.sh; then
             echo "✅ Datadog Agent installed successfully"
         else
             echo "⚠️  Datadog Agent installation failed, continuing with setup..."

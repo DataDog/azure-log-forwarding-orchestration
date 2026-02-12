@@ -82,7 +82,6 @@ func (l *Loader) Run(ctx context.Context) error {
 
 	// Create worker pool
 	workChan := make(chan struct{}, l.config.Workers*2)
-	resultChan := make(chan bool, l.config.Workers*2)
 
 	// Start workers
 	workerCtx, cancel := context.WithTimeout(ctx, l.config.Duration)
@@ -102,7 +101,7 @@ func (l *Loader) Run(ctx context.Context) error {
 
 	for i := 0; i < l.config.Workers; i++ {
 		l.wg.Add(1)
-		go l.worker(workerCtx, workChan, resultChan)
+		go l.worker(workerCtx, workChan)
 	}
 
 	// Progress updater
@@ -121,12 +120,6 @@ func (l *Loader) Run(ctx context.Context) error {
 	}()
 
 	// Wait for workers to finish or timeout
-	go func() {
-		l.wg.Wait()
-		close(resultChan)
-	}()
-
-	// Collect results
 	select {
 	case <-workerCtx.Done():
 		// Test duration reached
@@ -146,7 +139,7 @@ func (l *Loader) Run(ctx context.Context) error {
 }
 
 // worker processes requests from the work channel
-func (l *Loader) worker(ctx context.Context, workChan <-chan struct{}, resultChan chan<- bool) {
+func (l *Loader) worker(ctx context.Context, workChan <-chan struct{}) {
 	defer l.wg.Done()
 
 	for {
@@ -163,9 +156,8 @@ func (l *Loader) worker(ctx context.Context, workChan <-chan struct{}, resultCha
 				return
 			}
 
-			// Make request
-			success := l.makeRequest(ctx)
-			resultChan <- success
+			// Make request (metrics recorded inside makeRequest via collector)
+			l.makeRequest(ctx)
 		}
 	}
 }

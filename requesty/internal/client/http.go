@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 )
 
@@ -205,38 +204,4 @@ func (r *Response) String() string {
 // JSON unmarshals the response body into the provided interface
 func (r *Response) JSON(v interface{}) error {
 	return json.Unmarshal(r.Body, v)
-}
-
-// LoggyRequest represents a request specifically for the Loggy function app
-type LoggyRequest struct {
-	Message string `json:"message"`
-	Level   string `json:"level"`
-	Count   int    `json:"count"`
-}
-
-// BuildLoggyRequest creates a request for the CustomLog endpoint
-func BuildLoggyRequest(baseURL string, message string, level string, count int) *Request {
-	// Support both GET with query params and POST with JSON body
-	if strings.Contains(strings.ToUpper(baseURL), "GET") {
-		return &Request{
-			Method: "GET",
-			URL:    baseURL,
-			QueryParams: map[string]string{
-				"message": message,
-				"level":   level,
-				"count":   fmt.Sprintf("%d", count),
-			},
-		}
-	}
-
-	// Default to POST
-	return &Request{
-		Method: "POST",
-		URL:    baseURL,
-		Body: LoggyRequest{
-			Message: message,
-			Level:   level,
-			Count:   count,
-		},
-	}
 }
