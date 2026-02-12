@@ -8,6 +8,20 @@
 
 # Function to discover user's Azure resources
 discover_resources() {
+    # Check az CLI is installed
+    if ! command -v az &>/dev/null; then
+        echo "ERROR: Azure CLI (az) is not installed." >&2
+        echo "  Install: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli" >&2
+        return 1
+    fi
+
+    # Check az CLI is logged in
+    if ! az account show &>/dev/null; then
+        echo "ERROR: Not logged in to Azure CLI." >&2
+        echo "  Run: az login" >&2
+        return 1
+    fi
+
     # Get user's environment
     USERNAME="${USER:-unknown}"
     # Remove dots from username for Azure resource naming

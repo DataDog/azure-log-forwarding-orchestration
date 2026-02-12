@@ -101,12 +101,17 @@ def get_version_tag() -> str:
 
 def get_ssh_public_key() -> str:
     """Get SSH public key for VM authentication."""
-    ssh_key_path = os.path.expanduser("~/.ssh/id_rsa.pub")
-    if not os.path.exists(ssh_key_path):
-        raise Exception(f"SSH public key not found at {ssh_key_path}. Please generate one with: ssh-keygen -t rsa")
-
-    with open(ssh_key_path, "r") as f:
-        return f.read().strip()
+    ssh_dir = os.path.expanduser("~/.ssh")
+    for key_name in ("id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub"):
+        key_path = os.path.join(ssh_dir, key_name)
+        if os.path.exists(key_path):
+            with open(key_path, "r") as f:
+                return f.read().strip()
+    raise Exception(
+        f"No SSH public key found in {ssh_dir}. "
+        "Tried: id_ed25519.pub, id_rsa.pub, id_ecdsa.pub. "
+        "Generate one with: ssh-keygen -t ed25519"
+    )
 
 
 def create_resource_group(resource_client: ResourceManagementClient, name: str) -> None:

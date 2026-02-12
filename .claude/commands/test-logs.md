@@ -116,7 +116,7 @@ if [ -z "$LFO_VM_IP" ]; then
 fi
 
 # Path to requesty
-REQUESTY_PATH="/Users/matt.spurlin/go/src/github.com/DataDog/azure-log-forwarding-orchestration/requesty"
+REQUESTY_PATH="$(git rev-parse --show-toplevel)/requesty"
 
 # Build requesty if needed
 if [ ! -f "$REQUESTY_PATH/requesty" ]; then
