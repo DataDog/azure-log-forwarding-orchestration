@@ -7,7 +7,7 @@
 # Test script to verify Datadog Agent deployment on forwarder VM
 #
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -89,7 +89,7 @@ log_info "VM IP: ${VM_IP}"
 
 # Step 3: Check if agent is installed
 log_test "Checking if Datadog Agent is installed..."
-ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "command -v datadog-agent" >/dev/null 2>&1
 
 if [[ $? -eq 0 ]]; then
@@ -101,7 +101,7 @@ fi
 
 # Step 4: Check agent service status
 log_test "Checking Datadog Agent service status..."
-AGENT_STATUS=$(ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+AGENT_STATUS=$(ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "sudo systemctl is-active datadog-agent" 2>/dev/null)
 
 if [[ "${AGENT_STATUS}" == "active" ]]; then
@@ -111,14 +111,14 @@ else
 
     # Show agent logs for debugging
     log_warning "Agent logs:"
-    ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+    ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
         "sudo journalctl -u datadog-agent -n 20 --no-pager"
     exit 1
 fi
 
 # Step 5: Check agent health
 log_test "Checking Datadog Agent health..."
-ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "sudo datadog-agent health" >/dev/null 2>&1
 
 if [[ $? -eq 0 ]]; then
@@ -129,7 +129,7 @@ fi
 
 # Step 6: Check agent configuration
 log_test "Verifying agent configuration..."
-AGENT_CONFIG=$(ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+AGENT_CONFIG=$(ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "sudo grep -E '^(api_key|site|env)' /etc/datadog-agent/datadog.yaml" 2>/dev/null)
 
 if [[ -n "${AGENT_CONFIG}" ]]; then
@@ -142,7 +142,7 @@ fi
 
 # Step 7: Check APM receiver
 log_test "Checking APM receiver..."
-APM_STATUS=$(ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+APM_STATUS=$(ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "sudo netstat -tlpn | grep ':8126'" 2>/dev/null)
 
 if [[ -n "${APM_STATUS}" ]]; then
@@ -153,7 +153,7 @@ fi
 
 # Step 8: Check log collection
 log_test "Checking log collection configuration..."
-LOG_CONFIG=$(ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+LOG_CONFIG=$(ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "sudo ls -la /etc/datadog-agent/conf.d/logs.d/" 2>/dev/null)
 
 if [[ -n "${LOG_CONFIG}" ]]; then
@@ -164,7 +164,7 @@ fi
 
 # Step 9: Check forwarder service
 log_test "Checking forwarder service..."
-FORWARDER_STATUS=$(ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" \
+FORWARDER_STATUS=$(ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" \
     "sudo systemctl is-active datadog-forwarder.timer" 2>/dev/null)
 
 if [[ "${FORWARDER_STATUS}" == "active" ]]; then
@@ -175,7 +175,7 @@ fi
 
 # Step 10: Test metrics submission
 log_test "Testing metrics submission..."
-ssh -o StrictHostKeyChecking=no "azureuser@${VM_IP}" << 'EOF'
+ssh -o StrictHostKeyChecking=accept-new "azureuser@${VM_IP}" << 'EOF'
     # Send a test metric
     echo "test.agent.deployment:1|c" | nc -u -w1 localhost 8125
 EOF

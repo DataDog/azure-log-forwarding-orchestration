@@ -77,7 +77,7 @@ echo ""
 case "$ACTION" in
     start)
         echo "▶️  Starting forwarder timer..."
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl start datadog-forwarder.timer
             sudo systemctl enable datadog-forwarder.timer
             echo "Timer started and enabled"
@@ -87,7 +87,7 @@ EOF
 
     stop)
         echo "⏹️  Stopping forwarder..."
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl stop datadog-forwarder.timer
             sudo systemctl stop datadog-forwarder.service
             echo "Timer and service stopped"
@@ -96,7 +96,7 @@ EOF
 
     restart)
         echo "🔄 Restarting forwarder timer..."
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl restart datadog-forwarder.timer
             echo "Timer restarted"
             sudo systemctl status datadog-forwarder.timer --no-pager | head -5
@@ -105,7 +105,7 @@ EOF
 
     trigger)
         echo "⚡ Triggering immediate forwarder run..."
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl start datadog-forwarder.service
             sleep 2
             echo ""
@@ -116,13 +116,13 @@ EOF
 
     logs)
         echo "📜 Showing recent forwarder logs..."
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo journalctl -u datadog-forwarder -n 50 --no-pager"
         ;;
 
     config)
         echo "⚙️  Forwarder configuration:"
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             echo "Environment variables:"
             sudo cat /etc/datadog-forwarder/environment
             echo ""
@@ -137,7 +137,7 @@ EOF
     update-env)
         echo "📝 Update environment variables"
         echo "Current configuration:"
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} "sudo cat /etc/datadog-forwarder/environment"
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} "sudo cat /etc/datadog-forwarder/environment"
         echo ""
         echo "To update, edit the environment file on the VM:"
         echo "  ssh azureuser@${LFO_VM_IP}"
@@ -147,7 +147,7 @@ EOF
 
     status)
         echo "📊 Forwarder status:"
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             echo "Timer status:"
             sudo systemctl status datadog-forwarder.timer --no-pager | head -10
             echo ""
@@ -158,7 +158,7 @@ EOF
 
     agent-status)
         echo "🐶 Datadog Agent status:"
-        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "command -v datadog-agent" 2>/dev/null)
 
         if [ -z "$AGENT_INSTALLED" ]; then
@@ -168,7 +168,7 @@ EOF
             exit 1
         fi
 
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             echo "Service status:"
             sudo systemctl status datadog-agent --no-pager | head -15
             echo ""
@@ -182,7 +182,7 @@ EOF
 
     agent-start)
         echo "▶️  Starting Datadog Agent..."
-        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "command -v datadog-agent" 2>/dev/null)
 
         if [ -z "$AGENT_INSTALLED" ]; then
@@ -192,7 +192,7 @@ EOF
             exit 1
         fi
 
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl start datadog-agent
             sudo systemctl enable datadog-agent
             echo "Agent started and enabled"
@@ -203,7 +203,7 @@ EOF
 
     agent-stop)
         echo "⏹️  Stopping Datadog Agent..."
-        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "command -v datadog-agent" 2>/dev/null)
 
         if [ -z "$AGENT_INSTALLED" ]; then
@@ -211,7 +211,7 @@ EOF
             exit 1
         fi
 
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl stop datadog-agent
             echo "Agent stopped"
 EOF
@@ -219,7 +219,7 @@ EOF
 
     agent-restart)
         echo "🔄 Restarting Datadog Agent..."
-        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "command -v datadog-agent" 2>/dev/null)
 
         if [ -z "$AGENT_INSTALLED" ]; then
@@ -229,7 +229,7 @@ EOF
             exit 1
         fi
 
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             sudo systemctl restart datadog-agent
             echo "Agent restarted"
             sleep 3
@@ -239,7 +239,7 @@ EOF
 
     agent-logs)
         echo "📜 Showing recent Datadog Agent logs..."
-        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "command -v datadog-agent" 2>/dev/null)
 
         if [ -z "$AGENT_INSTALLED" ]; then
@@ -247,13 +247,13 @@ EOF
             exit 1
         fi
 
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo journalctl -u datadog-agent -n 50 --no-pager"
         ;;
 
     agent-config)
         echo "⚙️  Datadog Agent configuration:"
-        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_INSTALLED=$(ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "command -v datadog-agent" 2>/dev/null)
 
         if [ -z "$AGENT_INSTALLED" ]; then
@@ -263,7 +263,7 @@ EOF
             exit 1
         fi
 
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
             echo "Main configuration:"
             sudo grep -E "^(api_key|site|hostname|env|tags)" /etc/datadog-agent/datadog.yaml | head -20
             echo ""

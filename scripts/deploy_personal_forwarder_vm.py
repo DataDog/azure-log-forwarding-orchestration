@@ -21,10 +21,13 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
+import urllib.request
 from typing import Any
 from pathlib import Path
 
+from azure.core.exceptions import ResourceNotFoundError
 from azure.identity import AzureCliCredential
 from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
@@ -45,24 +48,21 @@ VM_IMAGE = {
 }
 
 
-def run(cmd: str | list[str], capture_output: bool = True, **kwargs: Any) -> str:
+def run(cmd: list[str], capture_output: bool = True, **kwargs: Any) -> str:
     """Run a command and return output."""
-    if isinstance(cmd, str):
-        cmd = cmd.split()
-
     print(f"Running: {' '.join(cmd)}")
 
-    if capture_output:
-        result = subprocess.run(cmd, capture_output=True, text=True, **kwargs)
-        if result.returncode != 0:
-            print(f"Error: {result.stderr}")
-            raise Exception(f"Command failed: {' '.join(cmd)}")
-        return result.stdout.strip()
-    else:
-        result = subprocess.run(cmd, **kwargs)
-        if result.returncode != 0:
-            raise Exception(f"Command failed: {' '.join(cmd)}")
-        return ""
+    try:
+        if capture_output:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, **kwargs)
+            return result.stdout.strip()
+        else:
+            subprocess.run(cmd, check=True, **kwargs)
+            return ""
+    except subprocess.CalledProcessError as e:
+        if capture_output and e.stderr:
+            print(f"Error: {e.stderr}")
+        raise
 
 
 def get_name(name: str, max_length: int) -> str:
@@ -86,10 +86,10 @@ def get_version_tag() -> str:
     """
     try:
         # Get short commit SHA (8 chars by default)
-        commit_sha = run("git rev-parse --short HEAD")
+        commit_sha = run(["git", "rev-parse", "--short", "HEAD"])
 
         # Check for uncommitted changes
-        status = run("git status --porcelain")
+        status = run(["git", "status", "--porcelain"])
 
         if status:
             return f"{commit_sha}-dirty"
@@ -199,6 +199,15 @@ def create_network_resources(network_client: NetworkManagementClient, resource_g
     nsg_name = f"{base_name}-nsg"
     print(f"Creating network security group: {nsg_name}")
 
+    # Auto-detect deployer IP to restrict SSH access
+    ssh_source_prefix = "*"
+    try:
+        my_ip = urllib.request.urlopen("https://ifconfig.me", timeout=5).read().decode().strip()
+        ssh_source_prefix = f"{my_ip}/32"
+        print(f"Restricting SSH access to deployer IP: {ssh_source_prefix}")
+    except Exception:
+        print("WARNING: Could not detect deployer IP, allowing SSH from any source")
+
     nsg_params = {
         "location": LOCATION,
         "security_rules": [
@@ -210,7 +219,7 @@ def create_network_resources(network_client: NetworkManagementClient, resource_g
                 "protocol": "Tcp",
                 "source_port_range": "*",
                 "destination_port_range": "22",
-                "source_address_prefix": "*",
+                "source_address_prefix": ssh_source_prefix,
                 "destination_address_prefix": "*",
             }
         ],
@@ -265,7 +274,7 @@ def create_vm(
         compute_client.virtual_machines.get(resource_group, vm_name)
         print(f"VM {vm_name} already exists")
         return
-    except Exception:
+    except ResourceNotFoundError:
         pass  # VM doesn't exist, create it
 
     print(f"Creating VM: {vm_name}")
@@ -303,9 +312,7 @@ def build_forwarder_binary(version_tag: str) -> str:
     """Build the forwarder binary for Linux and return the path."""
     print(f"Building forwarder binary with version: {version_tag}")
 
-    # Change to forwarder directory
     forwarder_dir = Path(__file__).parent.parent / "forwarder"
-    os.chdir(forwarder_dir)
 
     # Build binary
     output_file = f"forwarder-linux-amd64-{version_tag}"
@@ -324,7 +331,7 @@ def build_forwarder_binary(version_tag: str) -> str:
     env["GOOS"] = "linux"
     env["GOARCH"] = "amd64"
 
-    run(build_cmd, capture_output=False, env=env)
+    run(build_cmd, capture_output=False, env=env, cwd=str(forwarder_dir))
 
     binary_path = forwarder_dir / output_file
     print(f"Binary built at: {binary_path}")
@@ -413,7 +420,7 @@ def deploy_to_vm(
 
     # Create scripts directory on VM
     run(
-        ["ssh", "-o", "StrictHostKeyChecking=no", f"azureuser@{vm_ip}", "mkdir -p $HOME/deployment"],
+        ["ssh", "-o", "StrictHostKeyChecking=accept-new", f"azureuser@{vm_ip}", "mkdir -p $HOME/deployment"],
         capture_output=False,
     )
 
@@ -426,7 +433,10 @@ def deploy_to_vm(
     for script in scripts_to_copy:
         script_path = script_dir / script
         if script_path.exists():
-            run(f"scp -o StrictHostKeyChecking=no {script_path} azureuser@{vm_ip}:deployment/", capture_output=False)
+            run(
+                ["scp", "-o", "StrictHostKeyChecking=accept-new", str(script_path), f"azureuser@{vm_ip}:deployment/"],
+                capture_output=False,
+            )
         elif script == "install_datadog_agent.sh" and install_agent:
             print(f"Warning: Agent installation script not found at {script_path}")
             print("Agent installation will be skipped.")
@@ -436,7 +446,10 @@ def deploy_to_vm(
     for config in ["datadog-forwarder.service", "datadog-forwarder.timer"]:
         config_path = configs_dir / config
         if config_path.exists():
-            run(f"scp -o StrictHostKeyChecking=no {config_path} azureuser@{vm_ip}:deployment/", capture_output=False)
+            run(
+                ["scp", "-o", "StrictHostKeyChecking=accept-new", str(config_path), f"azureuser@{vm_ip}:deployment/"],
+                capture_output=False,
+            )
 
     # Run initial setup
     print("Running initial setup on VM...")
@@ -459,52 +472,56 @@ def deploy_to_vm(
         [
             "ssh",
             "-o",
-            "StrictHostKeyChecking=no",
+            "StrictHostKeyChecking=accept-new",
             f"azureuser@{vm_ip}",
             setup_cmd,
         ],
         capture_output=False,
     )
 
-    # Create environment file
+    # Create environment file with restricted permissions
     env_content = "\n".join([f'{k}="{v}"' for k, v in env_vars.items() if v])
-    env_file = "/tmp/forwarder-environment"
-    with open(env_file, "w") as f:
-        f.write(env_content)
+    env_fd = tempfile.NamedTemporaryFile(mode="w", suffix="-forwarder-env", delete=False)
+    env_file = env_fd.name
+    try:
+        env_fd.write(env_content)
+        env_fd.close()
+        os.chmod(env_file, 0o600)
 
-    # Copy environment file
-    run(
-        ["scp", "-o", "StrictHostKeyChecking=no", env_file, f"azureuser@{vm_ip}:deployment/environment"],
-        capture_output=False,
-    )
-    run(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"azureuser@{vm_ip}",
-            "sudo mv $HOME/deployment/environment /etc/datadog-forwarder/environment && sudo chmod 600 /etc/datadog-forwarder/environment",
-        ],
-        capture_output=False,
-    )
+        # Copy environment file
+        run(
+            ["scp", "-o", "StrictHostKeyChecking=accept-new", env_file, f"azureuser@{vm_ip}:deployment/environment"],
+            capture_output=False,
+        )
+        run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                f"azureuser@{vm_ip}",
+                "sudo mv $HOME/deployment/environment /etc/datadog-forwarder/environment && sudo chmod 600 /etc/datadog-forwarder/environment",
+            ],
+            capture_output=False,
+        )
 
-    # Deploy the binary
-    print(f"Deploying version {version_tag}...")
-    run(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"azureuser@{vm_ip}",
-            f"sudo $HOME/deployment/deploy.sh '{connection_string}' {version_tag}",
-        ],
-        capture_output=False,
-    )
+        # Deploy the binary
+        print(f"Deploying version {version_tag}...")
+        run(
+            [
+                "ssh",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                f"azureuser@{vm_ip}",
+                f"sudo $HOME/deployment/deploy.sh '{connection_string}' {version_tag}",
+            ],
+            capture_output=False,
+        )
 
-    print("Deployment complete!")
-
-    # Clean up temp file
-    os.remove(env_file)
+        print("Deployment complete!")
+    finally:
+        # Always clean up temp file containing secrets
+        if os.path.exists(env_file):
+            os.remove(env_file)
 
 
 def main():
@@ -562,12 +579,12 @@ def main():
     if args.subscription_id:
         subscription_id = args.subscription_id
     else:
-        subscription_id = run("az account show --query id -o tsv")
+        subscription_id = run(["az", "account", "show", "--query", "id", "-o", "tsv"])
 
     print(f"Using subscription: {subscription_id}")
 
     # Set subscription
-    run(f"az account set --subscription {subscription_id}")
+    run(["az", "account", "set", "--subscription", subscription_id])
 
     # Create clients
     resource_client = ResourceManagementClient(credential, subscription_id)
@@ -651,7 +668,9 @@ def main():
     function_app_name = f"{base_name}-loggy"[:60]  # Max 60 chars for function app name
 
     # Check if function app exists
-    existing_apps_output = run(f"az functionapp list --resource-group {resource_group_name} --output json")
+    existing_apps_output = run(
+        ["az", "functionapp", "list", "--resource-group", resource_group_name, "--output", "json"]
+    )
     existing_apps = json.loads(existing_apps_output if existing_apps_output else "[]")
     app_exists = any(app.get("name") == function_app_name for app in existing_apps)
 
@@ -662,12 +681,33 @@ def main():
         try:
             print("Attempting to create function app with consumption plan...")
             run(
-                f"az functionapp create --name {function_app_name} --storage-account {storage_account_name} --resource-group {resource_group_name} --consumption-plan-location eastus --runtime python --runtime-version 3.11 --functions-version 4 --os-type Linux --https-only true",
+                [
+                    "az",
+                    "functionapp",
+                    "create",
+                    "--name",
+                    function_app_name,
+                    "--storage-account",
+                    storage_account_name,
+                    "--resource-group",
+                    resource_group_name,
+                    "--consumption-plan-location",
+                    "eastus",
+                    "--runtime",
+                    "python",
+                    "--runtime-version",
+                    "3.11",
+                    "--functions-version",
+                    "4",
+                    "--os-type",
+                    "Linux",
+                    "--https-only",
+                    "true",
+                ],
                 capture_output=False,
-                check=True,
             )
             print(f"Function app {function_app_name} created with consumption plan")
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             print(f"Consumption plan creation failed: {e}")
             print("Attempting to create function app with Basic (B1) app service plan...")
 
@@ -676,19 +716,52 @@ def main():
                 plan_name = f"{base_name}-plan"
                 # Create App Service Plan
                 run(
-                    f"az appservice plan create --name {plan_name} --resource-group {resource_group_name} --location eastus --sku B1 --is-linux",
+                    [
+                        "az",
+                        "appservice",
+                        "plan",
+                        "create",
+                        "--name",
+                        plan_name,
+                        "--resource-group",
+                        resource_group_name,
+                        "--location",
+                        "eastus",
+                        "--sku",
+                        "B1",
+                        "--is-linux",
+                    ],
                     capture_output=False,
-                    check=True,
                 )
 
                 # Create function app
                 run(
-                    f"az functionapp create --name {function_app_name} --storage-account {storage_account_name} --resource-group {resource_group_name} --plan {plan_name} --runtime python --runtime-version 3.11 --functions-version 4 --os-type linux --https-only",
+                    [
+                        "az",
+                        "functionapp",
+                        "create",
+                        "--name",
+                        function_app_name,
+                        "--storage-account",
+                        storage_account_name,
+                        "--resource-group",
+                        resource_group_name,
+                        "--plan",
+                        plan_name,
+                        "--runtime",
+                        "python",
+                        "--runtime-version",
+                        "3.11",
+                        "--functions-version",
+                        "4",
+                        "--os-type",
+                        "linux",
+                        "--https-only",
+                    ],
                     capture_output=False,
-                    check=True,
                 )
                 print(f"Function app {function_app_name} created with B1 app service plan")
-            except Exception as e2:
+            except subprocess.CalledProcessError as e2:
                 print(f"WARNING: Could not create function app: {e2}")
                 print(
                     "The forwarder will still work, but you won't be able to generate test logs via the function app."
@@ -697,7 +770,9 @@ def main():
         print(f"Function app {function_app_name} already exists")
 
     # Check again if function app was created successfully
-    existing_apps_output = run(f"az functionapp list --resource-group {resource_group_name} --output json")
+    existing_apps_output = run(
+        ["az", "functionapp", "list", "--resource-group", resource_group_name, "--output", "json"]
+    )
     existing_apps = json.loads(existing_apps_output if existing_apps_output else "[]")
     app_exists = any(app.get("name") == function_app_name for app in existing_apps)
 
@@ -707,13 +782,13 @@ def main():
         try:
             loggy_path = Path(__file__).parent.parent / "loggy"
             run(
-                f"func azure functionapp publish {function_app_name} --python",
+                ["func", "azure", "functionapp", "publish", function_app_name, "--python"],
                 capture_output=False,
                 cwd=str(loggy_path),
             )
             print(f"Loggy deployed successfully to {function_app_name}")
             print(f"Function app URL: https://{function_app_name}.azurewebsites.net")
-        except Exception as e:
+        except subprocess.CalledProcessError as e:
             print(f"WARNING: Could not deploy loggy code: {e}")
             print("The function app exists but code deployment failed. You may need to deploy manually.")
     else:
@@ -730,34 +805,56 @@ def main():
         diagnostic_setting_name = "datadog-lfo"
 
         # First check if diagnostic setting already exists
-        existing_settings = run(
-            f"az monitor diagnostic-settings list --resource {function_app_resource_id} --output json",
-            capture_output=True,
-            check=False,
-        )
+        try:
+            existing_settings = run(
+                [
+                    "az",
+                    "monitor",
+                    "diagnostic-settings",
+                    "list",
+                    "--resource",
+                    function_app_resource_id,
+                    "--output",
+                    "json",
+                ],
+            )
+        except subprocess.CalledProcessError:
+            existing_settings = ""
 
         if existing_settings and diagnostic_setting_name not in existing_settings:
+            logs_json = json.dumps(
+                [{"categoryGroup": "allLogs", "enabled": True, "retentionPolicy": {"days": 7, "enabled": True}}]
+            )
+            metrics_json = json.dumps(
+                [{"category": "AllMetrics", "enabled": True, "retentionPolicy": {"days": 7, "enabled": True}}]
+            )
             try:
                 # Create diagnostic setting with all available log categories
                 run(
-                    f"az monitor diagnostic-settings create "
-                    f"--name {diagnostic_setting_name} "
-                    f"--resource {function_app_resource_id} "
-                    f"--storage-account {storage_resource_id} "
-                    f'--logs \'[{{"categoryGroup": "allLogs", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\' '
-                    f'--metrics \'[{{"category": "AllMetrics", "enabled": true, "retentionPolicy": {{"days": 7, "enabled": true}}}}]\'',
+                    [
+                        "az",
+                        "monitor",
+                        "diagnostic-settings",
+                        "create",
+                        "--name",
+                        diagnostic_setting_name,
+                        "--resource",
+                        function_app_resource_id,
+                        "--storage-account",
+                        storage_resource_id,
+                        "--logs",
+                        logs_json,
+                        "--metrics",
+                        metrics_json,
+                    ],
                     capture_output=False,
                 )
-                print(f"✅ Diagnostic settings configured - logs will be forwarded to {storage_account_name}")
-            except Exception as e:
-                print(f"⚠️ Warning: Could not configure diagnostic settings: {e}")
+                print(f"Diagnostic settings configured - logs will be forwarded to {storage_account_name}")
+            except subprocess.CalledProcessError as e:
+                print(f"Warning: Could not configure diagnostic settings: {e}")
                 print(f"You may need to manually configure diagnostic settings for {function_app_name}")
-                print("To do this manually, run:")
-                print(
-                    f'  az monitor diagnostic-settings create --name {diagnostic_setting_name} --resource {function_app_resource_id} --storage-account {storage_resource_id} --logs \'[{{"categoryGroup": "allLogs", "enabled": true}}]\''
-                )
         else:
-            print(f"✅ Diagnostic settings already configured for {function_app_name}")
+            print(f"Diagnostic settings already configured for {function_app_name}")
 
     print("\n✅ Deployment completed successfully!")
     print(
@@ -772,14 +869,26 @@ def main():
 
     # Get function key
     try:
-        function_key_result = run(
-            f"az functionapp function keys list --name {function_app_name} --resource-group {resource_group_name} --function-name CustomLog --query default -o tsv",
-            capture_output=True,
-            text=True,
-            shell=True,
+        function_key = run(
+            [
+                "az",
+                "functionapp",
+                "function",
+                "keys",
+                "list",
+                "--name",
+                function_app_name,
+                "--resource-group",
+                resource_group_name,
+                "--function-name",
+                "CustomLog",
+                "--query",
+                "default",
+                "-o",
+                "tsv",
+            ],
         )
-        function_key = function_key_result.stdout.strip()
-    except Exception:
+    except subprocess.CalledProcessError:
         function_key = "Unable to get function key - check Azure portal"
 
     print("\n🚀 Test Loggy with Requesty:")

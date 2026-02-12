@@ -81,18 +81,24 @@ func (l *Loader) Run(ctx context.Context) error {
 	l.progress = metrics.NewProgressBar(l.collector, totalRequests)
 
 	// Create worker pool
-	workChan := make(chan struct{}, totalRequests)
-	resultChan := make(chan bool, totalRequests)
-
-	// Fill work channel
-	for i := 0; i < totalRequests; i++ {
-		workChan <- struct{}{}
-	}
-	close(workChan)
+	workChan := make(chan struct{}, l.config.Workers*2)
+	resultChan := make(chan bool, l.config.Workers*2)
 
 	// Start workers
 	workerCtx, cancel := context.WithTimeout(ctx, l.config.Duration)
 	defer cancel()
+
+	// Fill work channel in a goroutine (bounded channel)
+	go func() {
+		defer close(workChan)
+		for i := 0; i < totalRequests; i++ {
+			select {
+			case workChan <- struct{}{}:
+			case <-workerCtx.Done():
+				return
+			}
+		}
+	}()
 
 	for i := 0; i < l.config.Workers; i++ {
 		l.wg.Add(1)
@@ -352,9 +358,4 @@ func (l *Loader) generateVarietyCount() int {
 	default:
 		return rand.Intn(50) + 25 // 2% 25-75 logs
 	}
-}
-
-func init() {
-	// Seed random number generator
-	rand.Seed(time.Now().UnixNano())
 }

@@ -25,7 +25,7 @@ This command deploys your personal Azure environment for testing the log forward
 DEPLOYMENT_TYPE="forwarder"
 BASE_NAME=""
 SKIP_AGENT=""
-REPO_ROOT="${REPO_ROOT:-/Users/matt.spurlin/go/src/github.com/DataDog/azure-log-forwarding-orchestration}"
+REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel)}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -96,7 +96,7 @@ fi
 
 echo "Configuration:"
 echo "  DD_SITE: $DD_SITE"
-echo "  DD_API_KEY: ${DD_API_KEY:0:10}..."
+echo "  DD_API_KEY: [set, ${#DD_API_KEY} chars]"
 echo ""
 
 # Setup Python environment if needed
@@ -119,7 +119,7 @@ case "$DEPLOYMENT_TYPE" in
 
         # Required environment variables
         export CONFIG_ID="${CONFIG_ID:-forwarder-vm-config}"
-        export CONTROL_PLANE_ID="${CONTROL_PLANE_ID:-d0105e57d837}"
+        export CONTROL_PLANE_ID="${CONTROL_PLANE_ID:?Must set CONTROL_PLANE_ID}"
 
         # Run deployment script
         cd "$REPO_ROOT"

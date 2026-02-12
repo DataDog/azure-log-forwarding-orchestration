@@ -10,7 +10,7 @@
 # Usage: deploy.sh "<connection_string>" <version>
 #
 
-set -e
+set -euo pipefail
 
 # Check arguments
 if [ $# -ne 2 ]; then
@@ -76,8 +76,12 @@ sudo -u ddforwarder env AzureWebJobsStorage="${CONNECTION_STRING}" "${BINARY_PAT
 
 # Stop the timer before switching
 echo "Stopping forwarder timer..."
-sudo systemctl stop datadog-forwarder.timer || true
-sudo systemctl stop datadog-forwarder.service || true
+if systemctl is-active --quiet datadog-forwarder.timer; then
+    sudo systemctl stop datadog-forwarder.timer
+fi
+if systemctl is-active --quiet datadog-forwarder.service; then
+    sudo systemctl stop datadog-forwarder.service
+fi
 
 # Update symlink atomically
 echo "Updating current version symlink..."
@@ -105,9 +109,13 @@ sleep 5
 
 # Check status
 echo "Checking service status..."
-sudo systemctl status datadog-forwarder.timer --no-pager || true
+if systemctl is-active --quiet datadog-forwarder.timer; then
+    sudo systemctl status datadog-forwarder.timer --no-pager
+fi
 echo ""
-sudo systemctl status datadog-forwarder.service --no-pager || true
+if systemctl is-active --quiet datadog-forwarder.service; then
+    sudo systemctl status datadog-forwarder.service --no-pager
+fi
 
 # Show recent logs
 echo ""

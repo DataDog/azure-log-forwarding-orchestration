@@ -8,7 +8,7 @@
 # This script runs once to set up the VM environment
 #
 
-set -e
+set -euo pipefail
 
 echo "Starting Datadog Forwarder initial setup..."
 
@@ -110,8 +110,8 @@ EOF
 if [ ! -f /etc/datadog-forwarder/environment ]; then
     echo "Creating environment file placeholder..."
     sudo touch /etc/datadog-forwarder/environment
-    sudo chown root:ddforwarder /etc/datadog-forwarder/environment
-    sudo chmod 640 /etc/datadog-forwarder/environment
+    sudo chown root:root /etc/datadog-forwarder/environment
+    sudo chmod 600 /etc/datadog-forwarder/environment
 fi
 
 echo "✅ Initial setup complete!"

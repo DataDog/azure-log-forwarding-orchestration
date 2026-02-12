@@ -174,13 +174,13 @@ sleep 10
 # Trigger forwarder to process the logs
 if [ -n "$LFO_VM_IP" ]; then
     echo "🔄 Triggering forwarder to process logs..."
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} "sudo systemctl start datadog-forwarder.service"
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} "sudo systemctl start datadog-forwarder.service"
 
     # Check results
     sleep 3
     echo ""
     echo "📊 Checking forwarder results:"
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} "sudo journalctl -u datadog-forwarder -n 5 --no-pager | grep 'Finished processing'"
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} "sudo journalctl -u datadog-forwarder -n 5 --no-pager | grep 'Finished processing'"
 else
     echo "⚠️  Skipping forwarder trigger (VM IP not found)"
 fi

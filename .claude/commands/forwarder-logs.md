@@ -92,16 +92,16 @@ echo "=================================="
 # Show recent logs
 if [ "$FOLLOW" = "true" ]; then
     echo "Following logs in real-time (Ctrl+C to stop)..."
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo journalctl -u datadog-forwarder -f"
 else
     if [ -n "$FILTER" ]; then
         echo "Showing last $LINES lines matching: $FILTER"
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo journalctl -u datadog-forwarder -n $LINES --no-pager | grep -i '$FILTER'"
     else
         echo "Showing last $LINES lines:"
-        ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo journalctl -u datadog-forwarder -n $LINES --no-pager"
     fi
 fi
@@ -111,19 +111,19 @@ if [ "$FOLLOW" != "true" ]; then
     echo ""
     echo "📊 Processing Statistics (last 10 runs):"
     echo "-----------------------------------------"
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo journalctl -u datadog-forwarder --no-pager | grep 'Finished processing' | tail -10"
 
     echo ""
     echo "⚠️  Recent Errors (if any):"
     echo "----------------------------"
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo journalctl -u datadog-forwarder -p err -n 10 --no-pager" 2>/dev/null || echo "No errors found"
 
     echo ""
     echo "🕐 Last Execution Times:"
     echo "------------------------"
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo systemctl status datadog-forwarder.timer --no-pager | grep -E 'Trigger|Active'"
 fi
 ```

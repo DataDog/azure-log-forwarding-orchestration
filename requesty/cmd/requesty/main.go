@@ -69,6 +69,7 @@ func main() {
 	go func() {
 		<-sigChan
 		color.Yellow("\n⚠️  Received interrupt signal, shutting down gracefully...")
+		signal.Stop(sigChan)
 		cancel()
 	}()
 
@@ -251,6 +252,11 @@ func printResults(collector *metrics.Collector, format string) {
 
 	// Text format
 	stats := collector.GetStats()
+
+	if stats.TotalRequests == 0 {
+		fmt.Println("\nNo requests completed.")
+		return
+	}
 
 	fmt.Println()
 	color.Cyan("📈 Test Results:")

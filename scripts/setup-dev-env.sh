@@ -3,7 +3,7 @@
 
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2026 Datadog, Inc.
 
-set -e
+set -euo pipefail
 
 # Colors for output
 RED='\033[0;31m'

@@ -11,7 +11,7 @@
 #   If version not specified, shows available versions and prompts
 #
 
-set -e
+set -euo pipefail
 
 BINARY_DIR="/opt/datadog-forwarder/bin"
 CURRENT_LINK="/opt/datadog-forwarder/current"
@@ -84,7 +84,9 @@ perform_rollback() {
     # Stop timer
     echo "Stopping forwarder timer..."
     sudo systemctl stop datadog-forwarder.timer
-    sudo systemctl stop datadog-forwarder.service || true
+    if systemctl is-active --quiet datadog-forwarder.service; then
+        sudo systemctl stop datadog-forwarder.service
+    fi
 
     # Switch symlink
     echo "Switching to version ${target_version}..."

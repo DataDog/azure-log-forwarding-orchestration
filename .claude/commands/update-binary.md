@@ -79,12 +79,12 @@ fi
 
 # Copy to VM
 echo "Copying binary to VM..."
-scp -o StrictHostKeyChecking=no forwarder-linux-amd64 azureuser@${LFO_VM_IP}:~/forwarder-updated
+scp -o StrictHostKeyChecking=accept-new forwarder-linux-amd64 azureuser@${LFO_VM_IP}:~/forwarder-updated
 
 # Deploy on VM
 echo "Deploying binary on VM..."
 if [ "$NO_RESTART" = "true" ]; then
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
         sudo systemctl stop datadog-forwarder.service
         sudo mv ~/forwarder-updated /usr/local/bin/datadog-forwarder
         sudo chmod +x /usr/local/bin/datadog-forwarder
@@ -92,7 +92,7 @@ if [ "$NO_RESTART" = "true" ]; then
         echo "✅ Forwarder binary updated (service not restarted)"
 EOF
 else
-    ssh -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} << 'EOF'
+    ssh -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} << 'EOF'
         sudo systemctl stop datadog-forwarder.timer
         sudo systemctl stop datadog-forwarder.service
         sudo mv ~/forwarder-updated /usr/local/bin/datadog-forwarder

@@ -10,7 +10,7 @@
 # Usage: update.sh "<connection_string>" <new_version>
 #
 
-set -e
+set -euo pipefail
 
 # Check arguments
 if [ $# -ne 2 ]; then

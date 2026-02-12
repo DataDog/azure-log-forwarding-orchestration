@@ -80,7 +80,9 @@ fi
 
 # Stop the agent while we configure it
 log_info "Stopping agent for configuration..."
-systemctl stop datadog-agent || true
+if systemctl is-active --quiet datadog-agent; then
+    systemctl stop datadog-agent
+fi
 
 # Create agent configuration directory structure
 log_info "Setting up configuration directories..."
@@ -131,11 +133,6 @@ process_config:
   process_collection:
     enabled: true
   process_discovery:
-    enabled: true
-
-# Live Processes
-process_config:
-  process_collection:
     enabled: true
 
 # System probe (for network monitoring)
@@ -189,30 +186,17 @@ EOF
 log_info "Configuring log collection..."
 cat > "${AGENT_CONFIG_DIR}/conf.d/logs.d/forwarder.yaml" <<EOF
 # Log collection configuration for Azure Log Forwarder
+# Forwarder logs to journald; collect via journald source
 
 logs:
-  - type: file
-    path: /var/log/datadog-forwarder/forwarder.log
-    service: ${DD_SERVICE}
+  - type: journald
     source: azure-log-forwarder
-    sourcecategory: application
+    service: ${DD_SERVICE}
+    include_units:
+      - datadog-forwarder.service
     tags:
       - env:${DD_ENV}
       - component:forwarder
-    # Multi-line log aggregation for stack traces
-    multiline:
-      pattern: '^\d{4}-\d{2}-\d{2}'
-      type: pattern
-
-  - type: file
-    path: /var/log/datadog-forwarder/error.log
-    service: ${DD_SERVICE}
-    source: azure-log-forwarder
-    sourcecategory: application
-    tags:
-      - env:${DD_ENV}
-      - component:forwarder
-      - log_type:error
 EOF
 
 # Configure process monitoring
@@ -250,7 +234,8 @@ EOF
 log_info "Setting configuration permissions..."
 chown -R dd-agent:dd-agent "${AGENT_CONFIG_DIR}"
 chmod 640 "${AGENT_CONFIG_DIR}/datadog.yaml"
-chmod -R 644 "${AGENT_CONFIG_DIR}/conf.d/"
+find "${AGENT_CONFIG_DIR}/conf.d/" -type f -exec chmod 644 {} +
+find "${AGENT_CONFIG_DIR}/conf.d/" -type d -exec chmod 755 {} +
 
 # Grant dd-agent user read access to forwarder logs
 log_info "Configuring log access permissions..."
@@ -262,7 +247,7 @@ fi
 # Ensure log directory permissions
 if [[ -d "/var/log/datadog-forwarder" ]]; then
     chmod 755 /var/log/datadog-forwarder
-    chmod 644 /var/log/datadog-forwarder/*.log 2>/dev/null || true
+    find /var/log/datadog-forwarder -name '*.log' -exec chmod 644 {} + 2>/dev/null || true
 fi
 
 # Enable and start the agent
@@ -279,7 +264,7 @@ if systemctl is-active --quiet datadog-agent; then
     log_info "Datadog Agent is running"
 
     # Display agent status
-    datadog-agent status || true
+    datadog-agent status || log_warning "Agent status check returned non-zero"
 
     log_info "Agent installation and configuration completed successfully!"
     log_info "You can check the agent status with: sudo datadog-agent status"

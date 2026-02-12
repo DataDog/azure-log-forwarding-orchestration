@@ -90,7 +90,7 @@ if [ -n "$LFO_VM_NAME" ]; then
 
     # Check SSH connectivity
     if [ -n "$LFO_VM_IP" ]; then
-        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} "echo '   SSH Access: ✅ Connected'" 2>/dev/null || echo "   SSH Access: ❌ Cannot connect"
+        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} "echo '   SSH Access: ✅ Connected'" 2>/dev/null || echo "   SSH Access: ❌ Cannot connect"
     fi
 else
     echo "   ❌ No VM found in resource group"
@@ -125,7 +125,7 @@ fi
 if [ -n "$LFO_VM_IP" ]; then
     echo ""
     echo "⚙️  Forwarder Configuration:"
-    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo cat /etc/datadog-forwarder/environment 2>/dev/null | grep -E '^(DD_SITE|DD_TELEMETRY|VERSION_TAG)'" 2>/dev/null || echo "   Unable to retrieve configuration"
 fi
 

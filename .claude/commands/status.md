@@ -71,7 +71,7 @@ if [ "$ERRORS_ONLY" = "true" ]; then
     echo ""
 
     # Check if service is active
-    SERVICE_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    SERVICE_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo systemctl is-active datadog-forwarder.timer" 2>/dev/null)
 
     if [ "$SERVICE_STATUS" != "active" ]; then
@@ -81,36 +81,36 @@ if [ "$ERRORS_ONLY" = "true" ]; then
     fi
 
     # Check for recent errors
-    ERROR_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ERROR_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo journalctl -u datadog-forwarder -p err --since '1 hour ago' --no-pager | wc -l" 2>/dev/null)
 
     if [ "$ERROR_COUNT" -gt 0 ]; then
         echo ""
         echo "❌ Found $ERROR_COUNT errors in the last hour:"
-        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo journalctl -u datadog-forwarder -p err --since '1 hour ago' --no-pager"
     else
         echo "✅ No errors in the last hour"
     fi
 
     # Check for warnings
-    WARN_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    WARN_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo journalctl -u datadog-forwarder -p warning --since '1 hour ago' --no-pager | wc -l" 2>/dev/null)
 
     if [ "$WARN_COUNT" -gt 0 ]; then
         echo ""
         echo "⚠️  Found $WARN_COUNT warnings in the last hour:"
-        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo journalctl -u datadog-forwarder -p warning --since '1 hour ago' --no-pager | tail -10"
     fi
 
     # Check Datadog Agent if installed
-    AGENT_INSTALLED=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    AGENT_INSTALLED=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "command -v datadog-agent" 2>/dev/null)
 
     if [ ! -z "$AGENT_INSTALLED" ]; then
         echo ""
-        AGENT_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo systemctl is-active datadog-agent" 2>/dev/null)
 
         if [ "$AGENT_STATUS" != "active" ]; then
@@ -125,31 +125,31 @@ fi
 
 # Full status report
 echo "⏲️  Timer Status:"
-ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "sudo systemctl status datadog-forwarder.timer --no-pager | head -15"
 
 echo ""
 echo "🔧 Service Status:"
-ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "sudo systemctl status datadog-forwarder.service --no-pager | head -10"
 
 echo ""
 echo "📝 Environment Configuration:"
-ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "sudo cat /etc/datadog-forwarder/environment | grep -E '^(DD_SITE|DD_TELEMETRY|VERSION_TAG|NUM_GOROUTINES)'"
 
 echo ""
 echo "📈 Recent Processing (last 5 runs):"
-ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "sudo journalctl -u datadog-forwarder --no-pager | grep 'Finished processing' | tail -5"
 
 echo ""
 echo "⚠️  Recent Errors (if any):"
-ERROR_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+ERROR_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "sudo journalctl -u datadog-forwarder -p err --since '1 hour ago' --no-pager | wc -l" 2>/dev/null)
 if [ "$ERROR_COUNT" -gt 0 ]; then
     echo "Found $ERROR_COUNT errors in the last hour:"
-    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo journalctl -u datadog-forwarder -p err --since '1 hour ago' --no-pager | tail -10"
 else
     echo "✅ No errors in the last hour"
@@ -157,31 +157,31 @@ fi
 
 echo ""
 echo "💾 Blob Processing:"
-ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "sudo journalctl -u datadog-forwarder --no-pager | grep -E 'processing blob|container' | tail -5"
 
 # Check Datadog Agent status (if installed)
 echo ""
 echo "🐶 Datadog Agent Status:"
-AGENT_INSTALLED=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+AGENT_INSTALLED=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
     "command -v datadog-agent" 2>/dev/null)
 
 if [ ! -z "$AGENT_INSTALLED" ]; then
-    AGENT_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+    AGENT_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
         "sudo systemctl is-active datadog-agent" 2>/dev/null)
 
     if [ "$AGENT_STATUS" = "active" ]; then
         echo "✅ Agent is running"
 
         # Get agent version
-        AGENT_VERSION=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_VERSION=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo datadog-agent version 2>/dev/null | grep 'Agent' | head -1" 2>/dev/null)
         if [ ! -z "$AGENT_VERSION" ]; then
             echo "   Version: $AGENT_VERSION"
         fi
 
         # Check agent connectivity
-        AGENT_HEALTH=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        AGENT_HEALTH=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo datadog-agent health 2>/dev/null | grep -E '(API|Forwarder)' | head -2" 2>/dev/null)
         if [ ! -z "$AGENT_HEALTH" ]; then
             echo "   Health:"
@@ -189,14 +189,14 @@ if [ ! -z "$AGENT_INSTALLED" ]; then
         fi
 
         # Check APM status
-        APM_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        APM_STATUS=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo datadog-agent status 2>/dev/null | grep -A 2 'APM Agent' | tail -2" 2>/dev/null)
         if [ ! -z "$APM_STATUS" ]; then
             echo "   APM Receiver: Listening on localhost:8126"
         fi
 
         # Show collected metrics count
-        METRICS_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no azureuser@${LFO_VM_IP} \
+        METRICS_COUNT=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new azureuser@${LFO_VM_IP} \
             "sudo datadog-agent status 2>/dev/null | grep 'Metrics' | grep -oE '[0-9]+' | head -1" 2>/dev/null)
         if [ ! -z "$METRICS_COUNT" ]; then
             echo "   Metrics collected: $METRICS_COUNT"
