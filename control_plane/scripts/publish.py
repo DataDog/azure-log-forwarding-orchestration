@@ -69,7 +69,7 @@ if len(sys.argv) >= 3:
 with ThreadPoolExecutor() as executor:
     if not client.exists():
         log.warning("Container %s does not exist, creating it...", TASKS_CONTAINER)
-        client.create_container(public_access="container")
+        client.create_container()
     futures = [executor.submit(client.upload_blob, filename, data, overwrite=True) for filename, data in files.items()]
     futures.append(executor.submit(client.upload_blob, MANIFEST_FILE_NAME, dumps(hashes), overwrite=True))
     exceptions = [e for f in futures if (e := f.exception())]
