@@ -10,6 +10,7 @@ from os import environ
 from re import sub
 from subprocess import PIPE, Popen
 from sys import argv
+from datetime import datetime, timedelta, timezone
 from time import sleep
 from typing import Any
 from urllib.parse import quote
@@ -18,7 +19,7 @@ from urllib.parse import quote
 from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, generate_account_sas, AccountSasPermissions, ResourceTypes
 
 # constants
 CONTAINER_NAME = "lfo"
@@ -210,6 +211,13 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
+        "storageAccountSas": generate_account_sas(
+            account_name=storage_account_name,
+            account_key=keys.keys[0].value,
+            resource_types=ResourceTypes(object=True),
+            permission=AccountSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(hours=1),
+        ),
         "logLevel": "DEBUG",
     }
     run(
