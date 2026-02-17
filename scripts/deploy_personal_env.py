@@ -18,7 +18,6 @@ from urllib.parse import quote
 from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
-from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
 from azure.storage.blob import BlobServiceClient
 
 # constants
@@ -102,17 +101,19 @@ if availability_result.name_available:
     poller = storage_client.storage_accounts.begin_create(
         resource_group_name,
         storage_account_name,
-        {"location": LOCATION, "kind": "StorageV2", "sku": {"name": "Standard_LRS"}},
+        {
+            "location": LOCATION,
+            "kind": "StorageV2",
+            "sku": {"name": "Standard_LRS"},
+            "properties": {
+                "supportsHttpsTrafficOnly": True,
+                "allowBlobPublicAccess": False,
+            },
+        },
     )
 
     account_result = poller.result()
     print(f"Created storage account {account_result.name}")
-
-    # set the allow_blob_public_access settings
-    public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
-    storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
-    print(f"Enabled public access for storage account {storage_account_name}. Waiting for settings to take effect...")
-    sleep(20)  # wait for storage account setting to propagate
 
 
 # get connection string
@@ -126,11 +127,9 @@ container_client = blob_service_client.get_container_client(CONTAINER_NAME)
 # if container does not exist, create it
 if not container_client.exists():
     try:
-        container_client = blob_service_client.create_container(CONTAINER_NAME, public_access="container")
+        container_client = blob_service_client.create_container(CONTAINER_NAME)
     except Exception as e:
-        print(
-            f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
-        )
+        print(f"Error creating storage container {CONTAINER_NAME}.")
         raise SystemExit(1) from e
     print(f"Created storage container {CONTAINER_NAME}")
 
