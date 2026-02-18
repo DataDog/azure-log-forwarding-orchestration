@@ -428,18 +428,34 @@ func main() {
 
 	datadogConfig := datadog.NewConfiguration()
 
-	if environment.Enabled(environment.TelemetryEnabled) {
-		// enable submission to staging
+	// SDK server-variable allow-list manipulation for staging site support.
+	//
+	// The datadog-api-client-go SDK validates the "site" server variable against a
+	// hard-coded allow-list of enum values. The Datadog staging site
+	// (e.g. "datad0g.com") is not included in that list. When DD_SITE is set to a
+	// staging value, the SDK silently falls back to the default production site,
+	// which causes log submission to hit the wrong environment.
+	//
+	// To fix this, we append the staging site to the enum allow-list for the
+	// SubmitLog operation *before* any API calls are made. This is coupled to the
+	// internal structure of datadog.Configuration.OperationServers and may need to
+	// be updated if the SDK changes that structure.
+	//
+	// We only do this when telemetry is enabled and DD_SITE is empty or staging,
+	// to avoid any risk of routing production logs to the wrong destination.
+	if environment.Enabled(environment.TelemetryEnabled) && (ddSite == "" || ddSite == logs.DatadogStagingSite) {
 		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
 		if len(servers) > 0 {
 			server := servers[0]
-			site := server.Variables["site"]
-			enumValues := site.EnumValues
+			siteVar := server.Variables["site"]
+			enumValues := siteVar.EnumValues
 			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
 				enumValues = append(enumValues, logs.DatadogStagingSite)
 			}
-			site.EnumValues = enumValues
-			server.Variables["site"] = site
+			siteVar.EnumValues = enumValues
+			server.Variables["site"] = siteVar
+			servers[0] = server
+			datadogConfig.OperationServers["v2.LogsApi.SubmitLog"] = servers
 		}
 	}
 
