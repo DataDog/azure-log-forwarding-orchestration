@@ -42,7 +42,16 @@ def custom_log(req: func.HttpRequest) -> func.HttpResponse:
         req_body = {}
 
     # Get message from query params or body
-    message = req.params.get("message") or req_body.get("message", "Custom log entry")
+    message = req.params.get("message") or req_body.get("message")
+
+    # Validate message parameter is provided
+    if not message:
+        return func.HttpResponse(
+            body=json.dumps({"error": "Missing required parameter: message"}),
+            status_code=400,
+            headers={"Content-Type": "application/json"},
+        )
+
     level = req.params.get("level") or req_body.get("level", "info")
     try:
         count = int(req.params.get("count") or req_body.get("count", 1))

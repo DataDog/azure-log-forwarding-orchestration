@@ -17,7 +17,7 @@ Your friendly log generator
 - **Route**: `/CustomLog`
 - **Methods**: GET/POST
 - Allows custom log generation with parameters:
-  - `message`: Custom message to log (default: "Custom log entry")
+  - `message`: **Required** - Custom message to log
   - `level`: Log level - debug/info/warning/error/critical (default: "info")
   - `count`: Number of logs to generate, max 100 (default: 1)
 
