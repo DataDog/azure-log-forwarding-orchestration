@@ -1,0 +1,20 @@
+[Unit]
+Description=Run Datadog Azure Log Forwarder every minute
+Requires=datadog-forwarder.service
+
+[Timer]
+# Run every minute at :00 seconds
+OnCalendar=*:*:00
+
+# High accuracy to ensure timely execution
+AccuracySec=1s
+
+# If the system was powered down when the timer should have triggered,
+# run it immediately on next boot
+Persistent=true
+
+# Randomized delay to prevent thundering herd (0-5 seconds)
+RandomizedDelaySec=5s
+
+[Install]
+WantedBy=timers.target
