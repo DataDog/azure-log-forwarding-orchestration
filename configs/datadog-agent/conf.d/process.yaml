@@ -1,0 +1,27 @@
+# Process monitoring configuration for Azure Log Forwarder
+# Monitors the forwarder process and alerts on anomalies
+
+init_config:
+instances:
+  # Monitor the main forwarder process
+  - name: azure-log-forwarder
+    search_string:
+      - "/opt/datadog-forwarder"
+    exact_match: false
+    thresholds:
+      # Alert if process count is outside expected range
+      # Expected: 1 process when timer triggers
+      critical: [1, 3] # Alert if less than 1 or more than 3 processes
+    tags:
+      - env:${DD_ENV}
+      - service:${DD_SERVICE}
+  # Monitor the Datadog agent itself
+  - name: datadog-agent
+    search_string:
+      - "datadog-agent"
+    exact_match: false
+    thresholds:
+      critical: [1, 10] # Alert if agent processes are abnormal
+    tags:
+      - env:${DD_ENV}
+      - component:monitoring
