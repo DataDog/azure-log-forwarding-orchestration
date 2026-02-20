@@ -68,7 +68,8 @@ class DeployerTask(Task):
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
-        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
+        # Credential is required because the storage account disables public blob access
+        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER, credential=self.credential)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
 

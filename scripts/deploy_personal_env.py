@@ -231,6 +231,25 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         ],
         cwd=lfo_dir,
     )
+
+    # Grant the deployer's managed identity Storage Blob Data Reader on the staging storage account
+    # so it can read task zips and manifest (needed because allowBlobPublicAccess is false)
+    deployer_jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
+    deployer_job_name = next(
+        (job.get("name") for job in deployer_jobs if "deployer-task" in job.get("name")),
+        None,
+    )
+    if deployer_job_name:
+        deployer_principal_id = loads(
+            run(f"az containerapp job show --resource-group {resource_group_name} --name {deployer_job_name} --query identity.principalId --output json")
+        )
+        storage_account_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
+        STORAGE_BLOB_DATA_READER = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
+        run(
+            f"az role assignment create --assignee-object-id {deployer_principal_id} --assignee-principal-type ServicePrincipal"
+            f" --role {STORAGE_BLOB_DATA_READER} --scope {storage_account_id}",
+        )
+        print(f"Granted Storage Blob Data Reader to deployer {deployer_job_name} on {storage_account_name}")
 else:
     # execute deployer
     jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
