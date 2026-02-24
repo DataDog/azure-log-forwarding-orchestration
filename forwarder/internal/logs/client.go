@@ -14,6 +14,7 @@ import (
 
 	// datadog
 	"github.com/DataDog/datadog-api-client-go/v2/api/datadogV2"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	// project
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/pointer"
@@ -55,8 +56,11 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 	}
 }
 
-// AddLog adds a log to the buffer for future submission.
+// AddLog adds a log to the buffer for future submission, flushing the buffer if adding the log would exceed the maximum payload
 func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Entry, log *Log) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "logsClient.AddLog")
+	defer func() { span.Finish(tracer.WithError(err)) }()
+
 	if !log.Validate(now, logger) {
 		return nil
 	}
@@ -94,6 +98,9 @@ func (c *Client) AddRawLog(ctx context.Context, now customtime.Now, logger *log.
 
 // Flush sends all buffered logs to the Datadog API.
 func (c *Client) Flush(ctx context.Context) (err error) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "logsClient.Flush")
+	defer func() { span.Finish(tracer.WithError(err)) }()
+
 	if len(c.logsBuffer) > 0 {
 		option := datadogV2.SubmitLogOptionalParameters{
 			ContentEncoding: pointer.Get(datadogV2.CONTENTENCODING_GZIP),
