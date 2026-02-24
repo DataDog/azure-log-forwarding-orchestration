@@ -734,7 +734,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
         ds_futures = [
             tpe.submit(
                 az,
-                f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"',
+                f'monitor diagnostic-settings list --resource "{resource_id}" --query "[?{diagnostic_settings_filter}].name"',
             )
             for resource_id in resource_ids
         ]
