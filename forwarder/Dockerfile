@@ -12,13 +12,15 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" cmd/forwarder/forwarder.go
 
-FROM scratch
+FROM gcr.io/distroless/base-debian12
 WORKDIR /
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /usr/local/go/src/github.com/DataDog/azure-log-forwarding-orchestration/forwarder/forwarder /forwarder
+COPY --from=datadog/serverless-init:1 /datadog-init /datadog-init
 
 # Set the version
 ARG VERSION_TAG="latest"
 ENV VERSION_TAG=$VERSION_TAG
 
+ENTRYPOINT ["/datadog-init"]
 CMD ["/forwarder"]
