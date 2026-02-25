@@ -232,7 +232,7 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         cwd=lfo_dir,
     )
 
-    # Grant the deployer's managed identity Storage Blob Data Reader on the staging storage account
+    # Grant the deployer's managed identity Storage Blob Data Reader on the personal env storage account
     # so it can read task zips and manifest (needed because allowBlobPublicAccess is false)
     deployer_jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
     deployer_job_name = next(

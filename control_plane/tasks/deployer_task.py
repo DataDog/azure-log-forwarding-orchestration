@@ -67,11 +67,16 @@ class DeployerTask(Task):
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
-        storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
-        # Credential is required because the storage account disables public blob access
-        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER, credential=self.credential)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
+
+        storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
+        # If authenticating with the public storage account, we use anonymous access since the blobs are public. 
+        # In this case, we should not pass a credential to the ContainerClient.
+        # If authenticating with a private storage account (ex. personal environment), we need to pass the credential
+        # of the DeployerTask. It should have Storage Blob Data Contributor role (or similar) on the storage acocunt
+        credential = self.credential if storage_account_url != PUBLIC_STORAGE_ACCOUNT_URL else None
+        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER, credential=credential)
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()

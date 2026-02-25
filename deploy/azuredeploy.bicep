@@ -22,7 +22,7 @@ param imageRegistry string = 'datadoghq.azurecr.io'
 #disable-next-line no-hardcoded-env-urls
 param storageAccountUrl string = 'https://ddazurelfo.blob.core.windows.net'
 @secure()
-@description('Optional SAS token for accessing the storage account when anonymous access is disabled')
+@description('Optional SAS token for the initial run deployment script to fetch initial_run.sh when anonymous access is disabled, for example when running in a personal environment')
 param storageAccountSas string = ''
 
 func subUuid(uuid string) string => toLower(substring(uuid, 24, 12))
