@@ -48,10 +48,12 @@ VM_IMAGE = {
 }
 
 
-def run(cmd: list[str], capture_output: bool = True, **kwargs: Any) -> str:
+def run(cmd: list[str], capture_output: bool = True, description: str | None = None, **kwargs: Any) -> str:
     """Run a command and return output."""
-    cmd_display = cmd[0] if cmd else "<empty command>"
-    print(f"Running command: {cmd_display} (arguments hidden for security)")
+    if description:
+        print(f"Running: {description} (arguments hidden for security)")
+    else:
+        print("Running command (arguments hidden for security)")
 
     try:
         if capture_output:
@@ -87,10 +89,10 @@ def get_version_tag() -> str:
     """
     try:
         # Get short commit SHA (8 chars by default)
-        commit_sha = run(["git", "rev-parse", "--short", "HEAD"])
+        commit_sha = run(["git", "rev-parse", "--short", "HEAD"], description="git rev-parse HEAD")
 
         # Check for uncommitted changes
-        status = run(["git", "status", "--porcelain"])
+        status = run(["git", "status", "--porcelain"], description="git status")
 
         if status:
             return f"{commit_sha}-dirty"
@@ -589,12 +591,12 @@ def main():
     if args.subscription_id:
         subscription_id = args.subscription_id
     else:
-        subscription_id = run(["az", "account", "show", "--query", "id", "-o", "tsv"])
+        subscription_id = run(["az", "account", "show", "--query", "id", "-o", "tsv"], description="az account show")
 
     print(f"Using subscription: {subscription_id}")
 
     # Set subscription
-    run(["az", "account", "set", "--subscription", subscription_id])
+    run(["az", "account", "set", "--subscription", subscription_id], description="az account set subscription")
 
     # Create clients
     resource_client = ResourceManagementClient(credential, subscription_id)
