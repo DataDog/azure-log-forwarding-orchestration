@@ -27,6 +27,7 @@ ROLLBACK_MARKER="/tmp/forwarder-update-in-progress"
 
 # Function to rollback on failure
 rollback() {
+    trap - ERR  # Prevent recursive rollback on error
     echo "ERROR: Update failed, initiating rollback..."
 
     if [ -f "${ROLLBACK_MARKER}" ]; then
