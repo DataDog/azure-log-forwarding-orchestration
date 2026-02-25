@@ -50,7 +50,8 @@ VM_IMAGE = {
 
 def run(cmd: list[str], capture_output: bool = True, **kwargs: Any) -> str:
     """Run a command and return output."""
-    print(f"Running: {' '.join(cmd)}")
+    cmd_display = cmd[0] if cmd else "<empty command>"
+    print(f"Running command: {cmd_display} (arguments hidden for security)")
 
     try:
         if capture_output:
