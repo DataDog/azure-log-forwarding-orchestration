@@ -79,10 +79,12 @@ def safe_get_id(r: Any) -> str | None:
         return r.id.lower()
     return None
 
+
 def is_control_plane_storage_account(resource_name: str) -> bool:
     """Determines if the storage account is one that is managed by the control plane based on its name"""
 
     return resource_name.lower().startswith(CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX)
+
 
 def should_ignore_resource(region: str, resource_type: str, resource_name: str) -> bool:
     """Determines if we should ignore the resource"""
@@ -252,7 +254,9 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             resource_tags = resource_tag_dict_to_list(resource.tags)
             # include the control plane storage account in the resource cache, but mark it as not included for forwarding
             # so we can remove diagnostic settings from it
-            include_resource = self.should_include(resource_tags) and not (is_control_plane_storage_account(cast(str, resource.name)))
+            include_resource = self.should_include(resource_tags) and not (
+                is_control_plane_storage_account(cast(str, resource.name))
+            )
             metadata = ResourceMetadata(include=include_resource)
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
