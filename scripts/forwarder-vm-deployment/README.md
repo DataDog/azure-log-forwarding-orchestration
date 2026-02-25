@@ -16,7 +16,7 @@ The deployment system provides:
 1. **Local Requirements:**
    - Azure CLI installed and authenticated
    - Go 1.21+ for building the forwarder
-   - SSH key pair (~/.ssh/id_rsa and ~/.ssh/id_rsa.pub)
+   - SSH key pair (`~/.ssh/id_ed25519`, `id_rsa`, or `id_ecdsa`; ed25519 preferred)
    - Git repository (for version tagging)
 
 2. **Environment Variables:**
