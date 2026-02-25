@@ -71,7 +71,7 @@ class DeployerTask(Task):
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
 
         storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
-        # If authenticating with the public storage account, we use anonymous access since the blobs are public. 
+        # If authenticating with the public storage account, we use anonymous access since the blobs are public.
         # In this case, we should not pass a credential to the ContainerClient.
         # If authenticating with a private storage account (ex. personal environment), we need to pass the credential
         # of the DeployerTask. It should have Storage Blob Data Contributor role (or similar) on the storage acocunt
