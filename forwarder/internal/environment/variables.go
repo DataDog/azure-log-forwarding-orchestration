@@ -21,6 +21,7 @@ const (
 	NumGoroutines       = "NUM_GOROUTINES"
 	PiiScrubberRules    = "PII_SCRUBBER_RULES"
 	VersionTag          = "VERSION_TAG"
+	ContainerAppJobName = "CONTAINER_APP_JOB_NAME"
 )
 
 func Get(envVar string) string {

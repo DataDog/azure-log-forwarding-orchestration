@@ -479,7 +479,9 @@ func startUp() (err error) {
 }
 
 func main() {
-	tracer.Start()
+	tracer.Start(
+		tracer.WithGlobalTag("container_app_job_name", environment.Get(environment.ContainerAppJobName)),
+	)
 	defer tracer.Stop()
 
 	if err := startUp(); err != nil {

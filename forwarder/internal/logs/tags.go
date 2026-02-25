@@ -21,6 +21,7 @@ var (
 		"control_plane_id:" + environment.Get(environment.ControlPlaneId),
 		"config_id:" + environment.Get(environment.ConfigId),
 		"forwarder_version:" + environment.Get(environment.VersionTag),
+		"container_app_job_name:" + environment.Get(environment.ContainerAppJobName),
 	}
 )
 
