@@ -159,22 +159,64 @@ If you were using the older skill-based system, here's the mapping:
 | `skill: generate-test-logs` | `/test-logs` |
 | `skill: search-datadog-logs` | `/search-logs` |
 
+## Standalone Scripts
+
+All commands are also available as standalone shell scripts in `scripts/vm/` that can be run directly from the terminal without Claude Code:
+
+```bash
+# These are equivalent:
+/discover --export              # Claude Code slash command
+scripts/vm/discover.sh --export # Standalone script
+
+# All scripts support --help
+scripts/vm/deploy.sh --help
+scripts/vm/forwarder-status.sh --help
+```
+
+| Script | Claude Command |
+|--------|---------------|
+| `scripts/vm/discover.sh` | `/discover` |
+| `scripts/vm/forwarder-status.sh` | `/forwarder-status` |
+| `scripts/vm/forwarder-logs.sh` | `/forwarder-logs` |
+| `scripts/vm/forwarder-manage.sh` | `/forwarder-manage` |
+| `scripts/vm/deploy.sh` | `/deploy` |
+| `scripts/vm/cleanup.sh` | `/cleanup` |
+| `scripts/vm/update-binary.sh` | `/update-binary` |
+| `scripts/vm/test-logs.sh` | `/test-logs` |
+| `scripts/vm/search-logs.sh` | `/search-logs` |
+
 ## Architecture
 
 ### Directory Structure
 ```
+scripts/
+├── lib/
+│   └── azure-discovery.sh   # Shared discovery library (canonical location)
+├── vm/                       # Standalone VM management scripts
+│   ├── discover.sh
+│   ├── forwarder-status.sh
+│   ├── forwarder-logs.sh
+│   ├── forwarder-manage.sh
+│   ├── deploy.sh
+│   ├── cleanup.sh
+│   ├── update-binary.sh
+│   ├── test-logs.sh
+│   └── search-logs.sh
+├── run_task.sh
+└── deploy_personal_env.py
+
 .claude/
-├── commands/           # Command definitions
+├── commands/           # Thin wrappers that delegate to scripts/vm/
 │   ├── cleanup.md
 │   ├── deploy.md
 │   ├── discover.md
-│   ├── forwarder-status.md
 │   ├── forwarder-logs.md
 │   ├── forwarder-manage.md
+│   ├── status.md
 │   ├── update-binary.md
 │   ├── test-logs.md
 │   └── search-logs.md
-├── lib/               # Shared utilities
+├── lib/               # Redirect to scripts/lib/
 │   └── azure-discovery.sh
 └── skills/            # Legacy skills (deprecated)
 ```
@@ -240,8 +282,8 @@ For issues or questions about these commands:
 ## Contributing
 
 When adding new commands:
-1. Create a new `.md` file in `.claude/commands/`
-2. Add YAML frontmatter with name, description, and argument-hint
-3. Include comprehensive help text
-4. Use the shared `azure-discovery.sh` library for resource discovery
+1. Create the standalone script in `scripts/vm/` with proper license header, `set -euo pipefail`, and `usage()` function
+2. Source the shared library: `source "${REPO_ROOT}/scripts/lib/azure-discovery.sh"`
+3. Create a thin wrapper `.md` file in `.claude/commands/` that `exec`s the script
+4. Add YAML frontmatter with name, description, and argument-hint
 5. Follow the existing naming patterns for consistency
