@@ -39,7 +39,7 @@ for arg in "$@"; do
 done
 
 # Source common discovery functions
-source "${REPO_ROOT}/scripts/lib/azure-discovery.sh"
+source "${REPO_ROOT}/scripts/vm/lib/azure-discovery.sh"
 
 if [ "$EXPORT_MODE" = "true" ]; then
     # Export mode - just output the variables

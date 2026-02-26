@@ -190,9 +190,9 @@ scripts/vm/forwarder-status.sh --help
 ### Directory Structure
 ```
 scripts/
-├── lib/
-│   └── azure-discovery.sh   # Shared discovery library (canonical location)
 ├── vm/                       # Standalone VM management scripts
+│   ├── lib/
+│   │   └── azure-discovery.sh   # Shared discovery library (canonical location)
 │   ├── discover.sh
 │   ├── forwarder-status.sh
 │   ├── forwarder-logs.sh
@@ -216,7 +216,7 @@ scripts/
 │   ├── update-binary.md
 │   ├── test-logs.md
 │   └── search-logs.md
-├── lib/               # Redirect to scripts/lib/
+├── lib/               # Redirect to scripts/vm/lib/
 │   └── azure-discovery.sh
 └── skills/            # Legacy skills (deprecated)
 ```
@@ -283,7 +283,7 @@ For issues or questions about these commands:
 
 When adding new commands:
 1. Create the standalone script in `scripts/vm/` with proper license header, `set -euo pipefail`, and `usage()` function
-2. Source the shared library: `source "${REPO_ROOT}/scripts/lib/azure-discovery.sh"`
+2. Source the shared library: `source "${REPO_ROOT}/scripts/vm/lib/azure-discovery.sh"`
 3. Create a thin wrapper `.md` file in `.claude/commands/` that `exec`s the script
 4. Add YAML frontmatter with name, description, and argument-hint
 5. Follow the existing naming patterns for consistency

@@ -42,7 +42,7 @@ if [ "$ACTION" = "--help" ] || [ "$ACTION" = "-h" ]; then
 fi
 
 # Source common discovery functions
-source "${REPO_ROOT}/scripts/lib/azure-discovery.sh"
+source "${REPO_ROOT}/scripts/vm/lib/azure-discovery.sh"
 
 # Discover resources
 discover_resources 2>/dev/null
