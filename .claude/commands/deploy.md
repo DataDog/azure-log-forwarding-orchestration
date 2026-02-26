@@ -21,6 +21,16 @@ This command deploys your personal Azure environment for testing the log forward
 ```bash
 #!/bin/bash
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$0")/../.." && pwd))"
+# Route LFO deployments to the existing Python script
+if [[ "${1:-}" == "lfo" ]]; then
+    shift
+    # activate venv
+    source "$REPO_ROOT/venv/bin/activate" 2>/dev/null || \
+        source "$HOME/dd/azure-log-forwarding-orchestration/venv/bin/activate"
+    exec python "$REPO_ROOT/scripts/deploy_personal_env.py" "$@"
+fi
+# Strip optional "forwarder" keyword — deploy.sh is VM-only now
+[[ "${1:-}" == "forwarder" ]] && shift
 exec "${REPO_ROOT}/scripts/vm/deploy.sh" "$@"
 ```
 

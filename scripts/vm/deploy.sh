@@ -8,14 +8,10 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 usage() {
-    echo "Usage: $0 [forwarder|lfo] [--base-name=<name>] [--skip-agent]"
-    echo "       /deploy [forwarder|lfo] [--base-name=<name>] [--skip-agent]"
+    echo "Usage: $0 [--base-name=<name>] [--skip-agent]"
+    echo "       /deploy [--base-name=<name>] [--skip-agent]"
     echo ""
-    echo "Deploy a complete personal forwarder environment."
-    echo ""
-    echo "Arguments:"
-    echo "  forwarder       Deploy the forwarder to a VM (default)"
-    echo "  lfo             Deploy the full LFO orchestration environment"
+    echo "Deploy a personal forwarder VM environment."
     echo ""
     echo "Options:"
     echo "  --base-name=NAME   Override default base name (default: lfo<username>vm)"
@@ -24,17 +20,12 @@ usage() {
 }
 
 # Default values
-DEPLOYMENT_TYPE="forwarder"
 BASE_NAME=""
 SKIP_AGENT=""
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        forwarder|lfo)
-            DEPLOYMENT_TYPE="$1"
-            shift
-            ;;
         --base-name=*)
             BASE_NAME="${1#*=}"
             shift
@@ -60,10 +51,9 @@ if [ -n "$BASE_NAME" ]; then
     export LFO_VM_BASE_NAME="$BASE_NAME"
 fi
 
-echo "🚀 Deploying Personal Forwarder Environment"
+echo "🚀 Deploying Personal Forwarder VM"
 echo "==========================================="
 echo "User: ${USER}"
-echo "Deployment Type: $DEPLOYMENT_TYPE"
 if [ -n "$BASE_NAME" ]; then
     echo "Base Name: $BASE_NAME"
 fi
@@ -99,51 +89,33 @@ else
     pip install -r requirements.txt
 fi
 
-# Deploy based on type
-case "$DEPLOYMENT_TYPE" in
-    forwarder)
-        echo "📦 Deploying forwarder..."
-        echo ""
+echo "📦 Deploying forwarder..."
+echo ""
 
-        # Required environment variables
-        export CONFIG_ID="${CONFIG_ID:-forwarder-vm-config}"
-        export CONTROL_PLANE_ID="${CONTROL_PLANE_ID:?Must set CONTROL_PLANE_ID}"
+# Required environment variables
+export CONFIG_ID="${CONFIG_ID:-forwarder-vm-config}"
+export CONTROL_PLANE_ID="${CONTROL_PLANE_ID:?Must set CONTROL_PLANE_ID}"
 
-        # Run deployment script
-        cd "$REPO_ROOT"
-        python scripts/deploy_personal_forwarder_vm.py $SKIP_AGENT
+# Run deployment script
+cd "$REPO_ROOT"
+python scripts/deploy_personal_forwarder_vm.py $SKIP_AGENT
 
-        # Get VM IP for convenience
-        USERNAME="${USER:-unknown}"
-        # Remove dots from username for Azure resource naming
-        CLEAN_USERNAME="${USERNAME//./}"
-        BASE_NAME="${LFO_VM_BASE_NAME:-lfo${CLEAN_USERNAME}vm}"
-        RESOURCE_GROUP="${BASE_NAME}rg"
+# Get VM IP for convenience
+USERNAME="${USER:-unknown}"
+# Remove dots from username for Azure resource naming
+CLEAN_USERNAME="${USERNAME//./}"
+BASE_NAME="${LFO_VM_BASE_NAME:-lfo${CLEAN_USERNAME}vm}"
+RESOURCE_GROUP="${BASE_NAME}rg"
 
-        VM_NAME=$(az vm list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv 2>/dev/null)
-        if [ -n "$VM_NAME" ]; then
-            VM_IP=$(az vm list-ip-addresses --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
-                    --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
-            echo ""
-            echo "✅ VM deployed successfully!"
-            echo "   SSH: ssh azureuser@${VM_IP}"
-            echo "   Logs: ssh azureuser@${VM_IP} 'sudo journalctl -u datadog-forwarder -f'"
-        fi
-        ;;
-
-    lfo)
-        echo "📦 Deploying LFO orchestration environment..."
-        echo ""
-        cd "$REPO_ROOT"
-        python scripts/deploy_personal_env.py
-        ;;
-
-    *)
-        echo "❌ Invalid deployment type: $DEPLOYMENT_TYPE"
-        echo "   Use: forwarder or lfo"
-        exit 1
-        ;;
-esac
+VM_NAME=$(az vm list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv 2>/dev/null)
+if [ -n "$VM_NAME" ]; then
+    VM_IP=$(az vm list-ip-addresses --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)
+    echo ""
+    echo "✅ VM deployed successfully!"
+    echo "   SSH: ssh azureuser@${VM_IP}"
+    echo "   Logs: ssh azureuser@${VM_IP} 'sudo journalctl -u datadog-forwarder -f'"
+fi
 
 echo ""
 echo "🎯 Next Steps:"
