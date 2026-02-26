@@ -10,6 +10,7 @@ from os import environ
 from re import sub
 from subprocess import PIPE, Popen
 from sys import argv
+from datetime import datetime, timedelta, timezone
 from time import sleep
 from typing import Any
 from urllib.parse import quote
@@ -18,8 +19,7 @@ from urllib.parse import quote
 from azure.identity import AzureCliCredential
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.storage import StorageManagementClient
-from azure.mgmt.storage.v2019_06_01.models import StorageAccountUpdateParameters
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, generate_account_sas, AccountSasPermissions, ResourceTypes
 
 # constants
 CONTAINER_NAME = "lfo"
@@ -102,17 +102,19 @@ if availability_result.name_available:
     poller = storage_client.storage_accounts.begin_create(
         resource_group_name,
         storage_account_name,
-        {"location": LOCATION, "kind": "StorageV2", "sku": {"name": "Standard_LRS"}},
+        {
+            "location": LOCATION,
+            "kind": "StorageV2",
+            "sku": {"name": "Standard_LRS"},
+            "properties": {
+                "supportsHttpsTrafficOnly": True,
+                "allowBlobPublicAccess": False,
+            },
+        },
     )
 
     account_result = poller.result()
     print(f"Created storage account {account_result.name}")
-
-    # set the allow_blob_public_access settings
-    public_params = StorageAccountUpdateParameters(allow_blob_public_access=True)
-    storage_client.storage_accounts.update(resource_group_name, storage_account_name, public_params)
-    print(f"Enabled public access for storage account {storage_account_name}. Waiting for settings to take effect...")
-    sleep(20)  # wait for storage account setting to propagate
 
 
 # get connection string
@@ -126,11 +128,9 @@ container_client = blob_service_client.get_container_client(CONTAINER_NAME)
 # if container does not exist, create it
 if not container_client.exists():
     try:
-        container_client = blob_service_client.create_container(CONTAINER_NAME, public_access="container")
+        container_client = blob_service_client.create_container(CONTAINER_NAME)
     except Exception as e:
-        print(
-            f"Error creating storage container {CONTAINER_NAME}. Sometimes this happens due to storage account public permissions not getting applied properly. Please re-try this script."
-        )
+        print(f"Error creating storage container {CONTAINER_NAME}.")
         raise SystemExit(1) from e
     print(f"Created storage container {CONTAINER_NAME}")
 
@@ -211,6 +211,13 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         "datadogSite": environ.get("DD_SITE", "datadoghq.com"),
         "imageRegistry": f"{container_registry_name}.azurecr.io",
         "storageAccountUrl": f"https://{storage_account_name}.blob.core.windows.net",
+        "storageAccountSas": generate_account_sas(
+            account_name=storage_account_name,
+            account_key=keys.keys[0].value,
+            resource_types=ResourceTypes(object=True),
+            permission=AccountSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(hours=1),
+        ),
         "logLevel": "DEBUG",
     }
     run(
@@ -224,6 +231,25 @@ if initial_deploy or FORCE_ARM_DEPLOY:
         ],
         cwd=lfo_dir,
     )
+
+    # Grant the deployer's managed identity Storage Blob Data Reader on the personal env storage account
+    # so it can read task zips and manifest (needed because allowBlobPublicAccess is false)
+    deployer_jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
+    deployer_job_name = next(
+        (job.get("name") for job in deployer_jobs if "deployer-task" in job.get("name")),
+        None,
+    )
+    if deployer_job_name:
+        deployer_principal_id = loads(
+            run(f"az containerapp job show --resource-group {resource_group_name} --name {deployer_job_name} --query identity.principalId --output json")
+        )
+        storage_account_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
+        STORAGE_BLOB_DATA_READER = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
+        run(
+            f"az role assignment create --assignee-object-id {deployer_principal_id} --assignee-principal-type ServicePrincipal"
+            f" --role {STORAGE_BLOB_DATA_READER} --scope {storage_account_id}",
+        )
+        print(f"Granted Storage Blob Data Reader to deployer {deployer_job_name} on {storage_account_name}")
 else:
     # execute deployer
     jobs = loads(run(f"az containerapp job list --resource-group {resource_group_name} --output json"))
