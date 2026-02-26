@@ -26,3 +26,11 @@ az deployment mg create --management-group-id "Azure-Integrations-Mg" \
     --parameters controlPlaneSubscriptionId="$AZURE_SUBSCRIPTION_ID" --parameters controlPlaneResourceGroupName=$resource_group \
     --parameters datadogApiKey="$DD_API_KEY" --parameters datadogSite=datadoghq.com --parameters datadogTelemetry=true \
     --parameters imageRegistry=lfoqa.azurecr.io --parameters 'storageAccountUrl=https://lfoqa.blob.core.windows.net'
+
+# Grant the deployer's managed identity Storage Blob Data Reader on the lfoqa storage account
+# so it can read task zips and manifest (needed because allowBlobPublicAccess is false)
+deployer_principal_id=$(az containerapp job list --resource-group $resource_group --query "[?contains(name,'deployer-task')].identity.principalId | [0]" -o tsv)
+az role assignment create \
+    --assignee "$deployer_principal_id" \
+    --role "Storage Blob Data Reader" \
+    --scope "/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/lfo-qa/providers/Microsoft.Storage/storageAccounts/lfoqa"
