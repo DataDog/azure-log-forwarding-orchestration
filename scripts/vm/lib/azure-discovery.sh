@@ -60,13 +60,17 @@ discover_resources() {
                 RESOURCE_GROUP="$FOUND_RG"
                 # Extract base name from resource group
                 BASE_NAME=$(echo "$RESOURCE_GROUP" | sed -e 's/^rg-//' -e 's/rg$//')
+            else
+                RESOURCE_GROUP=""
             fi
         fi
     fi
 
-    # Export discovered values
+    # Export discovered values (only set env type after confirming RG exists)
     export LFO_VM_BASE_NAME="$BASE_NAME"
     export LFO_RESOURCE_GROUP="$RESOURCE_GROUP"
+    export LFO_SUBSCRIPTION_ID
+    LFO_SUBSCRIPTION_ID=$(az account show --query "id" -o tsv 2>/dev/null || echo "")
 
     # Get VM IP
     if [ -n "$RESOURCE_GROUP" ]; then
@@ -119,6 +123,7 @@ discover_resources() {
 
     # Return 0 if we found at least the resource group
     if [ -n "$RESOURCE_GROUP" ]; then
+        export LFO_ENV_TYPE="forwarder"
         return 0
     else
         return 1

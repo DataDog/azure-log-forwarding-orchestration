@@ -1,15 +1,15 @@
 ---
 name: deploy
-description: Deploy a complete personal forwarder environment
+description: Deploy a personal environment for the forwarder or a complete LFO
 argument-hint: [forwarder|lfo] [--base-name=<name>] [--skip-agent]
 ---
 
-# Deploy Personal Forwarder Environment
+# Deploy Personal Environment
 
-Deploy a complete personal forwarder environment with VM, storage, and function app.
+Deploy a personal forwarder environment with either VM, storage, and Loggy function app or the full LFO control plane and Loggy.
 
 ## Usage
-This command deploys your personal Azure environment for testing the log forwarder. It creates all necessary resources and configures them properly.
+This command deploys your personal Azure environment for testing the log forwarder or LFO. It creates all necessary resources and configures them properly.
 
 ## Prerequisites
 - Azure CLI logged in

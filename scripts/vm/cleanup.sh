@@ -11,7 +11,7 @@ usage() {
     echo "Usage: $0 [--force]"
     echo "       /cleanup [--force]"
     echo ""
-    echo "Delete your entire personal forwarder environment (destructive!)."
+    echo "Delete your entire personal environment (LFO or forwarder) (destructive!)."
     echo ""
     echo "Options:"
     echo "  --force    Skip confirmation prompts (use with caution!)"
@@ -37,24 +37,29 @@ for arg in "$@"; do
     esac
 done
 
-# Source common discovery functions
+# Source both discovery libraries
+source "${REPO_ROOT}/scripts/lfo/lib/lfo-discovery.sh"
 source "${REPO_ROOT}/scripts/vm/lib/azure-discovery.sh"
 
-echo "🧹 Cleanup Personal Forwarder Environment"
-echo "=========================================="
+echo "🧹 Cleanup Personal Environment"
+echo "================================"
 echo ""
 
-# Discover resources
+# Discover resources - try LFO first, then VM forwarder
 echo "🔍 Discovering resources to delete..."
-discover_resources
-DISCOVERY_RESULT=$?
+LFO_ENV_TYPE=""
+if discover_lfo_resources 2>/dev/null; then
+    : # LFO_ENV_TYPE set to "lfo"
+elif discover_resources 2>/dev/null; then
+    : # LFO_ENV_TYPE set to "forwarder"
+fi
 
-if [ $DISCOVERY_RESULT -ne 0 ]; then
+if [ -z "$LFO_ENV_TYPE" ]; then
     echo "❌ No resources found to delete."
     echo ""
     echo "Available resource groups containing 'lfo' or your username:"
     CLEAN_USERNAME="${USER//./}"
-    az group list --query "[?contains(name, 'lfo') || contains(name, '${CLEAN_USERNAME}')].name" -o tsv
+    az group list --query "[?contains(name, 'lfo') || contains(name, '${CLEAN_USERNAME}')].name" -o tsv 2>/dev/null || echo "   (none found)"
     exit 1
 fi
 
@@ -62,8 +67,9 @@ fi
 if [ -z "$LFO_RESOURCE_GROUP" ]; then
     echo "❌ Resource group not found. Cannot proceed with deletion."
     echo ""
-    echo "Try setting LFO_VM_BASE_NAME manually:"
-    echo "  export LFO_VM_BASE_NAME='your-base-name'"
+    echo "Try setting LFO_BASE_NAME or LFO_VM_BASE_NAME manually:"
+    echo "  export LFO_BASE_NAME='your-base-name'       # for LFO environments"
+    echo "  export LFO_VM_BASE_NAME='your-base-name'    # for forwarder environments"
     echo "  Then run the cleanup command again"
     exit 1
 fi
@@ -83,14 +89,28 @@ az resource list --resource-group "$LFO_RESOURCE_GROUP" \
     --output table 2>/dev/null || echo "   Unable to list resources"
 
 echo ""
+echo "Environment Type: $LFO_ENV_TYPE"
+echo ""
 echo "This includes:"
-if [ -n "$LFO_VM_NAME" ]; then
-    echo "   ✓ Virtual Machine: $LFO_VM_NAME (IP: ${LFO_VM_IP:-unknown})"
+if [ "$LFO_ENV_TYPE" = "lfo" ]; then
+    if [ -n "${LFO_FUNCTION_APPS:-}" ]; then
+        while IFS= read -r app; do
+            [ -z "$app" ] && continue
+            echo "   ✓ Function App: $app"
+        done <<< "$LFO_FUNCTION_APPS"
+    fi
+    if [ -n "${LFO_CONTAINER_REGISTRY:-}" ]; then
+        echo "   ✓ Container Registry: $LFO_CONTAINER_REGISTRY"
+    fi
+else
+    if [ -n "${LFO_VM_NAME:-}" ]; then
+        echo "   ✓ Virtual Machine: $LFO_VM_NAME (IP: ${LFO_VM_IP:-unknown})"
+    fi
+    if [ -n "${LFO_FUNCTION_APP:-}" ]; then
+        echo "   ✓ Function App: $LFO_FUNCTION_APP"
+    fi
 fi
-if [ -n "$LFO_FUNCTION_APP" ]; then
-    echo "   ✓ Function App: $LFO_FUNCTION_APP"
-fi
-if [ -n "$LFO_STORAGE_ACCOUNT" ]; then
+if [ -n "${LFO_STORAGE_ACCOUNT:-}" ]; then
     echo "   ✓ Storage Account: $LFO_STORAGE_ACCOUNT"
 fi
 echo "   ✓ All associated networking resources"
@@ -155,12 +175,22 @@ while [ $COUNTER -lt $MAX_WAIT ]; do
         # Clear environment variables if they were set
         echo ""
         echo "💡 To clean up environment variables, remove these from ~/.profile:"
-        echo "   unset LFO_VM_BASE_NAME"
-        echo "   unset LFO_VM_IP"
-        echo "   unset LFO_FUNCTION_APP"
-        echo "   unset LFO_FUNCTION_KEY"
-        echo "   unset LFO_RESOURCE_GROUP"
-        echo "   unset LFO_STORAGE_ACCOUNT"
+        echo "   unset LFO_ENV_TYPE"
+        if [ "${LFO_ENV_TYPE:-}" = "lfo" ]; then
+            echo "   unset LFO_BASE_NAME"
+            echo "   unset LFO_FUNCTION_APP"
+            echo "   unset LFO_FUNCTION_KEY"
+            echo "   unset LFO_RESOURCE_GROUP"
+            echo "   unset LFO_STORAGE_ACCOUNT"
+            echo "   unset LFO_CONTAINER_REGISTRY"
+        else
+            echo "   unset LFO_VM_BASE_NAME"
+            echo "   unset LFO_VM_IP"
+            echo "   unset LFO_FUNCTION_APP"
+            echo "   unset LFO_FUNCTION_KEY"
+            echo "   unset LFO_RESOURCE_GROUP"
+            echo "   unset LFO_STORAGE_ACCOUNT"
+        fi
         exit 0
     fi
 

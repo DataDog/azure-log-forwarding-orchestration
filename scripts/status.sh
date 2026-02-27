@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
     echo "Usage: $0 [--errors-only]"
@@ -35,20 +35,71 @@ for arg in "$@"; do
     esac
 done
 
-# Source common discovery functions
+# Source both discovery libraries
+source "${REPO_ROOT}/scripts/lfo/lib/lfo-discovery.sh"
 source "${REPO_ROOT}/scripts/vm/lib/azure-discovery.sh"
 
-# Discover resources
-discover_resources 2>/dev/null
-DISCOVERY_RESULT=$?
+# Discover resources - try LFO first, then VM forwarder
+LFO_ENV_TYPE=""
+if discover_lfo_resources 2>/dev/null; then
+    : # LFO_ENV_TYPE set to "lfo"
+elif discover_resources 2>/dev/null; then
+    : # LFO_ENV_TYPE set to "forwarder"
+fi
 
-if [ $DISCOVERY_RESULT -ne 0 ]; then
+if [ -z "$LFO_ENV_TYPE" ]; then
     echo "❌ Failed to discover resources. Run '/discover' or scripts/vm/discover.sh first"
     exit 1
 fi
 
-# Check if we have a VM IP
-if [ -z "$LFO_VM_IP" ]; then
+# LFO environments don't have a VM — show function app status instead
+if [ "$LFO_ENV_TYPE" = "lfo" ]; then
+    echo "📊 LFO Environment Status Report"
+    echo "================================="
+    echo "Resource Group: $LFO_RESOURCE_GROUP"
+    echo ""
+
+    echo "⚡ Function Apps:"
+    if [ -n "${LFO_FUNCTION_APPS:-}" ]; then
+        while IFS= read -r app; do
+            [ -z "$app" ] && continue
+            APP_STATE=$(az functionapp show --resource-group "$LFO_RESOURCE_GROUP" --name "$app" --query "state" -o tsv 2>/dev/null || echo "unknown")
+            if [ "$APP_STATE" = "Running" ]; then
+                echo "   ✅ $app ($APP_STATE)"
+            else
+                echo "   ⚠️  $app ($APP_STATE)"
+            fi
+        done <<< "$LFO_FUNCTION_APPS"
+    else
+        echo "   ❌ No function apps found"
+    fi
+
+    if [ -n "${LFO_FUNCTION_APP:-}" ]; then
+        echo ""
+        echo "🧪 Loggy: https://${LFO_FUNCTION_APP}.azurewebsites.net"
+    fi
+
+    if [ -n "${LFO_STORAGE_ACCOUNT:-}" ]; then
+        echo ""
+        echo "💾 Storage Account: $LFO_STORAGE_ACCOUNT"
+    fi
+
+    if [ -n "${LFO_CONTAINER_REGISTRY:-}" ]; then
+        echo ""
+        echo "📦 Container Registry: $LFO_CONTAINER_REGISTRY"
+    fi
+
+    echo ""
+    echo "🔗 Datadog Links:"
+    echo "   Logs: https://app.datadoghq.com/logs?query=service%3Aazure-log-forwarder"
+    if [ -n "${LFO_SUBSCRIPTION_ID:-}" ]; then
+        echo "   Azure Portal: https://portal.azure.com/#@/resource/subscriptions/${LFO_SUBSCRIPTION_ID}/resourceGroups/${LFO_RESOURCE_GROUP}/overview"
+    fi
+    exit 0
+fi
+
+# Forwarder (VM) environment — check if we have a VM IP
+if [ -z "${LFO_VM_IP:-}" ]; then
     echo "❌ No VM IP found. Have you deployed your environment?"
     echo "   Run '/deploy' or scripts/vm/deploy.sh to create your environment"
     exit 1
