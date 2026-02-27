@@ -39,6 +39,7 @@ scaling_task = [
 ]
 deployer_task = [
     "azure-mgmt-web==8.0.0",
+    "azure-storage-file-share==12.24.0",
     "tenacity==9.1.2",
 ]
 

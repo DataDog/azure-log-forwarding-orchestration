@@ -11,9 +11,10 @@ from typing import Self, cast
 
 # 3p
 from aiohttp import ClientSession
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 from azure.storage.blob.aio import ContainerClient
+from azure.storage.fileshare.aio import ShareServiceClient
 from tenacity import RetryError, retry, retry_if_not_exception_type, stop_after_attempt
 
 # project
@@ -22,6 +23,7 @@ from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
     STORAGE_ACCOUNT_URL_SETTING,
+    STORAGE_CONNECTION_SETTING,
     SUBSCRIPTION_ID_SETTING,
     get_config_option,
 )
@@ -101,10 +103,59 @@ class DeployerTask(Task):
         )
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
+    async def fix_content_shares(self, current_function_app_ids: set[str]) -> None:
+        """Fix WEBSITE_CONTENTSHARE for diagnostic-settings and scaling function apps.
+
+        Existing deployments may have all three function apps sharing the same
+        WEBSITE_CONTENTSHARE value, which causes zip deploy conflicts. This method
+        creates the correct file shares and updates the app settings.
+        """
+        connection_string = environ.get(STORAGE_CONNECTION_SETTING, "")
+        if not connection_string:
+            self.log.warning("No storage connection string found, skipping content share fix")
+            return
+
+        apps_to_fix: list[tuple[str, str]] = []
+        for prefix in (DIAGNOSTIC_SETTINGS_TASK_PREFIX, SCALING_TASK_PREFIX):
+            app_name = next((app for app in current_function_app_ids if app.startswith(prefix)), None)
+            if app_name:
+                apps_to_fix.append((prefix, app_name))
+
+        async with ShareServiceClient.from_connection_string(connection_string) as share_service:
+            for _, app_name in apps_to_fix:
+                # Create the file share first — if this fails, skip the settings update
+                try:
+                    await share_service.create_share(app_name)
+                    self.log.info(f"Created file share for {app_name}")
+                except HttpResponseError as e:
+                    if e.status_code == 409:
+                        self.log.info(f"File share for {app_name} already exists")
+                    else:
+                        self.log.exception(f"Failed to create file share for {app_name}")
+                        continue
+
+                # Update WEBSITE_CONTENTSHARE app setting
+                try:
+                    settings = await self.web_client.web_apps.list_application_settings(
+                        self.resource_group, app_name
+                    )
+                    current_value = settings.properties.get("WEBSITE_CONTENTSHARE", "")
+                    if current_value == app_name:
+                        self.log.info(f"WEBSITE_CONTENTSHARE already correct for {app_name}")
+                        continue
+                    settings.properties["WEBSITE_CONTENTSHARE"] = app_name
+                    await self.web_client.web_apps.update_application_settings(
+                        self.resource_group, app_name, settings
+                    )
+                    self.log.info(f"Updated WEBSITE_CONTENTSHARE for {app_name}")
+                except Exception:
+                    self.log.exception(f"Failed to update WEBSITE_CONTENTSHARE for {app_name}")
+
     async def run(self) -> None:
         public_manifest, private_manifest, current_function_app_ids = await gather(
             self.get_public_manifests(), self.get_private_manifests(), self.get_current_function_apps()
         )
+        await self.fix_content_shares(current_function_app_ids)
         if not private_manifest:
             self.log.info("Failed to read private manifest. Deploying all components.")
         self.public_manifest = public_manifest

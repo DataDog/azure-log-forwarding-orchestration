@@ -30,6 +30,7 @@ azure-mgmt-storage,https://pypi.org/project/azure-mgmt-storage/,MIT,Copyright (c
 azure-mgmt-synapse,https://pypi.org/project/azure-mgmt-synapse/,MIT,Copyright (c) Microsoft Corporation
 azure-mgmt-web,https://pypi.org/project/azure-mgmt-web/,MIT,Copyright (c) Microsoft Corporation
 azure-storage-blob,https://pypi.org/project/azure-storage-blob/,MIT,Copyright (c) Microsoft Corporation
+azure-storage-file-share,https://pypi.org/project/azure-storage-file-share/,MIT,Copyright (c) Microsoft Corporation
 base64dec,https://github.com/dop251/base64dec,BSD-3-Clause,Copyright (c) 2023 Dmitry Panov. All rights reserved. Copyright (c) 2009 The Go Authors. All rights reserved.
 browser,https://github.com/pkg/browser,BSD-2-Clause,"Copyright (c) 2014, Dave Cheney <dave@cheney.net>"
 bytecode,https://pypi.org/project/bytecode/,MIT,Copyright Contributors to the bytecode project
