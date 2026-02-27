@@ -734,7 +734,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
         ds_futures = [
             tpe.submit(
                 az,
-                f'monitor diagnostic-settings list --resource {resource_id} --query "[?{diagnostic_settings_filter}].name"',
+                f'monitor diagnostic-settings list --resource "{resource_id}" --query "[?{diagnostic_settings_filter}].name"',
             )
             for resource_id in resource_ids
         ]
@@ -759,7 +759,7 @@ def delete_diagnostic_setting(sub_id: str, resource_id: str, ds_name: str):
     if DRY_RUN_SETTING:
         return
 
-    az(f"monitor diagnostic-settings delete --name {ds_name} --resource {resource_id} --subscription {sub_id}")
+    az(f'monitor diagnostic-settings delete --name {ds_name} --resource "{resource_id}" --subscription {sub_id}')
 
 
 def init_resource_group_delete(sub_id_to_name: dict[str, str], sub_to_rg_deletions: SubIdToResourceGroupsDict):
