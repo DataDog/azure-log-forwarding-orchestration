@@ -8,6 +8,7 @@ import (
 	// stdlib
 	"context"
 	"math"
+	"strings"
 
 	// 3p
 	log "github.com/sirupsen/logrus"
@@ -56,7 +57,13 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 }
 
 // AddLog adds a log to the buffer for future submission.
-func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Entry, log *Log) (err error) {
+func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Entry, log *Log, controlPlaneId string) (err error) {
+	if strings.Contains(log.ResourceId, "lfostorage"+controlPlaneId) {
+		// ignore logs originating from lfo's control plane storage account
+		// this is a temporary workaround, TODO: https://datadoghq.atlassian.net/browse/AZINTS-4446
+		return nil
+	}
+
 	if !log.Validate(now, logger) {
 		return nil
 	}
