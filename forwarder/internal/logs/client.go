@@ -58,7 +58,7 @@ func NewClient(logsApi DatadogLogsSubmitter) *Client {
 
 // AddLog adds a log to the buffer for future submission.
 func (c *Client) AddLog(ctx context.Context, now customtime.Now, logger *log.Entry, log *Log, controlPlaneId string) (err error) {
-	if strings.Contains(log.ResourceId, "lfostorage"+controlPlaneId) {
+	if strings.Contains(strings.ToLower(log.ResourceId), "lfostorage"+strings.ToLower(controlPlaneId)) {
 		// ignore logs originating from lfo's control plane storage account
 		// this is a temporary workaround, TODO: https://datadoghq.atlassian.net/browse/AZINTS-4446
 		return nil

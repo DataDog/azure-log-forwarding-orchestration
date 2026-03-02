@@ -28,8 +28,12 @@ import (
 )
 
 const (
-	azureService        = "azure"
-	resourceId   string = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+	azureService             = "azure"
+	resourceId               = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
+	functionAppContainer     = "insights-logs-functionapplogs"
+	workflowRuntimeContainer = "insights-logs-workflowruntime"
+	controlPlaneId           = "9b008b0cc1ab"
+	configId                 = "8e0ce1e1e048"
 )
 
 func azureTimestamp(t time.Time) string {
@@ -51,11 +55,6 @@ func getLogWithContent(content string, delay time.Duration) []byte {
 	timestamp := time.Now().Add(-delay)
 	return []byte("{ \"time\": \"" + azureTimestamp(timestamp) + "\", \"resourceId\": \"/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING\", \"category\": \"FunctionAppLogs\", \"operationName\": \"Microsoft.Web/sites/functions/log\", \"level\": \"Informational\", \"location\": \"East US\", \"properties\": {'appName':'','roleInstance':'BD28A314-638598491096328853','message':'" + content + "','category':'Microsoft.Azure.WebJobs.Hosting.OptionsLoggingService','hostVersion':'4.34.2.2','hostInstanceId':'2800f488-b537-439f-9f79-88293ea88f48','level':'Information','levelId':2,'processId':60}}")
 }
-
-const functionAppContainer = "insights-logs-functionapplogs"
-const worflowRuntimeContainer = "insights-logs-workflowruntime"
-const controlPlaneId = "9b008b0cc1ab"
-const configId = "8e0ce1e1e048"
 
 func MockLogger() (*log.Entry, *bytes.Buffer) {
 	var output []byte
@@ -104,7 +103,7 @@ func TestAddLog(t *testing.T) {
 
 		// WHEN
 		for _, l := range payload {
-			errors.Join(client.AddLog(ctx, time.Now, logger, l), err)
+			errors.Join(client.AddLog(ctx, time.Now, logger, l, controlPlaneId), err)
 		}
 		errors.Join(client.Flush(ctx), err)
 
