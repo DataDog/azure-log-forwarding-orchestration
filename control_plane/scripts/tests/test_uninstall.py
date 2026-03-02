@@ -442,9 +442,8 @@ class TestUninstallScript(TestCase):
 
         uninstall.delete_diagnostic_setting(SUB_ID_1, "/resource/1", "diag-setting-1")
 
-        expected_cmd = (
-            f"monitor diagnostic-settings delete --name diag-setting-1 --resource /resource/1 --subscription {SUB_ID_1}"
-        )
+        expected_cmd = f'monitor diagnostic-settings delete --name diag-setting-1 --resource "/resource/1" --subscription {SUB_ID_1}'
+
         self.az_mock.assert_called_once_with(expected_cmd)
 
     # ===== User Interaction Tests ===== #
