@@ -32,6 +32,7 @@ const (
 	resourceId               = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/FORWARDER-INTEGRATION-TESTING/PROVIDERS/MICROSOFT.WEB/SITES/FORWARDERINTEGRATIONTESTING"
 	functionAppContainer     = "insights-logs-functionapplogs"
 	workflowRuntimeContainer = "insights-logs-workflowruntime"
+	storageContainer         = "insights-logs-storageread"
 	controlPlaneId           = "9b008b0cc1ab"
 	configId                 = "8e0ce1e1e048"
 )
@@ -75,6 +76,62 @@ func MockScrubber(t *testing.T, scrubbedLog []byte) *mocks.MockScrubber {
 
 func TestAddLog(t *testing.T) {
 	t.Parallel()
+
+	t.Run("filters out logs from lfo control plane storage account", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN - a log with resource ID containing lfostorage{controlPlaneId}
+		lfoStorageResourceId := "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/LFO-RG/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/LFOSTORAGE" + strings.ToUpper(controlPlaneId) + "blobServices/default"
+		lfoLog := []byte(`{"time": "` + azureTimestamp(time.Now().Add(-5*time.Minute)) + `", "resourceId": "` + lfoStorageResourceId + `", "category": "StorageRead", "level": "Informational"}`)
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockDatadogLogsSubmitter(ctrl)
+		// Expect NO calls to SubmitLog since the log should be filtered
+		mockClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		client := logs.NewClient(mockClient)
+		ctx := context.Background()
+		logger, _ := MockLogger()
+
+		currLog, err := logs.NewLog(lfoLog, newBlob(lfoStorageResourceId, storageContainer), MockScrubber(t, lfoLog), int64(len(lfoLog)))
+		require.NoError(t, err)
+		currLog.Time = time.Now().Add(-5 * time.Minute)
+
+		// WHEN
+		err = client.AddLog(ctx, time.Now, logger, currLog, controlPlaneId)
+
+		// THEN - no error and no logs submitted
+		assert.NoError(t, err)
+		err = client.Flush(ctx)
+		assert.NoError(t, err)
+	})
+
+	t.Run("does not filter logs from non-lfo storage accounts", func(t *testing.T) {
+		t.Parallel()
+		// GIVEN - a normal storage account log (not from lfo)
+		normalStorageResourceId := "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/MY-RG/PROVIDERS/MICROSOFT.STORAGE/STORAGEACCOUNTS/MYSTORAGEACCOUNT" + "blobServices/default"
+		normalLog := []byte(`{"time": "` + azureTimestamp(time.Now().Add(-5*time.Minute)) + `", "resourceId": "` + normalStorageResourceId + `", "category": "StorageRead", "level": "Informational"}`)
+
+		ctrl := gomock.NewController(t)
+		mockClient := mocks.NewMockDatadogLogsSubmitter(ctrl)
+		// Expect SubmitLog to be called once since this log should NOT be filtered
+		mockClient.EXPECT().SubmitLog(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+
+		client := logs.NewClient(mockClient)
+		ctx := context.Background()
+		logger, _ := MockLogger()
+
+		currLog, err := logs.NewLog(normalLog, newBlob(normalStorageResourceId, storageContainer), MockScrubber(t, normalLog), int64(len(normalLog)))
+		require.NoError(t, err)
+		currLog.Time = time.Now().Add(-5 * time.Minute)
+
+		// WHEN
+		err = client.AddLog(ctx, time.Now, logger, currLog, controlPlaneId)
+		require.NoError(t, err)
+		err = client.Flush(ctx)
+
+		// THEN
+		assert.NoError(t, err)
+	})
 
 	t.Run("batches when over max payload size", func(t *testing.T) {
 		t.Parallel()
