@@ -156,7 +156,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, logsWithLevelAsIntOrStringData))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, workflowRuntimeContainer), MockScrubber(t, logsWithLevelAsIntOrStringData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			got += 1
@@ -176,7 +176,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, workflowRuntimeLogData))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, workflowRuntimeContainer), MockScrubber(t, workflowRuntimeLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog

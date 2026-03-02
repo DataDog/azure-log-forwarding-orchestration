@@ -107,7 +107,7 @@ LogChannelLoop:
 		case <-ctx.Done():
 			break LogChannelLoop
 		}
-		currErr := logsClient.AddLog(ctx, now, logger, logItem)
+		currErr := logsClient.AddLog(ctx, now, logger, logItem, environment.Get(environment.ControlPlaneId))
 		err = errors.Join(err, currErr)
 		select {
 		case resourceBytesCh <- resourceBytes{resourceId: logItem.ResourceId, bytes: logItem.RawLength()}:
