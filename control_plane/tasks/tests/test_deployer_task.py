@@ -4,7 +4,7 @@
 
 # stdlib
 from json import dumps
-from unittest.mock import DEFAULT, MagicMock, call
+from unittest.mock import AsyncMock, DEFAULT, MagicMock, call
 
 # 3p
 from azure.core.exceptions import HttpResponseError
@@ -56,6 +56,10 @@ class TestDeployerTask(TaskTestCase):
         self.web_client = AsyncMockClient()
         self.web_client.web_apps.list_by_resource_group = MagicMock(return_value=async_generator())
         self.web_client.app_service_plans.list_by_resource_group = MagicMock(return_value=async_generator())
+        self.web_client.web_apps.list_application_settings = AsyncMock(
+            side_effect=lambda rg, app_name: mock(properties={"WEBSITE_CONTENTSHARE": f"contentshare-{app_name}"})
+        )
+        self.web_client.web_apps.update_application_settings = AsyncMock()
         self.patch("WebSiteManagementClient").return_value = self.web_client
 
     def set_caches(self, public_cache: ManifestCache, private_cache: ManifestCache):
@@ -305,6 +309,77 @@ class TestDeployerTask(TaskTestCase):
         self.assertEqual(
             self.rest_client.post.mock_calls[0][1][0],
             "https://resources-task-0863329b4b49.scm.azurewebsites.us/api/zipdeploy",
+        )
+
+    async def test_fix_content_share_wrong(self):
+        self.set_caches(
+            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
+            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
+        )
+        self.set_current_function_apps(["resources-task-0863329b4b49"])
+        wrong_settings = mock(properties={"WEBSITE_CONTENTSHARE": "wrong-name"})
+        self.web_client.web_apps.list_application_settings = AsyncMock(return_value=wrong_settings)
+        self.web_client.web_apps.update_application_settings = AsyncMock()
+
+        task = DeployerTask(is_initial_run=False)
+        result = await task.fix_content_share("resources-task-0863329b4b49")
+
+        self.assertTrue(result)
+        self.assertEqual(wrong_settings.properties["WEBSITE_CONTENTSHARE"], "contentshare-resources-task-0863329b4b49")
+        self.web_client.web_apps.update_application_settings.assert_awaited_once()
+
+    async def test_fix_content_share_correct(self):
+        self.set_caches(
+            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
+            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
+        )
+        self.set_current_function_apps(["resources-task-0863329b4b49"])
+        correct_settings = mock(properties={"WEBSITE_CONTENTSHARE": "contentshare-resources-task-0863329b4b49"})
+        self.web_client.web_apps.list_application_settings = AsyncMock(return_value=correct_settings)
+        self.web_client.web_apps.update_application_settings = AsyncMock()
+
+        task = DeployerTask(is_initial_run=False)
+        result = await task.fix_content_share("resources-task-0863329b4b49")
+
+        self.assertFalse(result)
+        self.web_client.web_apps.update_application_settings.assert_not_awaited()
+
+    async def test_deploy_skipped_after_content_share_fix(self):
+        self.set_caches(
+            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
+            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
+        )
+        self.set_current_function_apps(ALL_FUNCTIONS)
+        self.web_client.web_apps.list_application_settings = AsyncMock(
+            return_value=mock(properties={"WEBSITE_CONTENTSHARE": "wrong-name"})
+        )
+        self.web_client.web_apps.update_application_settings = AsyncMock()
+
+        await self.run_deployer_task()
+
+        self.web_client.web_apps.update_application_settings.assert_awaited()
+        self.rest_client.post.assert_not_awaited()
+        self.write_cache.assert_not_awaited()
+
+    async def test_deploy_proceeds_when_content_share_correct(self):
+        self.set_caches(
+            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
+            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
+        )
+        self.set_current_function_apps(["resources-task-0863329b4b49"])
+
+        def correct_settings(resource_group, function_app_name):
+            return mock(properties={"WEBSITE_CONTENTSHARE": f"contentshare-{function_app_name}"})
+
+        self.web_client.web_apps.list_application_settings = AsyncMock(side_effect=correct_settings)
+        self.web_client.web_apps.update_application_settings = AsyncMock()
+
+        await self.run_deployer_task()
+
+        self.web_client.web_apps.update_application_settings.assert_not_awaited()
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
         )
 
     async def test_deployer_tags(self):

@@ -157,12 +157,44 @@ class DeployerTask(Task):
             )
         }
 
+    async def fix_content_share(self, function_app_name: str) -> bool:
+        settings = await self.web_client.web_apps.list_application_settings(
+            self.resource_group, function_app_name
+        )
+        correct_value = f"contentshare-{function_app_name}"
+        properties = settings.properties or {}
+        if properties.get("WEBSITE_CONTENTSHARE") == correct_value:
+            return False
+        self.log.info(
+            "Fixing WEBSITE_CONTENTSHARE for %s (was: %s)",
+            function_app_name,
+            properties.get("WEBSITE_CONTENTSHARE"),
+        )
+        if settings.properties is None:
+            settings.properties = {}
+        settings.properties["WEBSITE_CONTENTSHARE"] = correct_value
+        await self.web_client.web_apps.update_application_settings(
+            self.resource_group, function_app_name, settings
+        )
+        return True
+
     async def deploy_component(self, component: ControlPlaneComponent, current_function_app_ids: set[str]) -> None:
         task_prefix = f"{component.replace('_', '-')}-task-"
         function_app = next((app for app in current_function_app_ids if app.startswith(task_prefix)), None)
         if not function_app:
             self.log.error(f"Function app for {component} not found in {current_function_app_ids}, skipping deployment")
             return
+
+        try:
+            content_share_fixed = await self.fix_content_share(function_app)
+        except Exception:
+            self.log.exception("Failed to check/fix content share for %s", function_app)
+            return
+
+        if content_share_fixed:
+            self.log.info("Content share fixed for %s, skipping deployment this run", function_app)
+            return
+
         try:
             self.log.info(f"Downloading function app data for {component}")
             zip_data = await self.download_function_app_data(component)
