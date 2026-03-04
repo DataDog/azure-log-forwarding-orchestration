@@ -164,7 +164,6 @@ class DeployerTask(Task):
         correct_value = f"contentshare-{function_app_name}"
         properties = settings.properties or {}
         if properties.get("WEBSITE_CONTENTSHARE") == correct_value:
-            self.log.info("Content share already correct for %s", function_app_name)
             return False
         self.log.info(
             "Fixing WEBSITE_CONTENTSHARE for %s (was: %s)",
@@ -187,22 +186,26 @@ class DeployerTask(Task):
             return
 
         try:
-            await self.fix_content_share(function_app)
+            content_share_fixed = await self.fix_content_share(function_app)
         except Exception:
             self.log.exception("Failed to check/fix content share for %s", function_app)
             return
 
-        # try:
-        #     self.log.info(f"Downloading function app data for {component}")
-        #     zip_data = await self.download_function_app_data(component)
-        #     self.log.info(f"Deploying {function_app}")
-        #     await self.upload_function_app_data(function_app, zip_data)
-        #     await self.sync_function_app_triggers(function_app)
-        # except Exception:
-        #     self.log.exception(f"Failed to deploy {component}")
-        #     return
-        # self.manifest_cache[component] = self.public_manifest[component]
-        # self.log.info(f"Finished deploying {component}")
+        if content_share_fixed:
+            self.log.info("Content share fixed for %s, skipping deployment this run", function_app)
+            return
+
+        try:
+            self.log.info(f"Downloading function app data for {component}")
+            zip_data = await self.download_function_app_data(component)
+            self.log.info(f"Deploying {function_app}")
+            await self.upload_function_app_data(function_app, zip_data)
+            await self.sync_function_app_triggers(function_app)
+        except Exception:
+            self.log.exception(f"Failed to deploy {component}")
+            return
+        self.manifest_cache[component] = self.public_manifest[component]
+        self.log.info(f"Finished deploying {component}")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
