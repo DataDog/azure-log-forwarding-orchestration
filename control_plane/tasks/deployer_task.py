@@ -207,14 +207,14 @@ class DeployerTask(Task):
             self.log.info(f"Deploying {function_app}")
             await self.upload_function_app_data(function_app, zip_data)
             await self.sync_function_app_triggers(function_app)
-        except Exception:
-            self.log.exception(f"Failed to deploy {component}")
+        except Exception as e:
+            self.log.exception(f"Failed to deploy {component}: {e}")
             return
         self.manifest_cache[component] = self.public_manifest[component]
         self.log.info(f"Finished deploying {component}")
 
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
+        # Don't retry the zip deploy to avoid starting multiple deployments
         function_app_url = "https://{}.scm.azurewebsites.{}/api/zipdeploy".format(
             function_app_name, "us" if is_azure_gov(self.region) else "net"
         )
