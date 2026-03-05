@@ -4,6 +4,7 @@
 
 # stdlib
 from asyncio import gather, run
+from dataclasses import asdict
 from json import dumps
 from os import environ
 from types import TracebackType
@@ -28,11 +29,15 @@ from cache.env import (
 from cache.manifest_cache import (
     KEY_TO_ZIP,
     MANIFEST_FILE_NAME,
+    PENDING_DEPLOYMENTS_CACHE_NAME,
     PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
     ControlPlaneComponent,
     ManifestCache,
+    PendingDeployment,
+    PendingDeploymentsCache,
     deserialize_manifest_cache,
+    deserialize_pending_deployments,
 )
 from tasks.common import (
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
@@ -45,6 +50,10 @@ from tasks.concurrency import collect
 from tasks.task import Task, task_main
 
 DEPLOYER_TASK_NAME = "deployer_task"
+
+KUDU_STATUSES_IN_PROGRESS = {0, 1, 2}
+KUDU_STATUS_FAILED = 3
+KUDU_STATUS_SUCCESS = 4
 
 
 MAX_ATTEMPTS = 5
@@ -62,8 +71,10 @@ def get_azure_mgmt_url(region: str) -> str:
 class DeployerTask(Task):
     NAME = DEPLOYER_TASK_NAME
 
-    def __init__(self, is_initial_run: bool = False) -> None:
-        super().__init__()
+    def __init__(self, pending_deployments_state: str = "", is_initial_run: bool = False) -> None:
+        super().__init__(is_initial_run=is_initial_run)
+        self.pending_deployments: PendingDeploymentsCache = deserialize_pending_deployments(pending_deployments_state)
+        self._initial_pending_deployments: PendingDeploymentsCache = dict(self.pending_deployments)
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
@@ -190,6 +201,10 @@ class DeployerTask(Task):
             self.log.error(f"Function app for {component} not found in {current_function_app_ids}, skipping deployment")
             return
 
+        if pending := self.pending_deployments.get(component):
+            await self._check_pending_deployment(component, pending)
+            return
+
         resources_task = next((app for app in current_function_app_ids if app.startswith(RESOURCES_TASK_PREFIX)), None)
         try:
             content_share_fixed = await self.fix_content_share(function_app, resources_task or "")
@@ -201,27 +216,75 @@ class DeployerTask(Task):
             self.log.info("Content share fixed for %s, skipping deployment this run", function_app)
             return
 
-        try:
-            self.log.info(f"Downloading function app data for {component}")
-            zip_data = await self.download_function_app_data(component)
-            self.log.info(f"Deploying {function_app}")
-            await self.upload_function_app_data(function_app, zip_data)
-            await self.sync_function_app_triggers(function_app)
-        except Exception as e:
-            self.log.exception(f"Failed to deploy {component}: {e}")
-            return
-        self.manifest_cache[component] = self.public_manifest[component]
-        self.log.info(f"Finished deploying {component}")
+        await self._start_deployment(component, function_app)
 
-    async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
+    async def _start_deployment(self, component: ControlPlaneComponent, function_app: str) -> None:
+        try:
+            zip_data = await self.download_function_app_data(component)
+            poll_url = await self.upload_function_app_data(function_app, zip_data)
+        except Exception as e:
+            self.log.exception("Failed to start deployment for %s: %s", component, e)
+            return
+        self.pending_deployments[component] = PendingDeployment(
+            component=component,
+            function_app=function_app,
+            poll_url=poll_url,
+            target_manifest_hash=self.public_manifest[component],
+        )
+        self.log.info("Async deploy started for %s, will poll on next run", function_app)
+
+    async def _check_pending_deployment(self, component: ControlPlaneComponent, pending: PendingDeployment) -> None:
+        try:
+            is_complete, is_successful = await self.check_deployment_status(pending.poll_url)
+        except Exception:
+            self.log.exception("Failed to check deployment status for %s", component)
+            return
+
+        if not is_complete:
+            self.log.info("Deployment still in progress for %s", component)
+            return
+
+        del self.pending_deployments[component]
+
+        if not is_successful:
+            self.log.error("Deployment failed for %s, will retry next run", component)
+            return
+
+        try:
+            await self.sync_function_app_triggers(pending.function_app)
+        except Exception as e:
+            self.log.exception("Failed to sync triggers for %s: %s", component, e)
+            return
+
+        self.manifest_cache[component] = pending.target_manifest_hash
+        self.log.info("Finished deploying %s", component)
+
+    async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> str:
         # Don't retry the zip deploy to avoid starting multiple deployments
-        function_app_url = "https://{}.scm.azurewebsites.{}/api/zipdeploy".format(
+        function_app_url = "https://{}.scm.azurewebsites.{}/api/zipdeploy?isAsync=true".format(
             function_app_name, "us" if is_azure_gov(self.region) else "net"
         )
         resp = await self.rest_client.post(function_app_url, data=function_app_data)
+        if resp.status != 202:
+            content = (await resp.content.read()).decode()
+            raise DeployError(f"Failed to start async zip deploy: expected 202, got {resp.status} ({resp.reason})\n{content}")
+        poll_url = resp.headers.get("Location")
+        if not poll_url:
+            raise DeployError("Async zip deploy returned 202 but no Location header")
+        return poll_url
+
+    async def check_deployment_status(self, poll_url: str) -> tuple[bool, bool]:
+        """Returns (is_complete, is_successful). Raises DeployError on HTTP error."""
+        resp = await self.rest_client.get(poll_url)
         if not resp.ok:
             content = (await resp.content.read()).decode()
-            raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
+            raise DeployError(f"Failed to poll deployment status: {resp.status} ({resp.reason})\n{content}")
+        body = await resp.json()
+        status: int = body.get("status", 0)
+        KUDU_STATUS_SUCCESS = 4
+        if status in KUDU_STATUSES_IN_PROGRESS:
+            return False, False
+        return True, status == KUDU_STATUS_SUCCESS
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
     async def sync_function_app_triggers(self, function_app_name: str) -> None:
@@ -240,10 +303,16 @@ class DeployerTask(Task):
         return app_data
 
     async def write_caches(self) -> None:
-        if self.manifest_cache == self.private_manifest:
-            return
-        await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
+        writes = []
+        if self.manifest_cache != self.private_manifest:
+            writes.append(write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache)))
+        pending_dict = {c: asdict(p) for c, p in self.pending_deployments.items()}
+        initial_dict = {c: asdict(p) for c, p in self._initial_pending_deployments.items()}
+        if pending_dict != initial_dict:
+            writes.append(write_cache(PENDING_DEPLOYMENTS_CACHE_NAME, dumps(pending_dict)))
+        if writes:
+            await gather(*writes)
 
 
 if __name__ == "__main__":
-    run(task_main(DeployerTask, []))
+    run(task_main(DeployerTask, [PENDING_DEPLOYMENTS_CACHE_NAME]))

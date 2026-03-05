@@ -8,7 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, TypeVar
 from unittest import IsolatedAsyncioTestCase
-from unittest.mock import ANY, AsyncMock, MagicMock, Mock, call, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
 # project
 from cache.common import InvalidCacheError
@@ -50,12 +50,13 @@ class TaskTestCase(AsyncTestCase):
             self.write_cache: AsyncMock = self.patch("write_cache")
 
     def cache_value(self, cache_name: str, deserialize_cache: Callable[[str], T | None]) -> T:
-        self.write_cache.assert_called_with(cache_name, ANY)
-        raw_cache = self.write_cache.call_args_list[-1][0][1]
+        matching_calls = [c for c in self.write_cache.call_args_list if c.args[0] == cache_name]
+        self.assertTrue(matching_calls, f"write_cache not called with {cache_name!r}")
+        raw_cache = matching_calls[-1].args[1]
         cache = deserialize_cache(raw_cache)
         if cache is None:  # pragma: no cover
             # should never happen when tests pass, but it provides a useful error message if they don't
-            raise InvalidCacheError("Diagnostic Settings Cache is in an invalid format after the task")
+            raise InvalidCacheError("Cache is in an invalid format after the task")
         return cache
 
 
