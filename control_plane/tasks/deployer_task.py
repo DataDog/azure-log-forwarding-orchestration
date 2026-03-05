@@ -157,22 +157,27 @@ class DeployerTask(Task):
             )
         }
 
-    async def fix_content_share(self, function_app_name: str) -> bool:
+    async def fix_content_share(self, function_app_name: str, resources_task_name: str) -> bool:
         settings = await self.web_client.web_apps.list_application_settings(
             self.resource_group, function_app_name
         )
-        correct_value = f"contentshare-{function_app_name}"
         properties = settings.properties or {}
-        if properties.get("WEBSITE_CONTENTSHARE") == correct_value:
+        
+        current_value = properties.get("WEBSITE_CONTENTSHARE")
+        if current_value != resources_task_name:
+            # Variable has already been updated or was created via the python deployment script
             return False
+
+        new_value = f"contentshare-{function_app_name}"
         self.log.info(
-            "Fixing WEBSITE_CONTENTSHARE for %s (was: %s)",
+            "Fixing WEBSITE_CONTENTSHARE for %s (was: %s, now: %s)",
             function_app_name,
             properties.get("WEBSITE_CONTENTSHARE"),
+            new_value,
         )
         if settings.properties is None:
             settings.properties = {}
-        settings.properties["WEBSITE_CONTENTSHARE"] = correct_value
+        settings.properties["WEBSITE_CONTENTSHARE"] = new_value
         await self.web_client.web_apps.update_application_settings(
             self.resource_group, function_app_name, settings
         )
@@ -185,8 +190,9 @@ class DeployerTask(Task):
             self.log.error(f"Function app for {component} not found in {current_function_app_ids}, skipping deployment")
             return
 
+        resources_task = next((app for app in current_function_app_ids if app.startswith(RESOURCES_TASK_PREFIX)), None)
         try:
-            content_share_fixed = await self.fix_content_share(function_app)
+            content_share_fixed = await self.fix_content_share(function_app, resources_task or "")
         except Exception:
             self.log.exception("Failed to check/fix content share for %s", function_app)
             return
