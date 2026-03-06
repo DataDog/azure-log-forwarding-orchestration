@@ -3,7 +3,6 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
-from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
 # project
@@ -44,43 +43,6 @@ KEY_TO_ZIP: dict[ControlPlaneComponent, str] = {
 
 ALL_ZIPS = frozenset(KEY_TO_ZIP.values())
 ALL_COMPONENTS = frozenset(KEY_TO_ZIP)
-
-
-PENDING_DEPLOYMENTS_CACHE_NAME = "pending_deployments.json"
-
-
-@dataclass
-class PendingDeployment:
-    component: ControlPlaneComponent
-    function_app: str
-    poll_url: str
-    target_manifest_hash: str
-
-
-PendingDeploymentsCache: TypeAlias = dict[ControlPlaneComponent, PendingDeployment]
-
-PENDING_DEPLOYMENT_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "propertyNames": {"enum": ["resources", "scaling", "diagnostic_settings"]},
-    "additionalProperties": {
-        "type": "object",
-        "properties": {
-            "component": {"type": "string"},
-            "function_app": {"type": "string"},
-            "poll_url": {"type": "string"},
-            "target_manifest_hash": {"type": "string"},
-        },
-        "required": ["component", "function_app", "poll_url", "target_manifest_hash"],
-        "additionalProperties": False,
-    },
-}
-
-
-def deserialize_pending_deployments(raw: str) -> PendingDeploymentsCache:
-    result = deserialize_cache(raw, PENDING_DEPLOYMENT_SCHEMA)
-    if not result:
-        return {}
-    return {k: PendingDeployment(**v) for k, v in result.items()}
 
 
 def prune_manifest_cache(manifest_cache: ManifestCache) -> ManifestCache:
