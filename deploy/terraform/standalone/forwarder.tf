@@ -61,6 +61,14 @@ variable "storage_account_retention_days" {
   }
 }
 
+variable "user_assigned_identity_client_id" {
+  description = <<-EOT
+    Client ID of the User-Assigned Managed Identity.
+    Used by Azure SDK to identify which managed identity to use for authentication.
+  EOT
+  type        = string
+}
+
 variable "datadog_api_key" {
   description = "Datadog API Key"
   type        = string
@@ -220,6 +228,14 @@ resource "azurerm_container_app_job" "forwarder" {
         secret_name = "storage-connection-string"
       }
       env {
+        name  = "AzureWebJobsStorage__accountUrl"
+        value = "https://${azurerm_storage_account.forwarder_storage.name}.blob.core.windows.net/"
+      }
+      env {
+        name  = "AZURE_CLIENT_ID"
+        value = var.user_assigned_identity_client_id
+      }
+      env {
         name        = "DD_API_KEY"
         secret_name = "dd-api-key"
       }
@@ -249,6 +265,15 @@ resource "azurerm_container_app_job" "forwarder" {
   }
 
   tags = var.tags
+}
+
+# RBAC Role Assignments
+resource "azurerm_role_assignment" "forwarder_storage_access" {
+  scope                = azurerm_storage_account.forwarder_storage.id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = var.user_assigned_identity_principal_id
+
+  depends_on = [azurerm_container_app_job.forwarder]
 }
 
 # Outputs
