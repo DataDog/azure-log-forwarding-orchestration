@@ -148,11 +148,11 @@ func (l *azureLogLevel) UnmarshalJSON(data []byte) error {
 }
 
 type azureLog struct {
-	raw             []byte
-	byteSize        int64
-	Category        string `json:"category"`
-	Container       string `json:"container"`
-	Blob            string `json:"blob"`
+	raw                  []byte
+	byteSize             int64
+	Category             string `json:"category"`
+	Container            string `json:"container"`
+	Blob                 string `json:"blob"`
 	ResourceIdLower      string `json:"resourceId,omitempty"`
 	ResourceIdUpper      string `json:"ResourceId,omitempty"`
 	ResourceIdUnderscore string `json:"_ResourceId,omitempty"`
