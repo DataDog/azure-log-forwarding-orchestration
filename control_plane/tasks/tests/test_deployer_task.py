@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, DEFAULT, MagicMock, call
 
 # 3p
 from azure.core.exceptions import HttpResponseError
+from tenacity import RetryError
 
 # project
 from cache.common import InvalidCacheError
@@ -17,7 +18,13 @@ from cache.env import (
     RESOURCE_GROUP_SETTING,
     SUBSCRIPTION_ID_SETTING,
 )
-from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
+from cache.manifest_cache import (
+    MANIFEST_CACHE_NAME,
+    ManifestCache,
+    PrivateManifestCache,
+    deserialize_manifest_cache,
+    deserialize_private_manifest_cache,
+)
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployError, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
 from tasks.version import VERSION
@@ -35,8 +42,8 @@ class TestDeployerTask(TaskTestCase):
     TASK_NAME = DEPLOYER_TASK_NAME
 
     @property
-    def cache(self) -> ManifestCache:
-        return self.cache_value(MANIFEST_CACHE_NAME, deserialize_manifest_cache)
+    def cache(self) -> PrivateManifestCache:
+        return self.cache_value(MANIFEST_CACHE_NAME, deserialize_private_manifest_cache)
 
     def setUp(self) -> None:
         super().setUp()
@@ -53,11 +60,15 @@ class TestDeployerTask(TaskTestCase):
         self.patch("ContainerClient").return_value = self.public_client
         self.read_private_cache = self.patch("read_cache")
         self.rest_client = AsyncMockClient()
-        # Default: GET returns success (deployment complete), POST returns 202
+        # Default: GET returns success (deployment complete), POST returns 202 + Location
         self.rest_client.get.return_value.ok = True
         self.rest_client.get.return_value.status = 200
         self.rest_client.get.return_value.json = AsyncMock(return_value={"complete": True, "status": 4})
-        self.rest_client.post.return_value = MagicMock(ok=True)
+        self.rest_client.post.return_value = MagicMock(
+            status=202,
+            ok=True,
+            headers={"Location": RESOURCES_STATUS_URL},
+        )
         self.patch("ClientSession").return_value = self.rest_client
         self.web_client = AsyncMockClient()
         self.web_client.web_apps.list_by_resource_group = MagicMock(return_value=async_generator())
@@ -68,9 +79,11 @@ class TestDeployerTask(TaskTestCase):
         self.web_client.web_apps.update_application_settings = AsyncMock()
         self.patch("WebSiteManagementClient").return_value = self.web_client
 
-    def set_caches(self, public_cache: ManifestCache, private_cache: ManifestCache):
+    def set_caches(self, public_cache: ManifestCache, private_cache: dict):
         self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
-        self.read_private_cache.return_value = dumps(private_cache)
+        # private_cache accepts dict[component, str] for convenience and wraps in ComponentState format
+        private_serialized = {k: {"version": v} for k, v in private_cache.items()}
+        self.read_private_cache.return_value = dumps(private_serialized)
 
     def set_current_function_apps(self, function_apps: list[str]):
         self.web_client.web_apps.list_by_resource_group.return_value = async_generator(
@@ -113,7 +126,7 @@ class TestDeployerTask(TaskTestCase):
         self.write_cache.assert_not_awaited()
 
     async def test_deploy_task_diff_func_app(self):
-        """Kudu shows success: sync triggers, update manifest."""
+        """Deployment URL in cache, Kudu shows success: sync triggers, update manifest."""
         public_cache: ManifestCache = {
             "resources": "2",
             "scaling": "1",
@@ -127,11 +140,18 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
+        # Pre-populate deployment_url so the poll path is taken
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
 
-        self.assertEqual(self.cache, public_cache)
+        self.assertEqual(self.cache["resources"].version, "2")
+        self.assertFalse(self.cache["resources"].deployment_url)
         # GET was used to check deployment status
         self.rest_client.get.assert_awaited()
         # No zip deploy POST (deployment already succeeded per Kudu)
@@ -144,22 +164,21 @@ class TestDeployerTask(TaskTestCase):
             "scaling": "1",
             "diagnostic_settings": "1",
         }
-        self.set_caches(
-            public_cache=public_cache,
-            private_cache={
-                "resources": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
+        # Pre-populate deployment_url so the poll path is taken
+        self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
 
-        self.assertEqual(self.cache, public_cache)
+        self.assertEqual(self.cache["resources"].version, "2")
 
-    async def test_deploy_task_starts_async_deploy_when_no_kudu_deployment(self):
-        """Kudu returns 404 (no prior deployment): start async zip deploy, don't update manifest."""
+    async def test_deploy_task_starts_async_deploy_when_no_deployment_url(self):
+        """No deployment_url in cache: start async zip deploy, don't update manifest version."""
         public_cache: ManifestCache = {
             "resources": "2",
             "scaling": "1",
@@ -174,8 +193,7 @@ class TestDeployerTask(TaskTestCase):
             },
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
-        self.set_kudu_no_deployment()
-        self.rest_client.post.return_value = MagicMock(status=202)
+        # Default POST returns 202 + Location
 
         await self.run_deployer_task()
 
@@ -183,14 +201,20 @@ class TestDeployerTask(TaskTestCase):
             self.rest_client.post.mock_calls[0][1][0],
             "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy?isAsync=true",
         )
-        self.write_cache.assert_not_awaited()
+        # Deployment URL stored in cache, version not yet updated
+        self.assertEqual(self.cache["resources"].version, "1")
+        self.assertEqual(self.cache["resources"].deployment_url, RESOURCES_STATUS_URL)
 
     async def test_deploy_task_skips_when_deployment_in_progress(self):
-        """Kudu shows in-progress: skip, don't deploy, don't update manifest."""
-        self.set_caches(
-            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
-            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
-        )
+        """Deployment URL in cache, Kudu shows in-progress: skip, don't deploy, don't update manifest."""
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "1"}
+        ).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
         self.set_kudu_in_progress()
 
@@ -200,18 +224,16 @@ class TestDeployerTask(TaskTestCase):
         self.write_cache.assert_not_awaited()
 
     async def test_partial_success_func_app(self):
-        self.set_caches(
-            public_cache={
-                "resources": "2",
-                "scaling": "1",
-                "diagnostic_settings": "2",
-            },
-            private_cache={
-                "resources": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "2"}
+        ).encode()
+        # resources has deployment_url → poll path (GET returns success)
+        # diagnostic_settings has no deployment_url → start path → download fails
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         def _download_blob(item: str):
@@ -219,32 +241,12 @@ class TestDeployerTask(TaskTestCase):
                 raise HttpResponseError()
             return DEFAULT
 
-        # resources: Kudu success → sync + update manifest
-        # diagnostic_settings: Kudu 404 → attempt deploy → download fails
-        def _get_side_effect(url: str, **kwargs):
-            m = MagicMock()
-            m.ok = True
-            m.status = 200
-            if "diagnostic-settings" in url:
-                m.ok = False
-                m.status = 404
-            m.json = AsyncMock(return_value={"complete": True, "status": 4})
-            m.content.read = AsyncMock(return_value=b"")
-            return m
-
-        self.rest_client.get.side_effect = _get_side_effect
         self.public_client.download_blob.side_effect = _download_blob
 
         await self.run_deployer_task()
 
-        self.assertEqual(
-            self.cache,
-            {
-                "resources": "2",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
+        self.assertEqual(self.cache["resources"].version, "2")
+        self.assertEqual(self.cache["diagnostic_settings"].version, "1")
         self.public_client.download_blob.assert_has_calls(
             [
                 call("manifest.json"),
@@ -262,9 +264,9 @@ class TestDeployerTask(TaskTestCase):
         self.public_client.download_blob.return_value.readall.return_value = b"invalid"
         self.read_private_cache.return_value = dumps(
             {
-                "resources": "1",
-                "diagnostic_settings": "1",
-                "scaling": "1",
+                "resources": {"version": "1"},
+                "diagnostic_settings": {"version": "1"},
+                "scaling": {"version": "1"},
             }
         )
         self.set_current_function_apps(ALL_FUNCTIONS)
@@ -288,8 +290,8 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(public_cache)
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        # Deployment URLs are stored in cache (versions not yet updated since deploy just started)
+        self.write_cache.assert_awaited_once()
 
     async def test_deploy_task_no_manifests(self):
         self.public_client.download_blob.return_value.readall.return_value = b""
@@ -315,12 +317,12 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        public_cache_str = dumps(public_cache)
         self.assertEqual(self.read_private_cache.await_count, 5)
-        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+        # Deployment URLs are stored in cache (deploy just started for all components)
+        self.write_cache.assert_awaited_once()
 
     async def test_post_func_app_fails(self):
-        """Kudu 404 → attempt deploy → POST returns 400 (no retry): manifest not updated."""
+        """No deployment_url in cache → attempt deploy → POST returns 400 (no retry): manifest not updated."""
         self.set_caches(
             public_cache={
                 "resources": "2",
@@ -333,7 +335,6 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
-        self.set_kudu_no_deployment()
         self.rest_client.post.return_value = MagicMock(status=400)
         self.rest_client.post.return_value.content.read = AsyncMock(return_value=b"")
         self.set_current_function_apps(ALL_FUNCTIONS)
@@ -351,20 +352,19 @@ class TestDeployerTask(TaskTestCase):
             "scaling": "1",
             "diagnostic_settings": "1",
         }
-        self.set_caches(
-            public_cache=public_cache,
-            private_cache={
-                "resources": "1",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
-        )
+        self.public_client.download_blob.return_value.readall.return_value = dumps(public_cache).encode()
+        # Pre-populate deployment_url on the .us domain
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": "https://resources-task-0863329b4b49.scm.azurewebsites.us/api/deployments/latest"},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
 
         self.credential.get_token.assert_awaited_once_with("https://management.usgovcloudapi.net/.default")
-        self.assertEqual(self.cache, public_cache)
+        self.assertEqual(self.cache["resources"].version, "2")
         # GET status was checked on the .us domain
         get_urls = [str(c) for c in self.rest_client.get.call_args_list]
         self.assertTrue(any("azurewebsites.us" in u for u in get_urls))
@@ -446,8 +446,6 @@ class TestDeployerTask(TaskTestCase):
             private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
         )
         self.set_current_function_apps(["resources-task-0863329b4b49"])
-        self.set_kudu_no_deployment()
-        self.rest_client.post.return_value = MagicMock(status=202)
 
         def correct_settings(resource_group, function_app_name):
             return mock(properties={"WEBSITE_CONTENTSHARE": f"contentshare-{function_app_name}"})
@@ -469,8 +467,6 @@ class TestDeployerTask(TaskTestCase):
             private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
         )
         self.set_current_function_apps(["resources-task-0863329b4b49"])
-        self.set_kudu_no_deployment()
-        self.rest_client.post.return_value = MagicMock(status=202)
 
         def correct_settings(resource_group, function_app_name):
             return mock(properties={"WEBSITE_CONTENTSHARE": "resources-task-0863329b4b49123412341234"})
@@ -519,11 +515,14 @@ class TestDeployerTask(TaskTestCase):
     # -------------------------------------------------------------------------
 
     async def test_upload_function_app_data_succeeds_on_202(self):
-        self.rest_client.post.return_value = MagicMock(status=202)
+        self.rest_client.post.return_value = MagicMock(
+            status=202,
+            headers={"Location": RESOURCES_STATUS_URL},
+        )
         task = DeployerTask()
-        # Should not raise
-        await task.upload_function_app_data("resources-task-0863329b4b49", b"data")
+        poll_url = await task.upload_function_app_data("resources-task-0863329b4b49", b"data")
         self.rest_client.post.assert_awaited_once()
+        self.assertEqual(poll_url, RESOURCES_STATUS_URL)
 
     async def test_upload_function_app_data_raises_on_non_202(self):
         self.rest_client.post.return_value = MagicMock(status=400, reason="Bad Request")
@@ -533,134 +532,177 @@ class TestDeployerTask(TaskTestCase):
             await task.upload_function_app_data("resources-task-0863329b4b49", b"data")
         self.assertIn("expected 202, got 400", str(ctx.exception))
 
+    async def test_upload_function_app_data_raises_on_missing_location(self):
+        self.rest_client.post.return_value = MagicMock(status=202, headers={})
+        task = DeployerTask()
+        with self.assertRaises(DeployError) as ctx:
+            await task.upload_function_app_data("resources-task-0863329b4b49", b"data")
+        self.assertIn("no Location header", str(ctx.exception))
+
     # -------------------------------------------------------------------------
-    # check_deployment_status tests
+    # get_deployment_status tests
     # -------------------------------------------------------------------------
 
-    async def test_check_deployment_status_in_progress(self):
+    async def test_get_deployment_status_in_progress(self):
         task = DeployerTask()
         for in_progress_status in [0, 1, 2]:
             self.rest_client.get.return_value.json = AsyncMock(
-                return_value={"complete": False, "status": in_progress_status}
+                return_value={"status": in_progress_status}
             )
-            is_complete, is_successful = await task.check_deployment_status(RESOURCES_STATUS_URL)
-            self.assertFalse(is_complete)
-            self.assertFalse(is_successful)
+            status = await task.get_deployment_status(RESOURCES_STATUS_URL)
+            self.assertEqual(status, in_progress_status)
 
-    async def test_check_deployment_status_success(self):
-        self.rest_client.get.return_value.json = AsyncMock(return_value={"complete": True, "status": 4})
+    async def test_get_deployment_status_success(self):
+        self.rest_client.get.return_value.json = AsyncMock(return_value={"status": 4})
         task = DeployerTask()
-        is_complete, is_successful = await task.check_deployment_status(RESOURCES_STATUS_URL)
-        self.assertTrue(is_complete)
-        self.assertTrue(is_successful)
+        status = await task.get_deployment_status(RESOURCES_STATUS_URL)
+        self.assertEqual(status, 4)
 
-    async def test_check_deployment_status_failed(self):
-        self.rest_client.get.return_value.json = AsyncMock(return_value={"complete": True, "status": 3})
+    async def test_get_deployment_status_failed(self):
+        self.rest_client.get.return_value.json = AsyncMock(return_value={"status": 3})
         task = DeployerTask()
-        is_complete, is_successful = await task.check_deployment_status(RESOURCES_STATUS_URL)
-        self.assertTrue(is_complete)
-        self.assertFalse(is_successful)
+        status = await task.get_deployment_status(RESOURCES_STATUS_URL)
+        self.assertEqual(status, 3)
 
-    async def test_check_deployment_status_not_found(self):
-        """404 → no deployment exists, treat as (complete=True, successful=False) to trigger a new deploy."""
-        self.rest_client.get.return_value.ok = False
-        self.rest_client.get.return_value.status = 404
+    async def test_get_deployment_status_missing_status_field(self):
+        """Response missing 'status' field → DeployError."""
+        self.rest_client.get.return_value.json = AsyncMock(return_value={"complete": True})
         task = DeployerTask()
-        is_complete, is_successful = await task.check_deployment_status(RESOURCES_STATUS_URL)
-        self.assertTrue(is_complete)
-        self.assertFalse(is_successful)
+        with self.assertRaises((DeployError, RetryError)):
+            await task.get_deployment_status(RESOURCES_STATUS_URL)
 
-    async def test_check_deployment_status_http_error(self):
+    async def test_get_deployment_status_http_error(self):
         self.rest_client.get.return_value.ok = False
         self.rest_client.get.return_value.status = 500
         self.rest_client.get.return_value.reason = "Internal Server Error"
         self.rest_client.get.return_value.content.read = AsyncMock(return_value=b"server error")
         task = DeployerTask()
-        with self.assertRaises(DeployError):
-            await task.check_deployment_status(RESOURCES_STATUS_URL)
+        with self.assertRaises((DeployError, RetryError)):
+            await task.get_deployment_status(RESOURCES_STATUS_URL)
 
     # -------------------------------------------------------------------------
     # deploy_component state machine tests
     # -------------------------------------------------------------------------
 
-    async def test_deploy_component_kudu_in_progress_skips(self):
-        """Deployment already in progress: no new deploy, manifest unchanged."""
+    async def test_deploy_starts_deployment(self):
+        """No deployment_url in cache: POST called, url stored in cache, version unchanged."""
         self.set_caches(
             public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
             private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
         )
+        self.set_current_function_apps(ALL_FUNCTIONS)
+
+        task = await self.run_deployer_task()
+
+        zip_calls = [c for c in self.rest_client.post.call_args_list if "zipdeploy" in str(c)]
+        self.assertTrue(zip_calls)
+        self.assertEqual(task.manifest_cache["resources"].version, "1")
+        self.assertEqual(task.manifest_cache["resources"].deployment_url, RESOURCES_STATUS_URL)
+
+    async def test_deploy_polls_in_progress(self):
+        """Deployment URL in cache, GET returns in-progress: no new deploy, url preserved."""
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "1"}
+        ).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
         self.set_kudu_in_progress()
 
         task = await self.run_deployer_task()
 
         self.rest_client.post.assert_not_awaited()
-        self.assertEqual(task.manifest_cache["resources"], "1")
+        self.assertEqual(task.manifest_cache["resources"].version, "1")
+        self.assertEqual(task.manifest_cache["resources"].deployment_url, RESOURCES_STATUS_URL)
         self.write_cache.assert_not_awaited()
 
-    async def test_deploy_component_kudu_success_syncs_and_updates_manifest(self):
-        """Kudu shows success: sync triggers, update manifest, no new zip deploy."""
-        self.set_caches(
-            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
-            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
-        )
+    async def test_deploy_polls_success(self):
+        """Deployment URL in cache, GET returns success: sync triggers, version updated, url cleared."""
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "1"}
+        ).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         task = await self.run_deployer_task()
 
         zip_calls = [c for c in self.rest_client.post.call_args_list if "zipdeploy" in str(c)]
         self.assertFalse(zip_calls)
-        self.assertEqual(task.manifest_cache["resources"], "2")
-        self.assertEqual(self.cache["resources"], "2")
+        self.assertEqual(task.manifest_cache["resources"].version, "2")
+        self.assertFalse(task.manifest_cache["resources"].deployment_url)
+        self.assertEqual(self.cache["resources"].version, "2")
 
-    async def test_deploy_component_kudu_failed_starts_new_deploy(self):
-        """Kudu shows failure: start a new deployment."""
-        self.set_caches(
-            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
-            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
-        )
+    async def test_deploy_polls_failure(self):
+        """Deployment URL in cache, GET returns failure: url cleared, version unchanged."""
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "1"}
+        ).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
         self.rest_client.get.return_value.json = AsyncMock(return_value={"complete": True, "status": 3})
-        self.rest_client.post.return_value = MagicMock(status=202)
 
         task = await self.run_deployer_task()
 
         zip_calls = [c for c in self.rest_client.post.call_args_list if "zipdeploy" in str(c)]
-        self.assertTrue(zip_calls)
-        # Manifest not updated (deployment just started)
-        self.assertEqual(task.manifest_cache["resources"], "1")
-        self.write_cache.assert_not_awaited()
+        self.assertFalse(zip_calls)
+        self.assertEqual(task.manifest_cache["resources"].version, "1")
+        self.assertFalse(task.manifest_cache["resources"].deployment_url)
+        # Cache written to clear the url
+        self.write_cache.assert_awaited_once()
 
-    async def test_deploy_component_sync_triggers_fails_no_manifest_update(self):
-        """Sync triggers fails after Kudu success: manifest NOT updated."""
-        self.set_caches(
-            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
-            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
-        )
-        self.set_current_function_apps(ALL_FUNCTIONS)
-        # Kudu success, but sync triggers POST fails (all 5 retries)
-        self.rest_client.post.return_value = MagicMock(ok=False, status=500, reason="Error")
-        self.rest_client.post.return_value.content.read = AsyncMock(return_value=b"")
-
-        task = await self.run_deployer_task()
-
-        self.assertEqual(task.manifest_cache["resources"], "1")
-        self.write_cache.assert_not_awaited()
-
-    async def test_deploy_component_status_check_error_attempts_deploy(self):
-        """Kudu check raises DeployError (e.g. 500): fall through to attempting a new deployment."""
-        self.set_caches(
-            public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
-            private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
-        )
+    async def test_deploy_polls_error(self):
+        """Deployment URL in cache, GET raises DeployError: url preserved, retry next run."""
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "1"}
+        ).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
         self.set_current_function_apps(ALL_FUNCTIONS)
         self.rest_client.get.return_value.ok = False
         self.rest_client.get.return_value.status = 500
         self.rest_client.get.return_value.reason = "Error"
         self.rest_client.get.return_value.content.read = AsyncMock(return_value=b"")
-        self.rest_client.post.return_value = MagicMock(status=202)
 
-        await self.run_deployer_task()
+        task = await self.run_deployer_task()
 
+        # URL preserved — no new deploy started, no cache write
         zip_calls = [c for c in self.rest_client.post.call_args_list if "zipdeploy" in str(c)]
-        self.assertTrue(zip_calls)
+        self.assertFalse(zip_calls)
+        self.assertEqual(task.manifest_cache["resources"].deployment_url, RESOURCES_STATUS_URL)
+        self.write_cache.assert_not_awaited()
+
+    async def test_sync_triggers_failure(self):
+        """Poll success, sync triggers fails: url preserved so next run retries sync."""
+        self.public_client.download_blob.return_value.readall.return_value = dumps(
+            {"resources": "2", "scaling": "1", "diagnostic_settings": "1"}
+        ).encode()
+        self.read_private_cache.return_value = dumps({
+            "resources": {"version": "1", "deployment_url": RESOURCES_STATUS_URL},
+            "scaling": {"version": "1"},
+            "diagnostic_settings": {"version": "1"},
+        })
+        self.set_current_function_apps(ALL_FUNCTIONS)
+        # Kudu success, but sync triggers POST fails (all retries)
+        self.rest_client.post.return_value = MagicMock(ok=False, status=500, reason="Error")
+        self.rest_client.post.return_value.content.read = AsyncMock(return_value=b"")
+
+        task = await self.run_deployer_task()
+
+        self.assertEqual(task.manifest_cache["resources"].version, "1")
+        # Deployment URL preserved — next run polls status and retries sync
+        self.assertEqual(task.manifest_cache["resources"].deployment_url, RESOURCES_STATUS_URL)
+        self.write_cache.assert_not_awaited()

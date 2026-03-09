@@ -3,6 +3,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
+from dataclasses import dataclass
 from typing import Any, Literal, TypeAlias
 
 # project
@@ -13,7 +14,16 @@ ManifestCache: TypeAlias = dict[ControlPlaneComponent, str]
 """Mapping of deployable name to SHA-256 manifest"""
 
 
-MANIFEST_SCHEMA: dict[str, Any] = {
+@dataclass
+class ComponentState:
+    version: str
+    deployment_url: str = ""
+
+
+PrivateManifestCache: TypeAlias = dict[ControlPlaneComponent, ComponentState]
+
+
+PUBLIC_MANIFEST_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "resources": {"type": "string"},
@@ -50,5 +60,27 @@ def prune_manifest_cache(manifest_cache: ManifestCache) -> ManifestCache:
     return {component: manifest_cache[component] for component in ALL_COMPONENTS if component in manifest_cache}
 
 
-def deserialize_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
-    return deserialize_cache(raw_manifest_cache, MANIFEST_SCHEMA, prune_manifest_cache)
+def deserialize_public_manifest_cache(raw_manifest_cache: str) -> ManifestCache | None:
+    return deserialize_cache(raw_manifest_cache, PUBLIC_MANIFEST_SCHEMA, prune_manifest_cache)
+
+
+PRIVATE_MANIFEST_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "propertyNames": {"enum": ["resources", "scaling", "diagnostic_settings"]},
+    "additionalProperties": {
+        "type": "object",
+        "properties": {
+            "version": {"type": "string"},
+            "deployment_url": {"type": "string"},
+        },
+        "required": ["version"],
+        "additionalProperties": False,
+    },
+}
+
+
+def deserialize_private_manifest_cache(raw: str) -> PrivateManifestCache | None:
+    result: dict[str, Any] | None = deserialize_cache(raw, PRIVATE_MANIFEST_SCHEMA)
+    if not result:
+        return None
+    return {k: ComponentState(**v) for k, v in result.items()}
