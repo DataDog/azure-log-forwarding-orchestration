@@ -153,8 +153,9 @@ type azureLog struct {
 	Category        string `json:"category"`
 	Container       string `json:"container"`
 	Blob            string `json:"blob"`
-	ResourceIdLower string `json:"resourceId,omitempty"`
-	ResourceIdUpper string `json:"ResourceId,omitempty"`
+	ResourceIdLower      string `json:"resourceId,omitempty"`
+	ResourceIdUpper      string `json:"ResourceId,omitempty"`
+	ResourceIdUnderscore string `json:"_ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
 	blobResourceId string
 	Time           AzureLogTime  `json:"time"`
@@ -162,7 +163,7 @@ type azureLog struct {
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
-	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.blobResourceId} {
+	for _, resourceId := range []string{l.ResourceIdLower, l.ResourceIdUpper, l.ResourceIdUnderscore, l.blobResourceId} {
 		if r, err := arm.ParseResourceID(resourceId); err == nil {
 			return r
 		}
