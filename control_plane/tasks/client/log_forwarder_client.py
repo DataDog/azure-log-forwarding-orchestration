@@ -31,6 +31,7 @@ from azure.mgmt.appcontainers.models import (
     JobTemplate,
     ManagedEnvironment,
     Secret,
+    WorkloadProfile,
 )
 from azure.mgmt.storage.v2024_01_01.aio import StorageManagementClient
 from azure.mgmt.storage.v2024_01_01.models import (
@@ -100,6 +101,8 @@ from tasks.telemetry import TELEMETRY_ENABLED
 
 FORWARDER_METRIC_CONTAINER_NAME = "dd-forwarder"
 
+FORWARDER_WORKLOAD_PROFILE_NAME = "dedicated"
+FORWARDER_WORKLOAD_PROFILE_TYPE = "D4"
 
 FORWARDER_TIMEOUT_SECONDS = 1800  # 30 minutes
 CLIENT_MAX_SECONDS = 5
@@ -301,6 +304,14 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             ManagedEnvironment(
                 location=container_app_region,
                 zone_redundant=False,
+                workload_profiles=[
+                    WorkloadProfile(
+                        name=FORWARDER_WORKLOAD_PROFILE_NAME,
+                        workload_profile_type=FORWARDER_WORKLOAD_PROFILE_TYPE,
+                        minimum_count=1,
+                        maximum_count=1,
+                    )
+                ],
             ),
         )
         if wait:
@@ -331,6 +342,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             job_name,
             Job(
                 location=forwarder_region,
+                workload_profile_name=FORWARDER_WORKLOAD_PROFILE_NAME,
                 environment_id=get_managed_env_id(
                     self.subscription_id,
                     self.resource_group,

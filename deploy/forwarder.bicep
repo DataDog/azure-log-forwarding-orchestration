@@ -104,7 +104,16 @@ resource storageManagementPolicy 'Microsoft.Storage/storageAccounts/managementPo
 resource forwarderEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: environmentName
   location: resourceGroup().location
-  properties: {}
+  properties: {
+    workloadProfiles: [
+      {
+        name: 'dedicated'
+        workloadProfileType: 'D4'
+        minimumCount: 1
+        maximumCount: 1
+      }
+    ]
+  }
 }
 
 resource forwarder 'Microsoft.App/jobs@2023-05-01' = {
@@ -112,6 +121,7 @@ resource forwarder 'Microsoft.App/jobs@2023-05-01' = {
   location: resourceGroup().location
   properties: {
     environmentId: forwarderEnvironment.id
+    workloadProfileName: 'dedicated'
     configuration: {
       triggerType: 'Schedule'
       replicaTimeout: 1800
