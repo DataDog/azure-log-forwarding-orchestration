@@ -181,6 +181,13 @@ resource "azurerm_container_app_environment" "forwarder_env" {
   location            = var.location
   resource_group_name = data.azurerm_resource_group.current.name
 
+  workload_profile {
+    name                  = "dedicated"
+    workload_profile_type = "D4"
+    minimum_count         = 1
+    maximum_count         = 1
+  }
+
   tags = var.tags
 }
 
@@ -198,6 +205,7 @@ resource "azurerm_container_app_job" "forwarder" {
   location                     = var.location
   resource_group_name          = data.azurerm_resource_group.current.name
   container_app_environment_id = azurerm_container_app_environment.forwarder_env.id
+  workload_profile_name        = "dedicated"
 
   replica_timeout_in_seconds = 1800
   replica_retry_limit        = 1
