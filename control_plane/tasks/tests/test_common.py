@@ -20,6 +20,7 @@ from tasks.common import (
     get_managed_env_id,
     get_resource_group_id,
     get_storage_account_id,
+    is_azure_gov,
     now,
     resource_tag_dict_to_list,
 )
@@ -131,3 +132,35 @@ class TestCommon(IsolatedAsyncioTestCase):
             [],
             resource_tag_dict_to_list(None),
         )
+
+    def test_is_azure_gov_usgov_regions(self):
+        # Test all US Government regions (usgov prefix)
+        self.assertTrue(is_azure_gov("usgovvirginia"))
+        self.assertTrue(is_azure_gov("usgovarizona"))
+        self.assertTrue(is_azure_gov("usgovtexas"))
+        self.assertTrue(is_azure_gov("usgoviowa"))
+
+    def test_is_azure_gov_usdod_regions(self):
+        # Test US DoD regions (usdod prefix)
+        self.assertTrue(is_azure_gov("usdodeast"))
+        self.assertTrue(is_azure_gov("usdodcentral"))
+
+    def test_is_azure_gov_case_insensitive(self):
+        # Test case insensitivity
+        self.assertTrue(is_azure_gov("USGovVirginia"))
+        self.assertTrue(is_azure_gov("USGOVARIZONA"))
+        self.assertTrue(is_azure_gov("USDoDEast"))
+        self.assertTrue(is_azure_gov("USDODCENTRAL"))
+
+    def test_is_azure_gov_public_cloud_regions(self):
+        # Test public cloud regions return False
+        self.assertFalse(is_azure_gov("eastus"))
+        self.assertFalse(is_azure_gov("westus"))
+        self.assertFalse(is_azure_gov("centralus"))
+        self.assertFalse(is_azure_gov("northeurope"))
+        self.assertFalse(is_azure_gov("westeurope"))
+
+    def test_is_azure_gov_other_regions(self):
+        # Test other cloud regions return False
+        self.assertFalse(is_azure_gov("chinaeast"))
+        self.assertFalse(is_azure_gov("chinanorth"))

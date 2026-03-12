@@ -82,7 +82,8 @@ def get_storage_account_id(subscription_id: str, resource_group: str, config_id:
 
 # https://learn.microsoft.com/en-us/azure/azure-government/compare-azure-government-global-azure
 def is_azure_gov(region: str) -> bool:
-    return region.lower().startswith("usgov")
+    region_lower = region.lower()
+    return region_lower.startswith("usgov") or region_lower.startswith("usdod")
 
 
 def is_azure_china(region: str) -> bool:
