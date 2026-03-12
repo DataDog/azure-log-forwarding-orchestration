@@ -154,6 +154,8 @@ if not acr_list or container_registry_name not in acr_list:
     print("Waiting for settings to take effect...")
     sleep(20)
 
+# short commit sha
+commit_sha = run("git rev-parse --short HEAD", cwd=lfo_dir)
 
 if not SKIP_DOCKER:
     # login to ACR
@@ -162,9 +164,6 @@ if not SKIP_DOCKER:
         cwd=lfo_dir,
     )
     print(login_output)
-
-    # short commit sha
-    commit_sha = run("git rev-parse --short HEAD", cwd=lfo_dir)
 
     # build and push deployer
     run(
