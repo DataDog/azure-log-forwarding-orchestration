@@ -65,3 +65,29 @@ class TestMain(AsyncTestCase):
 
         # THEN
         self.container_apps_client.jobs.begin_start.assert_awaited()
+
+    async def test_main_uses_gov_cloud_endpoint_for_gov_regions(self):
+        # GIVEN
+        self.is_initial_deploy.return_value = False
+        environ["CONTROL_PLANE_REGION"] = "usgovvirginia"
+
+        # Mock the get_config_option to return actual values for region
+        def get_config_option_with_region(setting: str) -> str:
+            if setting == "CONTROL_PLANE_REGION":
+                return "usgovvirginia"
+            return setting
+
+        self.get_config_option.side_effect = get_config_option_with_region
+        container_apps_client_mock = self.patch_path("scripts.initial_run.ContainerAppsAPIClient")
+        container_apps_client_mock.return_value = self.container_apps_client
+
+        # WHEN
+        await main()
+
+        # THEN
+        # Verify ContainerAppsAPIClient was called with gov cloud base_url and credential_scopes
+        container_apps_client_mock.assert_called_once()
+        call_kwargs = container_apps_client_mock.call_args[1]
+        self.assertEqual(call_kwargs["base_url"], "https://management.usgovcloudapi.net")
+        self.assertEqual(call_kwargs["credential_scopes"], ["https://management.usgovcloudapi.net/.default"])
+        self.container_apps_client.jobs.begin_start.assert_awaited()

@@ -16,6 +16,7 @@ from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from cache.common import read_cache
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
     DD_API_KEY_SETTING,
     DD_SITE_SETTING,
     RESOURCE_GROUP_SETTING,
@@ -23,17 +24,27 @@ from cache.env import (
     get_config_option,
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
-from tasks.common import create_credential
+from tasks.common import create_credential, is_azure_gov
 from tasks.diagnostic_settings_task import DiagnosticSettingsTask
 from tasks.resources_task import RESOURCE_CACHE_BLOB, ResourcesTask
 from tasks.scaling_task import ScalingTask
 from tasks.version import VERSION
 
 
+def get_azure_mgmt_url(region: str) -> str:
+    return "https://management." + ("usgovcloudapi.net" if is_azure_gov(region) else "azure.com")
+
+
 async def start_deployer() -> None:
+    region = get_config_option(CONTROL_PLANE_REGION_SETTING)
+    base_url = get_azure_mgmt_url(region)
+    credential_scopes = [base_url + "/.default"]
+
     async with (
         create_credential() as cred,
-        ContainerAppsAPIClient(cred, get_config_option(SUBSCRIPTION_ID_SETTING)) as client,
+        ContainerAppsAPIClient(
+            cred, get_config_option(SUBSCRIPTION_ID_SETTING), base_url=base_url, credential_scopes=credential_scopes
+        ) as client,
     ):
         await client.jobs.begin_start(
             get_config_option(RESOURCE_GROUP_SETTING), f"deployer-task-{get_config_option(CONTROL_PLANE_ID_SETTING)}"
