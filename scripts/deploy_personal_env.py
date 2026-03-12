@@ -68,6 +68,7 @@ home = environ.get("HOME")
 user = environ.get("USER")
 lfo_base_name = sub(r"\W+", "", environ.get("LFO_BASE_NAME", f"lfo{user}"))
 lfo_dir = f"{home}/dd/azure-log-forwarding-orchestration"
+integrations_management_dir = f"{home}/dd/integrations-management"
 subscription_id = environ.get("AZURE_SUBSCRIPTION_ID") or run("az account show --query id -o tsv")
 credential = AzureCliCredential()
 resource_client = ResourceManagementClient(credential, subscription_id)
@@ -226,7 +227,7 @@ if initial_deploy or FORCE_ARM_DEPLOY:
             *("--management-group-id", "Azure-Integrations-Mg"),
             *("--location", LOCATION),
             *("--name", resource_group_name),
-            *("--template-file", "./deploy/azuredeploy.bicep"),
+            *("--template-file", f"{integrations_management_dir}/azure/logging_install/bicep/azuredeploy.bicep"),
             *(paramPart for k, v in params.items() for paramPart in ("--parameters", f"{k}={v}")),
         ],
         cwd=lfo_dir,
