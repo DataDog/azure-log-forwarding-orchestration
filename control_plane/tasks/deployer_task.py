@@ -40,6 +40,7 @@ from tasks.common import (
     SCALING_TASK_PREFIX,
     Resource,
     get_azure_mgmt_url,
+    is_azure_gov,
 )
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
