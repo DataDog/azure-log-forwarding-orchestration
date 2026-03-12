@@ -16,6 +16,7 @@ from azure.core.polling import AsyncLROPoller
 from tasks.common import (
     average,
     generate_unique_id,
+    get_azure_mgmt_url,
     get_container_app_id,
     get_managed_env_id,
     get_resource_group_id,
@@ -164,3 +165,26 @@ class TestCommon(IsolatedAsyncioTestCase):
         # Test other cloud regions return False
         self.assertFalse(is_azure_gov("chinaeast"))
         self.assertFalse(is_azure_gov("chinanorth"))
+
+    def test_get_azure_mgmt_url_public_cloud(self):
+        # Test public cloud regions return public cloud endpoint
+        self.assertEqual(get_azure_mgmt_url("eastus"), "https://management.azure.com")
+        self.assertEqual(get_azure_mgmt_url("westus"), "https://management.azure.com")
+        self.assertEqual(get_azure_mgmt_url("northeurope"), "https://management.azure.com")
+
+    def test_get_azure_mgmt_url_usgov_regions(self):
+        # Test US Government regions return gov cloud endpoint
+        self.assertEqual(get_azure_mgmt_url("usgovvirginia"), "https://management.usgovcloudapi.net")
+        self.assertEqual(get_azure_mgmt_url("usgovarizona"), "https://management.usgovcloudapi.net")
+        self.assertEqual(get_azure_mgmt_url("usgovtexas"), "https://management.usgovcloudapi.net")
+
+    def test_get_azure_mgmt_url_usdod_regions(self):
+        # Test US DoD regions return gov cloud endpoint
+        self.assertEqual(get_azure_mgmt_url("usdodeast"), "https://management.usgovcloudapi.net")
+        self.assertEqual(get_azure_mgmt_url("usdodcentral"), "https://management.usgovcloudapi.net")
+
+    def test_get_azure_mgmt_url_case_insensitive(self):
+        # Test case insensitivity
+        self.assertEqual(get_azure_mgmt_url("USGovVirginia"), "https://management.usgovcloudapi.net")
+        self.assertEqual(get_azure_mgmt_url("USDoDEast"), "https://management.usgovcloudapi.net")
+        self.assertEqual(get_azure_mgmt_url("EastUS"), "https://management.azure.com")

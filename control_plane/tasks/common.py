@@ -86,6 +86,11 @@ def is_azure_gov(region: str) -> bool:
     return region_lower.startswith("usgov") or region_lower.startswith("usdod")
 
 
+def get_azure_mgmt_url(region: str) -> str:
+    """Get the Azure management endpoint URL for the given region's cloud environment."""
+    return "https://management." + ("usgovcloudapi.net" if is_azure_gov(region) else "azure.com")
+
+
 def is_azure_china(region: str) -> bool:
     return region.lower().startswith("china")
 

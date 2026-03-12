@@ -39,7 +39,7 @@ from tasks.common import (
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
     Resource,
-    is_azure_gov,
+    get_azure_mgmt_url,
 )
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
@@ -53,10 +53,6 @@ MAX_WAIT_TIME = 30
 
 class DeployError(Exception):
     pass
-
-
-def get_azure_mgmt_url(region: str) -> str:
-    return "https://management." + ("usgovcloudapi.net" if is_azure_gov(region) else "azure.com")
 
 
 class DeployerTask(Task):

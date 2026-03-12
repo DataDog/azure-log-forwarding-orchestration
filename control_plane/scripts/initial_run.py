@@ -24,15 +24,11 @@ from cache.env import (
     get_config_option,
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
-from tasks.common import create_credential, is_azure_gov
+from tasks.common import create_credential, get_azure_mgmt_url
 from tasks.diagnostic_settings_task import DiagnosticSettingsTask
 from tasks.resources_task import RESOURCE_CACHE_BLOB, ResourcesTask
 from tasks.scaling_task import ScalingTask
 from tasks.version import VERSION
-
-
-def get_azure_mgmt_url(region: str) -> str:
-    return "https://management." + ("usgovcloudapi.net" if is_azure_gov(region) else "azure.com")
 
 
 async def start_deployer() -> None:
