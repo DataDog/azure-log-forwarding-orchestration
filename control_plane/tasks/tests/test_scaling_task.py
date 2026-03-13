@@ -307,7 +307,7 @@ class TestScalingTask(TaskTestCase):
 
         # THEN
         self.client.create_log_forwarder_managed_environment.assert_awaited_once_with(EAST_US, wait=False)
-        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
+        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US)
 
     async def test_errors_raised_when_forwarder_creation_fails(self):
         # GIVEN
@@ -342,12 +342,9 @@ class TestScalingTask(TaskTestCase):
         )
         self.client.delete_log_forwarder.assert_has_calls(
             [
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
-                call().__bool__(),
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
-                call().__bool__(),
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
-                call().__bool__(),
+                call(NEW_LOG_FORWARDER_ID),
+                call(NEW_LOG_FORWARDER_ID),
+                call(NEW_LOG_FORWARDER_ID),
             ]
         )
 
@@ -385,9 +382,9 @@ class TestScalingTask(TaskTestCase):
         # AND - the container app and storage account were successfully cleaned up on each attempt
         self.client.delete_log_forwarder.assert_has_calls(
             [
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call(NEW_LOG_FORWARDER_ID),
+                call(NEW_LOG_FORWARDER_ID),
+                call(NEW_LOG_FORWARDER_ID),
             ]
         )
         # AND - no error was logged indicating cleanup failed
