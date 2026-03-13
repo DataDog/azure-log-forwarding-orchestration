@@ -75,7 +75,7 @@ Deploy the complete system to your Azure subscription in under 5 minutes:
 ### Standalone Forwarder
 Deploy just the forwarder component for specific use cases:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/CustomDeploymentBlade/uri/https%3A%2F%2Fddazurelfo.blob.core.windows.net%2Ftemplates%2Fforwarder.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FDataDog%2Fintegrations-management%2Fmain%2Fazure%2Flogging_install%2Fdist%2Fforwarder.json)
 
 **That's it.** Automated Log Forwarding for Azure will automatically:
 1. Discover all log-generating resources in your subscription(s)
