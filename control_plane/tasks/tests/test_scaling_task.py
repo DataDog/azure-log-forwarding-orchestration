@@ -351,6 +351,48 @@ class TestScalingTask(TaskTestCase):
             ]
         )
 
+    async def test_forwarder_container_app_creation_failure_is_successfully_cleaned_up(self):
+        # GIVEN
+        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.create_log_forwarder.side_effect = Exception("400: Container app creation failed")
+        self.client.delete_log_forwarder.return_value = True
+        initial_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {},
+                    "configurations": {},
+                }
+            }
+        }
+
+        # WHEN
+        with self.assertRaises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state={
+                    SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}
+                },
+                assignment_cache_state=initial_cache,
+            )
+
+        # THEN - creation was attempted
+        self.client.create_log_forwarder.assert_has_calls(
+            [
+                call(EAST_US, NEW_LOG_FORWARDER_ID),
+                call(EAST_US, NEW_LOG_FORWARDER_ID),
+                call(EAST_US, NEW_LOG_FORWARDER_ID),
+            ]
+        )
+        # AND - the container app and storage account were successfully cleaned up on each attempt
+        self.client.delete_log_forwarder.assert_has_calls(
+            [
+                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+            ]
+        )
+        # AND - no error was logged indicating cleanup failed
+        self.log.error.assert_not_called()
+
     async def test_empty_regions_have_forwarders_deleted(self):
         # GIVEN
         expected_cache_state = {

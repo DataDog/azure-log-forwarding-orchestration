@@ -344,6 +344,49 @@ class TestLogForwarderClient(AsyncTestCase):
                 await self.client.create_log_forwarder(EAST_US, CONFIG_ID1)
         self.assertIn("400: Function App creation failed", str(ctx.exception))
 
+    async def test_container_app_creation_failure_cleanup_deletes_container_app_and_storage_account(self):
+        # GIVEN - container app creation fails
+        (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = Exception(
+            "400: Function App creation failed"
+        )
+
+        # WHEN - creation fails
+        with self.assertRaises(Exception):
+            async with self.client:
+                await self.client.create_log_forwarder(EAST_US, CONFIG_ID1)
+
+        # AND WHEN - cleanup is performed (as ScalingTask.create_log_forwarder does after creation failure)
+        async with self.client:
+            success = await self.client.delete_log_forwarder(CONFIG_ID1, raise_error=False)
+
+        # THEN - cleanup succeeds
+        self.assertTrue(success)
+        # AND - container app is deleted
+        self.client.container_apps_client.jobs.begin_delete.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, CONTAINER_APP_NAME
+        )
+        # AND - storage account is deleted
+        self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+        )
+
+    async def test_cleanup_deletes_storage_account_when_container_app_not_found(self):
+        # GIVEN - container app doesn't exist (creation failed before the resource was committed to Azure)
+        # but the storage account was already created
+        self.client.container_apps_client.jobs.begin_delete.side_effect = ResourceNotFoundError()
+
+        # WHEN - cleanup is performed
+        async with self.client:
+            await self.client.delete_log_forwarder(CONFIG_ID1, raise_error=False)
+
+            # Assert immediately before yielding control to the event loop.
+            # All awaits inside delete_log_forwarder use AsyncMock and do not yield, so any
+            # work deferred via create_task (rather than explicitly awaited) will not have
+            # run yet — making this a reliable check that the deletion was awaited directly.
+            self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(
+                RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+            )
+
     async def test_delete_log_forwarder(self):
         async with self.client as client:
             success = await client.delete_log_forwarder(CONFIG_ID1)
