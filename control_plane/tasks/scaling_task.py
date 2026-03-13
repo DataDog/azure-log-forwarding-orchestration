@@ -214,9 +214,10 @@ class ScalingTask(Task):
                 StatusCode.RESOURCE_CREATION_ERROR,
                 f"Failed to create log forwarder {config_id}. Reason: {e}",
             )
-            success = await client.delete_log_forwarder(config_id, raise_error=False)
-            if not success:
-                self.log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
+            try:
+                await client.delete_log_forwarder(config_id)
+            except Exception:
+                self.log.exception("Failed to clean up log forwarder %s, manual intervention required", config_id)
             return None
 
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> None:
@@ -230,9 +231,10 @@ class ScalingTask(Task):
                 StatusCode.RESOURCE_CREATION_ERROR,
                 f"Failed to create log forwarder env in {region}. Reason: {e}",
             )
-            success = await client.delete_log_forwarder_env(region, raise_error=False)
-            if not success:
-                self.log.error(
+            try:
+                await client.delete_log_forwarder_env(region)
+            except Exception:
+                self.log.exception(
                     "Failed to clean up log forwarder env for region %s, manual intervention required", region
                 )
 
