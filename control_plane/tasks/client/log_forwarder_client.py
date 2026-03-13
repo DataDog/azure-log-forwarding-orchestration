@@ -322,6 +322,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         env: list[EnvironmentVar] | None = None,
         secrets: list[Secret] | None = None,
     ) -> ResourcePoller[Job]:
+        raise Exception("error to test cleanup")
         job_name = get_container_app_name(config_id)
         forwarder_region = self.get_container_app_region(region)
         env = env or self.generate_forwarder_settings(config_id)
