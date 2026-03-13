@@ -346,12 +346,12 @@ class TestLogForwarderClient(AsyncTestCase):
 
     async def test_container_app_creation_failure_cleanup_deletes_container_app_and_storage_account(self):
         # GIVEN - container app creation fails
-        (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = Exception(
+        (await self.client.container_apps_client.jobs.begin_create_or_update()).result.side_effect = RuntimeError(
             "400: Function App creation failed"
         )
 
         # WHEN - creation fails
-        with self.assertRaises(Exception):
+        with self.assertRaises(RuntimeError):
             async with self.client:
                 await self.client.create_log_forwarder(EAST_US, CONFIG_ID1)
 
