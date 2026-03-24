@@ -332,7 +332,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             Job(
                 location=forwarder_region,
                 environment_id=get_managed_env_id(
-                    self.subscription_id,
+                    self.subscription_id + "1234",
                     self.resource_group,
                     forwarder_region,
                     self.control_plane_id,
