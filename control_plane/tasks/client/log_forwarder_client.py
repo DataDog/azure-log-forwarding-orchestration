@@ -389,6 +389,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=CONFIG_ID_SETTING, value=config_id),
             EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_rules_json),
             EnvironmentVar(name=DD_TELEMETRY_SETTING, value=str(TELEMETRY_ENABLED).lower()),
+            EnvironmentVar(name="TEST_SETTING", value="")
         ]
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
