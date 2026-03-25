@@ -344,6 +344,23 @@ class TestLogForwarderClient(AsyncTestCase):
                 await self.client.create_log_forwarder(EAST_US, CONFIG_ID1)
         self.assertIn("400: Function App creation failed", str(ctx.exception))
 
+    async def test_create_log_forwarder_failure_cleans_up_storage_account(self):
+        # Regression E2E: begin_create_or_update (line 329) raises HttpResponseError so the
+        # container app is never created. The caller then calls delete_log_forwarder to clean
+        # up. begin_delete raises ResourceNotFoundError (no container app), so poller=None.
+        # The bug: delete_storage_account_task is only awaited inside `if poller:`, so the
+        # storage account is leaked on every failed create attempt. Since generate_unique_id()
+        # produces a new config_id on each retry, this creates infinite storage accounts.
+        self.client.container_apps_client.jobs.begin_create_or_update.side_effect = FakeHttpError(500)
+        self.client.container_apps_client.jobs.begin_delete.side_effect = ResourceNotFoundError()
+        self.client.storage_client.storage_accounts.delete.side_effect = FakeHttpError(429)
+
+        async with self.client as client:
+            with self.assertRaises(FakeHttpError):
+                await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+            with self.assertRaises(RetryError):
+                await client.delete_log_forwarder(CONFIG_ID1)
+
     async def test_delete_log_forwarder(self):
         async with self.client as client:
             success = await client.delete_log_forwarder(CONFIG_ID1)
@@ -367,6 +384,17 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(
             RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
         )
+
+    async def test_delete_log_forwarder_deletes_storage_account_when_container_app_not_found(self):
+        # Regression: if the container app job never existed (ResourceNotFoundError), poller is
+        # None and delete_storage_account_task was never awaited, leaking storage accounts on
+        # repeated deploy failures. Verify that a retryable error from the storage delete is
+        # still raised, which only happens when the task is explicitly awaited.
+        self.client.container_apps_client.jobs.begin_delete.side_effect = ResourceNotFoundError()
+        self.client.storage_client.storage_accounts.delete.side_effect = FakeHttpError(429)
+        with self.assertRaises(RetryError):
+            async with self.client as client:
+                await client.delete_log_forwarder(CONFIG_ID1)
 
     async def test_delete_log_forwarder_not_raise_error(self):
         self.client.container_apps_client.jobs.begin_delete.side_effect = FakeHttpError(400)
