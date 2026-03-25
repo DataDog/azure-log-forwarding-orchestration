@@ -459,7 +459,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             if poller:
                 await poller.result()
 
-                await delete_storage_account_task
+            await delete_storage_account_task
             self.log.info("Deleted log forwarder %s", forwarder_id, extra=self.log_extra)
 
         try:
