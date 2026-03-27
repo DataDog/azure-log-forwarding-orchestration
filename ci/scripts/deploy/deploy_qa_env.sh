@@ -18,10 +18,14 @@ az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --t
 
 resource_group=lfoqaenv
 
+# Clone integrations-management to get the latest templates
+git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/DataDog/integrations-management.git" /tmp/integrations-management
+BICEP_DIR=/tmp/integrations-management/azure/logging_install/bicep
+
 : deploy to resource group $resource_group
 echo "Deploying $resource_group, view progress at https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F$resource_group"
 az deployment mg create --management-group-id "Azure-Integrations-Mg" \
-    --location eastus --name $resource_group --template-file ./deploy/azuredeploy.bicep \
+    --location eastus --name $resource_group --template-file "$BICEP_DIR/azuredeploy.bicep" \
     --parameters monitoredSubscriptions="[\"$AZURE_SUBSCRIPTION_ID\"]" --parameters controlPlaneLocation=eastus \
     --parameters controlPlaneSubscriptionId="$AZURE_SUBSCRIPTION_ID" --parameters controlPlaneResourceGroupName=$resource_group \
     --parameters datadogApiKey="$DD_API_KEY" --parameters datadogSite=datadoghq.com --parameters datadogTelemetry=true \
