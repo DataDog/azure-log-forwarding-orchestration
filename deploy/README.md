@@ -1,21 +1,13 @@
-# Arm Template
+# Deploy
 
-(this assumes your current directory is the root of the repo)
+The Bicep templates for deploying LFO are maintained in [integrations-management](https://github.com/DataDog/integrations-management/tree/main/azure/logging_install/bicep).
 
-## Setup:
+## Personal Environment
 
-```bash
-# ensure the az cli is installed
-brew install azure-cli
-# install the bicep cli
-az bicep install
-```
-
-## Development:
-
-To work with the bicep files, you can just make your changes and then run the
-deploy personal environment script with --force-arm-deploy to deploy the changes:
+To deploy a personal environment, run:
 
 ```bash
 ./scripts/deploy_personal_env.py --force-arm-deploy
 ```
+
+The script will use the Bicep templates from your local `integrations-management` repo (`~/dd/integrations-management`).
