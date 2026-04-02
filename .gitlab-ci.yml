@@ -5,7 +5,6 @@ variables:
   PR_COMMENTER_IMAGE: registry.ddbuild.io/images/pr-commenter:3-jammy
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
-  REPLICATED_DOCKER_REGISTRY: 486234852809.dkr.ecr.us-east-1.amazonaws.com/lfo
   INTERNAL_DOCKER_REGISTRY: registry.ddbuild.io/lfo
   QA_DOCKER_REGISTRY: lfoqa.azurecr.io
 stages:
@@ -124,7 +123,7 @@ deployer-publish:
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
@@ -165,7 +164,7 @@ forwarder-publish:
     branch: main
     strategy: depend
   variables:
-    IMG_SOURCES: $REPLICATED_DOCKER_REGISTRY/forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
