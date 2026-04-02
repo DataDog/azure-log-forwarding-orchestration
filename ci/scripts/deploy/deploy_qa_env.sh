@@ -19,7 +19,7 @@ az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --t
 resource_group=lfoqaenv
 
 # Clone integrations-management to get the latest templates
-git clone "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/DataDog/integrations-management.git" /tmp/integrations-management
+git clone "https://github.com/DataDog/integrations-management.git" /tmp/integrations-management
 BICEP_DIR=/tmp/integrations-management/azure/logging_install/bicep
 
 : deploy to resource group $resource_group
