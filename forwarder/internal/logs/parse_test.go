@@ -68,6 +68,9 @@ var (
 
 	//go:embed fixtures/large_logs_buffer_test.json
 	largeLogsBufferTestData []byte
+
+	//go:embed fixtures/law_logs.json
+	lawLogData []byte
 )
 
 func TestParseLogs(t *testing.T) {
@@ -156,7 +159,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, logsWithLevelAsIntOrStringData))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, workflowRuntimeContainer), MockScrubber(t, logsWithLevelAsIntOrStringData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			got += 1
@@ -176,7 +179,7 @@ func TestParseLogs(t *testing.T) {
 		var got int
 
 		// WHEN
-		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, worflowRuntimeContainer), MockScrubber(t, workflowRuntimeLogData))
+		parsedLogsIter, totalBytes, _ := logs.Parse(closer, newBlob(resourceId, workflowRuntimeContainer), MockScrubber(t, workflowRuntimeLogData))
 		for parsedLog := range parsedLogsIter {
 			require.NoError(t, parsedLog.Err)
 			currLog := parsedLog.ParsedLog
@@ -336,6 +339,33 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
 		})
 	}
+}
+
+func TestParseLAWLogs(t *testing.T) {
+	t.Parallel()
+
+	// GIVEN: real Log Analytics Workspace logs using _ResourceId (LAW convention)
+	lawResourceId := "/subscriptions/0b62a232-b8db-4380-9da6-640f7272ed6d/resourceGroups/lfonealpowellvmrg/providers/Microsoft.Compute/virtualMachines/lfonealpowellvm"
+	reader := bytes.NewReader(lawLogData)
+	closer := io.NopCloser(reader)
+
+	var got int
+
+	// WHEN
+	parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(resourceId, "am-syslog"), MockScrubber(t, lawLogData))
+	require.NoError(t, err)
+
+	for parsedLog := range parsedLogsIter {
+		require.NoError(t, parsedLog.Err)
+		currLog := parsedLog.ParsedLog
+		require.True(t, strings.EqualFold(lawResourceId, currLog.ResourceId),
+			"expected _ResourceId to be resolved, got: %s", currLog.ResourceId)
+		got += 1
+	}
+
+	// THEN
+	assert.Equal(t, 2, got)
+	assert.Equal(t, len(lawLogData), *totalBytes)
 }
 
 // Regression [CLOUDS-7233]: Because of a shared reference to the internal scanner buffer,

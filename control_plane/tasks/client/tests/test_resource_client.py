@@ -410,6 +410,44 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             },
         )
 
+    async def test_control_plane_storage_account_included_with_include_false(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(
+                mock(
+                    id="/subscriptions/WHATEVER/whatever/lfostorage123",
+                    name="lfostorage123",
+                    location=SUPPORTED_REGION_1,
+                    type="MICROSOFT.STORAGE/STORAGEACCOUNTS",
+                    tags={},
+                ),
+                resource1,
+            )
+        )
+
+        async with ResourceClient(self.log, self.cred, [], sub_id1) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    "/subscriptions/whatever/whatever/lfostorage123/fileservices/default": ResourceMetadata(
+                        include=False,
+                    ),
+                    "/subscriptions/whatever/whatever/lfostorage123/queueservices/default": ResourceMetadata(
+                        include=False,
+                    ),
+                    "/subscriptions/whatever/whatever/lfostorage123/blobservices/default": ResourceMetadata(
+                        include=False,
+                    ),
+                    "/subscriptions/whatever/whatever/lfostorage123/tableservices/default": ResourceMetadata(
+                        include=False,
+                    ),
+                    "res1": included_metadata,
+                }
+            },
+        )
+
     async def test_sub_resources_failed_doesnt_fail(self):
         expected_error = ResourceNotFoundError("meow")
         self.mock_clients["ResourceManagementClient"].resources.list = mock(

@@ -26,7 +26,6 @@ from cache.env import (
     get_config_option,
 )
 from cache.manifest_cache import (
-    KEY_TO_ZIP,
     MANIFEST_FILE_NAME,
     PUBLIC_STORAGE_ACCOUNT_URL,
     TASKS_CONTAINER,
@@ -39,7 +38,7 @@ from tasks.common import (
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
     Resource,
-    is_azure_gov,
+    get_azure_mgmt_url,
 )
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
@@ -51,14 +50,6 @@ MAX_ATTEMPTS = 5
 MAX_WAIT_TIME = 30
 
 
-class DeployError(Exception):
-    pass
-
-
-def get_azure_mgmt_url(region: str) -> str:
-    return "https://management." + ("usgovcloudapi.net" if is_azure_gov(region) else "azure.com")
-
-
 class DeployerTask(Task):
     NAME = DEPLOYER_TASK_NAME
 
@@ -67,10 +58,16 @@ class DeployerTask(Task):
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
-        storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
-        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER)
         self.rest_client = ClientSession()
         self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
+
+        storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
+        # If authenticating with the public storage account, we use anonymous access since the blobs are public.
+        # In this case, we should not pass a credential to the ContainerClient.
+        # If authenticating with a private storage account (ex. personal environment), we need to pass the credential
+        # of the DeployerTask. It should have Storage Blob Data Contributor role (or similar) on the storage acocunt
+        credential = self.credential if storage_account_url != PUBLIC_STORAGE_ACCOUNT_URL else None
+        self.public_storage_client = ContainerClient(storage_account_url, TASKS_CONTAINER, credential=credential)
 
     async def __aenter__(self) -> Self:
         await super().__aenter__()
@@ -157,46 +154,11 @@ class DeployerTask(Task):
         if not function_app:
             self.log.error(f"Function app for {component} not found in {current_function_app_ids}, skipping deployment")
             return
-        try:
-            self.log.info(f"Downloading function app data for {component}")
-            zip_data = await self.download_function_app_data(component)
-            self.log.info(f"Deploying {function_app}")
-            await self.upload_function_app_data(function_app, zip_data)
-            await self.sync_function_app_triggers(function_app)
-        except Exception:
-            self.log.exception(f"Failed to deploy {component}")
-            return
-        self.manifest_cache[component] = self.public_manifest[component]
-        self.log.info(f"Finished deploying {component}")
-
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def upload_function_app_data(self, function_app_name: str, function_app_data: bytes) -> None:
-        function_app_url = "https://{}.scm.azurewebsites.{}/api/zipdeploy".format(
-            function_app_name, "us" if is_azure_gov(self.region) else "net"
-        )
-        resp = await self.rest_client.post(function_app_url, data=function_app_data)
-        if not resp.ok:
-            content = (await resp.content.read()).decode()
-            raise DeployError(f"Failed to upload function app data: {resp.status} ({resp.reason})\n{content}")
-
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def sync_function_app_triggers(self, function_app_name: str) -> None:
-        resp = await self.rest_client.post(
-            f"{get_azure_mgmt_url(self.region)}/subscriptions/{self.subscription_id}/resourceGroups/{self.resource_group}/providers/Microsoft.Web/sites/{function_app_name}/syncfunctiontriggers?api-version=2016-08-01"
-        )
-        if not resp.ok:
-            content = (await resp.content.read()).decode()
-            raise DeployError(f"Failed to sync function app triggers: {resp.status} ({resp.reason})\n{content}")
-
-    @retry(stop=stop_after_attempt(MAX_ATTEMPTS))
-    async def download_function_app_data(self, component: ControlPlaneComponent) -> bytes:
-        blob_name = KEY_TO_ZIP[component]
-        stream = await self.public_storage_client.download_blob(blob_name)
-        app_data = await stream.readall()
-        return app_data
+        self.log.info(f"Skipping deployment for {function_app}; zip deploy and trigger sync are disabled")
+        self.log.info(f"Leaving manifest cache unchanged for {component}")
 
     async def write_caches(self) -> None:
-        if self.manifest_cache == self.private_manifest:
+        if self.private_manifest is None or self.manifest_cache == self.private_manifest:
             return
         await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
 
