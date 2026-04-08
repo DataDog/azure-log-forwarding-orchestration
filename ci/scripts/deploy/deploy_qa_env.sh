@@ -18,6 +18,21 @@ az login --service-principal -u "$AZURE_CLIENT_ID" -p "$AZURE_CLIENT_SECRET" --t
 
 resource_group=lfoqaenv
 
+# Azure ARM can't create managed environments with workload profiles (known limitation).
+# Pre-create via CLI if the env doesn't exist or lacks workload profiles.
+ENV_NAME="dd-log-forwarder-env-db751049441a-eastus"
+wp=$(az containerapp env show --name "$ENV_NAME" --resource-group "$resource_group" \
+     --query "properties.workloadProfiles[0].name" -o tsv 2>/dev/null || echo "")
+if [ -z "$wp" ]; then
+  echo "Creating managed environment with workload profiles..."
+  az containerapp job list --resource-group "$resource_group" \
+    --query "[?ends_with(properties.environmentId, '$ENV_NAME')].name" -o tsv | \
+    xargs -I{} az containerapp job delete --name {} --resource-group "$resource_group" --yes 2>/dev/null || true
+  az containerapp env delete --name "$ENV_NAME" --resource-group "$resource_group" --yes 2>/dev/null || true
+  az containerapp env create --name "$ENV_NAME" --resource-group "$resource_group" \
+    --location eastus --enable-workload-profiles
+fi
+
 : deploy to resource group $resource_group
 echo "Deploying $resource_group, view progress at https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id/%2Fproviders%2FMicrosoft.Management%2FmanagementGroups%2FAzure-Integrations-Mg%2Fproviders%2FMicrosoft.Resources%2Fdeployments%2F$resource_group"
 az deployment mg create --management-group-id "Azure-Integrations-Mg" \
