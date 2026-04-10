@@ -87,7 +87,9 @@ class ResourcesTask(Task):
 
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
-        async with ResourceClient(self.log, self.credential, self.tag_filter_list, subscription_id, self.base_url) as client:
+        async with ResourceClient(
+            self.log, self.credential, self.tag_filter_list, subscription_id, self.base_url
+        ) as client:
             try:
                 self.resource_cache[subscription_id] = await client.get_resources_per_region()
             except HttpResponseError as e:
