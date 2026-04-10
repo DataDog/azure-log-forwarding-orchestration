@@ -115,13 +115,15 @@ class DeployerTask(Task):
             }
         ).copy()
 
-        await gather(
-            *[
-                self.deploy_component(component, current_function_app_ids)
-                for component in public_manifest
-                if not private_manifest or public_manifest[component] != private_manifest[component]
-            ]
-        )
+        if not private_manifest:
+            await gather(
+                *[
+                    self.deploy_component(component, current_function_app_ids)
+                    for component in public_manifest
+                ]
+            )
+        else:
+            self.log.info("Private manifest exists, skipping deployment")
 
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
