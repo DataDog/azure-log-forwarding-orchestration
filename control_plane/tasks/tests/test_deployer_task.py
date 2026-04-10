@@ -4,7 +4,7 @@
 
 # stdlib
 from json import dumps
-from unittest.mock import MagicMock
+from unittest.mock import DEFAULT, MagicMock, call
 
 # 3p
 from azure.core.exceptions import HttpResponseError
@@ -92,12 +92,13 @@ class TestDeployerTask(TaskTestCase):
         self.write_cache.assert_not_awaited()
 
     async def test_deploy_task_diff_func_app(self):
+        public_cache: ManifestCache = {
+            "resources": "2",
+            "scaling": "1",
+            "diagnostic_settings": "1",
+        }
         self.set_caches(
-            public_cache={
-                "resources": "2",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
+            public_cache=public_cache,
             private_cache={
                 "resources": "1",
                 "scaling": "1",
@@ -108,16 +109,20 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        self.write_cache.assert_not_awaited()
-        self.rest_client.post.assert_not_awaited()
+        self.assertEqual(self.cache, public_cache)
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
+        )
 
     async def test_deploy_task_diff_func_and_container_app(self):
+        public_cache: ManifestCache = {
+            "resources": "2",
+            "scaling": "1",
+            "diagnostic_settings": "1",
+        }
         self.set_caches(
-            public_cache={
-                "resources": "2",
-                "scaling": "1",
-                "diagnostic_settings": "1",
-            },
+            public_cache=public_cache,
             private_cache={
                 "resources": "1",
                 "scaling": "1",
@@ -128,8 +133,11 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        self.write_cache.assert_not_awaited()
-        self.rest_client.post.assert_not_awaited()
+        self.assertEqual(self.cache, public_cache)
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
+        )
 
     async def test_partial_success_func_app(self):
         self.set_caches(
@@ -144,17 +152,43 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
-        self.set_current_function_apps(
-            [
-                "resources-task-0863329b4b49",
-                "scaling-task-0863329b4b49",
-            ]
-        )
+        self.set_current_function_apps(ALL_FUNCTIONS)
+
+        def _download_blob(item: str):
+            if item == "diagnostic_settings_task.zip":
+                raise HttpResponseError()
+            return DEFAULT
+
+        self.public_client.download_blob.side_effect = _download_blob
 
         await self.run_deployer_task()
 
-        self.rest_client.post.assert_not_awaited()
-        self.write_cache.assert_not_awaited()
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.net/api/zipdeploy",
+        )
+        self.assertEqual(
+            self.cache,
+            {
+                "resources": "2",
+                "scaling": "1",
+                "diagnostic_settings": "1",
+            },
+        )
+        self.public_client.download_blob.assert_has_calls(
+            [
+                call("manifest.json"),
+                call().readall(),
+                call("resources_task.zip"),
+                call().readall(),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+                call("diagnostic_settings_task.zip"),
+            ],
+            any_order=True,
+        )
 
     async def test_deploy_task_no_public_manifest(self):
         self.public_client.download_blob.return_value.readall.return_value = b"invalid"
@@ -186,7 +220,9 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        self.write_cache.assert_not_awaited()
+        public_cache_str = dumps(public_cache)
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
 
     async def test_deploy_task_no_manifests(self):
         self.public_client.download_blob.return_value.readall.return_value = b""
@@ -212,10 +248,12 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        self.assertEqual(self.read_private_cache.await_count, 5)
-        self.write_cache.assert_not_awaited()
+        public_cache_str = dumps(public_cache)
 
-    async def test_deploy_task_does_not_post_to_function_apps(self):
+        self.assertEqual(self.read_private_cache.await_count, 5)
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+
+    async def test_post_func_app_fails(self):
         self.set_caches(
             public_cache={
                 "resources": "2",
@@ -228,12 +266,13 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
+        self.rest_client.post.return_value.ok = False
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
 
-        self.rest_client.post.assert_not_awaited()
         self.write_cache.assert_not_awaited()
+        self.assertEqual(self.rest_client.post.await_count, 5)
 
     async def test_deploy_task_govcloud(self):
         self.env[CONTROL_PLANE_REGION_SETTING] = "usgovarizona"
@@ -254,8 +293,19 @@ class TestDeployerTask(TaskTestCase):
         await self.run_deployer_task()
 
         self.credential.get_token.assert_awaited_once_with("https://management.usgovcloudapi.net/.default")
-        self.rest_client.post.assert_not_awaited()
-        self.write_cache.assert_not_awaited()
+
+        self.assertEqual(
+            self.cache,
+            {
+                "resources": "2",
+                "scaling": "1",
+                "diagnostic_settings": "1",
+            },
+        )
+        self.assertEqual(
+            self.rest_client.post.mock_calls[0][1][0],
+            "https://resources-task-0863329b4b49.scm.azurewebsites.us/api/zipdeploy",
+        )
 
     async def test_deployer_tags(self):
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
