@@ -101,7 +101,14 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
 
 
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
-    def __init__(self, log: Logger, cred: DefaultAzureCredential, tag_filters: list[str], subscription_id: str) -> None:
+    def __init__(
+        self,
+        log: Logger,
+        cred: DefaultAzureCredential,
+        tag_filters: list[str],
+        subscription_id: str,
+        base_url: str = "https://management.azure.com",
+    ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
@@ -110,18 +117,18 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         """Predicate which takes a resource's tags as input and evaluates them against the
         user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
 
-        self.resources_client = ResourceManagementClient(cred, subscription_id)
-        redis_client = RedisEnterpriseManagementClient(cred, subscription_id)
-        cdn_client = CdnManagementClient(cred, subscription_id)
-        healthcareapis_client = HealthcareApisManagementClient(cred, subscription_id)
-        media_client = AzureMediaServices(cred, subscription_id)
-        network_client = NetworkManagementClient(cred, subscription_id)
-        netapp_client = NetAppManagementClient(cred, subscription_id)
-        notificationhubs_client = NotificationHubsManagementClient(cred, subscription_id)
-        powerbi_client = PowerBIEmbeddedManagementClient(cred, subscription_id)
-        sql_client = SqlManagementClient(cred, subscription_id)
-        synapse_client = SynapseManagementClient(cred, subscription_id)
-        web_client = WebSiteManagementClient(cred, subscription_id)
+        self.resources_client = ResourceManagementClient(cred, subscription_id, base_url=base_url)
+        redis_client = RedisEnterpriseManagementClient(cred, subscription_id, base_url=base_url)
+        cdn_client = CdnManagementClient(cred, subscription_id, base_url=base_url)
+        healthcareapis_client = HealthcareApisManagementClient(cred, subscription_id, base_url=base_url)
+        media_client = AzureMediaServices(cred, subscription_id, base_url=base_url)
+        network_client = NetworkManagementClient(cred, subscription_id, base_url=base_url)
+        netapp_client = NetAppManagementClient(cred, subscription_id, base_url=base_url)
+        notificationhubs_client = NotificationHubsManagementClient(cred, subscription_id, base_url=base_url)
+        powerbi_client = PowerBIEmbeddedManagementClient(cred, subscription_id, base_url=base_url)
+        sql_client = SqlManagementClient(cred, subscription_id, base_url=base_url)
+        synapse_client = SynapseManagementClient(cred, subscription_id, base_url=base_url)
+        web_client = WebSiteManagementClient(cred, subscription_id, base_url=base_url)
 
         # map of resource type to client and sub resource fetching function
         self._get_sub_resources_map: Final[
