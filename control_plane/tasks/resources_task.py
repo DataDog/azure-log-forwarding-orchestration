@@ -14,7 +14,12 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import write_cache
-from cache.env import MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTERS_SETTING
+from cache.env import (
+    CONTROL_PLANE_REGION_SETTING,
+    MONITORED_SUBSCRIPTIONS_SETTING,
+    RESOURCE_TAG_FILTERS_SETTING,
+    get_config_option,
+)
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -25,6 +30,7 @@ from cache.resources_cache import (
 )
 from tasks.client.datadog_api_client import StatusCode
 from tasks.client.resource_client import ResourceClient
+from tasks.common import get_azure_mgmt_url
 from tasks.task import Task, task_main
 
 RESOURCES_TASK_NAME = "resources_task"
@@ -35,6 +41,7 @@ class ResourcesTask(Task):
 
     def __init__(self, resource_cache_state: str, execution_id: str = "", is_initial_run: bool = False) -> None:
         super().__init__(is_initial_run=is_initial_run, execution_id=execution_id)
+        self.base_url = get_azure_mgmt_url(get_config_option(CONTROL_PLANE_REGION_SETTING))
         self.monitored_subscriptions = deserialize_monitored_subscriptions(
             getenv(MONITORED_SUBSCRIPTIONS_SETTING) or ""
         )
@@ -57,7 +64,7 @@ class ResourcesTask(Task):
             await self.write_caches(is_schema_upgrade=True)
             self.schema_upgrade = False
 
-        async with SubscriptionClient(self.credential) as subscription_client:
+        async with SubscriptionClient(self.credential, base_url=self.base_url) as subscription_client:
             try:
                 subscriptions = [
                     cast(str, sub.subscription_id).lower() async for sub in subscription_client.subscriptions.list()
@@ -85,7 +92,9 @@ class ResourcesTask(Task):
 
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
-        async with ResourceClient(self.log, self.credential, self.tag_filter_list, subscription_id) as client:
+        async with ResourceClient(
+            self.log, self.credential, self.tag_filter_list, subscription_id, self.base_url
+        ) as client:
             try:
                 self.resource_cache[subscription_id] = await client.get_resources_per_region()
             except HttpResponseError as e:

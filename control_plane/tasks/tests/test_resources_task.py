@@ -14,6 +14,7 @@ from azure.core.exceptions import HttpResponseError
 # project
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
@@ -48,7 +49,8 @@ class TestResourcesTask(TaskTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.sub_client = AsyncMockClient()
-        self.patch("SubscriptionClient").return_value = self.sub_client
+        self.subscription_client_mock = self.patch("SubscriptionClient")
+        self.subscription_client_mock.return_value = self.sub_client
         self.datadog_client = AsyncMockClient()
         self.patch_path("tasks.task.DatadogClient").return_value = self.datadog_client
         self.resource_client = self.patch("ResourceClient")
@@ -57,9 +59,11 @@ class TestResourcesTask(TaskTestCase):
 
         self.resource_mock_client = AsyncMockClient()
         self.resource_mock_client.log = self.log
+        self.last_resource_client_base_url: str | None = None
 
-        def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str):
+        def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str, base_url: str = ""):
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
+            self.last_resource_client_base_url = base_url
             self.resource_mock_client.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
             return self.resource_mock_client
 
@@ -107,6 +111,22 @@ class TestResourcesTask(TaskTestCase):
                 sub_id2: {SUPPORTED_REGION_2: {"res3": included_metadata}},
             },
         )
+        self.subscription_client_mock.assert_called_once_with(self.credential, base_url="https://management.azure.com")
+        self.assertEqual(self.last_resource_client_base_url, "https://management.azure.com")
+
+    async def test_gov_cloud_base_url(self):
+        self.env[CONTROL_PLANE_REGION_SETTING] = "usgovarizona"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        self.resource_client_mapping = {
+            sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}},
+        }
+
+        await self.run_resources_task({})
+
+        self.subscription_client_mock.assert_called_once_with(
+            self.credential, base_url="https://management.usgovcloudapi.net"
+        )
+        self.assertEqual(self.last_resource_client_base_url, "https://management.usgovcloudapi.net")
 
     async def test_cache_upgrade_schema(self):
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1, sub2))

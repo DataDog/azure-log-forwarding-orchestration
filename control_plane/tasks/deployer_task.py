@@ -65,7 +65,9 @@ class DeployerTask(Task):
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
         self.rest_client = ClientSession()
-        self.web_client = WebSiteManagementClient(self.credential, self.subscription_id)
+        self.web_client = WebSiteManagementClient(
+            self.credential, self.subscription_id, base_url=get_azure_mgmt_url(self.region)
+        )
 
         storage_account_url = environ.get(STORAGE_ACCOUNT_URL_SETTING, PUBLIC_STORAGE_ACCOUNT_URL)
         # If authenticating with the public storage account, we use anonymous access since the blobs are public.

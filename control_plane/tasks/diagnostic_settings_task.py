@@ -34,10 +34,11 @@ from cache.diagnostic_settings_cache import (
     remove_cached_resource,
     update_cached_event,
 )
-from cache.env import CONTROL_PLANE_ID_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+from cache.env import CONTROL_PLANE_ID_SETTING, CONTROL_PLANE_REGION_SETTING, RESOURCE_GROUP_SETTING, get_config_option
 from cache.resources_cache import INCLUDE_KEY, RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.datadog_api_client import StatusCode
 from tasks.common import (
+    get_azure_mgmt_url,
     get_event_hub_name,
     get_event_hub_namespace,
     get_resource_group_id,
@@ -100,6 +101,7 @@ class DiagnosticSettingsTask(Task):
         super().__init__(is_initial_run=is_initial_run, execution_id=execution_id)
 
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
+        self.base_url = get_azure_mgmt_url(get_config_option(CONTROL_PLANE_REGION_SETTING))
         self.diagnostic_settings_name = (
             DIAGNOSTIC_SETTING_PREFIX + get_config_option(CONTROL_PLANE_ID_SETTING)
         ).lower()
@@ -132,7 +134,7 @@ class DiagnosticSettingsTask(Task):
     async def process_subscription(self, sub_id: str) -> None:
         self.log.info("Processing subscription %s", sub_id)
         # we assume if a resource isn't in the assignment cache then is has been deleted
-        async with MonitorManagementClient(self.credential, sub_id) as client:
+        async with MonitorManagementClient(self.credential, sub_id, base_url=self.base_url) as client:
             # TODO: do we want to do anything with management group diagnostic settings?
             # client.management_group_diagnostic_settings.list("management_group_id")
             resources = [

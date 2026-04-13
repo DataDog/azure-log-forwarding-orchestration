@@ -86,6 +86,7 @@ from tasks.common import (
     FORWARDER_METRIC_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     Resource,
+    get_azure_mgmt_url,
     get_container_app_name,
     get_managed_env_id,
     get_managed_env_name,
@@ -162,8 +163,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self.resource_group = resource_group
         self.subscription_id = subscription_id
         self.pii_rules_json = pii_rules_json
-        self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id)
-        self.storage_client = StorageManagementClient(credential, subscription_id)
+        base_url = get_azure_mgmt_url(self.control_plane_region)
+        self.container_apps_client = ContainerAppsAPIClient(credential, subscription_id, base_url=base_url)
+        self.storage_client = StorageManagementClient(credential, subscription_id, base_url=base_url)
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
