@@ -14,7 +14,12 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 
 # project
 from cache.common import write_cache
-from cache.env import CONTROL_PLANE_REGION_SETTING, MONITORED_SUBSCRIPTIONS_SETTING, RESOURCE_TAG_FILTERS_SETTING
+from cache.env import (
+    CONTROL_PLANE_REGION_SETTING,
+    MONITORED_SUBSCRIPTIONS_SETTING,
+    RESOURCE_TAG_FILTERS_SETTING,
+    get_config_option,
+)
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
@@ -36,7 +41,7 @@ class ResourcesTask(Task):
 
     def __init__(self, resource_cache_state: str, execution_id: str = "", is_initial_run: bool = False) -> None:
         super().__init__(is_initial_run=is_initial_run, execution_id=execution_id)
-        self.base_url = get_azure_mgmt_url(getenv(CONTROL_PLANE_REGION_SETTING, ""))
+        self.base_url = get_azure_mgmt_url(get_config_option(CONTROL_PLANE_REGION_SETTING))
         self.monitored_subscriptions = deserialize_monitored_subscriptions(
             getenv(MONITORED_SUBSCRIPTIONS_SETTING) or ""
         )
