@@ -144,12 +144,7 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
-        self.set_current_function_apps(
-            [
-                "resources-task-0863329b4b49",
-                "scaling-task-0863329b4b49",
-            ]
-        )
+        self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
 
@@ -186,7 +181,9 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        self.write_cache.assert_not_awaited()
+        public_cache_str = dumps(public_cache)
+
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
 
     async def test_deploy_task_no_manifests(self):
         self.public_client.download_blob.return_value.readall.return_value = b""
@@ -212,10 +209,12 @@ class TestDeployerTask(TaskTestCase):
 
         await self.run_deployer_task()
 
-        self.assertEqual(self.read_private_cache.await_count, 5)
-        self.write_cache.assert_not_awaited()
+        public_cache_str = dumps(public_cache)
 
-    async def test_deploy_task_does_not_post_to_function_apps(self):
+        self.assertEqual(self.read_private_cache.await_count, 5)
+        self.write_cache.assert_awaited_once_with("manifest.json", public_cache_str)
+
+    async def test_post_func_app_fails(self):
         self.set_caches(
             public_cache={
                 "resources": "2",
@@ -228,12 +227,13 @@ class TestDeployerTask(TaskTestCase):
                 "diagnostic_settings": "1",
             },
         )
+        self.rest_client.post.return_value.ok = False
         self.set_current_function_apps(ALL_FUNCTIONS)
 
         await self.run_deployer_task()
 
-        self.rest_client.post.assert_not_awaited()
         self.write_cache.assert_not_awaited()
+        self.rest_client.post.assert_not_awaited()
 
     async def test_deploy_task_govcloud(self):
         self.env[CONTROL_PLANE_REGION_SETTING] = "usgovarizona"
@@ -254,8 +254,8 @@ class TestDeployerTask(TaskTestCase):
         await self.run_deployer_task()
 
         self.credential.get_token.assert_awaited_once_with("https://management.usgovcloudapi.net/.default")
-        self.rest_client.post.assert_not_awaited()
         self.write_cache.assert_not_awaited()
+        self.rest_client.post.assert_not_awaited()
 
     async def test_deployer_tags(self):
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
