@@ -116,12 +116,7 @@ class DeployerTask(Task):
         ).copy()
 
         if not private_manifest:
-            await gather(
-                *[
-                    self.deploy_component(component, current_function_app_ids)
-                    for component in public_manifest
-                ]
-            )
+            await gather(*[self.deploy_component(component, current_function_app_ids) for component in public_manifest])
         else:
             self.log.info("Private manifest exists, skipping deployment")
 
