@@ -45,18 +45,17 @@ func unmarshalFlowEventRecords[T any](bytes []byte) (*flowEventRecords[T], error
 }
 
 func processFlowEventRecords[T flowEventRecord](flowEventRecords *flowEventRecords[T], blob storage.Blob, originalSize int, scrubbedSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) bool {
-	response := ParsedLogResponse{}
 	for idx, flowEventLog := range flowEventRecords.Records {
 		currLog, err := flowEventLog.ToLog(blob)
-		response.ParsedLog = currLog
+		response := ParsedLogResponse{ParsedLog: currLog}
 		if err != nil {
 			response.Err = err
 			yield(response)
 			return false
 		}
 		if idx == len(flowEventRecords.Records)-1 {
-			response.ParsedLog.RawByteSize = int64(originalSize)
-			response.ParsedLog.ScrubbedByteSize = int64(scrubbedSize)
+			currLog.RawByteSize = int64(originalSize)
+			currLog.ScrubbedByteSize = int64(scrubbedSize)
 		}
 
 		if !yield(response) {

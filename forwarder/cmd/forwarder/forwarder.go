@@ -73,6 +73,7 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 }
 
 func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {
+	var processedRawBytes int64
 	var processedLogs int64
 
 	var currLog *logs.Log
@@ -88,15 +89,19 @@ func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, pii
 			break
 		}
 		currLog = parsedLog.ParsedLog
+		cursorBoundary := currLog.RawLength() > 0
 
 		select {
 		case logsChannel <- currLog:
+			if cursorBoundary {
+				processedRawBytes = int64(*totalBytes)
+			}
 			processedLogs += 1
 		case <-ctx.Done():
-			return int64(*totalBytes), processedLogs, err
+			return processedRawBytes, processedLogs, err
 		}
 	}
-	return int64(*totalBytes), processedLogs, err
+	return processedRawBytes, processedLogs, err
 }
 
 func processLogs(ctx context.Context, logsClient *logs.Client, now customtime.Now, logger *log.Entry, logsCh <-chan *logs.Log, resourceIdCh chan<- string, resourceBytesCh chan<- resourceBytes) (err error) {
