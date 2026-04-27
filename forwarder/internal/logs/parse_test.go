@@ -39,6 +39,9 @@ var (
 	//go:embed fixtures/activedirectory/service_principal_sign_in_logs.json
 	adServicePrincipalSignInLogData []byte
 
+	//go:embed fixtures/activedirectory/microsoft_service_principal_sign_in_logs.json
+	adMicrosoftServicePrincipalSignInLogData []byte
+
 	//go:embed fixtures/activedirectory/sign_in_logs.json
 	adSignInLogData []byte
 
@@ -296,6 +299,12 @@ func TestParseActiveDirectoryLogs(t *testing.T) {
 			containerName:    "insights-logs-serviceprincipalsigninlogs",
 			logData:          adServicePrincipalSignInLogData,
 			expectedLogCount: 25,
+		},
+		"can parse microsoft service principal sign in logs": {
+			categoryName:     "MicrosoftServicePrincipalSignInLogs",
+			containerName:    "insights-logs-microsoftserviceprincipalsigninlogs",
+			logData:          adMicrosoftServicePrincipalSignInLogData,
+			expectedLogCount: 3,
 		},
 		"can parse sign in logs": {
 			categoryName:     "SignInLogs",

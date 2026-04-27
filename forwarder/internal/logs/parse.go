@@ -172,6 +172,7 @@ var activeDirectoryContainers = []string{
 	"insights-logs-signinlogs",
 	"insights-logs-noninteractiveusersigninlogs",
 	"insights-logs-serviceprincipalsigninlogs",
+	"insights-logs-microsoftserviceprincipalsigninlogs",
 	"insights-logs-managedidentitysigninlogs",
 	"insights-logs-riskyusers",
 	"insights-logs-userriskevents",
