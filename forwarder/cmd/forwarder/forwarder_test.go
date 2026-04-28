@@ -1024,6 +1024,9 @@ var (
 	//go:embed fixtures/activedirectory/service_principal_sign_in_logs.json
 	adServicePrincipalSignInLogData string
 
+	//go:embed fixtures/activedirectory/microsoft_service_principal_sign_in_logs.json
+	adMicrosoftServicePrincipalSignInLogData string
+
 	//go:embed fixtures/activedirectory/sign_in_logs.json
 	adSignInLogData string
 
@@ -1225,6 +1228,11 @@ func TestCursorsOnActiveDirectoryLogs(t *testing.T) {
 			containerName: "insights-logs-serviceprincipalsigninlogs",
 			testFileName:  "service_principal_sign_in_logs.json",
 			testLogData:   adServicePrincipalSignInLogData,
+		},
+		"works with AD microsoft service principal sign in logs": {
+			containerName: "insights-logs-microsoftserviceprincipalsigninlogs",
+			testFileName:  "microsoft_service_principal_sign_in_logs.json",
+			testLogData:   adMicrosoftServicePrincipalSignInLogData,
 		},
 		"works with AD sign in logs": {
 			containerName: "insights-logs-signinlogs",
