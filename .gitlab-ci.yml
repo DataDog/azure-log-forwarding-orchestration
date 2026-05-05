@@ -65,6 +65,27 @@ deployer-test-build:
   script:
     - docker buildx build --platform=linux/amd64 -f
       "ci/deployer-task/Dockerfile" ./control_plane
+resources-task-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f
+      "ci/resources-task/Dockerfile" ./control_plane
+diagnostic-settings-task-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f
+      "ci/diagnostic-settings-task/Dockerfile" ./control_plane
+scaling-task-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f "ci/scaling-task/Dockerfile"
+      ./control_plane
 build-tasks:
   image: $CI_IMAGE
   stage: build
@@ -131,6 +152,90 @@ deployer-publish:
   variables:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
+resources-task-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/resources-task/Dockerfile" ./control_plane --push
+resources-task-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - resources-task-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: resources-task:latest,resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
+diagnostic-settings-task-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/diagnostic-settings-task/Dockerfile" ./control_plane --push
+diagnostic-settings-task-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - diagnostic-settings-task-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: diagnostic-settings-task:latest,diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
+scaling-task-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/scaling-task/Dockerfile" ./control_plane --push
+scaling-task-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - scaling-task-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: scaling-task:latest,scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
 # ------------- FORWARDER -------------
