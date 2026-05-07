@@ -20,14 +20,15 @@ ci-build-image:
   rules:
     - when: manual
       allow_failure: true
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
-    - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f "ci/build-image/Dockerfile" . --push
+    - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f
+      "ci/build-image/Dockerfile" . --push
 # ------------- CONTROL PLANE -------------
 control-plane-tests:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - ci/scripts/control_plane/test.sh
   artifacts:
@@ -36,37 +37,59 @@ control-plane-tests:
 control-plane-test-dependencies:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - ci/scripts/control_plane/test-dependencies.sh
 control-plane-formatting:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - ci/scripts/control_plane/format.sh
 control-plane-lint:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - ci/scripts/control_plane/lint.sh
 control-plane-type-check:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - ci/scripts/control_plane/type-check.sh
 deployer-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
-    - docker buildx build --platform=linux/amd64 -f "ci/deployer-task/Dockerfile" ./control_plane
+    - docker buildx build --platform=linux/amd64 -f
+      "ci/deployer-task/Dockerfile" ./control_plane
+resources-task-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f
+      "ci/resources-task/Dockerfile" ./control_plane
+diagnostic-settings-task-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f
+      "ci/diagnostic-settings-task/Dockerfile" ./control_plane
+scaling-task-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f "ci/scaling-task/Dockerfile"
+      ./control_plane
 build-tasks:
   image: $CI_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   only:
     refs:
       - main
@@ -81,7 +104,7 @@ build-tasks:
 publish-tasks:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -94,23 +117,27 @@ publish-tasks:
 uninstall-script-publish:
   image: $CI_IMAGE
   stage: publish
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   script:
-    - ./ci/scripts/arm-template/upload-public.sh ./control_plane/scripts/uninstall.py uninstall uninstall.py
+    - ./ci/scripts/arm-template/upload-public.sh
+      ./control_plane/scripts/uninstall.py uninstall uninstall.py
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
-    - docker buildx build --platform=linux/amd64 --build-arg VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/deployer-task/Dockerfile" ./control_plane --push
 deployer-publish:
   stage: publish
   rules:
@@ -127,11 +154,95 @@ deployer-publish:
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+resources-task-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/resources-task/Dockerfile" ./control_plane --push
+resources-task-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - resources-task-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: resources-task:latest,resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
+diagnostic-settings-task-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/diagnostic-settings-task/Dockerfile" ./control_plane --push
+diagnostic-settings-task-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - diagnostic-settings-task-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: diagnostic-settings-task:latest,diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
+scaling-task-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/scaling-task/Dockerfile" ./control_plane --push
+scaling-task-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - scaling-task-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: scaling-task:latest,scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
 # ------------- FORWARDER -------------
 forwarder-tests:
   image: $CI_IMAGE
   stage: test
-  tags: ["docker-in-docker:amd64"]
+  tags: [ "docker-in-docker:amd64" ]
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
@@ -140,18 +251,20 @@ forwarder-tests:
 forwarder-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - docker buildx build --platform=linux/amd64 ./forwarder
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   only:
     refs:
       - main
   script:
-    - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA} v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY
+      v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 forwarder-publish:
   stage: publish
   rules:
@@ -171,7 +284,7 @@ forwarder-publish:
 forwarder-tidy:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - cd forwarder
     - go mod tidy
@@ -179,14 +292,14 @@ forwarder-tidy:
 forwarder-vet:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - cd forwarder
     - go vet ./...
 forwarder-format:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
     - cd forwarder
     - go fmt ./...
@@ -194,7 +307,7 @@ forwarder-format:
 copyright-headers:
   image: $CI_IMAGE
   stage: test
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   dependencies:
     - control-plane-formatting
     - forwarder-vet
@@ -205,7 +318,7 @@ copyright-headers:
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   rules:
     - if: $CI_COMMIT_BRANCH != "main"
       allow_failure: true
@@ -218,31 +331,36 @@ coverage-comment:
 forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   only:
     refs:
       - main
   script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    - $(vault kv get -field=docker
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
+      v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   only:
     refs:
       - main
   script:
-    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - control_plane/scripts/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
 deploy-qa-env:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   only:
     refs:
       - main
@@ -256,16 +374,21 @@ deployer-build-qa:
   only:
     refs:
       - main
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   script:
-    - $(vault kv get -field=docker kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
-    - docker buildx build --platform=linux/amd64 --build-arg VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile" ./control_plane --push
+    - $(vault kv get -field=docker
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile"
+      ./control_plane --push
 uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: ["arch:amd64"]
+  tags: [ "arch:amd64" ]
   only:
     refs:
       - main
   script:
-    - ./ci/scripts/arm-template/upload-qa-env.sh ./control_plane/scripts/uninstall.py uninstall uninstall.py
+    - ./ci/scripts/arm-template/upload-qa-env.sh
+      ./control_plane/scripts/uninstall.py uninstall uninstall.py
