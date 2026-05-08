@@ -3,6 +3,8 @@ module github.com/DataDog/azure-log-forwarding-orchestration/forwarder
 // update ci/scripts/forwarder/test.sh and forwarder/Dockerfile when upgrading go versions
 go 1.25.3
 
+toolchain go1.26.2
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.0
