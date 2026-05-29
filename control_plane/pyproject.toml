@@ -45,7 +45,7 @@ deployer_task = [
 dev = [
     "azure-log-forwarding-orchestration[resources_task,diagnostic_settings_task,scaling_task,deployer_task]",
     "pre-commit==4.2.0",
-    "pytest==8.3.5",
+    "pytest==9.0.3",
     "coverage==7.8.0",
     "pycobertura==4.0.0",
     "stickytape==0.2.1",
