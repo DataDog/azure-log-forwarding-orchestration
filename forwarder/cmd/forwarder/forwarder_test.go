@@ -364,7 +364,7 @@ func TestRun(t *testing.T) {
 		}
 
 		assert.Equal(t, "gzip", latestHeaders.Get("Content-Encoding"))
-		assert.Equal(t, "lfo", latestHeaders.Get("dd_evp_origin"))
+		assert.Equal(t, LfoValue, latestHeaders.Get(EvpOriginHeader))
 	})
 
 	t.Run("continues processing on errors", func(t *testing.T) {

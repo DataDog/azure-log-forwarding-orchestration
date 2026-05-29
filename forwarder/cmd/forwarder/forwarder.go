@@ -36,6 +36,8 @@ import (
 
 const (
 	ForwarderMaxRuntime = 45 * time.Second
+	EvpOriginHeader     = "dd-evp-origin"
+	LfoValue            = "lfo"
 )
 
 // resourceBytes is a struct to hold the resource id and the number of bytes processed for that resource.
@@ -314,7 +316,7 @@ func processDeadLetterQueue(ctx context.Context, now customtime.Now, logger *log
 func run(ctx context.Context, logParent *log.Logger, goroutineCount int, datadogConfig *datadog.Configuration, azBlobClient storage.AzureBlobClient, piiScrubber logs.Scrubber, now customtime.Now, versionTag string) error {
 	start := time.Now()
 
-	datadogConfig.AddDefaultHeader("dd_evp_origin", "lfo")
+	datadogConfig.AddDefaultHeader(EvpOriginHeader, LfoValue)
 	datadogConfig.RetryConfiguration.HTTPRetryTimeout = 90 * time.Second
 	datadogClient := datadog.NewAPIClient(datadogConfig)
 	datadogLogsClient := datadogV2.NewLogsApi(datadogClient)
