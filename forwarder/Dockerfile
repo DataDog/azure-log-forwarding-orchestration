@@ -1,4 +1,4 @@
-FROM registry.ddbuild.io/images/mirror/golang:1.25.3 AS builder
+FROM registry.ddbuild.io/images/mirror/golang:1.26.2 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
