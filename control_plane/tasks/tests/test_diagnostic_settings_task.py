@@ -36,8 +36,8 @@ region1: Final = "region1"
 config_id1: Final = "bc666ef914ec"
 control_plane_id: Final = "e90ecb54476d"
 DIAGNOSTIC_SETTING_NAME: Final = DIAGNOSTIC_SETTING_PREFIX + control_plane_id
-resource_id1: Final = "/subscriptions/1/resourcegroups/rg1/providers/microsoft.compute/virtualmachines/vm1"
-resource_id2: Final = "/subscriptions/1/resourcegroups/rg1/providers/microsoft.compute/virtualmachines/vm2"
+resource_id1: Final = "/subscriptions/1/resourcegroups/rg1/providers/microsoft.network/loadbalancers/lb1"
+resource_id2: Final = "/subscriptions/1/resourcegroups/rg1/providers/microsoft.network/loadbalancers/lb2"
 storage_account: Final = (
     f"/subscriptions/{sub_id1}/resourcegroups/lfo/providers/microsoft.storage/storageaccounts/ddlogstorage{config_id1}"
 )

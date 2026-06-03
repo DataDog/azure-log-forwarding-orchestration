@@ -36,7 +36,7 @@ SUPPORTED_REGION_1 = "norwayeast"
 SUPPORTED_REGION_2 = "southafricanorth"
 CONTAINER_APPS_UNSUPPORTED_REGION = "newzealandnorth"
 UNSUPPORTED_REGION = "uae"
-resource1 = mock(id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/virtualMachines")
+resource1 = mock(id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.KeyVault/vaults")
 resource2 = mock(id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways")
 resource3 = mock(id="res3", name="3", location=SUPPORTED_REGION_2, type="Microsoft.Network/loadBalancers")
 included_metadata = ResourceMetadata(include=True)

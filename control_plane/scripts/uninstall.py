@@ -74,7 +74,6 @@ ALLOWED_TYPES_PER_PROVIDER: Final = {
     "Microsoft.CognitiveServices": {"accounts"},
     "Microsoft.Communication": {"CommunicationServices"},
     "microsoft.community": {"communityTrainings"},
-    "Microsoft.Compute": {"virtualMachines"},
     "Microsoft.ConfidentialLedger": {"ManagedCCF", "ManagedCCFs"},
     "Microsoft.ConnectedCache": {
         "CacheNodes",
