@@ -25,7 +25,7 @@ SUPPORTED_REGION_2 = "southafricanorth"
 CONTAINER_APPS_UNSUPPORTED_REGION = "newzealandnorth"
 UNSUPPORTED_REGION = "uae"
 resource1 = mock(
-    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/virtualMachines", tags={"datadog": "true"}
+    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Network/loadbalancers", tags={"datadog": "true"}
 )
 resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
@@ -45,24 +45,25 @@ class TestResourceClientHelpers(TestCase):
         )
 
     def test_should_ignore_resource_by_region(self):
-        vm_type = "Microsoft.Compute/virtualMachines"
-        vm_name = "vm1"
+        resource_type = "Microsoft.Network/loadbalancers"
+        resource_name = "lb1"
         # valid regions
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, vm_type, vm_name))
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_2, vm_type, vm_name))
-        self.assertFalse(should_ignore_resource(CONTAINER_APPS_UNSUPPORTED_REGION, vm_type, vm_name))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, resource_type, resource_name))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_2, resource_type, resource_name))
+        self.assertFalse(should_ignore_resource(CONTAINER_APPS_UNSUPPORTED_REGION, resource_type, resource_name))
 
         # invalid regions
-        self.assertTrue(should_ignore_resource(UNSUPPORTED_REGION, vm_type, vm_name))
-        self.assertTrue(should_ignore_resource("nonsense region that doesn't exist", vm_type, vm_name))
-        self.assertTrue(should_ignore_resource("global", vm_type, vm_name))
+        self.assertTrue(should_ignore_resource(UNSUPPORTED_REGION, resource_type, resource_name))
+        self.assertTrue(should_ignore_resource("nonsense region that doesn't exist", resource_type, resource_name))
+        self.assertTrue(should_ignore_resource("global", resource_type, resource_name))
 
     def test_should_ignore_resource_by_type(self):
         # valid types
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadbalancers", "lb1"))
         self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/applicationGateways", "ag1"))
 
         # invalid types
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/Snapshots", "snap1"))
         self.assertTrue(
             should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.AlertsManagement/PrometheusRuleGroups", "prg1")
@@ -70,8 +71,8 @@ class TestResourceClientHelpers(TestCase):
 
     def test_should_ignore_resource_by_name(self):
         # normal resources
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm1"))
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Compute/virtualMachines", "vm2"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadbalancers", "lb1"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadbalancers", "lb2"))
 
         # TODO (AZINTS-2763): ensure storage accounts are ignored
         # control plane resources
@@ -132,7 +133,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
     async def test_global_resource_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                mock(id="res1", location="global", type="Microsoft.Compute/virtualMachines"),
+                mock(id="res1", location="global", type="Microsoft.Network/loadbalancers"),
                 mock(id="res2", location="global", type="Microsoft.Network/applicationGateways"),
             )
         )
@@ -287,7 +288,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     id="res_key_only",
                     name="1",
                     location=SUPPORTED_REGION_1,
-                    type="Microsoft.Compute/virtualMachines",
+                    type="Microsoft.Network/loadbalancers",
                     tags={"datadog": ""},
                 )
             )
