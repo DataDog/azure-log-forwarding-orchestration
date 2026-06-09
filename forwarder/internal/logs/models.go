@@ -8,6 +8,7 @@ import (
 	// stdlib
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +22,25 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
+
+const (
+	managedEnvironmentsType = "Microsoft.App/managedEnvironments"
+)
+
+// containerAppResourceId builds the ARM resource ID of a container app from its managed
+// environment's ARM ID and the app name. Azure diagnostic settings can only be configured
+// on the managed environment, so forwarded ContainerApp* logs have the resource id of the
+// managed environment; per-app identity is available in properties in the log.
+// The format mirrors what serverless-init emits so both produce the same resource_id tag.
+// This keeps the serverless UI consistent across agent & log forwarder setups.
+func containerAppResourceId(env *arm.ResourceID, appName string) string {
+	return fmt.Sprintf(
+		"/subscriptions/%s/resourcegroups/%s/providers/microsoft.app/containerapps/%s",
+		env.SubscriptionID,
+		env.ResourceGroupName,
+		strings.ToLower(appName),
+	)
+}
 
 var (
 	supportedTimeLayouts = []string{
@@ -158,8 +178,25 @@ type azureLog struct {
 	ResourceIdUnderscore string `json:"_ResourceId,omitempty"`
 	// resource ID from blob name, used as a backup
 	blobResourceId string
-	Time           AzureLogTime  `json:"time"`
-	Level          azureLogLevel `json:"level,omitempty"`
+	Time           AzureLogTime       `json:"time"`
+	Level          azureLogLevel      `json:"level,omitempty"`
+	Properties     azureLogProperties `json:"properties,omitempty"`
+}
+
+// azureLogProperties holds optional per-record fields. Azure sometimes emits
+// properties as a JSON string rather than an object, so UnmarshalJSON ignores
+// non-object values instead of returning an error.
+type azureLogProperties struct {
+	ContainerAppName string `json:"ContainerAppName,omitempty"`
+}
+
+func (p *azureLogProperties) UnmarshalJSON(data []byte) error {
+	// Some log categories (e.g. FunctionApp) encode properties as a plain string.
+	if len(data) > 0 && data[0] != '{' {
+		return nil
+	}
+	type plain azureLogProperties
+	return json.Unmarshal(data, (*plain)(p))
 }
 
 func (l *azureLog) ResourceId() *arm.ResourceID {
@@ -182,6 +219,14 @@ func (l *azureLog) ToLog(scrubber Scrubber) (*Log, error) {
 		logSource = sourceTag(parsedId.ResourceType.String())
 		resourceId = parsedId.String()
 		tags = append(tags, tagsFromResourceId(parsedId)...)
+
+		// Container App logs are emitted on the managed environment resource, so they
+		// lack a per-app resource ID. Synthesize a per-app resource_id tag from log properties.
+		// The format mirrors what serverless-init emits so both produce the same resource_id tag.
+		// This keeps the serverless UI consistent across agent & log forwarder setups.
+		if strings.EqualFold(parsedId.ResourceType.String(), managedEnvironmentsType) && l.Properties.ContainerAppName != "" {
+			tags = append(tags, "resource_id:"+containerAppResourceId(parsedId, l.Properties.ContainerAppName))
+		}
 	}
 
 	if l.Level == "" {
