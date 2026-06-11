@@ -74,6 +74,9 @@ var (
 
 	//go:embed fixtures/law_logs.json
 	lawLogData []byte
+
+	//go:embed fixtures/container_app_logs.json
+	containerAppLogData []byte
 )
 
 func TestParseLogs(t *testing.T) {
@@ -407,4 +410,47 @@ func TestParseLargeLogsBufferReuse(t *testing.T) {
 
 	secondLogContent := string(collectedLogs[1].Content)
 	assert.Contains(t, secondLogContent, "SECOND_LOG_MARKER", "Second log Content should contain SECOND_LOG_MARKER")
+}
+
+func TestParseContainerAppLogs(t *testing.T) {
+	t.Parallel()
+
+	// GIVEN: Container App logs are emitted on the managed environment resource;
+	// the per-app identity lives only in properties.ContainerAppName.
+	const managedEnvId = "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/RUNDECK-RG/PROVIDERS/MICROSOFT.APP/MANAGEDENVIRONMENTS/MANAGEDENVIRONMENT-RUNDECKDEFAULTR-A15D"
+	reader := bytes.NewReader(containerAppLogData)
+	closer := io.NopCloser(reader)
+
+	// Expected resource_id tags, matching serverless-init's format:
+	// /subscriptions/{sub}/resourcegroups/{rg}/providers/microsoft.app/containerapps/{lowercased app}
+	const rundeckResourceId = "resource_id:/subscriptions/0B62A232-B8DB-4380-9DA6-640F7272ED6D/resourcegroups/RUNDECK-RG/providers/microsoft.app/containerapps/rundeck"
+	const workerResourceId = "resource_id:/subscriptions/0B62A232-B8DB-4380-9DA6-640F7272ED6D/resourcegroups/RUNDECK-RG/providers/microsoft.app/containerapps/worker"
+
+	// WHEN
+	parsedLogsIter, _, err := logs.Parse(closer, newBlob(managedEnvId, "insights-logs-containerappconsolelogs"), MockScrubber(t, containerAppLogData))
+	require.NoError(t, err)
+
+	var resourceIdTags []string
+	var got int
+	for parsedLog := range parsedLogsIter {
+		require.NoError(t, parsedLog.Err)
+		currLog := parsedLog.ParsedLog
+
+		// The existing env-scoped tags must be untouched (additive change only).
+		// ARM parser preserves input casing, so the managed environment resource type is uppercase.
+		assert.Contains(t, currLog.Tags, "resource_type:MICROSOFT.APP/MANAGEDENVIRONMENTS")
+		assert.Contains(t, currLog.Tags, "subscription_id:0B62A232-B8DB-4380-9DA6-640F7272ED6D")
+
+		for _, tag := range currLog.Tags {
+			if strings.HasPrefix(tag, "resource_id:") {
+				resourceIdTags = append(resourceIdTags, tag)
+			}
+		}
+		got++
+	}
+
+	// THEN
+	assert.Equal(t, 3, got)
+	// Two console records get per-app resource_id; the system record (no ContainerAppName) gets none.
+	assert.ElementsMatch(t, []string{rundeckResourceId, workerResourceId}, resourceIdTags)
 }
