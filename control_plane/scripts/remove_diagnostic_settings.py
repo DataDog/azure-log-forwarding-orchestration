@@ -55,16 +55,10 @@ async def collect(it: AsyncIterable[T], s: Semaphore) -> list[T]:
 
 async def get_resources(cred: DefaultAzureCredential, subscription_id: str) -> set[str]:
     async with ResourceManagementClient(cred, subscription_id) as client:
-        return {
-            resource.id
-            async for resource in client.resources.list(filter=RESOURCE_TYPE_FILTER)
-            if resource.id
-        }
+        return {resource.id async for resource in client.resources.list(filter=RESOURCE_TYPE_FILTER) if resource.id}
 
 
-async def list_diagnostic_settings(
-    client: MonitorManagementClient, resource: str, s: Semaphore
-) -> list[str]:
+async def list_diagnostic_settings(client: MonitorManagementClient, resource: str, s: Semaphore) -> list[str]:
     try:
         return await collect(
             (
@@ -101,14 +95,15 @@ async def main(subscriptions: list[str]) -> None:
         resource_sets = await gather(*(get_resources(cred, sub) for sub in subscriptions))
         total = sum(len(r) for r in resource_sets)
         print(f"Found {total} resources across {len(subscriptions)} subscriptions")
-        await gather(*(
-            process_subscription(cred, sub, resources)
-            for sub, resources in zip(subscriptions, resource_sets)
-        ))
+        await gather(
+            *(process_subscription(cred, sub, resources) for sub, resources in zip(subscriptions, resource_sets))
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Remove Datadog diagnostic settings from Azure subscriptions")
-    parser.add_argument("subscriptions", nargs="+", metavar="SUBSCRIPTION_ID", help="One or more Azure subscription IDs")
+    parser.add_argument(
+        "subscriptions", nargs="+", metavar="SUBSCRIPTION_ID", help="One or more Azure subscription IDs"
+    )
     args = parser.parse_args()
     run(main(args.subscriptions))
