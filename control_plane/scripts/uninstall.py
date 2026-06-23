@@ -992,7 +992,7 @@ def mark_role_assignment_deletions(
 
     if lfo_id_deletions:
         log.info("Searching for Datadog role assignments in subscriptions... ")
-        role_assignment_deletions = find_role_assignments(sub_id_to_name, lfo_id_deletions)
+        role_assignment_deletions = defaultdict(list, find_role_assignments(sub_id_to_name, lfo_id_deletions))
     else:
         log.info("Skipping role assignment search since no log forwarding IDs were found")
 
