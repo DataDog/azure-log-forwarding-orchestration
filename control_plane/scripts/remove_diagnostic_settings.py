@@ -5,17 +5,14 @@
 
 """
 Script which removes all diagnostic settings in a given subscription.
-Runs the resources task to get all resources in the subscription
-and then removes all diagnostic settings.
+Enumerates all resources in each subscription and removes all diagnostic settings
+with the datadog_log_forwarding_ prefix.
 """
 
 # stdlib
-import json
-import os
+import argparse
 from asyncio import Semaphore, gather, run
 from collections.abc import AsyncIterable
-from contextlib import suppress
-from itertools import chain
 from logging import ERROR, basicConfig
 from typing import TypeVar
 
@@ -23,21 +20,17 @@ from typing import TypeVar
 from azure.core.exceptions import ResourceNotFoundError
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.monitor.v2021_05_01_preview.aio import MonitorManagementClient
+from azure.mgmt.resource.resources.aio import ResourceManagementClient
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
-from cache.resources_cache import ResourceCache
-
 # project
-from tasks.resources_task import ResourcesTask
+from tasks.constants import FETCHED_RESOURCE_TYPES
 
-LOG_FORWARDING_TESTING = "34464906-34fe-401e-a420-79bd0ce2a1da"
-AZURE_INTS_TESTING = "0b62a232-b8db-4380-9da6-640f7272ed6d"
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 
-MONITORED_SUBSCRIPTIONS = [LOG_FORWARDING_TESTING, AZURE_INTS_TESTING]
-os.environ["MONITORED_SUBSCRIPTIONS_SETTING"] = json.dumps(MONITORED_SUBSCRIPTIONS)
-
 MAX_CONCURRENCY = 100
+
+RESOURCE_TYPE_FILTER = " or ".join(f"resourceType eq '{rt}'" for rt in FETCHED_RESOURCE_TYPES)
 
 
 @retry(
@@ -60,21 +53,36 @@ async def collect(it: AsyncIterable[T], s: Semaphore) -> list[T]:
         return [item async for item in it]
 
 
+async def get_resources(cred: DefaultAzureCredential, subscription_id: str) -> set[str]:
+    async with ResourceManagementClient(cred, subscription_id) as client:
+        return {
+            resource.id
+            async for resource in client.resources.list(filter=RESOURCE_TYPE_FILTER)
+            if resource.id
+        }
+
+
+async def list_diagnostic_settings(
+    client: MonitorManagementClient, resource: str, s: Semaphore
+) -> list[str]:
+    try:
+        return await collect(
+            (
+                str(ds.name)
+                async for ds in client.diagnostic_settings.list(resource)
+                if str(ds.name).startswith(DIAGNOSTIC_SETTING_PREFIX)
+            ),
+            s,
+        )
+    except ResourceNotFoundError:
+        return []
+
+
 async def process_subscription(cred: DefaultAzureCredential, subscription_id: str, resources: set[str]) -> None:
     async with MonitorManagementClient(cred, subscription_id) as client:
         s = Semaphore(MAX_CONCURRENCY)
         diagnostic_settings = await gather(
-            *(
-                collect(
-                    (
-                        str(s.name)
-                        async for s in client.diagnostic_settings.list(resource)
-                        if str(s.name).startswith(DIAGNOSTIC_SETTING_PREFIX)
-                    ),
-                    s,
-                )
-                for resource in resources
-            ),
+            *(list_diagnostic_settings(client, resource, s) for resource in resources),
         )
         errors = await gather(
             *(delete_diagnostic_settings(client, rid, ds, s) for rid, ds in zip(resources, diagnostic_settings)),
@@ -86,22 +94,21 @@ async def process_subscription(cred: DefaultAzureCredential, subscription_id: st
             print("Successfully processed subscription", subscription_id)
 
 
-async def main():
-    print("Running Resources Task to get all resources")
+async def main(subscriptions: list[str]) -> None:
     basicConfig(level=ERROR)
-    cache: ResourceCache = {}
-    with suppress(Exception):
-        async with ResourcesTask("") as resources_task:
-            await resources_task.run()
-            cache = resources_task.resource_cache
-    print(
-        f"Resources Task completed, found {sum(len(resources) for regions in cache.values() for resources in regions.values())} resources"
-    )
     async with DefaultAzureCredential() as cred:
-        await gather(
-            *(process_subscription(cred, sub, set(chain(*cache[sub].values()))) for sub in MONITORED_SUBSCRIPTIONS)
-        )
+        print("Fetching resources from Azure")
+        resource_sets = await gather(*(get_resources(cred, sub) for sub in subscriptions))
+        total = sum(len(r) for r in resource_sets)
+        print(f"Found {total} resources across {len(subscriptions)} subscriptions")
+        await gather(*(
+            process_subscription(cred, sub, resources)
+            for sub, resources in zip(subscriptions, resource_sets)
+        ))
 
 
 if __name__ == "__main__":
-    run(main())
+    parser = argparse.ArgumentParser(description="Remove Datadog diagnostic settings from Azure subscriptions")
+    parser.add_argument("subscriptions", nargs="+", metavar="SUBSCRIPTION_ID", help="One or more Azure subscription IDs")
+    args = parser.parse_args()
+    run(main(args.subscriptions))
