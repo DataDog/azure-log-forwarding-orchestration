@@ -219,14 +219,10 @@ def build_and_push_forwarder(ctx: AzureContext, commit_sha: str) -> None:
 
 def parse_args():
     parser = ArgumentParser(description="Deploy a personal LFO environment")
-    parser.add_argument(
-        "--caj",
-        action="store_true",
-        help="Deploy Container App Job env (default: deploy Function App env)",
-    )
-    parser.add_argument(
-        "--skip-docker", action="store_true", help="Skip docker build/push"
-    )
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--function-apps", action="store_true", help="Deploy a FunctionApp env")
+    mode.add_argument("--container-app-jobs", action="store_true", help="Deploy a ContainerAppJob env")
+    parser.add_argument("--skip-docker", action="store_true", help="Skip docker build/push")
     parser.add_argument(
         "--force-arm-deploy",
         action="store_true",
@@ -608,11 +604,11 @@ def _deploy_tasks(
 
 def main():
     args = parse_args()
-    base_name_suffix = "caj" if args.caj else ""
+    base_name_suffix = "caj" if args.container_app_jobs else ""
     ctx = setup_azure_context(base_name_suffix)
     commit_sha = run("git rev-parse --short HEAD", cwd=ctx.lfo_dir)
 
-    if args.caj:
+    if args.container_app_jobs:
         deploy_container_app_jobs(ctx, commit_sha, args.skip_docker, args.force_recreate)
     else:
         deploy_function_apps(ctx, commit_sha, args.skip_docker, args.force_arm_deploy)
