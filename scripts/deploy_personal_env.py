@@ -32,9 +32,10 @@ RESOURCE_GROUP_MAX_LENGTH = 90
 STORAGE_ACCOUNT_MAX_LENGTH = 24
 
 # RBAC role definition IDs
-READER_ROLE = "acdd72a7-3385-48ef-bd42-f606fba81ae7"
 CONTRIBUTOR_ROLE = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+MONITORING_READER_ROLE = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
 MONITORING_CONTRIBUTOR_ROLE = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
+READER_AND_DATA_ACCESS_ROLE = "c12c1c16-33a1-487b-954d-41c89c60f349"
 
 # FunctionApp-specific constants
 FA_CONTAINER_NAME = "lfo"
@@ -201,6 +202,27 @@ def ensure_acr(ctx: AzureContext) -> None:
     )
     print("Waiting for settings to take effect...")
     sleep(20)
+
+
+def grant_role(principal_id: str, role_id: str, scope: str) -> None:
+    """Grant a role assignment, skipping silently if it already exists."""
+    try:
+        run(
+            [
+                "az", "role", "assignment", "create",
+                "--assignee-object-id", principal_id,
+                "--assignee-principal-type", "ServicePrincipal",
+                "--role", role_id,
+                "--scope", scope,
+            ],
+            stderr=PIPE,
+        )
+        print(f"Granted role {role_id} to {scope}")
+    except Exception as e:
+        if "RoleAssignmentExists" in str(e):
+            print(f"Role {role_id} on {scope} already assigned, skipping")
+        else:
+            raise
 
 
 def acr_login(ctx: AzureContext) -> None:
@@ -501,9 +523,12 @@ def _deploy_tasks(
         f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
     )
     task_role_assignments: dict[str, list[tuple[str, str]]] = {
-        "resources-task": [(READER_ROLE, subscription_scope)],
+        "resources-task": [(MONITORING_READER_ROLE, subscription_scope)],
         "scaling-task": [(CONTRIBUTOR_ROLE, resource_group_scope)],
-        "diagnostic-settings-task": [(MONITORING_CONTRIBUTOR_ROLE, subscription_scope)],
+        "diagnostic-settings-task": [
+            (READER_AND_DATA_ACCESS_ROLE, resource_group_scope),
+            (MONITORING_CONTRIBUTOR_ROLE, subscription_scope),
+        ],
     }
 
     existing_jobs = loads(
@@ -549,7 +574,7 @@ def _deploy_tasks(
                     "1",
                     "--parallelism",
                     "1",
-                    "--system-assigned",
+                    "--mi-system-assigned",
                     "--secrets",
                     f"dd-api-key={api_key}",
                     f"connection-string={connection_string}",
@@ -558,31 +583,6 @@ def _deploy_tasks(
                 ],
             )
             print(f"Created Container App Job {task}")
-
-            principal_id = loads(
-                run(
-                    f"az containerapp job show --resource-group {ctx.resource_group_name}"
-                    f" --name {task} --query identity.principalId --output json"
-                )
-            )
-            for role_id, scope in task_role_assignments[task]:
-                run(
-                    [
-                        "az",
-                        "role",
-                        "assignment",
-                        "create",
-                        "--assignee-object-id",
-                        principal_id,
-                        "--assignee-principal-type",
-                        "ServicePrincipal",
-                        "--role",
-                        role_id,
-                        "--scope",
-                        scope,
-                    ],
-                )
-                print(f"Granted role {role_id} to {task} on {scope}")
         else:
             print(f"Updating Container App Job {task} image to {task_image}...")
             run(
@@ -600,6 +600,15 @@ def _deploy_tasks(
                 ],
             )
             print(f"Updated Container App Job {task}")
+
+        principal_id = loads(
+            run(
+                f"az containerapp job show --resource-group {ctx.resource_group_name}"
+                f" --name {task} --query identity.principalId --output json"
+            )
+        )
+        for role_id, scope in task_role_assignments[task]:
+            grant_role(principal_id, role_id, scope)
 
 
 def main():
