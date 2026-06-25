@@ -20,13 +20,15 @@ from azure.storage.blob import BlobServiceClient, ContainerClient
 from cache.manifest_cache import (
     ALL_ZIPS,
     DIAGNOSTIC_SETTINGS_TASK_ZIP,
-    MANIFEST_FILE_NAME,
     PUBLIC_STORAGE_ACCOUNT_URL,
     RESOURCES_TASK_ZIP,
     SCALING_TASK_ZIP,
+    TASK_ZIPS_MANIFEST_FILE_NAME,
     TASKS_CONTAINER,
     ManifestCache,
 )
+
+# TODO update this file
 
 if len(sys.argv) < 2:
     print("Usage: publish.py <public_storage_account_url>")
@@ -77,7 +79,7 @@ with ThreadPoolExecutor() as executor:
         else:
             client.create_container()
     futures = [executor.submit(client.upload_blob, filename, data, overwrite=True) for filename, data in files.items()]
-    futures.append(executor.submit(client.upload_blob, MANIFEST_FILE_NAME, dumps(hashes), overwrite=True))
+    futures.append(executor.submit(client.upload_blob, TASK_ZIPS_MANIFEST_FILE_NAME, dumps(hashes), overwrite=True))
     exceptions = [e for f in futures if (e := f.exception())]
     for e in exceptions:
         log.error("An error occurred while uploading a file", exc_info=e)
