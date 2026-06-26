@@ -65,6 +65,13 @@ deployer-test-build:
   script:
     - docker buildx build --platform=linux/amd64 -f
       "ci/deployer-task/Dockerfile" ./control_plane
+deployer-caj-test-build:
+  image: $DOCKER_IMAGE
+  stage: test
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 -f
+      "ci/deployer-caj-task/Dockerfile" ./control_plane
 resources-task-test-build:
   image: $DOCKER_IMAGE
   stage: test
@@ -152,6 +159,34 @@ deployer-publish:
   variables:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_SIGNING: "false"
+    IMG_REGISTRIES: public-azure
+deployer-caj-build-tagged:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $INTERNAL_DOCKER_REGISTRY/deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/deployer-caj-task/Dockerfile" ./control_plane --push
+deployer-caj-publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  needs:
+    - deployer-caj-build-tagged
+  trigger:
+    project: DataDog/public-images
+    branch: main
+    strategy: depend
+  variables:
+    IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    IMG_DESTINATIONS: deployer-caj:latest,deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
 resources-task-build-tagged:
@@ -381,6 +416,20 @@ deployer-build-qa:
     - docker buildx build --platform=linux/amd64 --build-arg
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile"
+      ./control_plane --push
+deployer-caj-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: [ "arch:amd64" ]
+  script:
+    - $(vault kv get -field=docker
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $QA_DOCKER_REGISTRY/deployer-caj:latest -f "ci/deployer-caj-task/Dockerfile"
       ./control_plane --push
 uninstall-script-publish-qa:
   image: $CI_IMAGE
