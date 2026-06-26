@@ -14,89 +14,101 @@ stages:
   - publish-qa
   - publish
 # ------------- CI IMAGE -------------
+# Rebuilds the CI image used by all other jobs; run manually when ci/build-image/Dockerfile changes
 ci-build-image:
   image: $DOCKER_IMAGE
   stage: ci-image
   rules:
     - when: manual
       allow_failure: true
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f
       "ci/build-image/Dockerfile" . --push
 # ------------- CONTROL PLANE -------------
+# Runs the control plane Python test suite and uploads a coverage report artifact
 control-plane-tests:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/test.sh
   artifacts:
     paths:
       - ci/control_plane_coverage.md
+# Verifies that all control plane dependencies are pinned and consistent
 control-plane-test-dependencies:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/test-dependencies.sh
+# Checks that control plane Python code is formatted with ruff
 control-plane-formatting:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/format.sh
+# Lints control plane Python code with ruff
 control-plane-lint:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/lint.sh
+# Type-checks control plane Python code with pyright
 control-plane-type-check:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - ci/scripts/control_plane/type-check.sh
+# Verifies the deployer (Function App) Docker image builds successfully
 deployer-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 -f
       "ci/deployer-task/Dockerfile" ./control_plane
+# Verifies the deployer-caj (Container App Job) Docker image builds successfully
 deployer-caj-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 -f
       "ci/deployer-caj-task/Dockerfile" ./control_plane
+# Verifies the resources-task Docker image (for CAJ control plane) builds successfully
 resources-task-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 -f
       "ci/resources-task/Dockerfile" ./control_plane
+# Verifies the diagnostic-settings-task Docker image (for CAJ control plane) builds successfully
 diagnostic-settings-task-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 -f
       "ci/diagnostic-settings-task/Dockerfile" ./control_plane
+# Verifies the scaling-task Docker image (for CAJ control plane) builds successfully
 scaling-task-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 -f "ci/scaling-task/Dockerfile"
       ./control_plane
+# Packages the control plane Function App tasks into zip artifacts for deployment
 build-tasks:
   image: $CI_IMAGE
   stage: build
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
@@ -108,10 +120,11 @@ build-tasks:
       - dist/resources_task.zip
       - dist/scaling_task.zip
       - dist/initial_run.sh
+# Uploads control plane Function App task zips and their SHA256 manifest to the public storage account (manual)
 publish-tasks:
   image: $CI_IMAGE
   stage: publish
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -121,10 +134,11 @@ publish-tasks:
     - control_plane/scripts/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
+# Publishes control plane task image manifest to the public storage account so deployer-caj knows which images to deploy (manual)
 publish-task-images:
   image: $CI_IMAGE
   stage: publish
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -137,10 +151,11 @@ publish-task-images:
   script:
     - control_plane/scripts/publish_images.py https://ddazurelfo.blob.core.windows.net
       $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+# Uploads the uninstall script to the public storage account (manual)
 uninstall-script-publish:
   image: $CI_IMAGE
   stage: publish
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
@@ -149,18 +164,20 @@ uninstall-script-publish:
   script:
     - ./ci/scripts/arm-template/upload-public.sh
       ./control_plane/scripts/uninstall.py uninstall uninstall.py
+# Builds the deployer (Function App) image and pushes it to the internal registry with a versioned tag
 deployer-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --build-arg
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
       -f "ci/deployer-task/Dockerfile" ./control_plane --push
+# Promotes the deployer (Function App) image from the internal registry to the public Azure registry (manual)
 deployer-publish:
   stage: publish
   rules:
@@ -177,18 +194,20 @@ deployer-publish:
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+# Builds the deployer-caj image and pushes it to the internal registry with a versioned tag
 deployer-caj-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --build-arg
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $INTERNAL_DOCKER_REGISTRY/deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
       -f "ci/deployer-caj-task/Dockerfile" ./control_plane --push
+# Promotes the deployer-caj image from the internal registry to the public Azure registry (manual)
 deployer-caj-publish:
   stage: publish
   rules:
@@ -205,18 +224,20 @@ deployer-caj-publish:
     IMG_DESTINATIONS: deployer-caj:latest,deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+# Builds the resources-task image and pushes it to the internal registry with a versioned tag
 resources-task-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --build-arg
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $INTERNAL_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
       -f "ci/resources-task/Dockerfile" ./control_plane --push
+# Promotes the resources-task image from the internal registry to the public Azure registry (manual)
 resources-task-publish:
   stage: publish
   rules:
@@ -233,18 +254,20 @@ resources-task-publish:
     IMG_DESTINATIONS: resources-task:latest,resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+# Builds the diagnostic-settings-task image and pushes it to the internal registry with a versioned tag
 diagnostic-settings-task-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --build-arg
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $INTERNAL_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
       -f "ci/diagnostic-settings-task/Dockerfile" ./control_plane --push
+# Promotes the diagnostic-settings-task image from the internal registry to the public Azure registry (manual)
 diagnostic-settings-task-publish:
   stage: publish
   rules:
@@ -261,18 +284,20 @@ diagnostic-settings-task-publish:
     IMG_DESTINATIONS: diagnostic-settings-task:latest,diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+# Builds the scaling-task image and pushes it to the internal registry with a versioned tag
 scaling-task-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 --build-arg
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $INTERNAL_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
       -f "ci/scaling-task/Dockerfile" ./control_plane --push
+# Promotes the scaling-task image from the internal registry to the public Azure registry (manual)
 scaling-task-publish:
   stage: publish
   rules:
@@ -290,25 +315,28 @@ scaling-task-publish:
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
 # ------------- FORWARDER -------------
+# Runs the forwarder Go test suite and uploads a coverage report artifact
 forwarder-tests:
   image: $CI_IMAGE
   stage: test
-  tags: [ "docker-in-docker:amd64" ]
+  tags: ["docker-in-docker:amd64"]
   script:
     - ci/scripts/forwarder/test.sh
   artifacts:
     paths:
       - ci/forwarder_coverage.md
+# Verifies the forwarder Docker image builds successfully
 forwarder-test-build:
   image: $DOCKER_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - docker buildx build --platform=linux/amd64 ./forwarder
+# Builds the forwarder image and pushes it to the internal registry with a versioned tag
 forwarder-build-tagged:
   image: $DOCKER_IMAGE
   stage: build
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
@@ -316,6 +344,7 @@ forwarder-build-tagged:
     - ci/scripts/forwarder/build_and_push.sh $INTERNAL_DOCKER_REGISTRY
       v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
       v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+# Promotes the forwarder image from the internal registry to the public Azure registry (manual)
 forwarder-publish:
   stage: publish
   rules:
@@ -332,33 +361,37 @@ forwarder-publish:
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
     IMG_REGISTRIES: public-azure
+# Checks that go.mod and go.sum are tidy (no missing or extra dependencies)
 forwarder-tidy:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - cd forwarder
     - go mod tidy
     - git diff --exit-code
+# Runs go vet on the forwarder to catch common Go mistakes
 forwarder-vet:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - cd forwarder
     - go vet ./...
+# Checks that forwarder Go code is formatted with gofmt
 forwarder-format:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - cd forwarder
     - go fmt ./...
     - git diff --exit-code
+# Ensures all source files have the required copyright header
 copyright-headers:
   image: $CI_IMAGE
   stage: test
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   dependencies:
     - control-plane-formatting
     - forwarder-vet
@@ -366,10 +399,11 @@ copyright-headers:
     - ci/scripts/licensing/add_copyright_header.py
     - git diff --exit-code
 # ------------- CODE COV -------------
+# Posts a combined test coverage comment on the PR
 coverage-comment:
   image: $PR_COMMENTER_IMAGE
   stage: build
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH != "main"
       allow_failure: true
@@ -379,10 +413,11 @@ coverage-comment:
   script:
     - ci/scripts/coverage-comment.sh
 # ------------- QA ENV -------------
+# Builds the forwarder image and pushes it to the QA registry
 forwarder-build-qa:
   image: $DOCKER_IMAGE
   stage: build
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
@@ -391,10 +426,11 @@ forwarder-build-qa:
       kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - ci/scripts/forwarder/build_and_push.sh $QA_DOCKER_REGISTRY latest
       v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+# Uploads task zips and their SHA256 manifest to the QA storage account
 publish-tasks-qa:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
@@ -408,10 +444,11 @@ publish-tasks-qa:
     - control_plane/scripts/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
+# Publishes the task images manifest to the QA storage account so deployer-caj knows which images to deploy
 publish-task-images-qa:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
@@ -428,10 +465,11 @@ publish-task-images-qa:
     - resources-task-build-tagged
     - scaling-task-build-tagged
     - diagnostic-settings-task-build-tagged
+# Deploys the QA environment using the latest published task artifacts
 deploy-qa-env:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
@@ -439,13 +477,14 @@ deploy-qa-env:
     - publish-tasks-qa
   script:
     - ci/scripts/deploy/deploy_qa_env.sh
+# Builds the deployer (FA) image and pushes it to the QA registry
 deployer-build-qa:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - $(vault kv get -field=docker
       kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
@@ -453,13 +492,14 @@ deployer-build-qa:
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $QA_DOCKER_REGISTRY/deployer:latest -f "ci/deployer-task/Dockerfile"
       ./control_plane --push
+# Builds the deployer-caj image and pushes it to the QA registry
 deployer-caj-build-qa:
   image: $DOCKER_IMAGE
   stage: build
   only:
     refs:
       - main
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   script:
     - $(vault kv get -field=docker
       kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
@@ -467,10 +507,11 @@ deployer-caj-build-qa:
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $QA_DOCKER_REGISTRY/deployer-caj:latest -f "ci/deployer-caj-task/Dockerfile"
       ./control_plane --push
+# Uploads the uninstall script to the QA storage account
 uninstall-script-publish-qa:
   image: $CI_IMAGE
   stage: publish-qa
-  tags: [ "arch:amd64" ]
+  tags: ["arch:amd64"]
   only:
     refs:
       - main
