@@ -15,8 +15,8 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from azure.mgmt.appcontainers.models import Container, JobPatchProperties, JobPatchPropertiesProperties, JobTemplate
 from azure.storage.blob.aio import ContainerClient
-from control_plane.cache.common import InvalidCacheError, read_cache, write_cache
-from control_plane.tasks.concurrency import collect
+
+from cache.common import InvalidCacheError, read_cache, write_cache
 
 # project
 from cache.env import (
@@ -41,6 +41,7 @@ from tasks.common import (
     Resource,
     get_azure_mgmt_url,
 )
+from tasks.concurrency import collect
 from tasks.task import Task, task_main
 
 CAJ_DEPLOYER_TASK_NAME = "container_app_jobs_deployer_task"
