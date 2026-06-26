@@ -28,8 +28,6 @@ from cache.manifest_cache import (
     ManifestCache,
 )
 
-# TODO update this file
-
 if len(sys.argv) < 2:
     print("Usage: publish.py <public_storage_account_url>")
     sys.exit(1)

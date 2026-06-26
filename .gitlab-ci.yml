@@ -121,6 +121,22 @@ publish-tasks:
     - control_plane/scripts/publish.py https://ddazurelfo.blob.core.windows.net
   dependencies:
     - build-tasks
+publish-task-images:
+  image: $CI_IMAGE
+  stage: publish
+  tags: [ "arch:amd64" ]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  variables:
+    KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
+  needs:
+    - resources-task-build-tagged
+    - scaling-task-build-tagged
+    - diagnostic-settings-task-build-tagged
+  script:
+    - control_plane/scripts/publish_images.py https://ddazurelfo.blob.core.windows.net
+      $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 uninstall-script-publish:
   image: $CI_IMAGE
   stage: publish
@@ -392,6 +408,26 @@ publish-tasks-qa:
     - control_plane/scripts/publish.py https://lfoqa.blob.core.windows.net
   dependencies:
     - build-tasks
+publish-task-images-qa:
+  image: $CI_IMAGE
+  stage: publish-qa
+  tags: [ "arch:amd64" ]
+  only:
+    refs:
+      - main
+  script:
+    - export AZURE_TENANT_ID=$(vault kv get -field=azureTenantId
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_ID=$(vault kv get -field=azureClientId
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - control_plane/scripts/publish_images.py https://lfoqa.blob.core.windows.net
+      $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+  needs:
+    - resources-task-build-tagged
+    - scaling-task-build-tagged
+    - diagnostic-settings-task-build-tagged
 deploy-qa-env:
   image: $CI_IMAGE
   stage: publish-qa
