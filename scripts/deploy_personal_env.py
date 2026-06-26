@@ -42,14 +42,17 @@ STORAGE_BLOB_DATA_READER_ROLE = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
 FA_CONTAINER_NAME = "lfo"
 
 # ContainerAppJob-specific constants
-DEPLOYER_CAJ_NAME = "deployer-caj"
 # Matches BLOB_STORAGE_CACHE in cache/common.py; must be created explicitly because there is no
 # Azure Functions runtime in the CAJ environment to create it automatically.
 CAJ_CACHE_CONTAINER_NAME = "control-plane-cache"
 TASK_SCHEDULE = "*/5 * * * *"
 TASK_CPU = "0.5"
 TASK_MEMORY = "1Gi"
-TASK_REPLICA_TIMEOUT = "1800"
+TASK_REPLICA_TIMEOUTS = {
+    "resources-task": "300",
+    "diagnostic-settings-task": "300",
+    "scaling-task": "600",
+}
 TASK_NAMES = ["resources-task", "scaling-task", "diagnostic-settings-task"]
 
 
@@ -417,7 +420,8 @@ def _run_deployer(ctx: AzureContext) -> None:
 def deploy_container_app_jobs(
     ctx: AzureContext, commit_sha: str, skip_docker: bool, force_recreate: bool
 ) -> None:
-    control_plane_env_name = get_name(f"{ctx.lfo_base_name}-cp-env", 60)
+    control_plane_env_name = f"control-plane-env-{ctx.lfo_base_name}"
+    deployer_env_name = f"dd-log-forwarder-env-{ctx.lfo_base_name}-{LOCATION}"
 
     ensure_resource_group(ctx)
     ensure_storage_account(ctx)
@@ -480,10 +484,11 @@ def deploy_container_app_jobs(
         )
 
     _ensure_control_plane_env(ctx, control_plane_env_name)
+    _ensure_control_plane_env(ctx, deployer_env_name)
     _deploy_tasks(
         ctx, control_plane_env_name, commit_sha, connection_string, force_recreate
     )
-    _deploy_deployer_caj(ctx, control_plane_env_name, connection_string, force_recreate)
+    _deploy_deployer_caj(ctx, deployer_env_name, connection_string, force_recreate)
 
     print(
         f"\nDone! Control plane ContainerAppJob environment deployed to resource group '{ctx.resource_group_name}'.\n"
@@ -497,6 +502,7 @@ def _deploy_deployer_caj(
     connection_string: str,
     force_recreate: bool,
 ) -> None:
+    deployer_job_name = f"deployer-task-{ctx.lfo_base_name}"
     deployer_caj_image = f"{ctx.container_registry_name}.azurecr.io/deployer-caj:latest"
     storage_account_url = f"https://{ctx.storage_account_name}.blob.core.windows.net"
     api_key = environ["DD_API_KEY"]
@@ -518,20 +524,20 @@ def _deploy_deployer_caj(
     )
     existing_job_names = {job["name"] for job in existing_jobs}
 
-    if DEPLOYER_CAJ_NAME not in existing_job_names or force_recreate:
-        print(f"Creating Container App Job {DEPLOYER_CAJ_NAME}...")
+    if deployer_job_name not in existing_job_names or force_recreate:
+        print(f"Creating Container App Job {deployer_job_name}...")
         run(
             [
                 "az", "containerapp", "job", "create",
                 "--resource-group", ctx.resource_group_name,
-                "--name", DEPLOYER_CAJ_NAME,
+                "--name", deployer_job_name,
                 "--environment", control_plane_env_name,
                 "--trigger-type", "Schedule",
                 "--cron-expression", "*/30 * * * *",
                 "--image", deployer_caj_image,
                 "--cpu", TASK_CPU,
                 "--memory", TASK_MEMORY,
-                "--replica-timeout", TASK_REPLICA_TIMEOUT,
+                "--replica-timeout", "1800",
                 "--replica-retry-limit", "0",
                 "--replica-completion-count", "1",
                 "--parallelism", "1",
@@ -543,23 +549,23 @@ def _deploy_deployer_caj(
                 *env_vars,
             ],
         )
-        print(f"Created Container App Job {DEPLOYER_CAJ_NAME}")
+        print(f"Created Container App Job {deployer_job_name}")
     else:
-        print(f"Updating Container App Job {DEPLOYER_CAJ_NAME} image to {deployer_caj_image}...")
+        print(f"Updating Container App Job {deployer_job_name} image to {deployer_caj_image}...")
         run(
             [
                 "az", "containerapp", "job", "update",
                 "--resource-group", ctx.resource_group_name,
-                "--name", DEPLOYER_CAJ_NAME,
+                "--name", deployer_job_name,
                 "--image", deployer_caj_image,
             ],
         )
-        print(f"Updated Container App Job {DEPLOYER_CAJ_NAME}")
+        print(f"Updated Container App Job {deployer_job_name}")
 
     principal_id = loads(
         run(
             f"az containerapp job show --resource-group {ctx.resource_group_name}"
-            f" --name {DEPLOYER_CAJ_NAME} --query identity.principalId --output json"
+            f" --name {deployer_job_name} --query identity.principalId --output json"
         )
     )
     resource_group_scope = (
@@ -654,11 +660,12 @@ def _deploy_tasks(
     existing_job_names = {job["name"] for job in existing_jobs}
 
     for task in TASK_NAMES:
+        job_name = f"{task}-{ctx.lfo_base_name}"
         task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:{commit_sha}"
         env_vars = common_env_vars + task_extra_env_vars[task]
 
-        if task not in existing_job_names or force_recreate:
-            print(f"Creating Container App Job {task}...")
+        if job_name not in existing_job_names or force_recreate:
+            print(f"Creating Container App Job {job_name}...")
             run(
                 [
                     "az",
@@ -668,7 +675,7 @@ def _deploy_tasks(
                     "--resource-group",
                     ctx.resource_group_name,
                     "--name",
-                    task,
+                    job_name,
                     "--environment",
                     control_plane_env_name,
                     "--trigger-type",
@@ -682,7 +689,7 @@ def _deploy_tasks(
                     "--memory",
                     TASK_MEMORY,
                     "--replica-timeout",
-                    TASK_REPLICA_TIMEOUT,
+                    TASK_REPLICA_TIMEOUTS[task],
                     "--replica-retry-limit",
                     "0",
                     "--replica-completion-count",
@@ -697,9 +704,9 @@ def _deploy_tasks(
                     *env_vars,
                 ],
             )
-            print(f"Created Container App Job {task}")
+            print(f"Created Container App Job {job_name}")
         else:
-            print(f"Updating Container App Job {task} image to {task_image}...")
+            print(f"Updating Container App Job {job_name} image to {task_image}...")
             run(
                 [
                     "az",
@@ -709,17 +716,17 @@ def _deploy_tasks(
                     "--resource-group",
                     ctx.resource_group_name,
                     "--name",
-                    task,
+                    job_name,
                     "--image",
                     task_image,
                 ],
             )
-            print(f"Updated Container App Job {task}")
+            print(f"Updated Container App Job {job_name}")
 
         principal_id = loads(
             run(
                 f"az containerapp job show --resource-group {ctx.resource_group_name}"
-                f" --name {task} --query identity.principalId --output json"
+                f" --name {job_name} --query identity.principalId --output json"
             )
         )
         for role_id, scope in task_role_assignments[task]:
