@@ -27,7 +27,7 @@ ALL_COMPONENTS = frozenset({"resources", "scaling", "diagnostic_settings"})
 
 PUBLIC_STORAGE_ACCOUNT_URL = "https://ddazurelfo.blob.core.windows.net"
 TASKS_CONTAINER = "lfo"
-TASK_IMAGES_TASK_ZIPS_MANIFEST_FILE_NAME = "task_images_manifest.json"
+TASK_IMAGES_MANIFEST_FILE_NAME = "task_images_manifest.json"
 TASK_ZIPS_MANIFEST_FILE_NAME = "manifest.json"
 
 RESOURCES_TASK_ZIP = "resources_task.zip"
