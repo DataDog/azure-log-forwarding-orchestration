@@ -92,9 +92,7 @@ class TestContainerAppJobsDeployerTask(TaskTestCase):
         self.container_apps_client.jobs.begin_update.assert_awaited_once_with(
             "test_rg",
             "resources-task-0863329b4b49",
-            AzureModelMatcher(
-                {"properties": {"template": {"containers": [{"name": "resources-task", "image": "2"}]}}}
-            ),
+            AzureModelMatcher({"properties": {"template": {"containers": [{"name": "resources-task", "image": "2"}]}}}),
         )
         self.assertEqual(self.cache, {"resources": "2", "scaling": "1", "diagnostic_settings": "1"})
 
