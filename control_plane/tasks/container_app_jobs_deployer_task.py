@@ -15,6 +15,8 @@ from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from azure.mgmt.appcontainers.models import Container, JobPatchProperties, JobPatchPropertiesProperties, JobTemplate
 from azure.storage.blob.aio import ContainerClient
+from control_plane.cache.common import InvalidCacheError, read_cache, write_cache
+from control_plane.tasks.concurrency import collect
 
 # project
 from cache.env import (
@@ -32,8 +34,6 @@ from cache.manifest_cache import (
     ManifestCache,
     deserialize_manifest_cache,
 )
-from control_plane.cache.common import InvalidCacheError, read_cache, write_cache
-from control_plane.tasks.concurrency import collect
 from tasks.common import (
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
     RESOURCES_TASK_PREFIX,
@@ -122,7 +122,12 @@ class ContainerAppJobsDeployerTask(Task):
                 if private_manifest.get(component) != new_image
             }
         if components_to_update:
-            await gather(*[self.update_task_image(component, new_image, current_control_plane_jobs) for component, new_image in components_to_update.items()])
+            await gather(
+                *[
+                    self.update_task_image(component, new_image, current_control_plane_jobs)
+                    for component, new_image in components_to_update.items()
+                ]
+            )
         else:
             self.log.info("All components are up to date, skipping deployment")
 
@@ -156,7 +161,9 @@ class ContainerAppJobsDeployerTask(Task):
             )
         }
 
-    async def update_task_image(self, component: ControlPlaneComponent, new_image: str, current_job_names: set[str]) -> None:
+    async def update_task_image(
+        self, component: ControlPlaneComponent, new_image: str, current_job_names: set[str]
+    ) -> None:
         task_prefix = f"{component.replace('_', '-')}-task-"
         container_name = f"{component.replace('_', '-')}-task"
         job_name = next((app for app in current_job_names if app.startswith(task_prefix)), None)
@@ -179,9 +186,7 @@ class ContainerAppJobsDeployerTask(Task):
             job_name,
             JobPatchProperties(
                 properties=JobPatchPropertiesProperties(
-                    template=JobTemplate(
-                        containers=[Container(name=container_name, image=new_image)]
-                    )
+                    template=JobTemplate(containers=[Container(name=container_name, image=new_image)])
                 )
             ),
         )
