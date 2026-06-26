@@ -36,11 +36,15 @@ CONTRIBUTOR_ROLE = "b24988ac-6180-42a0-ab88-20f7382dd24c"
 MONITORING_READER_ROLE = "43d0d8ad-25c7-4714-9337-8ba259a9fe05"
 MONITORING_CONTRIBUTOR_ROLE = "749f88d5-cbae-40b8-bcfc-e573ddc772fa"
 READER_AND_DATA_ACCESS_ROLE = "c12c1c16-33a1-487b-954d-41c89c60f349"
+STORAGE_BLOB_DATA_READER_ROLE = "2a2b9908-6ea1-4ae2-8e65-a410df84e7d1"
 
 # FunctionApp-specific constants
 FA_CONTAINER_NAME = "lfo"
 
 # ContainerAppJob-specific constants
+DEPLOYER_CAJ_NAME = "deployer-caj"
+# Matches BLOB_STORAGE_CACHE in cache/common.py; must be created explicitly because there is no
+# Azure Functions runtime in the CAJ environment to create it automatically.
 CAJ_CACHE_CONTAINER_NAME = "control-plane-cache"
 TASK_SCHEDULE = "*/5 * * * *"
 TASK_CPU = "0.5"
@@ -419,6 +423,7 @@ def deploy_container_app_jobs(
     ensure_storage_account(ctx)
     _, connection_string, blob_service_client = get_storage_connection(ctx)
     ensure_blob_container(blob_service_client, CAJ_CACHE_CONTAINER_NAME)
+    ensure_blob_container(blob_service_client, FA_CONTAINER_NAME)
     ensure_acr(ctx)
 
     if not skip_docker:
@@ -446,16 +451,126 @@ def deploy_container_app_jobs(
                 ],
                 cwd=ctx.lfo_dir,
             )
+        print("Building and pushing deployer-caj:latest...")
+        run(
+            [
+                "docker",
+                "buildx",
+                "build",
+                "--platform",
+                "linux/amd64",
+                "--build-arg",
+                f"VERSION_TAG={commit_sha}",
+                "--tag",
+                f"{ctx.container_registry_name}.azurecr.io/deployer-caj:latest",
+                "-f",
+                f"{ctx.lfo_dir}/ci/deployer-caj-task/Dockerfile",
+                "./control_plane",
+                "--push",
+            ],
+            cwd=ctx.lfo_dir,
+        )
+        run(
+            f"{ctx.lfo_dir}/control_plane/scripts/publish_images.py"
+            f" https://{ctx.storage_account_name}.blob.core.windows.net"
+            f" {ctx.container_registry_name}.azurecr.io"
+            f" {commit_sha}"
+            f" {connection_string}",
+            cwd=ctx.lfo_dir,
+        )
 
     _ensure_control_plane_env(ctx, control_plane_env_name)
     _deploy_tasks(
         ctx, control_plane_env_name, commit_sha, connection_string, force_recreate
     )
+    _deploy_deployer_caj(ctx, control_plane_env_name, connection_string, force_recreate)
 
     print(
         f"\nDone! Control plane ContainerAppJob environment deployed to resource group '{ctx.resource_group_name}'.\n"
         f"Tasks are scheduled with cron '{TASK_SCHEDULE}' in environment '{control_plane_env_name}'."
     )
+
+
+def _deploy_deployer_caj(
+    ctx: AzureContext,
+    control_plane_env_name: str,
+    connection_string: str,
+    force_recreate: bool,
+) -> None:
+    deployer_caj_image = f"{ctx.container_registry_name}.azurecr.io/deployer-caj:latest"
+    storage_account_url = f"https://{ctx.storage_account_name}.blob.core.windows.net"
+    api_key = environ["DD_API_KEY"]
+    dd_site = environ.get("DD_SITE", "datadoghq.com")
+
+    env_vars = [
+        f"SUBSCRIPTION_ID={ctx.subscription_id}",
+        f"RESOURCE_GROUP={ctx.resource_group_name}",
+        f"CONTROL_PLANE_REGION={LOCATION}",
+        f"CONTROL_PLANE_ID={ctx.lfo_base_name}",
+        f"STORAGE_ACCOUNT_URL={storage_account_url}",
+        f"DD_SITE={dd_site}",
+        "DD_API_KEY=secretref:dd-api-key",
+        "AzureWebJobsStorage=secretref:connection-string",
+    ]
+
+    existing_jobs = loads(
+        run(f"az containerapp job list --resource-group {ctx.resource_group_name} --output json")
+    )
+    existing_job_names = {job["name"] for job in existing_jobs}
+
+    if DEPLOYER_CAJ_NAME not in existing_job_names or force_recreate:
+        print(f"Creating Container App Job {DEPLOYER_CAJ_NAME}...")
+        run(
+            [
+                "az", "containerapp", "job", "create",
+                "--resource-group", ctx.resource_group_name,
+                "--name", DEPLOYER_CAJ_NAME,
+                "--environment", control_plane_env_name,
+                "--trigger-type", "Schedule",
+                "--cron-expression", "*/30 * * * *",
+                "--image", deployer_caj_image,
+                "--cpu", TASK_CPU,
+                "--memory", TASK_MEMORY,
+                "--replica-timeout", TASK_REPLICA_TIMEOUT,
+                "--replica-retry-limit", "0",
+                "--replica-completion-count", "1",
+                "--parallelism", "1",
+                "--mi-system-assigned",
+                "--secrets",
+                f"dd-api-key={api_key}",
+                f"connection-string={connection_string}",
+                "--env-vars",
+                *env_vars,
+            ],
+        )
+        print(f"Created Container App Job {DEPLOYER_CAJ_NAME}")
+    else:
+        print(f"Updating Container App Job {DEPLOYER_CAJ_NAME} image to {deployer_caj_image}...")
+        run(
+            [
+                "az", "containerapp", "job", "update",
+                "--resource-group", ctx.resource_group_name,
+                "--name", DEPLOYER_CAJ_NAME,
+                "--image", deployer_caj_image,
+            ],
+        )
+        print(f"Updated Container App Job {DEPLOYER_CAJ_NAME}")
+
+    principal_id = loads(
+        run(
+            f"az containerapp job show --resource-group {ctx.resource_group_name}"
+            f" --name {DEPLOYER_CAJ_NAME} --query identity.principalId --output json"
+        )
+    )
+    resource_group_scope = (
+        f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
+    )
+    storage_account_id = (
+        f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
+        f"/providers/Microsoft.Storage/storageAccounts/{ctx.storage_account_name}"
+    )
+    grant_role(principal_id, CONTRIBUTOR_ROLE, resource_group_scope)
+    grant_role(principal_id, STORAGE_BLOB_DATA_READER_ROLE, storage_account_id)
 
 
 def _ensure_control_plane_env(ctx: AzureContext, control_plane_env_name: str) -> None:
