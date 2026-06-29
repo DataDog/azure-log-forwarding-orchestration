@@ -87,13 +87,10 @@ def run(cmd: str | list[str], **kwargs: Any) -> str:
     if isinstance(cmd, str):
         cmd = cmd.split()
     output = Popen(cmd, stdout=PIPE, text=True, **kwargs)
-    output.wait()
-    if not output.stdout:
-        return ""
+    stdout, stderr = output.communicate()
     if output.returncode != 0:
-        err = "" if not output.stderr else output.stderr.read()
-        raise Exception(f"Error running command {cmd}: {err}")
-    return output.stdout.read().strip()
+        raise Exception(f"Error running command {cmd}: {stderr or ''}")
+    return stdout.strip() if stdout else ""
 
 
 def setup_azure_context(base_name_suffix: str = "") -> AzureContext:
@@ -549,6 +546,21 @@ def _deploy_deployer_caj(
             ],
         )
         print(f"Created Container App Job {deployer_job_name}")
+        principal_id = loads(
+            run(
+                f"az containerapp job show --resource-group {ctx.resource_group_name}"
+                f" --name {deployer_job_name} --query identity.principalId --output json"
+            )
+        )
+        resource_group_scope = (
+            f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
+        )
+        storage_account_id = (
+            f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
+            f"/providers/Microsoft.Storage/storageAccounts/{ctx.storage_account_name}"
+        )
+        grant_role(principal_id, CONTRIBUTOR_ROLE, resource_group_scope)
+        grant_role(principal_id, STORAGE_BLOB_DATA_READER_ROLE, storage_account_id)
     else:
         print(f"Updating Container App Job {deployer_job_name} image to {deployer_caj_image}...")
         run(
@@ -557,25 +569,10 @@ def _deploy_deployer_caj(
                 "--resource-group", ctx.resource_group_name,
                 "--name", deployer_job_name,
                 "--image", deployer_caj_image,
+                "--no-wait",
             ],
         )
         print(f"Updated Container App Job {deployer_job_name}")
-
-    principal_id = loads(
-        run(
-            f"az containerapp job show --resource-group {ctx.resource_group_name}"
-            f" --name {deployer_job_name} --query identity.principalId --output json"
-        )
-    )
-    resource_group_scope = (
-        f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
-    )
-    storage_account_id = (
-        f"/subscriptions/{ctx.subscription_id}/resourceGroups/{ctx.resource_group_name}"
-        f"/providers/Microsoft.Storage/storageAccounts/{ctx.storage_account_name}"
-    )
-    grant_role(principal_id, CONTRIBUTOR_ROLE, resource_group_scope)
-    grant_role(principal_id, STORAGE_BLOB_DATA_READER_ROLE, storage_account_id)
 
 
 def _ensure_control_plane_env(ctx: AzureContext, control_plane_env_name: str) -> None:
@@ -704,6 +701,14 @@ def _deploy_tasks(
                 ],
             )
             print(f"Created Container App Job {job_name}")
+            principal_id = loads(
+                run(
+                    f"az containerapp job show --resource-group {ctx.resource_group_name}"
+                    f" --name {job_name} --query identity.principalId --output json"
+                )
+            )
+            for role_id, scope in task_role_assignments[task]:
+                grant_role(principal_id, role_id, scope)
         else:
             print(f"Updating Container App Job {job_name} image to {task_image}...")
             run(
@@ -718,18 +723,10 @@ def _deploy_tasks(
                     job_name,
                     "--image",
                     task_image,
+                    "--no-wait",
                 ],
             )
             print(f"Updated Container App Job {job_name}")
-
-        principal_id = loads(
-            run(
-                f"az containerapp job show --resource-group {ctx.resource_group_name}"
-                f" --name {job_name} --query identity.principalId --output json"
-            )
-        )
-        for role_id, scope in task_role_assignments[task]:
-            grant_role(principal_id, role_id, scope)
 
 
 def main():
