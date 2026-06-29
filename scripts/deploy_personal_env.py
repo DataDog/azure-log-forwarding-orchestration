@@ -26,6 +26,7 @@ from azure.storage.blob import (
 
 MD5_LENGTH = 32
 
+CONTAINER_APP_JOB_MAX_LENGTH = 32
 CONTAINER_REGISTRY_MAX_LENGTH = 50
 LOCATION = "eastus2"
 RESOURCE_GROUP_MAX_LENGTH = 90
@@ -420,7 +421,6 @@ def _run_deployer(ctx: AzureContext) -> None:
 def deploy_container_app_jobs(
     ctx: AzureContext, commit_sha: str, skip_docker: bool, force_recreate: bool
 ) -> None:
-    control_plane_env_name = f"control-plane-env-{ctx.lfo_base_name}"
     deployer_env_name = f"dd-log-forwarder-env-{ctx.lfo_base_name}-{LOCATION}"
 
     ensure_resource_group(ctx)
@@ -483,16 +483,15 @@ def deploy_container_app_jobs(
             cwd=ctx.lfo_dir,
         )
 
-    _ensure_control_plane_env(ctx, control_plane_env_name)
     _ensure_control_plane_env(ctx, deployer_env_name)
     _deploy_tasks(
-        ctx, control_plane_env_name, commit_sha, connection_string, force_recreate
+        ctx, deployer_env_name, commit_sha, connection_string, force_recreate
     )
     _deploy_deployer_caj(ctx, deployer_env_name, connection_string, force_recreate)
 
     print(
         f"\nDone! Control plane ContainerAppJob environment deployed to resource group '{ctx.resource_group_name}'.\n"
-        f"Tasks are scheduled with cron '{TASK_SCHEDULE}' in environment '{control_plane_env_name}'."
+        f"Tasks are scheduled with cron '{TASK_SCHEDULE}' in environment '{deployer_env_name}'."
     )
 
 
@@ -502,7 +501,7 @@ def _deploy_deployer_caj(
     connection_string: str,
     force_recreate: bool,
 ) -> None:
-    deployer_job_name = f"deployer-task-{ctx.lfo_base_name}"
+    deployer_job_name = get_name(f"deployer-task-{ctx.lfo_base_name}", CONTAINER_APP_JOB_MAX_LENGTH)
     deployer_caj_image = f"{ctx.container_registry_name}.azurecr.io/deployer-caj:latest"
     storage_account_url = f"https://{ctx.storage_account_name}.blob.core.windows.net"
     api_key = environ["DD_API_KEY"]
@@ -660,7 +659,7 @@ def _deploy_tasks(
     existing_job_names = {job["name"] for job in existing_jobs}
 
     for task in TASK_NAMES:
-        job_name = f"{task}-{ctx.lfo_base_name}"
+        job_name = get_name(f"{task}-{ctx.lfo_base_name}", CONTAINER_APP_JOB_MAX_LENGTH)
         task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:{commit_sha}"
         env_vars = common_env_vars + task_extra_env_vars[task]
 
