@@ -501,7 +501,7 @@ def _deploy_deployer_caj(
     connection_string: str,
     force_recreate: bool,
 ) -> None:
-    deployer_job_name = get_name(f"deployer-task-{ctx.lfo_base_name}", CONTAINER_APP_JOB_MAX_LENGTH)
+    deployer_job_name = f"deployer-task-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
     deployer_caj_image = f"{ctx.container_registry_name}.azurecr.io/deployer-caj:latest"
     storage_account_url = f"https://{ctx.storage_account_name}.blob.core.windows.net"
     api_key = environ["DD_API_KEY"]
@@ -659,7 +659,7 @@ def _deploy_tasks(
     existing_job_names = {job["name"] for job in existing_jobs}
 
     for task in TASK_NAMES:
-        job_name = get_name(f"{task}-{ctx.lfo_base_name}", CONTAINER_APP_JOB_MAX_LENGTH)
+        job_name = f"{task}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
         task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:{commit_sha}"
         env_vars = common_env_vars + task_extra_env_vars[task]
 
