@@ -11,16 +11,13 @@ from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from itertools import chain
 from json import dumps
-from logging import INFO, WARNING, basicConfig, getLogger
+from logging import INFO, basicConfig, getLogger
 
-# 3p
-from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient, ContainerClient
+from blob_publishing import ensure_container_exists, get_container_client
 
 from cache.manifest_cache import (
     ALL_ZIPS,
     DIAGNOSTIC_SETTINGS_TASK_ZIP,
-    PUBLIC_STORAGE_ACCOUNT_URL,
     RESOURCES_TASK_ZIP,
     SCALING_TASK_ZIP,
     TASK_ZIPS_MANIFEST_FILE_NAME,
@@ -36,7 +33,6 @@ storage_account_url = sys.argv[1]
 
 basicConfig(level=INFO)
 log = getLogger("publish")
-getLogger("azure").setLevel(WARNING)
 
 log.info("Reading artifacts from dist/")
 files: dict[str, bytes] = {}
@@ -58,24 +54,13 @@ log.info(
     "\n".join(files),
 )
 
-cred = DefaultAzureCredential()
-
-
-client = ContainerClient(storage_account_url, TASKS_CONTAINER, cred)
-if len(sys.argv) >= 3:
-    blob_client = BlobServiceClient.from_connection_string(sys.argv[2])
-    client = blob_client.get_container_client(TASKS_CONTAINER)
-
+connection_string = sys.argv[2] if len(sys.argv) >= 3 else None
+client = get_container_client(storage_account_url, TASKS_CONTAINER, connection_string)
 
 with ThreadPoolExecutor() as executor:
-    if not client.exists():
-        log.warning("Container %s does not exist, creating it...", TASKS_CONTAINER)
-        # The public storage account needs public container access, but storage accounts
-        # created for personal environments can't have public access.
-        if storage_account_url == PUBLIC_STORAGE_ACCOUNT_URL:
-            client.create_container(public_access="container")
-        else:
-            client.create_container()
+    # The public storage account needs public container access, but storage accounts
+    # created for personal environments can't have public access.
+    ensure_container_exists(client, storage_account_url)
     futures = [executor.submit(client.upload_blob, filename, data, overwrite=True) for filename, data in files.items()]
     futures.append(executor.submit(client.upload_blob, TASK_ZIPS_MANIFEST_FILE_NAME, dumps(hashes), overwrite=True))
     exceptions = [e for f in futures if (e := f.exception())]
