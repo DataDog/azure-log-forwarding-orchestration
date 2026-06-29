@@ -657,7 +657,7 @@ def _deploy_tasks(
 
     for task in TASK_NAMES:
         job_name = f"{task}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
-        task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:{commit_sha}"
+        task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:latest"
         env_vars = common_env_vars + task_extra_env_vars[task]
 
         if job_name not in existing_job_names or force_recreate:
