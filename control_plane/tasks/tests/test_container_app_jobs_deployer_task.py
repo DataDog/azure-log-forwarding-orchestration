@@ -147,7 +147,7 @@ class TestContainerAppJobsDeployerTask(TaskTestCase):
             public_cache={"resources": "2", "scaling": "1", "diagnostic_settings": "1"},
             private_cache={"resources": "1", "scaling": "1", "diagnostic_settings": "1"},
         )
-        self.set_current_jobs(["scaling-task-0863329b4b49", "diagnostic-settings-task-0863329b4b49"])
+        self.set_current_jobs(["scaling-task-0863329b4b49", "diag-settings-task-0863329b4b49"])
 
         await self.run_task()
 

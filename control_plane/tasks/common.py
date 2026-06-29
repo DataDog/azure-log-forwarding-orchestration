@@ -27,7 +27,11 @@ CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
 SCALING_TASK_PREFIX: Final = "scaling-task-"
 RESOURCES_TASK_PREFIX: Final = "resources-task-"
-DIAGNOSTIC_SETTINGS_TASK_PREFIX: Final = "diagnostic-settings-task-"
+# Prefix for the diagnostic settings task when deployed as Function Apps
+DIAGNOSTIC_SETTINGS_TASK_PREFIX_FUNCTION_APP: Final = "diagnostic-settings-task-"
+# Prefix for the diagnostic settings task when deployed as Container App Jobs. 
+# CAJs have a shorter restriction on name length.
+DIAGNOSTIC_SETTINGS_TASK_PREFIX_CONTAINER_APP: Final = "diag-settings-task-"
 
 
 FORWARDER_CONTAINER_APP_PREFIX: Final = "dd-log-forwarder-"
