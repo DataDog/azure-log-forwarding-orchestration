@@ -4,7 +4,6 @@
 
 # stdlib
 from asyncio import gather, run
-from json import dumps
 from os import environ
 from types import TracebackType
 from typing import Self, cast
@@ -13,11 +12,17 @@ from typing import Self, cast
 from aiohttp import ClientSession
 from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
-from azure.mgmt.appcontainers.models import Container, JobPatchProperties, JobPatchPropertiesProperties, JobTemplate
+from azure.mgmt.appcontainers.models import (
+    Container,
+    Job,
+    JobPatchProperties,
+    JobPatchPropertiesProperties,
+    JobTemplate,
+)
 from azure.storage.blob.aio import ContainerClient
 
 # project
-from cache.common import InvalidCacheError, read_cache, write_cache
+from cache.common import InvalidCacheError
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
@@ -37,13 +42,18 @@ from tasks.common import (
     DIAGNOSTIC_SETTINGS_TASK_PREFIX,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
-    Resource,
     get_azure_mgmt_url,
 )
 from tasks.concurrency import collect
 from tasks.task import Task, task_main
 
 CAJ_DEPLOYER_TASK_NAME = "container_app_jobs_deployer_task"
+
+COMPONENT_TASK_PREFIXES: dict[ControlPlaneComponent, str] = {
+    "resources": RESOURCES_TASK_PREFIX,
+    "scaling": SCALING_TASK_PREFIX,
+    "diagnostic_settings": DIAGNOSTIC_SETTINGS_TASK_PREFIX,
+}
 
 
 class DeployError(Exception):
@@ -95,37 +105,26 @@ class ContainerAppJobsDeployerTask(Task):
         await super().__aexit__(exc_type, exc_val, exc_tb)
 
     async def run(self) -> None:
-        public_manifest, private_manifest, current_control_plane_jobs = await gather(
-            self.get_public_manifests(), self.get_private_manifests(), self.get_control_plane_jobs()
+        public_manifest, current_control_plane_jobs = await gather(
+            self.get_public_manifests(), self.get_control_plane_jobs()
         )
 
-        if not private_manifest:
-            self.log.warning("Failed to read private manifest. Deploying all components.")
-        self.public_manifest = public_manifest
-        self.private_manifest = private_manifest
-        self.manifest_cache = (
-            private_manifest
-            or {
-                "resources": "",
-                "scaling": "",
-                "diagnostic_settings": "",
-            }
-        ).copy()
+        components_to_update: dict[ControlPlaneComponent, tuple[Job, str]] = {
+            component: (job, new_image)
+            for component, new_image in public_manifest.items()
+            if (job := current_control_plane_jobs.get(component)) is not None
+            and self.get_current_image(component, job) != new_image
+        }
 
-        components_to_update: ManifestCache
-        if not private_manifest:
-            components_to_update = public_manifest
-        else:
-            components_to_update = {
-                component: new_image
-                for component, new_image in public_manifest.items()
-                if private_manifest.get(component) != new_image
-            }
+        missing_components = public_manifest.keys() - current_control_plane_jobs.keys()
+        for component in missing_components:
+            self.log.error(f"Container app job for {component} not found, skipping update")
+
         if components_to_update:
             await gather(
                 *[
-                    self.update_task_image(component, new_image, current_control_plane_jobs)
-                    for component, new_image in components_to_update.items()
+                    self.update_task_image(component, job, new_image)
+                    for component, (job, new_image) in components_to_update.items()
                 ]
             )
         else:
@@ -142,42 +141,29 @@ class ContainerAppJobsDeployerTask(Task):
             raise InvalidCacheError(f"Invalid Public Manifest: {cache_str}")
         return cache
 
-    async def get_private_manifests(self) -> ManifestCache | None:
-        try:
-            blob_data = await read_cache(TASK_IMAGES_MANIFEST_FILE_NAME)
-        except Exception:
-            self.log.exception("Error reading private manifest cache")
-            return None
-        return deserialize_manifest_cache(blob_data)
-
-    async def get_control_plane_jobs(self) -> set[str]:
+    async def get_control_plane_jobs(self) -> dict[ControlPlaneComponent, Job]:
         current_jobs = await collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group))
-        return {
-            task.name
-            for task in cast(list[Resource], current_jobs)
-            if any(
-                task.name.startswith(prefix)
-                for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX)
-            )
-        }
+        jobs_by_component: dict[ControlPlaneComponent, Job] = {}
+        for job in cast(list[Job], current_jobs):
+            for component, prefix in COMPONENT_TASK_PREFIXES.items():
+                if job.name and job.name.startswith(prefix):
+                    jobs_by_component[component] = job
+                    break
+        return jobs_by_component
 
-    async def update_task_image(
-        self, component: ControlPlaneComponent, new_image: str, current_job_names: set[str]
-    ) -> None:
-        task_prefix = f"{component.replace('_', '-')}-task-"
+    def get_current_image(self, component: ControlPlaneComponent, job: Job) -> str | None:
         container_name = f"{component.replace('_', '-')}-task"
-        job_name = next((app for app in current_job_names if app.startswith(task_prefix)), None)
-        if not job_name:
-            self.log.error(f"Container app job for {component} not found in {current_job_names}, skipping update")
-            return
+        containers = job.template.containers if job.template else None
+        return next((container.image for container in containers or [] if container.name == container_name), None)
 
+    async def update_task_image(self, component: ControlPlaneComponent, job: Job, new_image: str) -> None:
+        container_name = f"{component.replace('_', '-')}-task"
         try:
-            self.log.info(f"Updating image of {job_name}")
-            await self.update_container_app_image(job_name, container_name, new_image)
+            self.log.info(f"Updating image of {job.name}")
+            await self.update_container_app_image(cast(str, job.name), container_name, new_image)
         except Exception:
             self.log.exception(f"Failed to update {component}")
             return
-        self.manifest_cache[component] = self.public_manifest[component]
         self.log.info(f"Finished updating {component}")
 
     async def update_container_app_image(self, job_name: str, container_name: str, new_image: str) -> None:
@@ -193,9 +179,7 @@ class ContainerAppJobsDeployerTask(Task):
         await poller.result()
 
     async def write_caches(self) -> None:
-        if self.manifest_cache == self.private_manifest:
-            return
-        await write_cache(TASK_IMAGES_MANIFEST_FILE_NAME, dumps(self.manifest_cache))
+        return
 
 
 if __name__ == "__main__":
