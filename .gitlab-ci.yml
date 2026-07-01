@@ -6,6 +6,7 @@ variables:
   DOCKER_IMAGE: 486234852809.dkr.ecr.us-east-1.amazonaws.com/docker:24.0.4-gbi-focal
   CI_IMAGE: registry.ddbuild.io/ci/azure-log-forwarding-orchestration-ci:latest
   INTERNAL_DOCKER_REGISTRY: registry.ddbuild.io/lfo
+  PUBLIC_DOCKER_REGISTRY: datadoghq.azurecr.io
   QA_DOCKER_REGISTRY: lfoqa.azurecr.io
 stages:
   - ci-image
@@ -150,7 +151,7 @@ publish-task-images:
     - diagnostic-settings-task-build-tagged
   script:
     - control_plane/scripts/publish_images.py https://ddazurelfo.blob.core.windows.net
-      $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      $PUBLIC_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
 # Uploads the uninstall script to the public storage account (manual)
 uninstall-script-publish:
   image: $CI_IMAGE
@@ -460,11 +461,11 @@ publish-task-images-qa:
     - export AZURE_CLIENT_SECRET=$(vault kv get -field=azureSecret
       kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
     - control_plane/scripts/publish_images.py https://lfoqa.blob.core.windows.net
-      $INTERNAL_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      $QA_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
   needs:
-    - resources-task-build-tagged
-    - scaling-task-build-tagged
-    - diagnostic-settings-task-build-tagged
+    - resources-task-build-qa
+    - scaling-task-build-qa
+    - diagnostic-settings-task-build-qa
 # Deploys the QA environment using the latest published task artifacts
 deploy-qa-env:
   image: $CI_IMAGE
@@ -507,6 +508,51 @@ deployer-caj-build-qa:
       VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
       $QA_DOCKER_REGISTRY/deployer-caj:latest -f "ci/deployer-caj-task/Dockerfile"
       ./control_plane --push
+# Builds the resources-task image and pushes it to the QA registry
+resources-task-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: ["arch:amd64"]
+  script:
+    - $(vault kv get -field=docker
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $QA_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/resources-task/Dockerfile" ./control_plane --push
+# Builds the diagnostic-settings-task image and pushes it to the QA registry
+diagnostic-settings-task-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: ["arch:amd64"]
+  script:
+    - $(vault kv get -field=docker
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $QA_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/diagnostic-settings-task/Dockerfile" ./control_plane --push
+# Builds the scaling-task image and pushes it to the QA registry
+scaling-task-build-qa:
+  image: $DOCKER_IMAGE
+  stage: build
+  only:
+    refs:
+      - main
+  tags: ["arch:amd64"]
+  script:
+    - $(vault kv get -field=docker
+      kv/k8s/gitlab-runner/azure-log-forwarding-orchestration/qa)
+    - docker buildx build --platform=linux/amd64 --build-arg
+      VERSION_TAG="v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}" --tag
+      $QA_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+      -f "ci/scaling-task/Dockerfile" ./control_plane --push
 # Uploads the uninstall script to the QA storage account
 uninstall-script-publish-qa:
   image: $CI_IMAGE
