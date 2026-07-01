@@ -16,9 +16,8 @@ from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from azure.mgmt.appcontainers.models import Container, JobPatchProperties, JobPatchPropertiesProperties, JobTemplate
 from azure.storage.blob.aio import ContainerClient
 
-from cache.common import InvalidCacheError, read_cache, write_cache
-
 # project
+from cache.common import InvalidCacheError, read_cache, write_cache
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     RESOURCE_GROUP_SETTING,
