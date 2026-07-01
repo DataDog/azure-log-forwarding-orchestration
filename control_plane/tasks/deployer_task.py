@@ -27,8 +27,8 @@ from cache.env import (
 )
 from cache.manifest_cache import (
     KEY_TO_ZIP,
-    MANIFEST_FILE_NAME,
     PUBLIC_STORAGE_ACCOUNT_URL,
+    TASK_ZIPS_MANIFEST_FILE_NAME,
     TASKS_CONTAINER,
     ControlPlaneComponent,
     ManifestCache,
@@ -125,7 +125,7 @@ class DeployerTask(Task):
     @retry(stop=stop_after_attempt(MAX_ATTEMPTS), retry=retry_if_not_exception_type(InvalidCacheError))
     async def get_public_manifests(self) -> ManifestCache:
         try:
-            stream = await self.public_storage_client.download_blob(MANIFEST_FILE_NAME)
+            stream = await self.public_storage_client.download_blob(TASK_ZIPS_MANIFEST_FILE_NAME)
         except ResourceNotFoundError as e:
             raise InvalidCacheError("Public Manifest not found") from e
         blob_data = await stream.readall()
@@ -136,7 +136,7 @@ class DeployerTask(Task):
 
     async def get_private_manifests(self) -> ManifestCache | None:
         try:
-            blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(MANIFEST_FILE_NAME)
+            blob_data = await retry(stop=stop_after_attempt(MAX_ATTEMPTS))(read_cache)(TASK_ZIPS_MANIFEST_FILE_NAME)
         except RetryError as e:
             self.log.error("Error reading private manifest cache", exc_info=e.last_attempt.exception())
             return None
@@ -200,7 +200,7 @@ class DeployerTask(Task):
     async def write_caches(self) -> None:
         if self.manifest_cache == self.private_manifest:
             return
-        await write_cache(MANIFEST_FILE_NAME, dumps(self.manifest_cache))
+        await write_cache(TASK_ZIPS_MANIFEST_FILE_NAME, dumps(self.manifest_cache))
 
 
 if __name__ == "__main__":

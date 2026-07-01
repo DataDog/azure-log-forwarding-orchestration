@@ -17,7 +17,7 @@ from cache.env import (
     RESOURCE_GROUP_SETTING,
     SUBSCRIPTION_ID_SETTING,
 )
-from cache.manifest_cache import MANIFEST_CACHE_NAME, ManifestCache, deserialize_manifest_cache
+from cache.manifest_cache import TASK_ZIPS_MANIFEST_FILE_NAME, ManifestCache, deserialize_manifest_cache
 from tasks.deployer_task import DEPLOYER_TASK_NAME, DeployerTask
 from tasks.tests.common import AsyncMockClient, TaskTestCase, async_generator, mock
 from tasks.version import VERSION
@@ -34,7 +34,7 @@ class TestDeployerTask(TaskTestCase):
 
     @property
     def cache(self) -> ManifestCache:
-        return self.cache_value(MANIFEST_CACHE_NAME, deserialize_manifest_cache)
+        return self.cache_value(TASK_ZIPS_MANIFEST_FILE_NAME, deserialize_manifest_cache)
 
     def setUp(self) -> None:
         super().setUp()
