@@ -14,6 +14,7 @@ stages:
   - build
   - publish-qa
   - publish
+  - publish-manifest
 # ------------- CI IMAGE -------------
 # Rebuilds the CI image used by all other jobs; run manually when ci/build-image/Dockerfile changes
 ci-build-image:
@@ -138,7 +139,7 @@ publish-tasks:
 # Publishes control plane task image manifest to the public storage account so deployer-caj knows which images to deploy (manual)
 publish-task-images:
   image: $CI_IMAGE
-  stage: publish
+  stage: publish-manifest
   tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
@@ -146,9 +147,9 @@ publish-task-images:
   variables:
     KUBERNETES_POD_ANNOTATIONS_azure: cloud-iam.emissary.datadoghq.com/azure=88d13348-0530-418a-89c0-9caa32d59037
   needs:
-    - resources-task-build-tagged
-    - scaling-task-build-tagged
-    - diagnostic-settings-task-build-tagged
+    - resources-task-publish
+    - scaling-task-publish
+    - diagnostic-settings-task-publish
   script:
     - control_plane/scripts/publish_images.py https://ddazurelfo.blob.core.windows.net
       $PUBLIC_DOCKER_REGISTRY v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
