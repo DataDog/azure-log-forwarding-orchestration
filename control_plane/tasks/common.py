@@ -29,7 +29,7 @@ SCALING_TASK_PREFIX: Final = "scaling-task-"
 RESOURCES_TASK_PREFIX: Final = "resources-task-"
 # Prefix for the diagnostic settings task when deployed as Function Apps
 DIAGNOSTIC_SETTINGS_TASK_PREFIX_FUNCTION_APP: Final = "diagnostic-settings-task-"
-# Prefix for the diagnostic settings task when deployed as Container App Jobs. 
+# Prefix for the diagnostic settings task when deployed as Container App Jobs.
 # CAJs have a shorter restriction on name length.
 DIAGNOSTIC_SETTINGS_TASK_PREFIX_CONTAINER_APP: Final = "diag-settings-task-"
 
