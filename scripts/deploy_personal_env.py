@@ -656,6 +656,7 @@ def _deploy_tasks(
     )
     existing_job_names = {job["name"] for job in existing_jobs}
 
+    # TODO (AZINTS-4785) use ARM templates to deploy personal env
     # CAJ job names must be ≤32 chars, so "diagnostic-settings-task" is shortened to match
     # the prefix that container_app_jobs_deployer_task.py looks for.
     caj_job_prefix = {"diagnostic-settings-task": "diag-settings-task"}
