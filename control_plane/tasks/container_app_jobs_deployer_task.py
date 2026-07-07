@@ -146,18 +146,18 @@ class ContainerAppJobsDeployerTask(Task):
         jobs_by_component: dict[ControlPlaneComponent, Job] = {}
         for job in cast(list[Job], current_jobs):
             for component, prefix in COMPONENT_TASK_PREFIXES.items():
-                if job.name and job.name.startswith(prefix):
+                if job.name and job.name.lower().startswith(prefix):
                     jobs_by_component[component] = job
                     break
         return jobs_by_component
 
     def get_current_image(self, component: ControlPlaneComponent, job: Job) -> str | None:
-        container_name = f"{component.replace('_', '-')}-task"
+        container_name = COMPONENT_TASK_PREFIXES[component].rstrip("-")
         containers = job.template.containers if job.template else None
         return next((container.image for container in containers or [] if container.name == container_name), None)
 
     async def update_task_image(self, component: ControlPlaneComponent, job: Job, new_image: str) -> None:
-        container_name = f"{component.replace('_', '-')}-task"
+        container_name = COMPONENT_TASK_PREFIXES[component].rstrip("-")
         try:
             self.log.info(f"Updating image of {job.name}")
             await self.update_container_app_image(cast(str, job.name), container_name, new_image)
