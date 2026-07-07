@@ -14,7 +14,7 @@ stages:
   - build
   - publish-qa
   - publish
-  - publish-manifest
+  - publish-task-images-manifest
 # ------------- CI IMAGE -------------
 # Rebuilds the CI image used by all other jobs; run manually when ci/build-image/Dockerfile changes
 ci-build-image:
@@ -139,7 +139,7 @@ publish-tasks:
 # Publishes control plane task image manifest to the public storage account so deployer-caj knows which images to deploy (manual)
 publish-task-images:
   image: $CI_IMAGE
-  stage: publish-manifest
+  stage: publish-task-images-manifest
   tags: ["arch:amd64"]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
