@@ -12,7 +12,9 @@ from cache.manifest_cache import PUBLIC_STORAGE_ACCOUNT_URL
 getLogger("azure").setLevel(WARNING)
 
 
-def get_container_client(storage_account_url: str, container: str, connection_string: str | None = None) -> ContainerClient:
+def get_container_client(
+    storage_account_url: str, container: str, connection_string: str | None = None
+) -> ContainerClient:
     if connection_string is not None:
         return BlobServiceClient.from_connection_string(connection_string).get_container_client(container)
     return ContainerClient(storage_account_url, container, DefaultAzureCredential())
