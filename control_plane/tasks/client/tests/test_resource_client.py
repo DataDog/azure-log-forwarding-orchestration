@@ -25,7 +25,7 @@ SUPPORTED_REGION_2 = "southafricanorth"
 CONTAINER_APPS_UNSUPPORTED_REGION = "newzealandnorth"
 UNSUPPORTED_REGION = "uae"
 resource1 = mock(
-    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Network/loadbalancers", tags={"datadog": "true"}
+    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Network/loadBalancers", tags={"datadog": "true"}
 )
 resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
@@ -45,7 +45,7 @@ class TestResourceClientHelpers(TestCase):
         )
 
     def test_should_ignore_resource_by_region(self):
-        resource_type = "Microsoft.Network/loadbalancers"
+        resource_type = "Microsoft.Network/loadBalancers"
         resource_name = "lb1"
         # valid regions
         self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, resource_type, resource_name))
@@ -59,7 +59,7 @@ class TestResourceClientHelpers(TestCase):
 
     def test_should_ignore_resource_by_type(self):
         # valid types
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadbalancers", "lb1"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadBalancers", "lb1"))
         self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/applicationGateways", "ag1"))
 
         # invalid types
@@ -71,8 +71,8 @@ class TestResourceClientHelpers(TestCase):
 
     def test_should_ignore_resource_by_name(self):
         # normal resources
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadbalancers", "lb1"))
-        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadbalancers", "lb2"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadBalancers", "lb1"))
+        self.assertFalse(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Network/loadBalancers", "lb2"))
 
         # TODO (AZINTS-2763): ensure storage accounts are ignored
         # control plane resources
@@ -130,7 +130,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
     async def test_global_resource_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                mock(id="res1", location="global", type="Microsoft.Network/loadbalancers"),
+                mock(id="res1", location="global", type="Microsoft.Network/loadBalancers"),
                 mock(id="res2", location="global", type="Microsoft.Network/applicationGateways"),
             )
         )
@@ -285,7 +285,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     id="res_key_only",
                     name="1",
                     location=SUPPORTED_REGION_1,
-                    type="Microsoft.Network/loadbalancers",
+                    type="Microsoft.Network/loadBalancers",
                     tags={"datadog": ""},
                 )
             )

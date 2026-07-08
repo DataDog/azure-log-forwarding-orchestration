@@ -73,7 +73,7 @@ MOCK_UNKNOWN_ROLE_ASSIGNMENT = {
 
 MOCK_RESOURCE_IDS = [
     "/subscriptions/sub-1/resourceGroups/test-rg-1/providers/Microsoft.Storage/storageAccounts/storage1",
-    "/subscriptions/sub-1/resourceGroups/test-rg-2/providers/Microsoft.Network/loadbalancers/lb1",
+    "/subscriptions/sub-1/resourceGroups/test-rg-2/providers/Microsoft.Network/loadBalancers/lb1",
 ]
 
 MOCK_DIAGNOSTIC_SETTINGS = {
