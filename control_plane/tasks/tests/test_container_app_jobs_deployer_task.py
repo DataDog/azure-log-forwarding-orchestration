@@ -6,6 +6,9 @@
 from json import dumps
 from unittest.mock import AsyncMock, MagicMock
 
+# 3p
+from azure.mgmt.appcontainers.models import Container, JobTemplate
+
 # project
 from cache.common import InvalidCacheError
 from cache.env import (
@@ -59,7 +62,8 @@ class TestContainerAppJobsDeployerTask(TaskTestCase):
         for component, image in current_images.items():
             job_name = JOB_NAMES[component]
             container_name = job_name.rsplit("-", 1)[0]
-            jobs.append(mock(name=job_name, template=mock(containers=[mock(name=container_name, image=image)])))
+            template = JobTemplate(containers=[Container(name=container_name, image=image)])
+            jobs.append(mock(name=job_name, template=template))
         self.container_apps_client.jobs.list_by_resource_group.return_value = async_generator(*jobs)
 
     async def run_task(self) -> ContainerAppJobsDeployerTask:
