@@ -57,6 +57,7 @@ TASK_REPLICA_TIMEOUTS = {
 TASK_NAMES = ["resources-task", "scaling-task", "diagnostic-settings-task"]
 
 
+
 @dataclass
 class AzureContext:
     home: str
@@ -655,8 +656,13 @@ def _deploy_tasks(
     )
     existing_job_names = {job["name"] for job in existing_jobs}
 
+    # TODO (AZINTS-4785) use ARM templates to deploy personal env
+    # CAJ job names must be ≤32 chars, so "diagnostic-settings-task" is shortened to match
+    # the prefix that container_app_jobs_deployer_task.py looks for.
+    caj_job_prefix = {"diagnostic-settings-task": "diag-settings-task"}
+
     for task in TASK_NAMES:
-        job_name = f"{task}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
+        job_name = f"{caj_job_prefix.get(task, task)}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
         task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:latest"
         env_vars = common_env_vars + task_extra_env_vars[task]
 

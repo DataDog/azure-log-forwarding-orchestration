@@ -35,7 +35,7 @@ from cache.manifest_cache import (
     deserialize_manifest_cache,
 )
 from tasks.common import (
-    DIAGNOSTIC_SETTINGS_TASK_PREFIX,
+    DIAGNOSTIC_SETTINGS_TASK_PREFIX_FUNCTION_APP,
     RESOURCES_TASK_PREFIX,
     SCALING_TASK_PREFIX,
     Resource,
@@ -149,7 +149,7 @@ class DeployerTask(Task):
             for task in cast(list[Resource], current_apps)
             if any(
                 task.name.startswith(prefix)
-                for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX)
+                for prefix in (SCALING_TASK_PREFIX, RESOURCES_TASK_PREFIX, DIAGNOSTIC_SETTINGS_TASK_PREFIX_FUNCTION_APP)
             )
         }
 
