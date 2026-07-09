@@ -182,6 +182,7 @@ class ContainerAppJobsDeployerTask(Task):
                 probes=container.probes,
             )
             for container in existing_containers or []
+            if container.name is not None
         ]
         poller = await self.container_apps_client.jobs.begin_update(
             self.resource_group,
