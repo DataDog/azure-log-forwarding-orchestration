@@ -660,6 +660,7 @@ def _deploy_tasks(
     )
     existing_job_names = {job["name"] for job in existing_jobs}
 
+    # TODO (AZINTS-4785) use ARM templates to deploy personal env
     for task_name, task_image_name in TASK_NAME_TO_IMAGE_NAME.items():
         job_name = f"{task_name}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
         task_image = f"{ctx.container_registry_name}.azurecr.io/{task_image_name}:latest"

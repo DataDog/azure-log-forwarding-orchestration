@@ -82,6 +82,9 @@ class TestResourceClientHelpers(TestCase):
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "scaling-task-"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "resources-task-"))
         self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.Web/sites", "diagnostic-settings-task-"))
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/jobs", "scaling-task-"))
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/jobs", "resources-task-"))
+        self.assertTrue(should_ignore_resource(SUPPORTED_REGION_1, "Microsoft.App/jobs", "diag-settings-task-"))
 
 
 class TestResourceClient(IsolatedAsyncioTestCase):

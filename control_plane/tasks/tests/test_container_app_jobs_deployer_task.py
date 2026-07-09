@@ -25,7 +25,7 @@ from tasks.version import VERSION
 JOB_NAMES = {
     "resources": "resources-task-0863329b4b49",
     "scaling": "scaling-task-0863329b4b49",
-    "diagnostic_settings": "diagnostic-settings-task-0863329b4b49",
+    "diagnostic_settings": "diag-settings-task-0863329b4b49",
 }
 
 
