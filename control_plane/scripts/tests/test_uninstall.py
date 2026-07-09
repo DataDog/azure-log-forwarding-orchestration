@@ -71,6 +71,15 @@ MOCK_UNKNOWN_ROLE_ASSIGNMENT = {
     "principalName": "",  # Empty principalName indicates "Unknown" role assignbment
 }
 
+# Container App Job control planes assign this role instead of relying on Function App identities,
+# but it's tagged with the same "ddlfo{id}" description convention as any other LFO role assignment.
+MOCK_CAJ_ROLE_ASSIGNMENT = {
+    "id": "/subscriptions/sub-1/providers/Microsoft.Authorization/roleAssignments/role-caj-1",
+    "roleDefinitionName": "Container App Job Contributor",
+    "principalId": "principal-caj-1",
+    "principalName": "service-principal-caj-1",
+}
+
 MOCK_RESOURCE_IDS = [
     "/subscriptions/sub-1/resourceGroups/test-rg-1/providers/Microsoft.Storage/storageAccounts/storage1",
     "/subscriptions/sub-1/resourceGroups/test-rg-2/providers/Microsoft.Compute/virtualMachines/vm1",
@@ -261,6 +270,17 @@ class TestUninstallScript(TestCase):
         call_args = self.az_mock.call_args[0][0]
         self.assertIn(f"ddlfo{CONTROL_PLANE_ID_1}", call_args)
         self.assertIn(f"ddlfo{CONTROL_PLANE_ID_2}", call_args)
+
+    def test_find_role_assignments_finds_container_app_job_role(self):
+        """Container App Job control plane role assignments are found the same way as Function App ones,
+        since the query filters by description tag rather than roleDefinitionName"""
+        self.az_mock.return_value = json.dumps([MOCK_CAJ_ROLE_ASSIGNMENT])
+
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1}
+        control_plane_ids = {CONTROL_PLANE_ID_1}
+        result = uninstall.find_role_assignments(sub_id_to_name, control_plane_ids)
+
+        self.assertEqual(result, {SUB_ID_1: [MOCK_CAJ_ROLE_ASSIGNMENT]})
 
     @mock_patch("uninstall.find_role_assignments")
     @mock_patch("uninstall.find_unknown_role_assignments")
