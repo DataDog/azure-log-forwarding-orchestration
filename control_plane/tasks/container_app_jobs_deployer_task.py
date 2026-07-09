@@ -171,7 +171,7 @@ class ContainerAppJobsDeployerTask(Task):
         updated_containers = [
             Container(
                 name=container.name,
-                image=new_image if container.name == container_name else container.image,
+                image=new_image if container.name.lower() == container_name.lower() else container.image,
                 command=container.command,
                 args=container.args,
                 env=container.env,
