@@ -167,6 +167,8 @@ class ContainerAppJobsDeployerTask(Task):
         self.log.info(f"Finished updating {component}")
 
     async def update_container_app_image(self, job: Job, container_name: str, new_image: str) -> None:
+        # Although we are only updating the image of a single container, the request needs to
+        # include all containers or they will be overwritten by the patch request.
         existing_containers = job.template.containers if job.template else None
         updated_containers = [
             Container(
