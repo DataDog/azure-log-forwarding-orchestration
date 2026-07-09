@@ -51,10 +51,15 @@ TASK_CPU = "0.5"
 TASK_MEMORY = "1Gi"
 TASK_REPLICA_TIMEOUTS = {
     "resources-task": "300",
-    "diagnostic-settings-task": "300",
+    "diag-settings-task": "300",
     "scaling-task": "600",
 }
-TASK_NAMES = ["resources-task", "scaling-task", "diagnostic-settings-task"]
+
+TASK_NAME_TO_IMAGE_NAME = {
+    "resources-task": "resources-task", 
+    "diag-settings-task": "diagnostic-settings-task", 
+    "scaling-task": "scaling-task"
+}
 
 
 @dataclass
@@ -430,7 +435,7 @@ def deploy_container_app_jobs(
     if not skip_docker:
         acr_login(ctx)
         build_and_push_forwarder(ctx, commit_sha)
-        for task in TASK_NAMES:
+        for task in TASK_NAME_TO_IMAGE_NAME.values():
             print(f"Building and pushing {task}:{commit_sha}...")
             run(
                 [
@@ -632,7 +637,7 @@ def _deploy_tasks(
             f"FORWARDER_IMAGE={forwarder_image}",
             f"PII_SCRUBBER_RULES={environ.get('PII_SCRUBBER_RULES', '')}",
         ],
-        "diagnostic-settings-task": [],
+        "diag-settings-task": [],
     }
 
     subscription_scope = f"/subscriptions/{ctx.subscription_id}"
@@ -642,7 +647,7 @@ def _deploy_tasks(
     task_role_assignments: dict[str, list[tuple[str, str]]] = {
         "resources-task": [(MONITORING_READER_ROLE, subscription_scope)],
         "scaling-task": [(CONTRIBUTOR_ROLE, resource_group_scope)],
-        "diagnostic-settings-task": [
+        "diag-settings-task": [
             (READER_AND_DATA_ACCESS_ROLE, resource_group_scope),
             (MONITORING_CONTRIBUTOR_ROLE, subscription_scope),
         ],
@@ -655,10 +660,10 @@ def _deploy_tasks(
     )
     existing_job_names = {job["name"] for job in existing_jobs}
 
-    for task in TASK_NAMES:
-        job_name = f"{task}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
-        task_image = f"{ctx.container_registry_name}.azurecr.io/{task}:latest"
-        env_vars = common_env_vars + task_extra_env_vars[task]
+    for task_name, task_image_name in TASK_NAME_TO_IMAGE_NAME.items():
+        job_name = f"{task_name}-{ctx.lfo_base_name}"[:CONTAINER_APP_JOB_MAX_LENGTH]
+        task_image = f"{ctx.container_registry_name}.azurecr.io/{task_image_name}:latest"
+        env_vars = common_env_vars + task_extra_env_vars[task_name]
 
         if job_name not in existing_job_names or force_recreate:
             print(f"Creating Container App Job {job_name}...")
@@ -672,6 +677,8 @@ def _deploy_tasks(
                     ctx.resource_group_name,
                     "--name",
                     job_name,
+                    "--container-name",
+                    task_name,
                     "--environment",
                     control_plane_env_name,
                     "--trigger-type",
@@ -685,7 +692,7 @@ def _deploy_tasks(
                     "--memory",
                     TASK_MEMORY,
                     "--replica-timeout",
-                    TASK_REPLICA_TIMEOUTS[task],
+                    TASK_REPLICA_TIMEOUTS[task_name],
                     "--replica-retry-limit",
                     "0",
                     "--replica-completion-count",
@@ -707,7 +714,7 @@ def _deploy_tasks(
                     f" --name {job_name} --query identity.principalId --output json"
                 )
             )
-            for role_id, scope in task_role_assignments[task]:
+            for role_id, scope in task_role_assignments[task_name]:
                 grant_role(principal_id, role_id, scope)
         else:
             print(f"Updating Container App Job {job_name} image to {task_image}...")
