@@ -160,19 +160,40 @@ class ContainerAppJobsDeployerTask(Task):
         container_name = COMPONENT_TASK_PREFIXES[component].rstrip("-")
         try:
             self.log.info(f"Updating image of {job.name}")
-            await self.update_container_app_image(cast(str, job.name), container_name, new_image)
+            await self.update_container_app_image(job, container_name, new_image)
         except Exception:
             self.log.exception(f"Failed to update {component}")
             return
         self.log.info(f"Finished updating {component}")
 
-    async def update_container_app_image(self, job_name: str, container_name: str, new_image: str) -> None:
+    async def update_container_app_image(self, job: Job, container_name: str, new_image: str) -> None:
+        # Although we are only updating the image of a single container, the request needs to
+        # include all containers or they will be overwritten by the patch request.
+        existing_containers = job.template.containers if job.template else None
+        updated_containers = [
+            Container(
+                name=container.name,
+                image=new_image if container.name.lower() == container_name.lower() else container.image,
+                command=container.command,
+                args=container.args,
+                env=container.env,
+                resources=container.resources,
+                volume_mounts=container.volume_mounts,
+                probes=container.probes,
+            )
+            for container in existing_containers or []
+            if container.name is not None
+        ]
         poller = await self.container_apps_client.jobs.begin_update(
             self.resource_group,
-            job_name,
+            cast(str, job.name),
             JobPatchProperties(
                 properties=JobPatchPropertiesProperties(
-                    template=JobTemplate(containers=[Container(name=container_name, image=new_image)])
+                    template=JobTemplate(
+                        containers=updated_containers,
+                        init_containers=job.template.init_containers if job.template else None,
+                        volumes=job.template.volumes if job.template else None,
+                    )
                 )
             ),
         )
