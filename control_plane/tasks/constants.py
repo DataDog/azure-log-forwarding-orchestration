@@ -34,7 +34,6 @@ UNNESTED_VALID_RESOURCE_TYPES: Final[frozenset[str]] = frozenset(
         "microsoft.cognitiveservices/accounts",
         "microsoft.communication/communicationservices",
         "microsoft.community/communitytrainings",
-        "microsoft.compute/virtualmachines",
         "microsoft.confidentialledger/managedccf",
         "microsoft.confidentialledger/managedccfs",
         "microsoft.connectedcache/cachenodes",
