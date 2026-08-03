@@ -444,24 +444,38 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 extra=self.log_extra,
             )
 
-            # start deleting the storage account now, it has no dependencies
-            delete_storage_account_task = create_task(
-                ignore_exception_type(
+            async def _delete_job() -> None:
+                poller = await ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.container_apps_client.jobs.begin_delete(
+                        self.resource_group, get_container_app_name(forwarder_id)
+                    ),
+                )
+                if poller:
+                    await poller.result()
+
+            async def _delete_storage_account() -> None:
+                await ignore_exception_type(
                     ResourceNotFoundError,
                     self.storage_client.storage_accounts.delete(
                         self.resource_group, get_storage_account_name(forwarder_id)
                     ),
                 )
-            )
 
-            poller = await ignore_exception_type(
-                ResourceNotFoundError,
-                self.container_apps_client.jobs.begin_delete(self.resource_group, get_container_app_name(forwarder_id)),
+            # run both deletes concurrently, but always wait for both so neither is left dangling
+            # if the other raises
+            maybe_errors = await gather(
+                _delete_job(),
+                _delete_storage_account(),
+                return_exceptions=True,
             )
-            if poller:
-                await poller.result()
-
-            await delete_storage_account_task
+            log_errors(
+                self.log,
+                f"Failed to delete log forwarder {forwarder_id}",
+                *maybe_errors,
+                reraise=True,
+                extra=self.log_extra,
+            )
             self.log.info("Deleted log forwarder %s", forwarder_id, extra=self.log_extra)
 
         try:
