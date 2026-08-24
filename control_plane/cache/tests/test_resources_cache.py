@@ -112,6 +112,20 @@ class TestDeserializeResourceCache(TestCase):
             ],
         )
 
+    def test_legacy_csv_monitored_subscriptions_var(self):
+        env_var = "8C56D827-5F07-45CE-8F2B-6C5001DB5C6F,0b62a232-b8db-4380-9da6-640f7272ed6d"
+        monitored_subscriptions = deserialize_monitored_subscriptions(env_var)
+        self.assertEqual(
+            monitored_subscriptions,
+            [
+                "8c56d827-5f07-45ce-8f2b-6c5001db5c6f",
+                "0b62a232-b8db-4380-9da6-640f7272ed6d",
+            ],
+        )
+
+    def test_invalid_monitored_subscriptions_var(self):
+        self.assertIsNone(deserialize_monitored_subscriptions('["malformed-json",]'))
+
     def test_deserialize_resource_tag_filters(self):
         env_var = "datadog:true, env:STAGING,!env:pRoD        , !not:me,solo"
         tag_filters = deserialize_resource_tag_filters(env_var)

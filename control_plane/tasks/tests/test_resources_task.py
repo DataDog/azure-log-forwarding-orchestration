@@ -249,12 +249,12 @@ class TestResourcesTask(TaskTestCase):
             )
         write_caches.assert_not_awaited()
 
-    async def test_unmonitored_subscriptions_ignored(self):
+    async def test_unmonitored_subscriptions_ignored_with_legacy_csv(self):
         sub_id3 = "6522f787-edd0-4005-a901-d61c0ee60cb8"
 
         def getenv_mock(name, default=None):
             env_vars = {
-                "MONITORED_SUBSCRIPTIONS": '["a062baee-fdd3-4784-beb4-d817f591422c", "77602a31-36b2-4417-a27c-9071107ca3e6"]'
+                "MONITORED_SUBSCRIPTIONS": "a062baee-fdd3-4784-beb4-d817f591422c,77602a31-36b2-4417-a27c-9071107ca3e6"
             }
             return env_vars.get(name, default)
 
