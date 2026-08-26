@@ -44,9 +44,14 @@ ci-build-image:
     - when: manual
       allow_failure: true
   tags: ["arch:amd64"]
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
   script:
+    - METADATA_FILE=$(mktemp)
     - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f
-      "ci/build-image/Dockerfile" . --push
+      "ci/build-image/Dockerfile" . --push --metadata-file "$METADATA_FILE"
+    - ddsign sign "$CI_IMAGE" --docker-metadata-file "$METADATA_FILE"
 # ------------- CONTROL PLANE -------------
 # Runs the control plane Python test suite and uploads a coverage report artifact
 control-plane-tests:
