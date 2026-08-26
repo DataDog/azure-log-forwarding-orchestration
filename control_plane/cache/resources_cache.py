@@ -4,6 +4,7 @@
 
 # stdlib
 from typing import Any, TypeAlias, TypedDict
+from uuid import UUID
 
 # 3p
 from cache.common import deserialize_cache
@@ -72,7 +73,22 @@ def deserialize_resource_cache(cache_str: str) -> tuple[ResourceCache | None, bo
 def deserialize_monitored_subscriptions(env_str: str) -> list[str] | None:
     """Deserialize monitored subscriptions from a string representation of an array of subscription IDs"""
 
-    return deserialize_cache(env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs])
+    subscriptions = deserialize_cache(
+        env_str, MONITORED_SUBSCRIPTIONS_SCHEMA, lambda subs: [sub.lower() for sub in subs]
+    )
+    if subscriptions is not None:
+        return subscriptions
+
+    # Container App Jobs created before CLOUDS-8668 stored this value as CSV.
+    legacy_subscriptions = [sub.strip().lower() for sub in env_str.split(",") if sub.strip()]
+    try:
+        if not legacy_subscriptions:
+            return None
+        for subscription_id in legacy_subscriptions:
+            UUID(subscription_id)
+    except ValueError:
+        return None
+    return legacy_subscriptions
 
 
 def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
