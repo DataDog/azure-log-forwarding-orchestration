@@ -40,13 +40,28 @@ stages:
 ci-build-image:
   image: $DOCKER_IMAGE
   stage: ci-image
+  id_tokens:
+    DDSIGN_ID_TOKEN:
+      aud: image-integrity
   rules:
     - when: manual
       allow_failure: true
   tags: ["arch:amd64"]
   script:
-    - docker buildx build --platform linux/amd64 --tag "$CI_IMAGE" -f
-      "ci/build-image/Dockerfile" . --push
+    - |
+      set -euo pipefail
+      metadata_file="$(mktemp)"
+      trap 'rm -f "$metadata_file"' EXIT
+
+      ddsign version
+      docker buildx build \
+        --platform linux/amd64 \
+        --tag "$CI_IMAGE" \
+        --file "ci/build-image/Dockerfile" \
+        --push \
+        --metadata-file "$metadata_file" \
+        .
+      ddsign sign "$CI_IMAGE" --docker-metadata-file "$metadata_file"
 # ------------- CONTROL PLANE -------------
 # Runs the control plane Python test suite and uploads a coverage report artifact
 control-plane-tests:
