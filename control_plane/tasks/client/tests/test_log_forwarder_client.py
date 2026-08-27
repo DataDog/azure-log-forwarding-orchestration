@@ -11,6 +11,7 @@ from unittest.mock import ANY, DEFAULT, AsyncMock, MagicMock, Mock, call, patch
 
 # 3p
 from azure.core.exceptions import HttpResponseError, ResourceNotFoundError, ServiceResponseTimeoutError
+from azure.mgmt.appcontainers.models import EnvironmentProvisioningState
 from tenacity import RetryError
 
 # project
@@ -19,6 +20,7 @@ from cache.metric_blob_cache import MetricBlobEntry
 from tasks.client.log_forwarder_client import (
     MAX_ATTEMPS,
     LogForwarderClient,
+    ManagedEnvironmentState,
 )
 from tasks.common import (
     FORWARDER_CONTAINER_APP_PREFIX,
@@ -495,39 +497,63 @@ class TestLogForwarderClient(AsyncTestCase):
             self.client.container_apps_client.managed_environments.begin_delete, 5, RESOURCE_GROUP_NAME, env_name
         )
 
-    async def test_get_log_forwarder_managed_environment_returns_id_on_success(self):
+    async def test_get_log_forwarder_managed_environment_state_returns_ready_on_success(self):
         # GIVEN
-        env_id = "fake_id"
-
-        mocked_env = Mock(id=env_id)
+        mocked_env = Mock(id="fake_id", provisioning_state=EnvironmentProvisioningState.SUCCEEDED)
 
         self.client.container_apps_client.managed_environments.get.return_value = mocked_env
 
         # WHEN
         async with self.client as client:
-            result = await client.get_log_forwarder_managed_environment(WEST_US)
+            result = await client.get_log_forwarder_managed_environment_state(WEST_US)
 
         # THEN
-        self.assertEqual(result, env_id)
+        self.assertEqual(result, ManagedEnvironmentState.READY)
 
-    async def test_get_log_forwarder_managed_environment_returns_none_on_failure(self):
+    async def test_get_log_forwarder_managed_environment_state_returns_not_found_on_failure(self):
         # GIVEN
         self.client.container_apps_client.managed_environments.get.side_effect = ResourceNotFoundError()
 
         # WHEN
         async with self.client as client:
-            result = await client.get_log_forwarder_managed_environment(WEST_US)
+            result = await client.get_log_forwarder_managed_environment_state(WEST_US)
 
         # THEN
-        self.assertIsNone(result)
+        self.assertEqual(result, ManagedEnvironmentState.NOT_FOUND)
+
+    async def test_get_log_forwarder_managed_environment_state_returns_failed_for_failed_provisioning_state(self):
+        # GIVEN
+        mocked_env = Mock(id="fake_id", provisioning_state=EnvironmentProvisioningState.FAILED)
+        self.client.container_apps_client.managed_environments.get.return_value = mocked_env
+
+        # WHEN
+        async with self.client as client:
+            result = await client.get_log_forwarder_managed_environment_state(WEST_US)
+
+        # THEN
+        self.assertEqual(result, ManagedEnvironmentState.FAILED)
+
+    async def test_get_log_forwarder_managed_environment_state_returns_provisioning_while_in_progress(self):
+        # GIVEN
+        mocked_env = Mock(id="fake_id", provisioning_state=EnvironmentProvisioningState.WAITING)
+        self.client.container_apps_client.managed_environments.get.return_value = mocked_env
+
+        # WHEN
+        async with self.client as client:
+            result = await client.get_log_forwarder_managed_environment_state(WEST_US)
+
+        # THEN
+        self.assertEqual(result, ManagedEnvironmentState.PROVISIONING)
 
     async def test_get_log_forwarder_managed_env_unsupported_region_defaults_to_control_plane_region(self):
-        self.client.container_apps_client.managed_environments.get.return_value = mock(id="fake_id")
+        self.client.container_apps_client.managed_environments.get.return_value = mock(
+            id="fake_id", provisioning_state=EnvironmentProvisioningState.SUCCEEDED
+        )
 
         async with self.client:
-            res = await self.client.get_log_forwarder_managed_environment(NEW_ZEALAND_NORTH)
+            res = await self.client.get_log_forwarder_managed_environment_state(NEW_ZEALAND_NORTH)
 
-        self.assertEqual("fake_id", res)
+        self.assertEqual(ManagedEnvironmentState.READY, res)
         self.client.container_apps_client.managed_environments.get.assert_called_once_with(
             RESOURCE_GROUP_NAME, f"dd-log-forwarder-env-{CONTROL_PLANE_ID}-{EAST_US}"
         )

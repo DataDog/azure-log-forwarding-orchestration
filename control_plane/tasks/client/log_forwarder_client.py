@@ -7,6 +7,7 @@ from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
+from enum import Enum, auto
 from logging import Logger
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
@@ -24,6 +25,7 @@ from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from azure.mgmt.appcontainers.models import (
     Container,
     ContainerResources,
+    EnvironmentProvisioningState,
     EnvironmentVar,
     Job,
     JobConfiguration,
@@ -107,6 +109,23 @@ CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
 FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
+
+FAILED_ENVIRONMENT_PROVISIONING_STATES = frozenset(
+    {
+        EnvironmentProvisioningState.FAILED,
+        EnvironmentProvisioningState.CANCELED,
+        EnvironmentProvisioningState.UPGRADE_FAILED,
+    }
+)
+
+
+class ManagedEnvironmentState(Enum):
+    """High level state of a log forwarder managed environment, derived from its provisioning_state."""
+
+    NOT_FOUND = auto()
+    READY = auto()
+    PROVISIONING = auto()
+    FAILED = auto()
 
 
 T = TypeVar("T")
@@ -308,13 +327,28 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         if wait:
             await poller.result()
 
-    async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
+    async def get_log_forwarder_managed_environment_state(self, region: str) -> ManagedEnvironmentState:
+        """Checks the provisioning state of the forwarder managed environment for a given region."""
         env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
-            return None
-        return str(managed_env.id)
+            return ManagedEnvironmentState.NOT_FOUND
+
+        provisioning_state = managed_env.provisioning_state
+        if provisioning_state == EnvironmentProvisioningState.SUCCEEDED:
+            return ManagedEnvironmentState.READY
+        if provisioning_state in FAILED_ENVIRONMENT_PROVISIONING_STATES:
+            self.log.error(
+                "Managed environment %s for region %s is in a failed provisioning state: %s",
+                env_name,
+                region,
+                provisioning_state,
+                extra=self.log_extra,
+            )
+            return ManagedEnvironmentState.FAILED
+        # still settling, nothing to do until it resolves
+        return ManagedEnvironmentState.PROVISIONING
 
     async def create_or_update_log_forwarder_container_app(
         self,
