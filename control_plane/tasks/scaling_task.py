@@ -247,20 +247,7 @@ class ScalingTask(Task):
 
         Will never raise an exception.
         """
-        env_state = await self.get_region_forwarder_env_state(client, region)
-        if env_state is ManagedEnvironmentState.FAILED:
-            await self.handle_failed_log_forwarder_env(client, subscription_id, region)
-            return
-        if env_state is not ManagedEnvironmentState.READY:
-            if env_state is ManagedEnvironmentState.NOT_FOUND:
-                self.log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
-                await self.create_log_forwarder_env(client, region)
-            else:
-                self.log.info(
-                    "Log forwarder env for subscription %s in region %s is still provisioning, waiting",
-                    subscription_id,
-                    region,
-                )
+        if not await self.ensure_forwarder_env_ready(client, subscription_id, region, is_new_region=True):
             # log forwarder environments take multiple minutes to be ready, so we should wait until the next run
             return
 
@@ -328,24 +315,7 @@ class ScalingTask(Task):
         self.log.info("Checking scaling for log forwarders in subscription %s in region %s", subscription_id, region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        env_state = await self.get_region_forwarder_env_state(client, region)
-        if env_state is ManagedEnvironmentState.FAILED:
-            await self.handle_failed_log_forwarder_env(client, subscription_id, region)
-            return
-        if env_state is not ManagedEnvironmentState.READY:
-            if env_state is ManagedEnvironmentState.NOT_FOUND:
-                self.log.error(
-                    "Log forwarder env missing for subscription %s in region %s. Setting up new one.",
-                    subscription_id,
-                    region,
-                )
-                await self.create_log_forwarder_env(client, region)
-            else:
-                self.log.info(
-                    "Log forwarder env for subscription %s in region %s is still provisioning, waiting",
-                    subscription_id,
-                    region,
-                )
+        if not await self.ensure_forwarder_env_ready(client, subscription_id, region, is_new_region=False):
             return
 
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
@@ -478,9 +448,43 @@ class ScalingTask(Task):
             region, config_id, env=expected_settings, secrets=expected_secrets
         )
 
-    async def get_region_forwarder_env_state(self, client: LogForwarderClient, region: str) -> ManagedEnvironmentState:
-        """Checks the state of the forwarder env for a given region."""
-        return await client.get_log_forwarder_managed_environment_state(region)
+    async def ensure_forwarder_env_ready(
+        self, client: LogForwarderClient, subscription_id: str, region: str, *, is_new_region: bool
+    ) -> bool:
+        """Checks the forwarder env state for a region and handles every non-READY outcome.
+        Returns True if the env is READY and the caller should proceed, False otherwise."""
+        env_state = await client.get_log_forwarder_managed_environment_state(region)
+        if env_state is ManagedEnvironmentState.FAILED:
+            await self.handle_failed_log_forwarder_env(client, subscription_id, region)
+            return False
+        if env_state is ManagedEnvironmentState.NOT_FOUND:
+            if is_new_region:
+                self.log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
+            else:
+                self.log.error(
+                    "Log forwarder env missing for subscription %s in region %s. Setting up new one.",
+                    subscription_id,
+                    region,
+                )
+            await self.create_log_forwarder_env(client, region)
+            return False
+        if env_state is ManagedEnvironmentState.PROVISIONING:
+            self.log.info(
+                "Log forwarder env for subscription %s in region %s is still provisioning, waiting",
+                subscription_id,
+                region,
+            )
+            return False
+        if env_state is not ManagedEnvironmentState.READY:
+            # Should be unreachable, but don't act against a state we don't recognize
+            self.log.error(
+                "Unrecognized log forwarder env state %s for subscription %s in region %s, taking no action",
+                env_state,
+                subscription_id,
+                region,
+            )
+            return False
+        return True
 
     async def handle_failed_log_forwarder_env(
         self, client: LogForwarderClient, subscription_id: str, region: str
