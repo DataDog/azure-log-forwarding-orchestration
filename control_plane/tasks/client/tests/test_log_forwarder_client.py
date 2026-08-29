@@ -449,6 +449,20 @@ class TestLogForwarderClient(AsyncTestCase):
             RESOURCE_GROUP_NAME, env_name
         )
 
+    async def test_delete_log_forwarder_env_unsupported_region_defaults_to_control_plane_region(self):
+        # GIVEN
+        env_name = get_managed_env_name(EAST_US, CONTROL_PLANE_ID)
+
+        # WHEN
+        async with self.client as client:
+            success = await client.delete_log_forwarder_env(NEW_ZEALAND_NORTH)
+
+        # THEN
+        self.assertTrue(success)
+        self.client.container_apps_client.managed_environments.begin_delete.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, env_name
+        )
+
     async def test_delete_log_forwarder_env_ignore_resource_not_found(self):
         # GIVEN
         env_name = get_managed_env_name(EAST_US, CONTROL_PLANE_ID)
