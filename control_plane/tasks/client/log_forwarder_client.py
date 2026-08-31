@@ -82,9 +82,20 @@ from cache.metric_blob_cache import (
     deserialize_blob_metric_entry,
 )
 from tasks.common import (
+    CONTROL_PLANE_METRIC_PREFIX,
+    CONTROL_PLANE_METRIC_TAG,
     FORWARDER_CONTAINER_APP_PREFIX,
+    FORWARDER_CREATE_ATTEMPTED_METRIC,
+    FORWARDER_CREATE_FAILED_METRIC,
+    FORWARDER_CREATE_SUCCEEDED_METRIC,
+    FORWARDER_DELETE_ATTEMPTED_METRIC,
+    FORWARDER_DELETE_SUCCEEDED_METRIC,
     FORWARDER_METRIC_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
+    MANAGED_ENV_STATE_METRIC,
+    STORAGE_ACCOUNT_QUOTA_LIMIT_METRIC,
+    STORAGE_ACCOUNT_QUOTA_USED_METRIC,
+    UNKNOWN_REGION,
     Resource,
     get_azure_mgmt_url,
     get_container_app_name,
@@ -107,6 +118,19 @@ CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
 FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
+
+# Azure's usage API name for the per-subscription, per-region storage account quota. The SDK
+# docstring says "StorageAccount" while the REST docs use "StorageAccounts", so both spellings are
+# accepted rather than betting on one and silently degrading to a no-op preflight if it is wrong.
+STORAGE_ACCOUNT_USAGE_NAMES = frozenset({"storageaccount", "storageaccounts"})
+
+
+class StorageAccountQuotaExceededError(Exception):
+    """Raised when a subscription is at its storage account quota for a region.
+
+    Distinct from a generic creation failure because the remedy is different: nothing the
+    control plane retries will help until accounts are freed or the quota is raised.
+    """
 
 
 T = TypeVar("T")
@@ -153,6 +177,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         subscription_id: str,
         resource_group: str,
         pii_rules_json: str,
+        base_metric_tags: Iterable[str] = (),
     ) -> None:
         self.forwarder_image = get_config_option(FORWARDER_IMAGE_SETTING)
         self.dd_api_key = get_config_option(DD_API_KEY_SETTING)
@@ -169,6 +194,13 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         self._blob_forwarder_data_lock = Lock()
         self._blob_forwarder_data: bytes | None = None
         self._background_tasks: set[AsyncTask[Any]] = set()
+        # the owning task's tags (task:, version:, ...) so control plane metrics emitted here can
+        # be scoped the same way as the ones the task itself emits
+        self.base_metric_tags = list(base_metric_tags)
+        # quota is subscription+region wide and identical for every create in a run, so it is read
+        # once per region rather than once per attempt: the usage API is itself throttleable, and a
+        # throttled read fails open, which would disable the preflight exactly when it matters
+        self._storage_quota_cache: dict[str, tuple[int, int] | None] = {}
         self.log_extra = {
             "subscription_id": self.subscription_id,
             "resource_group": self.resource_group,
@@ -213,25 +245,122 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return region
         return self.control_plane_region
 
+    def _control_plane_metric_tags(self, region: str) -> list[str]:
+        tags = [
+            CONTROL_PLANE_METRIC_TAG,
+            f"control_plane_id:{self.control_plane_id}",
+            f"subscription_id:{self.subscription_id}",
+            f"region:{region}",
+        ]
+        # the task's own tags may already carry control_plane_id and the forwarder tag
+        tags.extend(tag for tag in self.base_metric_tags if tag not in tags)
+        return tags
+
+    def submit_control_plane_metric(self, metric_name: str, value: float, region: str, *extra_tags: str) -> None:
+        if not TELEMETRY_ENABLED:
+            return
+        statsd.count(
+            CONTROL_PLANE_METRIC_PREFIX + metric_name,
+            value,
+            tags=[*self._control_plane_metric_tags(region), *extra_tags],
+        )
+
+    def submit_control_plane_gauge(self, metric_name: str, value: float, region: str, *extra_tags: str) -> None:
+        if not TELEMETRY_ENABLED:
+            return
+        statsd.gauge(
+            CONTROL_PLANE_METRIC_PREFIX + metric_name,
+            value,
+            tags=[*self._control_plane_metric_tags(region), *extra_tags],
+        )
+
+    async def get_storage_account_quota(self, region: str) -> tuple[int, int] | None:
+        """Returns (used, limit) storage accounts for this subscription in the region.
+
+        Returns None when the quota cannot be read, so a failure here degrades to the previous
+        behaviour of attempting the create rather than blocking log forwarding outright.
+        """
+        if region in self._storage_quota_cache:
+            return self._storage_quota_cache[region]
+        quota = await self._read_storage_account_quota(region)
+        self._storage_quota_cache[region] = quota
+        return quota
+
+    async def _read_storage_account_quota(self, region: str) -> tuple[int, int] | None:
+        seen: list[str] = []
+        try:
+            async for usage in self.storage_client.usages.list_by_location(region):
+                name = usage.name.value if usage.name else None
+                if not name:
+                    continue
+                seen.append(name)
+                if name.lower() in STORAGE_ACCOUNT_USAGE_NAMES:
+                    if usage.current_value is None or usage.limit is None:
+                        return None
+                    return usage.current_value, usage.limit
+        except Exception:
+            self.log.warning(
+                "Unable to read storage account quota for region %s", region, exc_info=True, extra=self.log_extra
+            )
+            return None
+        # a silent miss here would disable the preflight permanently, so say so out loud
+        self.log.warning(
+            "No storage account quota found for region %s, saw usage names %s", region, seen, extra=self.log_extra
+        )
+        return None
+
+    async def check_storage_account_quota(self, region: str) -> None:
+        """Emits storage account quota usage and raises if the subscription is at its limit.
+
+        Without this, hitting the quota surfaces as an opaque creation failure indistinguishable
+        from any other Azure error, and the task keeps retrying against a wall.
+        """
+        quota = await self.get_storage_account_quota(region)
+        if quota is None:
+            return
+        used, limit = quota
+        self.submit_control_plane_gauge(STORAGE_ACCOUNT_QUOTA_USED_METRIC, used, region)
+        self.submit_control_plane_gauge(STORAGE_ACCOUNT_QUOTA_LIMIT_METRIC, limit, region)
+        if used >= limit:
+            raise StorageAccountQuotaExceededError(
+                f"Subscription {self.subscription_id} is at its storage account quota in {region} "
+                f"({used}/{limit}). Log forwarder creation cannot proceed until accounts are removed "
+                "or the quota is raised."
+            )
+
     async def create_log_forwarder(self, region: str, config_id: str) -> LogForwarderType:
         storage_account_name = get_storage_account_name(config_id)
 
-        await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
+        try:
+            # before the attempted counter: a quota-blocked create never reaches Azure, so counting
+            # it as an attempt would blunt the very signal these metrics exist to give
+            await self.check_storage_account_quota(region)
+        except StorageAccountQuotaExceededError:
+            self.submit_control_plane_metric(FORWARDER_CREATE_FAILED_METRIC, 1, region, "reason:quota")
+            raise
 
-        maybe_errors = await gather(
-            wait_for_resource(*await self.create_or_update_log_forwarder_container_app(region, config_id)),
-            self.create_log_forwarder_containers(storage_account_name),
-            self.create_log_forwarder_storage_management_policy(storage_account_name),
-            return_exceptions=True,
-        )
-        log_errors(
-            self.log,
-            "Failed to create function app and/or get blob forwarder data",
-            *maybe_errors,
-            reraise=True,
-            extra=self.log_extra,
-        )
+        self.submit_control_plane_metric(FORWARDER_CREATE_ATTEMPTED_METRIC, 1, region)
+        try:
+            await wait_for_resource(*await self.create_log_forwarder_storage_account(region, storage_account_name))
 
+            maybe_errors = await gather(
+                wait_for_resource(*await self.create_or_update_log_forwarder_container_app(region, config_id)),
+                self.create_log_forwarder_containers(storage_account_name),
+                self.create_log_forwarder_storage_management_policy(storage_account_name),
+                return_exceptions=True,
+            )
+            log_errors(
+                self.log,
+                "Failed to create function app and/or get blob forwarder data",
+                *maybe_errors,
+                reraise=True,
+                extra=self.log_extra,
+            )
+        except Exception:
+            self.submit_control_plane_metric(FORWARDER_CREATE_FAILED_METRIC, 1, region, "reason:azure_error")
+            raise
+
+        self.submit_control_plane_metric(FORWARDER_CREATE_SUCCEEDED_METRIC, 1, region)
         # for now this is the only type we support
         return STORAGE_ACCOUNT_TYPE
 
@@ -309,11 +438,20 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             await poller.result()
 
     async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
-        env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
+        # regions without container app support share the control plane's environment, so the
+        # metric is tagged with the region the environment actually lives in - tagging it with the
+        # requested region would report one shared env's state under several different regions
+        env_region = self.get_container_app_region(region)
+        env_name = get_managed_env_name(env_region, self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
+            self.submit_control_plane_metric(MANAGED_ENV_STATE_METRIC, 1, env_region, "state:not_found")
             return None
+        # an environment can exist while stuck in a Failed state, which is indistinguishable from a
+        # healthy one to every caller of this method
+        state = str(managed_env.provisioning_state or "unknown").lower()
+        self.submit_control_plane_metric(MANAGED_ENV_STATE_METRIC, 1, env_region, f"state:{state}")
         return str(managed_env.id)
 
     async def create_or_update_log_forwarder_container_app(
@@ -433,8 +571,26 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         endpoint_suffix = "core.{}.net".format("usgovcloudapi" if is_azure_gov(storage_account_region) else "windows")
         return f"DefaultEndpointsProtocol=https;AccountName={storage_account_name};AccountKey={key};EndpointSuffix={endpoint_suffix}"
 
-    async def delete_log_forwarder(self, forwarder_id: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
-        """Deletes the Log forwarder, returns True if successful, False otherwise"""
+    async def delete_log_forwarder(
+        self,
+        forwarder_id: str,
+        *,
+        raise_error: bool = True,
+        max_attempts: int = 3,
+        region: str = UNKNOWN_REGION,
+        reason: str = "unspecified",
+    ) -> bool:
+        """Deletes the Log forwarder, returns True if successful, False otherwise.
+
+        `region` is only used to tag metrics, and defaults to UNKNOWN_REGION rather than the
+        control plane region: the orphan sweep genuinely does not know the region, and tagging
+        those deletes with the control plane's would make a leak in one region show up as a leak
+        in another. `reason` separates a failed-create rollback from a deliberate scale down; every
+        production call site passes one, so `unspecified` showing up in metrics means a new call
+        site was added without classifying it.
+        """
+        reason_tag = f"reason:{reason}"
+        self.submit_control_plane_metric(FORWARDER_DELETE_ATTEMPTED_METRIC, 1, region, reason_tag)
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder() -> None:
@@ -454,23 +610,46 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 )
             )
 
-            poller = await ignore_exception_type(
-                ResourceNotFoundError,
-                self.container_apps_client.jobs.begin_delete(self.resource_group, get_container_app_name(forwarder_id)),
-            )
-            if poller:
-                await poller.result()
-
-            await delete_storage_account_task
+            # the storage account delete must be awaited even if the container app delete raises,
+            # otherwise the client closes its transport out from under the in-flight request and
+            # the storage account is leaked with nothing logged.
+            # the container app error is the one that propagates: it is what the enclosing retry
+            # classifies on, and letting a non-retryable storage error replace a retryable
+            # container app error would silently turn 3 attempts into 1
+            # BaseException, not Exception: a CancelledError from the function host being killed
+            # at its timeout is exactly when an orphaned delete leaks a storage account
+            container_app_error: BaseException | None = None
+            try:
+                poller = await ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.container_apps_client.jobs.begin_delete(
+                        self.resource_group, get_container_app_name(forwarder_id)
+                    ),
+                )
+                if poller:
+                    await poller.result()
+            except BaseException as e:
+                container_app_error = e
+            try:
+                await delete_storage_account_task
+            except Exception:
+                if container_app_error is None:
+                    raise
+                self.log.exception(
+                    "Failed to delete storage account for log forwarder %s", forwarder_id, extra=self.log_extra
+                )
+            if container_app_error is not None:
+                raise container_app_error
             self.log.info("Deleted log forwarder %s", forwarder_id, extra=self.log_extra)
 
         try:
             await _delete_forwarder()
-            return True
         except Exception:
             if raise_error:
                 raise
             return False
+        self.submit_control_plane_metric(FORWARDER_DELETE_SUCCEEDED_METRIC, 1, region, reason_tag)
+        return True
 
     async def delete_log_forwarder_env(self, region: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
         """Deletes the Log forwarder env, returns True if successful, False otherwise"""

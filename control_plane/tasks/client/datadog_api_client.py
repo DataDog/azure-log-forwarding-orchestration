@@ -15,6 +15,9 @@ class StatusCode(Enum):
     OK = 200
     DESERIALIZATION_ERROR = 502
     RESOURCE_CREATION_ERROR = 503
+    # distinct from RESOURCE_CREATION_ERROR because retrying cannot clear it: the subscription is
+    # at its per-region storage account quota and needs accounts removed or the quota raised
+    QUOTA_EXCEEDED_ERROR = 507
     AZURE_RESPONSE_ERROR = 555
     UNKNOWN_ERROR = 999
 
