@@ -5,12 +5,18 @@
 # stdlib
 from logging import INFO, basicConfig
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import ANY, call, patch
 
 # project
 import tasks.task as task_module
-from tasks.task import Task, get_error_telemetry
-from tasks.tests.common import TaskTestCase
+from tasks.client.datadog_api_client import StatusCode
+from tasks.common import (
+    CONTROL_PLANE_METRIC_PREFIX,
+    TASK_RUN_COMPLETED_METRIC,
+    TASK_STARTED_METRIC,
+)
+from tasks.task import Task, get_error_telemetry, task_main
+from tasks.tests.common import AsyncMockClient, TaskTestCase
 
 
 class TestGetErrorTelemetry(TestCase):
@@ -104,3 +110,121 @@ class TestTask(TaskTestCase):
         task._datadog_client.__aenter__.assert_called_once_with()  # type: ignore
         task._datadog_client.__aexit__.assert_called_once_with(None, None, None)  # type: ignore
         self.assertEqual(task._logs, [])
+
+
+class TestSubmitStatusUpdate(TaskTestCase):
+    """Error statuses must reach the status endpoint on every run, not only the initial one.
+
+    Suppressing them outside onboarding is why a scaling task stuck in a failed create/delete
+    loop produced no status signal at all until telemetry was manually turned on.
+    """
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        basicConfig(level=INFO)
+        task_module.TELEMETRY_ENABLED = False
+        self.status_client = AsyncMockClient()
+        self.datadog_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = self.status_client
+        self.patch_path("tasks.task.DatadogClient").return_value = self.datadog_client
+
+    async def test_error_status_submitted_on_steady_state_run(self):
+        task = DummyTask(is_initial_run=False)
+        async with task:
+            await task.submit_status_update("step", StatusCode.RESOURCE_CREATION_ERROR, "boom")
+        self.status_client.assert_awaited_once_with(
+            "dummy_task.step", StatusCode.RESOURCE_CREATION_ERROR, "boom", task.execution_id, "unknown", "unknown"
+        )
+
+    async def test_ok_status_suppressed_on_steady_state_run(self):
+        task = DummyTask(is_initial_run=False)
+        async with task:
+            await task.submit_status_update("step", StatusCode.OK, "fine")
+        self.status_client.assert_not_awaited()
+
+    async def test_ok_status_submitted_on_initial_run(self):
+        task = DummyTask(is_initial_run=True)
+        async with task:
+            await task.submit_status_update("step", StatusCode.OK, "fine")
+        self.status_client.assert_awaited_once()
+
+
+class TestStatusUpdateNeverAborts(TaskTestCase):
+    """A failing status endpoint must not abort its caller.
+
+    These calls are awaited from inside except handlers that still have cleanup left to run, so
+    an unreachable status endpoint must never become the reason a storage account is leaked.
+    """
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        basicConfig(level=INFO)
+        task_module.TELEMETRY_ENABLED = False
+        self.status_client = AsyncMockClient()
+        self.datadog_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = self.status_client
+        self.patch_path("tasks.task.DatadogClient").return_value = self.datadog_client
+
+    async def test_status_failure_is_logged_where_telemetry_can_collect_it(self):
+        # the ListHandler feeding Datadog log submission is attached to self.log (a child logger),
+        # and records propagate up but never down - logging this on the module logger would make a
+        # status endpoint failing on every run completely silent in the telemetry this PR adds
+        task_module.TELEMETRY_ENABLED = True
+        self.addCleanup(setattr, task_module, "TELEMETRY_ENABLED", False)
+        self.status_client.side_effect = ConnectionError("status endpoint down")
+        task = DummyTask(is_initial_run=False)
+        async with task:
+            await task.submit_status_update("step", StatusCode.RESOURCE_CREATION_ERROR, "boom")
+            messages = [record.getMessage() for record in task._logs]
+        self.assertTrue(
+            any("Failed to submit status update" in message for message in messages),
+            f"status failure missing from telemetry logs: {messages}",
+        )
+
+    async def test_status_endpoint_failure_does_not_propagate(self):
+        self.status_client.side_effect = ConnectionError("status endpoint down")
+        task = DummyTask(is_initial_run=False)
+        async with task:
+            await task.submit_status_update("step", StatusCode.RESOURCE_CREATION_ERROR, "boom")
+        self.status_client.assert_awaited_once()
+
+
+class TestTaskRunMetrics(TaskTestCase):
+    """task_started paired with task_run_completed makes a run killed mid-flight visible.
+
+    A function host terminated at its timeout never reaches teardown, so it logs nothing at all;
+    the started-minus-completed delta is the only trace it leaves.
+    """
+
+    async def asyncSetUp(self) -> None:
+        await super().asyncSetUp()
+        basicConfig(level=INFO)
+        task_module.TELEMETRY_ENABLED = True
+        self.patch_path("tasks.task.read_cache")
+
+    async def test_started_and_completed_emitted_for_a_clean_run(self):
+        await task_main(DummyTask, [])
+        self.statsd.count.assert_has_calls(
+            [
+                call(CONTROL_PLANE_METRIC_PREFIX + TASK_STARTED_METRIC, 1, tags=ANY),
+                call(CONTROL_PLANE_METRIC_PREFIX + TASK_RUN_COMPLETED_METRIC, 1, tags=ANY),
+            ],
+            any_order=True,
+        )
+
+    async def test_completed_not_emitted_when_the_run_raises(self):
+        class FailingTask(DummyTask):
+            async def run(self):
+                raise ValueError("boom")
+
+        with self.assertRaises(ValueError):
+            await task_main(FailingTask, [])
+
+        emitted = [c.args[0] for c in self.statsd.count.call_args_list]
+        self.assertIn(CONTROL_PLANE_METRIC_PREFIX + TASK_STARTED_METRIC, emitted)
+        self.assertNotIn(CONTROL_PLANE_METRIC_PREFIX + TASK_RUN_COMPLETED_METRIC, emitted)
+
+    async def test_no_metrics_emitted_when_telemetry_is_disabled(self):
+        task_module.TELEMETRY_ENABLED = False
+        await task_main(DummyTask, [])
+        self.statsd.count.assert_not_called()
