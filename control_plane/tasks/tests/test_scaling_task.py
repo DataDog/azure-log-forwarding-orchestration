@@ -42,6 +42,7 @@ from cache.env import (
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache, ResourceMetadata
 from tasks.client.datadog_api_client import StatusCode
+from tasks.client.log_forwarder_client import ManagedEnvironmentState
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_METRIC_PERIOD_MINUTES,
@@ -114,6 +115,7 @@ class TestScalingTask(TaskTestCase):
         self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
         self.client.create_log_forwarder_env.return_value = CONTROL_PLANE_ID
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
         self.forwarder_resources_mapping: dict[str, tuple[Mock | None, Mock | None]] = {
             OLD_LOG_FORWARDER_ID: (mock(), mock()),
             NEW_LOG_FORWARDER_ID: (mock(), mock()),
@@ -242,7 +244,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_new_regions_are_added_first_run(self):
         # GIVEN
-        self.client.get_log_forwarder_managed_environment.return_value = False
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.NOT_FOUND
         expected_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -263,9 +265,52 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder_managed_environment.assert_called_once_with(EAST_US, wait=False)
         self.assertEqual(self.cache, expected_cache)
 
+    async def test_new_region_env_in_failed_state_is_deleted_and_not_recreated(self):
+        # GIVEN
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.FAILED
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}},
+            assignment_cache_state={},
+        )
+
+        # THEN
+        self.client.create_log_forwarder_managed_environment.assert_not_awaited()
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
+        self.assertEqual(
+            self.cache,
+            {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {}}}},
+        )
+
+    async def test_existing_region_env_in_failed_state_is_deleted_and_not_recreated(self):
+        # GIVEN
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.FAILED
+        initial_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID, "resource2": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}},
+            assignment_cache_state=initial_cache,
+        )
+
+        # THEN
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.client.create_log_forwarder_managed_environment.assert_not_awaited()
+        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
+        self.write_cache.assert_not_awaited()
+
     async def test_new_regions_are_added_second_run(self):
         # GIVEN
-        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
         initial_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -295,7 +340,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_failed_env_creation_triggers_delete(self):
         # GIVEN
-        self.client.get_log_forwarder_managed_environment.return_value = False
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.NOT_FOUND
         self.client.create_log_forwarder_managed_environment.side_effect = Exception("Test")
         initial_cache: AssignmentCache = {}
 
@@ -311,7 +356,7 @@ class TestScalingTask(TaskTestCase):
 
     async def test_errors_raised_when_forwarder_creation_fails(self):
         # GIVEN
-        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
         self.client.create_log_forwarder.side_effect = Exception("Test")
         expected_cache: AssignmentCache = {
             SUB_ID1: {
@@ -1502,7 +1547,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.create_log_forwarder_managed_environment.side_effect = create_log_forwarder_env_side_effect
 
-        self.client.get_log_forwarder_managed_environment.return_value = False
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.NOT_FOUND
 
         resource_cache: ResourceCache = {
             SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}

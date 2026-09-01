@@ -40,7 +40,7 @@ from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from cache.user_config import convert_pii_rules_to_json
 from tasks.client.datadog_api_client import StatusCode
-from tasks.client.log_forwarder_client import LogForwarderClient
+from tasks.client.log_forwarder_client import LogForwarderClient, ManagedEnvironmentState
 from tasks.common import average, chunks, generate_unique_id, log_errors
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.task import Task, task_main
@@ -247,10 +247,7 @@ class ScalingTask(Task):
 
         Will never raise an exception.
         """
-        env_exists = await self.check_region_forwarder_env(client, region)
-        if not env_exists:
-            self.log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
-            await self.create_log_forwarder_env(client, region)
+        if not await self.ensure_forwarder_env_ready(client, subscription_id, region, is_new_region=True):
             # log forwarder environments take multiple minutes to be ready, so we should wait until the next run
             return
 
@@ -318,14 +315,7 @@ class ScalingTask(Task):
         self.log.info("Checking scaling for log forwarders in subscription %s in region %s", subscription_id, region)
         region_config = self.assignment_cache[subscription_id][region]
 
-        env_exists = await self.check_region_forwarder_env(client, region)
-        if not env_exists:
-            self.log.error(
-                "Log forwarder env missing for subscription %s in region %s. Setting up new one.",
-                subscription_id,
-                region,
-            )
-            await self.create_log_forwarder_env(client, region)
+        if not await self.ensure_forwarder_env_ready(client, subscription_id, region, is_new_region=False):
             return
 
         all_forwarders_exist = await self.ensure_region_forwarders(client, subscription_id, region)
@@ -458,9 +448,70 @@ class ScalingTask(Task):
             region, config_id, env=expected_settings, secrets=expected_secrets
         )
 
-    async def check_region_forwarder_env(self, client: LogForwarderClient, region: str) -> bool:
-        """Checks to see if the forwarder env exists for a given region"""
-        return bool(await client.get_log_forwarder_managed_environment(region))
+    async def ensure_forwarder_env_ready(
+        self, client: LogForwarderClient, subscription_id: str, region: str, *, is_new_region: bool
+    ) -> bool:
+        """Checks the forwarder env state for a region and handles every non-READY outcome.
+        Returns True if the env is READY and the caller should proceed, False otherwise."""
+        env_state = await client.get_log_forwarder_managed_environment_state(region)
+        if env_state is ManagedEnvironmentState.FAILED:
+            await self.handle_failed_log_forwarder_env(client, subscription_id, region)
+            return False
+        if env_state is ManagedEnvironmentState.NOT_FOUND:
+            if is_new_region:
+                self.log.info("Creating log forwarder env for subscription %s in region %s", subscription_id, region)
+            else:
+                self.log.error(
+                    "Log forwarder env missing for subscription %s in region %s. Setting up new one.",
+                    subscription_id,
+                    region,
+                )
+            await self.create_log_forwarder_env(client, region)
+            return False
+        if env_state is ManagedEnvironmentState.PROVISIONING:
+            self.log.info(
+                "Log forwarder env for subscription %s in region %s is still provisioning, waiting",
+                subscription_id,
+                region,
+            )
+            return False
+        if env_state is not ManagedEnvironmentState.READY:
+            # Should be unreachable, but don't act against a state we don't recognize
+            self.log.error(
+                "Unrecognized log forwarder env state %s for subscription %s in region %s, taking no action",
+                env_state,
+                subscription_id,
+                region,
+            )
+            return False
+        return True
+
+    async def handle_failed_log_forwarder_env(
+        self, client: LogForwarderClient, subscription_id: str, region: str
+    ) -> None:
+        """Handles a log forwarder env stuck in a failed provisioning state - deletes it without recreating immediately.
+
+        Regions outside ALLOWED_CONTAINER_APP_REGIONS share a single env in the control plane
+        region, so it is not safe to unilaterally delete it just because one region observed it
+        as failed - that requires manual intervention instead."""
+        message = f"Log forwarder env for subscription {subscription_id} in region {region} is in a failed provisioning state and cannot be used."
+        if region not in ALLOWED_CONTAINER_APP_REGIONS:
+            message += (
+                " The env is shared with the control plane region and other unsupported regions, "
+                "so it was not deleted. Manual intervention required."
+            )
+            self.log.error(message)
+            await self.submit_status_update("check_region_forwarder_env", StatusCode.AZURE_RESPONSE_ERROR, message)
+            return
+
+        message += " The env will be deleted and recreated on a future run."
+        self.log.error(message)
+        await self.submit_status_update("check_region_forwarder_env", StatusCode.AZURE_RESPONSE_ERROR, message)
+        success = await client.delete_log_forwarder_env(region, raise_error=False)
+        if not success:
+            self.log.error(
+                "Failed to clean up failed log forwarder env for region %s, manual intervention required", region
+            )
 
     async def collect_region_forwarder_metrics(
         self, client: LogForwarderClient, region: str, log_forwarders: Iterable[str]
