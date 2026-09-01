@@ -396,6 +396,28 @@ class TestLogForwarderClient(AsyncTestCase):
             async with self.client as client:
                 await client.delete_log_forwarder(CONFIG_ID1)
 
+    async def test_delete_log_forwarder_still_awaits_storage_delete_when_job_delete_fails(self):
+        # Regression: the storage account delete used to be launched via a bare create_task()
+        # and only awaited *after* the job delete call. If the job delete raised something other
+        # than ResourceNotFoundError, the function returned via that exception without ever
+        # awaiting the storage delete task, silently leaking the storage account. A real Azure
+        # call isn't instant, so give the storage delete a small delay here too: a zero-delay
+        # mock can spuriously finish anyway during an incidental event-loop yield, masking the bug.
+        self.client.container_apps_client.jobs.begin_delete.side_effect = FakeHttpError(400)
+
+        async def _slow_delete(*args: object, **kwargs: object) -> None:
+            await sleep(0.05)
+
+        self.client.storage_client.storage_accounts.delete.side_effect = _slow_delete
+        async with self.client as client:
+            success = await client.delete_log_forwarder(CONFIG_ID1, raise_error=False, max_attempts=1)
+            # assert immediately, before exiting the `async with` block gives the event loop
+            # any more incidental opportunities to let a dangling task sneak in
+            self.assertFalse(success)
+            self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(
+                RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+            )
+
     async def test_delete_log_forwarder_not_raise_error(self):
         self.client.container_apps_client.jobs.begin_delete.side_effect = FakeHttpError(400)
         async with self.client as client:
