@@ -491,13 +491,17 @@ class ScalingTask(Task):
     ) -> None:
         """Handles a log forwarder env stuck in a failed provisioning state - deletes it without recreating immediately.
 
-        Regions outside ALLOWED_CONTAINER_APP_REGIONS share a single env in the control plane
-        region, so it is not safe to unilaterally delete it just because one region observed it
-        as failed - that requires manual intervention instead."""
+        The env in the control plane region is shared: the control plane's own container app jobs run
+        in it, and every region outside ALLOWED_CONTAINER_APP_REGIONS has its forwarders placed in it.
+        Deleting it because one region observed it as failed would tear down forwarding for every
+        unsupported region in every subscription, so that case needs manual intervention instead.
+        Same guard as delete_region."""
         message = f"Log forwarder env for subscription {subscription_id} in region {region} is in a failed provisioning state and cannot be used."
-        if region not in ALLOWED_CONTAINER_APP_REGIONS:
+        # mirrors the guard in delete_region: only a region with an env of its own may be deleted here
+        if region == self.control_plane_region or region not in ALLOWED_CONTAINER_APP_REGIONS:
             message += (
-                " The env is shared with the control plane region and other unsupported regions, "
+                f" The failed env lives in the control plane region {self.control_plane_region}, which is shared "
+                "with the control plane's own jobs and with every region container apps do not support, "
                 "so it was not deleted. Manual intervention required."
             )
             self.log.error(message)

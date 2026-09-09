@@ -308,6 +308,60 @@ class TestScalingTask(TaskTestCase):
         self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US, raise_error=False)
         self.write_cache.assert_not_awaited()
 
+    async def test_failed_env_in_control_plane_region_is_not_deleted(self):
+        # GIVEN the control plane region env, which the deployer task and every unsupported region share
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.FAILED
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {EAST_US_2: {"resource1": included_metadata, "resource2": included_metadata}}
+            },
+            assignment_cache_state={},
+        )
+
+        # THEN
+        self.client.delete_log_forwarder_env.assert_not_called()
+        self.client.create_log_forwarder_managed_environment.assert_not_awaited()
+        self.client.create_log_forwarder.assert_not_awaited()
+
+    async def test_failed_env_for_unsupported_region_is_not_deleted(self):
+        # GIVEN an unsupported region, whose forwarders live in the shared control plane region env
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.FAILED
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {NEW_ZEALAND_NORTH: {"resource1": included_metadata, "resource2": included_metadata}}
+            },
+            assignment_cache_state={},
+        )
+
+        # THEN
+        self.client.delete_log_forwarder_env.assert_not_called()
+        self.client.create_log_forwarder_managed_environment.assert_not_awaited()
+        self.client.create_log_forwarder.assert_not_awaited()
+
+    async def test_control_plane_region_guard_follows_the_configured_region(self):
+        # GIVEN a control plane region other than the suite default, so the guard cannot be
+        # passing by virtue of a hardcoded region
+        self.env[CONTROL_PLANE_REGION_SETTING] = WEST_US
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.FAILED
+
+        # WHEN the new control plane region and the previous one both have a failed env
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {
+                    WEST_US: {"resource1": included_metadata},
+                    EAST_US_2: {"resource2": included_metadata},
+                }
+            },
+            assignment_cache_state={},
+        )
+
+        # THEN only the region that is not the control plane region is deleted
+        self.client.delete_log_forwarder_env.assert_awaited_once_with(EAST_US_2, raise_error=False)
+
     async def test_new_regions_are_added_second_run(self):
         # GIVEN
         self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
