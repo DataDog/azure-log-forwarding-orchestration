@@ -1,4 +1,4 @@
-FROM registry.ddbuild.io/images/mirror/golang:1.26.2 AS builder
+FROM golang:1.26.2 AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
@@ -10,7 +10,7 @@ RUN go mod download
 # Copy the code into the container
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" cmd/forwarder/forwarder.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o forwarder ./cmd/forwarder
 
 FROM scratch
 WORKDIR /

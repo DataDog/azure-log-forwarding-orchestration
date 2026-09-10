@@ -214,6 +214,20 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         (await container_app_job_create()).result.assert_awaited_once_with()
 
+    async def test_generate_forwarder_settings_includes_dd_tags_when_configured(self):
+        #GIVEN
+        environ["DD_TAGS"] = "env:prod team platform"
+
+        #WHEN
+        settings = self.client.generate_forwarder_settings(CONFIG_ID1)
+
+        #THEN
+        env_by_name = {setting.name: setting.value for setting in settings}
+        self.assertEqual("env:prod team:platform" env_by_name["DD_TAGS"])
+
+
+
+
     async def test_create_log_forwarder_in_unsupported_region_falls_back_to_control_plane_region(self):
         (await self.container_client.download_blob()).content_as_bytes.return_value = b"some data"
 
