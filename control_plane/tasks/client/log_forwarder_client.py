@@ -522,8 +522,37 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return False
 
     async def delete_log_forwarder_env(self, region: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
-        """Deletes the Log forwarder env, returns True if successful, False otherwise"""
+        """Deletes the Log forwarder env, including all forwarders in the env. Returns True if successful, False otherwise"""
 
+        # delete any log forwarders in this environment first
+        environment_id = get_managed_env_id(self.subscription_id, self.resource_group, region, self.control_plane_id)
+        jobs = await collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group))
+        for job in jobs:
+            if (
+                job.name
+                and job.name.startswith(FORWARDER_CONTAINER_APP_PREFIX)
+                and job.environment_id
+                and job.environment_id.lower() == environment_id.lower()
+            ):
+                try:
+                    await self.delete_log_forwarder(
+                        job.name.removeprefix(FORWARDER_CONTAINER_APP_PREFIX),
+                        raise_error=True,
+                        max_attempts=max_attempts,
+                    )
+                except Exception:
+                    self.log.info(
+                        "Failed to delete log forwarder env for region %s and control plane %s because child forwarder %s could not be deleted.",
+                        region,
+                        self.control_plane_id,
+                        job.name,
+                        extra=self.log_extra,
+                    )
+                    if raise_error:
+                        raise
+                    return False
+
+        # then the environment itself
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder_env() -> None:
             self.log.info(

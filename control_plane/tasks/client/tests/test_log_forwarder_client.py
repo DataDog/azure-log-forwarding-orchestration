@@ -27,6 +27,7 @@ from tasks.common import (
     FORWARDER_MANAGED_ENVIRONMENT_PREFIX,
     FORWARDER_STORAGE_ACCOUNT_PREFIX,
     get_container_app_name,
+    get_managed_env_id,
     get_managed_env_name,
     get_storage_account_name,
 )
@@ -128,6 +129,7 @@ class TestLogForwarderClient(AsyncTestCase):
         )
         await self.client.__aexit__(None, None, None)
         self.client.container_apps_client = AsyncMockClient()
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(side_effect=lambda *_: async_generator())
         self.client.storage_client = AsyncMockClient()
         self.client._datadog_client = AsyncMockClient()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
@@ -473,6 +475,60 @@ class TestLogForwarderClient(AsyncTestCase):
             RESOURCE_GROUP_NAME, env_name
         )
 
+    async def test_delete_log_forwarder_env_deletes_matching_forwarders_first(self):
+        environment_id = get_managed_env_id(SUB_ID1, RESOURCE_GROUP_NAME, EAST_US, CONTROL_PLANE_ID)
+        self.client.container_apps_client.jobs.list_by_resource_group.return_value = async_generator(
+            mock(name=get_container_app_name(CONFIG_ID1), environment_id=environment_id),
+            mock(name=get_container_app_name(CONFIG_ID2), environment_id=environment_id.upper()),
+            mock(name=get_container_app_name(CONFIG_ID3), environment_id=environment_id + "-other"),
+            mock(name="unrelated-job", environment_id=environment_id),
+        )
+        self.client.container_apps_client.jobs.list_by_resource_group.side_effect = None
+        deleted = []
+
+        async def delete_forwarder(forwarder_id, **kwargs):
+            await sleep(0)
+            deleted.append(forwarder_id)
+            return True
+
+        async def delete_environment(*args):
+            self.assertEqual(deleted, [CONFIG_ID1, CONFIG_ID2])
+
+        self.client.container_apps_client.managed_environments.begin_delete.side_effect = delete_environment
+        with patch.object(self.client, "delete_log_forwarder", side_effect=delete_forwarder) as delete:
+            self.assertTrue(await self.client.delete_log_forwarder_env(EAST_US, max_attempts=5))
+
+        self.assertEqual(
+            delete.await_args_list,
+            [call(CONFIG_ID1, raise_error=True, max_attempts=5), call(CONFIG_ID2, raise_error=True, max_attempts=5)],
+        )
+        self.client.container_apps_client.jobs.list_by_resource_group.assert_called_once_with(RESOURCE_GROUP_NAME)
+
+    async def test_delete_log_forwarder_env_stops_when_forwarder_deletion_fails(self):
+        environment_id = get_managed_env_id(SUB_ID1, RESOURCE_GROUP_NAME, EAST_US, CONTROL_PLANE_ID)
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(
+            side_effect=lambda *_: async_generator(
+                mock(name=get_container_app_name(CONFIG_ID1), environment_id=environment_id),
+                mock(name=get_container_app_name(CONFIG_ID2), environment_id=environment_id),
+            )
+        )
+        for status_code in (400, 529):
+            for raise_error in (False, True):
+                with self.subTest(status_code=status_code, raise_error=raise_error):
+                    error = FakeHttpError(status_code)
+                    with patch.object(self.client, "delete_log_forwarder", side_effect=error) as delete:
+                        if raise_error:
+                            with self.assertRaises(FakeHttpError) as ctx:
+                                await self.client.delete_log_forwarder_env(EAST_US, max_attempts=5)
+                            self.assertIs(ctx.exception, error)
+                        else:
+                            self.assertFalse(
+                                await self.client.delete_log_forwarder_env(EAST_US, raise_error=False, max_attempts=5)
+                            )
+                        delete.assert_awaited_once_with(CONFIG_ID1, raise_error=True, max_attempts=5)
+
+        self.client.container_apps_client.managed_environments.begin_delete.assert_not_awaited()
+
     async def test_delete_log_forwarder_env_ignore_resource_not_found(self):
         # GIVEN
         env_name = get_managed_env_name(EAST_US, CONTROL_PLANE_ID)
@@ -506,14 +562,25 @@ class TestLogForwarderClient(AsyncTestCase):
     async def test_delete_log_forwarder_env_makes_5_retryable_attempts(self):
         # GIVEN
         env_name = get_managed_env_name(EAST_US, CONTROL_PLANE_ID)
+        environment_id = get_managed_env_id(SUB_ID1, RESOURCE_GROUP_NAME, EAST_US, CONTROL_PLANE_ID)
+        self.client.container_apps_client.jobs.list_by_resource_group = Mock(
+            side_effect=lambda *_: async_generator(
+                mock(name=get_container_app_name(CONFIG_ID1), environment_id=environment_id)
+            )
+        )
         self.client.container_apps_client.managed_environments.begin_delete.side_effect = FakeHttpError(529)
 
         # WHEN
-        with self.assertRaises(RetryError) as ctx:
+        with (
+            patch.object(self.client, "delete_log_forwarder", return_value=True) as delete,
+            self.assertRaises(RetryError) as ctx,
+        ):
             async with self.client as client:
                 await client.delete_log_forwarder_env(EAST_US, max_attempts=5)
 
         # THEN
+        delete.assert_awaited_once_with(CONFIG_ID1, raise_error=True, max_attempts=5)
+        self.client.container_apps_client.jobs.list_by_resource_group.assert_called_once_with(RESOURCE_GROUP_NAME)
         self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(529))
         self.assertCalledTimesWith(
             self.client.container_apps_client.managed_environments.begin_delete, 5, RESOURCE_GROUP_NAME, env_name
