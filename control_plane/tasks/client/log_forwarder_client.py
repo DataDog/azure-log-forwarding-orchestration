@@ -114,6 +114,7 @@ FAILED_ENVIRONMENT_PROVISIONING_STATES = frozenset(
     {
         EnvironmentProvisioningState.FAILED,
         EnvironmentProvisioningState.CANCELED,
+        EnvironmentProvisioningState.SCHEDULED_FOR_DELETE,
         EnvironmentProvisioningState.UPGRADE_FAILED,
     }
 )
