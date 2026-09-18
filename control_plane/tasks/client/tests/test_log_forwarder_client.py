@@ -3,7 +3,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
-from asyncio import sleep
+from asyncio import CancelledError, sleep
 from json import dumps
 from os import environ
 from typing import cast
@@ -105,6 +105,143 @@ FAKE_METRIC_BLOBS: list[MetricBlobEntry] = [
 METRIC_TAGS = ["control_plane_id:e90ecb54476d", "region:eastus", "version:74a5f6a"]
 
 
+class TestControlPlaneMetrics(AsyncTestCase):
+    """Metric emission with telemetry ON.
+
+    TestLogForwarderClient sets TELEMETRY_ENABLED = False, so every emission path short-circuits
+    there and the metric names and tags are never actually checked by it.
+    """
+
+    async def asyncSetUp(self) -> None:
+        p = patch.dict(environ, LOG_FORWARDER_CLIENT_SETTINGS, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
+        self.log = mock()
+        client_module.TELEMETRY_ENABLED = True
+        self.addCleanup(setattr, client_module, "TELEMETRY_ENABLED", False)
+        self.statsd = self.patch_path("tasks.client.log_forwarder_client.statsd")
+        self.client: MockedLogForwarderClient = cast(
+            MockedLogForwarderClient,
+            LogForwarderClient(
+                log=self.log,
+                credential=AsyncMock(),
+                subscription_id=SUB_ID1,
+                resource_group=RESOURCE_GROUP_NAME,
+                pii_rules_json=PII_RULES_JSON,
+                base_metric_tags=["task:scaling_task", "version:abc123"],
+            ),
+        )
+        await self.client.__aexit__(None, None, None)
+        self.client.container_apps_client = AsyncMockClient()
+        self.client.storage_client = AsyncMockClient()
+        self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
+        self.client.storage_client.usages.list_by_location = Mock(
+            side_effect=lambda _region: async_generator(
+                mock(name=mock(value="StorageAccounts"), current_value=1, limit=250)
+            )
+        )
+        self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
+        self.container_client = AsyncMockClient()
+        self.container_client_class.from_connection_string.return_value = self.container_client
+
+    EXPECTED_TAGS = [
+        "forwarder:lfocontrolplane",
+        f"control_plane_id:{CONTROL_PLANE_ID}",
+        f"subscription_id:{SUB_ID1}",
+        f"region:{EAST_US}",
+        "task:scaling_task",
+        "version:abc123",
+    ]
+
+    async def test_successful_create_emits_attempted_and_succeeded_with_full_tags(self):
+        async with self.client as client:
+            await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+        self.statsd.count.assert_has_calls(
+            [
+                call("azure.lfo.control_plane.forwarder_create_attempted", 1, tags=self.EXPECTED_TAGS),
+                call("azure.lfo.control_plane.forwarder_create_succeeded", 1, tags=self.EXPECTED_TAGS),
+            ]
+        )
+
+    async def test_quota_blocked_create_is_not_counted_as_an_attempt(self):
+        self.client.storage_client.usages.list_by_location = Mock(
+            side_effect=lambda _region: async_generator(
+                mock(name=mock(value="StorageAccounts"), current_value=250, limit=250)
+            )
+        )
+        async with self.client as client:
+            with self.assertRaises(client_module.StorageAccountQuotaExceededError):
+                await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+        emitted = [c.args[0] for c in self.statsd.count.call_args_list]
+        self.assertNotIn("azure.lfo.control_plane.forwarder_create_attempted", emitted)
+        self.statsd.count.assert_any_call(
+            "azure.lfo.control_plane.forwarder_create_failed", 1, tags=[*self.EXPECTED_TAGS, "reason:quota"]
+        )
+        self.statsd.gauge.assert_any_call(
+            "azure.lfo.control_plane.storage_account_quota_used", 250, tags=self.EXPECTED_TAGS
+        )
+
+    async def test_delete_emits_attempted_and_succeeded_tagged_with_its_reason(self):
+        async with self.client as client:
+            await client.delete_log_forwarder(CONFIG_ID1, region=EAST_US, reason="scale_down")
+        expected = [*self.EXPECTED_TAGS, "reason:scale_down"]
+        self.statsd.count.assert_has_calls(
+            [
+                call("azure.lfo.control_plane.forwarder_delete_attempted", 1, tags=expected),
+                call("azure.lfo.control_plane.forwarder_delete_succeeded", 1, tags=expected),
+            ]
+        )
+
+    async def test_failed_delete_emits_attempted_but_not_succeeded(self):
+        # the attempted-minus-succeeded delta is the leak rate, so a failed delete must not
+        # increment succeeded
+        self.client.container_apps_client.jobs.begin_delete.side_effect = FakeHttpError(400)
+        async with self.client as client:
+            await client.delete_log_forwarder(CONFIG_ID1, raise_error=False, region=EAST_US, reason="scale_down")
+        emitted = [c.args[0] for c in self.statsd.count.call_args_list]
+        self.assertIn("azure.lfo.control_plane.forwarder_delete_attempted", emitted)
+        self.assertNotIn("azure.lfo.control_plane.forwarder_delete_succeeded", emitted)
+
+    async def test_managed_env_state_is_tagged_with_the_environments_own_region(self):
+        # an unsupported region shares the control plane's env, so the state must be reported
+        # against that env's region rather than the region that was asked for
+        self.client.container_apps_client.managed_environments.get = AsyncMock(
+            return_value=mock(id="env-id", provisioning_state="Failed")
+        )
+        async with self.client as client:
+            await client.get_log_forwarder_managed_environment(NEW_ZEALAND_NORTH)
+        self.statsd.count.assert_any_call(
+            "azure.lfo.control_plane.managed_env_provisioning_state",
+            1,
+            # region:eastus, not region:newzealandnorth - the control plane's env is the one
+            # whose state this actually is
+            tags=[*self.EXPECTED_TAGS, "state:failed"],
+        )
+
+    async def test_missing_managed_env_reports_not_found(self):
+        self.client.container_apps_client.managed_environments.get = AsyncMock(side_effect=ResourceNotFoundError())
+        async with self.client as client:
+            self.assertIsNone(await client.get_log_forwarder_managed_environment(EAST_US))
+        self.statsd.count.assert_any_call(
+            "azure.lfo.control_plane.managed_env_provisioning_state",
+            1,
+            tags=[*self.EXPECTED_TAGS, "state:not_found"],
+        )
+
+    async def test_quota_is_read_once_per_region_across_attempts(self):
+        async with self.client as client:
+            await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+            await client.create_log_forwarder(EAST_US, CONFIG_ID2)
+        self.assertEqual(self.client.storage_client.usages.list_by_location.call_count, 1)
+
+    async def test_no_metrics_emitted_when_telemetry_is_disabled(self):
+        client_module.TELEMETRY_ENABLED = False
+        async with self.client as client:
+            await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+        self.statsd.count.assert_not_called()
+        self.statsd.gauge.assert_not_called()
+
+
 class TestLogForwarderClient(AsyncTestCase):
     async def asyncSetUp(self) -> None:
         p = patch.dict(environ, LOG_FORWARDER_CLIENT_SETTINGS, clear=True)
@@ -129,6 +266,14 @@ class TestLogForwarderClient(AsyncTestCase):
         self.client.storage_client = AsyncMockClient()
         self.client._datadog_client = AsyncMockClient()
         self.client.storage_client.storage_accounts.list_keys = AsyncMock(return_value=Mock(keys=[Mock(value="key")]))
+        # default to plenty of quota headroom so tests exercise the paths they are actually about.
+        # side_effect, not return_value: an async generator is single-use, so a test that creates
+        # more than one forwarder would silently get an exhausted iterator on the second call.
+        self.client.storage_client.usages.list_by_location = Mock(
+            side_effect=lambda _region: async_generator(
+                mock(name=mock(value="StorageAccounts"), current_value=1, limit=250)
+            )
+        )
         self.container_client_class = self.patch_path("tasks.client.log_forwarder_client.ContainerClient")
 
         self.container_client = AsyncMockClient()
@@ -360,6 +505,123 @@ class TestLogForwarderClient(AsyncTestCase):
                 await client.create_log_forwarder(EAST_US, CONFIG_ID1)
             with self.assertRaises(RetryError):
                 await client.delete_log_forwarder(CONFIG_ID1)
+
+    async def _mock_quota(self, current: int | None, limit: int | None) -> None:
+        self.client.storage_client.usages.list_by_location = Mock(
+            side_effect=lambda _region: async_generator(
+                mock(name=mock(value="StorageAccounts"), current_value=current, limit=limit),
+            )
+        )
+
+    async def test_create_log_forwarder_raises_when_storage_account_quota_is_exhausted(self):
+        # Without the preflight, hitting the quota surfaces as an opaque create failure and the
+        # task keeps retrying against a wall.
+        await self._mock_quota(250, 250)
+        async with self.client as client:
+            with self.assertRaises(client_module.StorageAccountQuotaExceededError):
+                await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+        self.client.storage_client.storage_accounts.begin_create.assert_not_awaited()
+
+    async def test_create_log_forwarder_proceeds_when_under_storage_account_quota(self):
+        await self._mock_quota(67, 250)
+        async with self.client as client:
+            await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+        self.client.storage_client.storage_accounts.begin_create.assert_awaited_once()
+
+    async def test_create_log_forwarder_proceeds_when_quota_cannot_be_read(self):
+        # Failing open: an unreadable quota must not become a new way to block log forwarding.
+        self.client.storage_client.usages.list_by_location = Mock(side_effect=FakeHttpError(403))
+        async with self.client as client:
+            await client.create_log_forwarder(EAST_US, CONFIG_ID1)
+        self.client.storage_client.storage_accounts.begin_create.assert_awaited_once()
+
+    async def test_get_storage_account_quota_ignores_other_usage_names(self):
+        self.client.storage_client.usages.list_by_location = Mock(
+            return_value=async_generator(mock(name=mock(value="SomethingElse"), current_value=1, limit=2))
+        )
+        async with self.client as client:
+            self.assertIsNone(await client.get_storage_account_quota(EAST_US))
+
+    async def test_get_storage_account_quota_returns_none_on_missing_values(self):
+        await self._mock_quota(None, 250)
+        async with self.client as client:
+            self.assertIsNone(await client.get_storage_account_quota(EAST_US))
+
+    async def test_delete_log_forwarder_awaits_storage_delete_when_container_app_delete_raises(self):
+        # Regression: the storage delete task was awaited only after the container app delete, so
+        # an unretryable error from begin_delete skipped it and the client then tore down its
+        # transport underneath the in-flight request, leaking the storage account silently.
+        #
+        # The storage delete has to be genuinely in flight for this to discriminate: an AsyncMock
+        # that completes on first suspension is awaited either way, which makes the test vacuous.
+        storage_delete_completed = False
+
+        async def slow_storage_delete(*_args: object) -> None:
+            nonlocal storage_delete_completed
+            await sleep(0.05)
+            storage_delete_completed = True
+
+        self.client.storage_client.storage_accounts.delete = AsyncMock(side_effect=slow_storage_delete)
+        self.client.container_apps_client.jobs.begin_delete.side_effect = FakeHttpError(400)
+
+        async with self.client as client:
+            success = await client.delete_log_forwarder(CONFIG_ID1, raise_error=False)
+
+        self.assertFalse(success)
+        self.assertTrue(
+            storage_delete_completed,
+            "delete_log_forwarder returned before the in-flight storage account delete finished",
+        )
+        self.client.storage_client.storage_accounts.delete.assert_awaited_once_with(
+            RESOURCE_GROUP_NAME, STORAGE_ACCOUNT_NAME
+        )
+
+    async def test_cancellation_still_awaits_the_in_flight_storage_delete(self):
+        # A CancelledError is the function host being killed at its timeout - exactly when an
+        # orphaned delete leaks a storage account, since the client tears down its transport on
+        # the way out. `except Exception` would let it past the storage await.
+        storage_delete_completed = False
+
+        async def slow_storage_delete(*_args: object) -> None:
+            nonlocal storage_delete_completed
+            await sleep(0.05)
+            storage_delete_completed = True
+
+        self.client.storage_client.storage_accounts.delete = AsyncMock(side_effect=slow_storage_delete)
+        self.client.container_apps_client.jobs.begin_delete.side_effect = CancelledError()
+
+        with self.assertRaises(CancelledError):
+            async with self.client as client:
+                await client.delete_log_forwarder(CONFIG_ID1, raise_error=False)
+
+        self.assertTrue(
+            storage_delete_completed,
+            "cancellation orphaned the in-flight storage account delete",
+        )
+
+    async def test_container_app_error_propagates_when_storage_delete_also_fails(self):
+        # The container app error is the one the enclosing retry classifies on. If a
+        # non-retryable storage error replaced a retryable container app error, 3 attempts would
+        # silently collapse to 1 and the container app would be left behind.
+        self.client.container_apps_client.jobs.begin_delete.side_effect = FakeHttpError(503)  # retryable
+        self.client.storage_client.storage_accounts.delete.side_effect = FakeHttpError(400)  # not retryable
+
+        with self.assertRaises(RetryError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder(CONFIG_ID1)
+
+        self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(503))
+        self.assertCalledTimesWith(
+            self.client.container_apps_client.jobs.begin_delete, 3, RESOURCE_GROUP_NAME, CONTAINER_APP_NAME
+        )
+
+    async def test_storage_delete_error_propagates_when_container_app_delete_succeeds(self):
+        # with nothing to mask, the storage error must still surface rather than be swallowed
+        self.client.storage_client.storage_accounts.delete.side_effect = FakeHttpError(429)
+        with self.assertRaises(RetryError) as ctx:
+            async with self.client as client:
+                await client.delete_log_forwarder(CONFIG_ID1)
+        self.assertEqual(ctx.exception.last_attempt.exception(), FakeHttpError(429))
 
     async def test_delete_log_forwarder(self):
         async with self.client as client:

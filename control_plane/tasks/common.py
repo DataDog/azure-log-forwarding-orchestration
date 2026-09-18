@@ -23,6 +23,40 @@ LFO_METRIC_PREFIX = "azure.lfo."
 CONTROL_PLANE_METRIC_PREFIX = LFO_METRIC_PREFIX + "control_plane."
 FORWARDER_METRIC_PREFIX = LFO_METRIC_PREFIX + "forwarder."
 
+# Control plane metric names, all emitted under CONTROL_PLANE_METRIC_PREFIX.
+# task_started is paired with TASK_RUN_COMPLETED_METRIC: a positive
+# started - completed delta means runs are dying before their teardown, which is invisible in
+# logs because a killed function host never gets to log anything.
+TASK_STARTED_METRIC: Final = "task_started"
+TASK_RUN_COMPLETED_METRIC: Final = "task_run_completed"
+
+# Forwarder resource lifecycle. create_attempted - create_succeeded is the churn rate, and
+# delete_attempted - delete_succeeded is the leak rate. Both were needed to explain an
+# accumulation of unused forwarder storage accounts (CLOUDS-8663) and neither existed.
+FORWARDER_CREATE_ATTEMPTED_METRIC: Final = "forwarder_create_attempted"
+FORWARDER_CREATE_SUCCEEDED_METRIC: Final = "forwarder_create_succeeded"
+FORWARDER_CREATE_FAILED_METRIC: Final = "forwarder_create_failed"
+FORWARDER_DELETE_ATTEMPTED_METRIC: Final = "forwarder_delete_attempted"
+FORWARDER_DELETE_SUCCEEDED_METRIC: Final = "forwarder_delete_succeeded"
+
+# Storage accounts are capped per subscription per region, and creation starts failing at the
+# cap with no other warning.
+STORAGE_ACCOUNT_QUOTA_USED_METRIC: Final = "storage_account_quota_used"
+STORAGE_ACCOUNT_QUOTA_LIMIT_METRIC: Final = "storage_account_quota_limit"
+
+# Forwarder resources that exist in Azure but are absent from the assignment cache.
+ORPHANED_FORWARDERS_METRIC: Final = "orphaned_forwarders"
+
+# Emitted as 1 with a state:<provisioning_state> tag, so a managed environment wedged in a
+# failed state is visible without reading task logs.
+MANAGED_ENV_STATE_METRIC: Final = "managed_env_provisioning_state"
+
+CONTROL_PLANE_METRIC_TAG: Final = "forwarder:lfocontrolplane"
+
+# used to tag metrics for operations whose region genuinely is not known, e.g. the orphan sweep,
+# which lists a whole resource group rather than a single region
+UNKNOWN_REGION: Final = "unknown"
+
 CONTROL_PLANE_APP_SERVICE_PLAN_PREFIX: Final = "dd-lfo-control-"
 CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX: Final = "lfostorage"
 SCALING_TASK_PREFIX: Final = "scaling-task-"

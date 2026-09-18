@@ -40,8 +40,15 @@ from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from cache.user_config import convert_pii_rules_to_json
 from tasks.client.datadog_api_client import StatusCode
-from tasks.client.log_forwarder_client import LogForwarderClient
-from tasks.common import average, chunks, generate_unique_id, log_errors
+from tasks.client.log_forwarder_client import LogForwarderClient, StorageAccountQuotaExceededError
+from tasks.common import (
+    ORPHANED_FORWARDERS_METRIC,
+    UNKNOWN_REGION,
+    average,
+    chunks,
+    generate_unique_id,
+    log_errors,
+)
 from tasks.constants import ALLOWED_CONTAINER_APP_REGIONS
 from tasks.task import Task, task_main
 
@@ -186,7 +193,12 @@ class ScalingTask(Task):
         regions_to_remove = provisioned_regions - regions_with_resources
         regions_to_check_scaling = regions_with_resources & regions_with_forwarders
         async with LogForwarderClient(
-            self.log, self.credential, subscription_id, self.resource_group, self.pii_rules_json
+            self.log,
+            self.credential,
+            subscription_id,
+            self.resource_group,
+            self.pii_rules_json,
+            base_metric_tags=self.tags,
         ) as client:
             await gather(
                 *(self.set_up_region(client, subscription_id, region) for region in regions_to_add),
@@ -198,26 +210,44 @@ class ScalingTask(Task):
             )
             await self.clean_up_orphaned_forwarders(client, subscription_id)
 
-    @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
     async def create_log_forwarder(self, client: LogForwarderClient, region: str) -> LogForwarder | None:
         """Creates a log forwarder for the given subscription and region and returns the configuration id and type.
         Will try 3 times, and if the creation fails, the forwarder is (attempted to be) deleted and None is returned.
-        If container apps are not supported in the region, the forwarder is created in the same region as the control plane."""
+        If container apps are not supported in the region, the forwarder is created in the same region as the control plane.
+
+        The config id is generated once for all attempts rather than per attempt. Azure resource
+        creation is idempotent by name, so reusing the id means a failed attempt whose cleanup does
+        not land is overwritten by the next attempt instead of leaking another storage account.
+        """
         config_id = generate_unique_id()
-        try:
-            config_type = await client.create_log_forwarder(region, config_id)
-            return LogForwarder(config_id, config_type)
-        except Exception as e:
-            self.log.exception("Failed to create log forwarder %s, cleaning up", config_id)
-            await self.submit_status_update(
-                "create_log_forwarder",
-                StatusCode.RESOURCE_CREATION_ERROR,
-                f"Failed to create log forwarder {config_id}. Reason: {e}",
-            )
-            success = await client.delete_log_forwarder(config_id, raise_error=False)
-            if not success:
-                self.log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
-            return None
+
+        @retry(stop=stop_after_attempt(3), retry=retry_if_result(lambda result: result is None))
+        async def _create_log_forwarder() -> LogForwarder | None:
+            try:
+                config_type = await client.create_log_forwarder(region, config_id)
+                return LogForwarder(config_id, config_type)
+            except Exception as e:
+                self.log.exception("Failed to create log forwarder %s, cleaning up", config_id)
+                # clean up before reporting: cleanup is what stops a storage account leaking, so it
+                # must not sit behind a network call to the status endpoint
+                success = await client.delete_log_forwarder(
+                    config_id, raise_error=False, region=region, reason="create_cleanup"
+                )
+                if not success:
+                    self.log.error("Failed to clean up log forwarder %s, manual intervention required", config_id)
+                status = (
+                    StatusCode.QUOTA_EXCEEDED_ERROR
+                    if isinstance(e, StorageAccountQuotaExceededError)
+                    else StatusCode.RESOURCE_CREATION_ERROR
+                )
+                await self.submit_status_update(
+                    "create_log_forwarder",
+                    status,
+                    f"Failed to create log forwarder {config_id}. Reason: {e}",
+                )
+                return None
+
+        return await _create_log_forwarder()
 
     async def create_log_forwarder_env(self, client: LogForwarderClient, region: str) -> None:
         """Creates a log forwarder env for the given region. If the creation fails, the env is (attempted to be) deleted"""
@@ -225,16 +255,16 @@ class ScalingTask(Task):
             await client.create_log_forwarder_managed_environment(region, wait=self.wait_on_envs)
         except Exception as e:
             self.log.exception("Failed to create log forwarder env for region %s, cleaning up", region)
-            await self.submit_status_update(
-                "create_log_forwarder_env",
-                StatusCode.RESOURCE_CREATION_ERROR,
-                f"Failed to create log forwarder env in {region}. Reason: {e}",
-            )
             success = await client.delete_log_forwarder_env(region, raise_error=False)
             if not success:
                 self.log.error(
                     "Failed to clean up log forwarder env for region %s, manual intervention required", region
                 )
+            await self.submit_status_update(
+                "create_log_forwarder_env",
+                StatusCode.RESOURCE_CREATION_ERROR,
+                f"Failed to create log forwarder env in {region}. Reason: {e}",
+            )
 
     async def set_up_region(
         self,
@@ -301,7 +331,7 @@ class ScalingTask(Task):
         self.log.info("Deleting log forwarders for subscription %s in region %s", subscription_id, region)
         maybe_errors = await gather(
             *(
-                self.delete_log_forwarder(client, self.assignment_cache[subscription_id][region], forwarder_id)
+                self.delete_log_forwarder(client, self.assignment_cache[subscription_id][region], forwarder_id, region)
                 for forwarder_id in forwarders_to_delete
             ),
             return_exceptions=True,
@@ -641,7 +671,10 @@ class ScalingTask(Task):
                 self.collapse_forwarders(region_config, config_1, config_2)
                 for config_1, config_2 in chunks(forwarders_to_collapse, 2)
             ),
-            *(self.delete_log_forwarder(client, region_config, config_id) for config_id in forwarders_to_delete),
+            *(
+                self.delete_log_forwarder(client, region_config, config_id, region)
+                for config_id in forwarders_to_delete
+            ),
             return_exceptions=True,
         )
         log_errors(self.log, "Errors during scaling down", *maybe_errors)
@@ -660,10 +693,14 @@ class ScalingTask(Task):
         region_config["resources"].update(resources_to_move)
 
     async def delete_log_forwarder(
-        self, client: LogForwarderClient, region_config: RegionAssignmentConfiguration, config_id: str
+        self,
+        client: LogForwarderClient,
+        region_config: RegionAssignmentConfiguration,
+        config_id: str,
+        region: str,
     ) -> None:
         """Deletes a forwarder and removes it from the configurations"""
-        await client.delete_log_forwarder(config_id)
+        await client.delete_log_forwarder(config_id, region=region, reason="scale_down")
         region_config["configurations"].pop(config_id, None)
 
     async def clean_up_orphaned_forwarders(self, client: LogForwarderClient, subscription_id: str) -> None:
@@ -674,6 +711,10 @@ class ScalingTask(Task):
                 for region_config in self.assignment_cache.get(subscription_id, {}).values()
             )
         )
+        # emitted even when zero, so the metric distinguishes "no orphans" from "task never ran".
+        # the sweep lists a whole resource group, so this count spans every region in the
+        # subscription - tagging it with a single region would misattribute the whole total
+        client.submit_control_plane_gauge(ORPHANED_FORWARDERS_METRIC, len(orphaned_forwarders), UNKNOWN_REGION)
         if not orphaned_forwarders:
             return
 
@@ -682,7 +723,8 @@ class ScalingTask(Task):
             *(
                 # only try once and don't error, if something transiently fails
                 # we can wait til next time, we don't want to spend much time here
-                client.delete_log_forwarder(forwarder_id, raise_error=False, max_attempts=1)
+                # the sweep lists a whole resource group, so the region is genuinely unknown here
+                client.delete_log_forwarder(forwarder_id, raise_error=False, max_attempts=1, reason="orphan")
                 for forwarder_id in orphaned_forwarders
             )
         )

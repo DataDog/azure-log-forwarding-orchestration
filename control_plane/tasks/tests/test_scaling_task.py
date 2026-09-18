@@ -42,6 +42,8 @@ from cache.env import (
 from cache.metric_blob_cache import MetricBlobEntry
 from cache.resources_cache import ResourceCache, ResourceMetadata
 from tasks.client.datadog_api_client import StatusCode
+from tasks.client.log_forwarder_client import StorageAccountQuotaExceededError
+from tasks.common import ORPHANED_FORWARDERS_METRIC, UNKNOWN_REGION
 from tasks.scaling_task import (
     METRIC_COLLECTION_PERIOD_MINUTES,
     SCALING_METRIC_PERIOD_MINUTES,
@@ -113,6 +115,10 @@ class TestScalingTask(TaskTestCase):
         self.client = AsyncMockClient()
         self.patch_path("tasks.scaling_task.LogForwarderClient").return_value = self.client
         self.client.create_log_forwarder.return_value = STORAGE_ACCOUNT_TYPE
+        # these are sync methods on the real client; leaving them as AsyncMocks would create
+        # never-awaited coroutines and hide whether they were called at all
+        self.client.submit_control_plane_metric = Mock()
+        self.client.submit_control_plane_gauge = Mock()
         self.client.create_log_forwarder_env.return_value = CONTROL_PLANE_ID
         self.forwarder_resources_mapping: dict[str, tuple[Mock | None, Mock | None]] = {
             OLD_LOG_FORWARDER_ID: (mock(), mock()),
@@ -205,14 +211,17 @@ class TestScalingTask(TaskTestCase):
 
     async def test_scaling_task_runs_with_latest_resource_cache_schema(self):
         resource_cache_state = {SUB_ID1: {EAST_US: {"resource1": included_metadata, "resource2": included_metadata}}}
-        assignment_cache: AssignmentCache = {
-            SUB_ID1: {
-                EAST_US: {
-                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
-                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+        assignment_cache = cast(
+            AssignmentCache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
                 }
-            }
-        }
+            },
+        )
 
         await self.run_scaling_task(
             resource_cache_state=cast(ResourceCache, resource_cache_state),
@@ -342,14 +351,132 @@ class TestScalingTask(TaskTestCase):
         )
         self.client.delete_log_forwarder.assert_has_calls(
             [
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False, region=EAST_US, reason="create_cleanup"),
                 call().__bool__(),
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False, region=EAST_US, reason="create_cleanup"),
                 call().__bool__(),
-                call(NEW_LOG_FORWARDER_ID, raise_error=False),
+                call(NEW_LOG_FORWARDER_ID, raise_error=False, region=EAST_US, reason="create_cleanup"),
                 call().__bool__(),
             ]
         )
+
+    async def test_create_log_forwarder_reuses_config_id_across_retries(self):
+        # Regression: config_id was generated inside the retried function, so each of the 3
+        # attempts created a differently-named storage account. Any attempt whose cleanup did not
+        # land leaked an account that nothing would ever reconcile by name.
+        self.generate_unique_id.side_effect = ["aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"]
+        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.create_log_forwarder.side_effect = Exception("Test")
+        assignment_cache = cast(AssignmentCache, {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {}}}})
+
+        with self.assertRaises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+                assignment_cache_state=assignment_cache,
+            )
+
+        self.assertEqual(self.generate_unique_id.call_count, 1)
+        self.assertCalledTimesWith(self.client.create_log_forwarder, 3, EAST_US, "aaaaaaaaaaaa")
+
+    async def test_cleanup_runs_before_the_status_update(self):
+        # Ordering is a defense in its own right: it is what survives if the swallow in
+        # Task.submit_status_update is ever narrowed. Asserted on call order rather than on
+        # outcome, because the swallow alone already makes the outcome pass either way.
+        recorder = Mock()
+        recorder.attach_mock(self.client.delete_log_forwarder, "delete")
+        recorder.attach_mock(self.status_client, "status")
+        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.create_log_forwarder.side_effect = Exception("azure broke")
+        assignment_cache = cast(AssignmentCache, {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {}}}})
+
+        # is_initial_run=False so the task_start OK status is suppressed and the only status
+        # recorded is the error one whose ordering is under test
+        with self.assertRaises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+                assignment_cache_state=assignment_cache,
+            )
+
+        ordered = [name for name, _args, _kwargs in recorder.mock_calls if name in ("delete", "status")]
+        self.assertEqual(ordered[:2], ["delete", "status"])
+
+    async def test_env_cleanup_runs_before_the_status_update(self):
+        recorder = Mock()
+        recorder.attach_mock(self.client.delete_log_forwarder_env, "delete_env")
+        recorder.attach_mock(self.status_client, "status")
+        self.client.get_log_forwarder_managed_environment.return_value = None
+        self.client.create_log_forwarder_managed_environment.side_effect = Exception("azure broke")
+
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+            assignment_cache_state={},
+        )
+
+        ordered = [name for name, _args, _kwargs in recorder.mock_calls if name in ("delete_env", "status")]
+        self.assertEqual(ordered[:2], ["delete_env", "status"])
+
+    async def test_cleanup_survives_a_status_failure_the_swallow_does_not_catch(self):
+        # BaseException is deliberately not caught by Task.submit_status_update's `except
+        # Exception`, so only the cleanup-first ordering can save the delete here. Without the
+        # ordering this leaks the exact storage account CLOUDS-8663 is about.
+        class HardFailure(BaseException):
+            pass
+
+        self.status_client.side_effect = HardFailure("status endpoint down hard")
+        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.create_log_forwarder.side_effect = Exception("azure broke")
+        assignment_cache = cast(AssignmentCache, {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {}}}})
+
+        with self.assertRaises(HardFailure):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+                assignment_cache_state=assignment_cache,
+            )
+
+        self.client.delete_log_forwarder.assert_awaited_once_with(
+            NEW_LOG_FORWARDER_ID, raise_error=False, region=EAST_US, reason="create_cleanup"
+        )
+
+    async def test_quota_exceeded_reports_a_distinct_status(self):
+        # A quota failure cannot be cleared by retrying, so it must be distinguishable from a
+        # generic creation error in the status the operator sees.
+        self.client.get_log_forwarder_managed_environment.return_value = True
+        self.client.create_log_forwarder.side_effect = StorageAccountQuotaExceededError("at quota")
+        assignment_cache = cast(AssignmentCache, {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {}}}})
+
+        with self.assertRaises(RetryError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+                assignment_cache_state=assignment_cache,
+                execution_id=self.uuid,
+                is_initial_run=True,
+            )
+
+        self.status_client.assert_any_call(
+            "scaling_task.create_log_forwarder",
+            StatusCode.QUOTA_EXCEEDED_ERROR,
+            f"Failed to create log forwarder {NEW_LOG_FORWARDER_ID}. Reason: at quota",
+            self.uuid,
+            "unknown",
+            CONTROL_PLANE_ID,
+        )
+
+    async def test_orphaned_forwarder_count_is_always_emitted(self):
+        # Emitted even at zero, so the metric distinguishes "no orphans" from "task never ran".
+        self.client.list_log_forwarder_ids.return_value = set()
+        assignment_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+            assignment_cache_state=assignment_cache,
+        )
+        self.client.submit_control_plane_gauge.assert_called_once_with(ORPHANED_FORWARDERS_METRIC, 0, UNKNOWN_REGION)
 
     async def test_empty_regions_have_forwarders_deleted(self):
         # GIVEN
@@ -377,7 +504,9 @@ class TestScalingTask(TaskTestCase):
 
         # THEN
         self.client.create_log_forwarder.assert_not_awaited()
-        self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_awaited_once_with(
+            OLD_LOG_FORWARDER_ID, region=EAST_US, reason="scale_down"
+        )
         self.assertEqual(self.cache, expected_cache_state)
 
     async def test_empty_regions_with_no_configs_have_forwarder_env_deleted(self):
@@ -418,7 +547,9 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.create_log_forwarder.assert_called_once_with(WEST_US, NEW_LOG_FORWARDER_ID)
-        self.client.delete_log_forwarder.assert_called_once_with(OLD_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_called_once_with(
+            OLD_LOG_FORWARDER_ID, region=EAST_US, reason="scale_down"
+        )
 
         expected_cache: AssignmentCache = {
             SUB_ID1: {
@@ -1012,7 +1143,7 @@ class TestScalingTask(TaskTestCase):
 
         self.client.create_log_forwarder.assert_not_awaited()
         self.client.delete_log_forwarder.assert_awaited_once_with(
-            NEW_LOG_FORWARDER_ID, raise_error=False, max_attempts=1
+            NEW_LOG_FORWARDER_ID, raise_error=False, max_attempts=1, reason="orphan"
         )
         self.write_cache.assert_not_awaited()
 
@@ -1086,7 +1217,9 @@ class TestScalingTask(TaskTestCase):
         )
 
         self.client.create_log_forwarder.assert_not_awaited()
-        self.client.delete_log_forwarder.assert_awaited_once_with(NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_awaited_once_with(
+            NEW_LOG_FORWARDER_ID, region=EAST_US, reason="scale_down"
+        )
         self.assertEqual(
             self.cache,
             {
@@ -1187,7 +1320,9 @@ class TestScalingTask(TaskTestCase):
 
         await self.run_scaling_task(resource_cache_state=resource_cache, assignment_cache_state=phase_1_cache)
         self.client.create_log_forwarder.assert_not_awaited()
-        self.client.delete_log_forwarder.assert_called_once_with(NEW_LOG_FORWARDER_ID)
+        self.client.delete_log_forwarder.assert_called_once_with(
+            NEW_LOG_FORWARDER_ID, region=EAST_US, reason="scale_down"
+        )
         self.assertEqual(
             self.cache,
             {

@@ -31,7 +31,14 @@ from cache.env import (
     LOG_LEVEL_SETTING,
 )
 from tasks.client.datadog_api_client import DatadogClient, StatusCode
-from tasks.common import CONTROL_PLANE_METRIC_PREFIX, create_credential, now
+from tasks.common import (
+    CONTROL_PLANE_METRIC_PREFIX,
+    CONTROL_PLANE_METRIC_TAG,
+    TASK_RUN_COMPLETED_METRIC,
+    TASK_STARTED_METRIC,
+    create_credential,
+    now,
+)
 from tasks.telemetry import TELEMETRY_ENABLED
 from tasks.version import VERSION
 
@@ -89,7 +96,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         self.execution_id = execution_id if execution_id else str(uuid4())
         self.control_plane_id = environ.get(CONTROL_PLANE_ID_SETTING, "unknown")
         self.tags = [
-            "forwarder:lfocontrolplane",
+            CONTROL_PLANE_METRIC_TAG,
             f"task:{self.NAME}",
             f"control_plane_id:{self.control_plane_id}",
             f"version:{VERSION}",
@@ -125,6 +132,14 @@ class Task(AbstractAsyncContextManager["Task"]):
     @abstractmethod
     async def run(self) -> None: ...
 
+    def submit_control_plane_metric(self, metric_name: str, value: float) -> None:
+        """Emits a control plane metric immediately, rather than at teardown like the telemetry
+        gauges. A run that is killed mid-flight never reaches teardown, so anything emitted there
+        is exactly the signal that goes missing when it is most needed."""
+        if not TELEMETRY_ENABLED:
+            return
+        statsd.count(CONTROL_PLANE_METRIC_PREFIX + metric_name, value, tags=self.tags)
+
     async def __aenter__(self) -> Self:
         await gather(
             self.credential.__aenter__(), self._datadog_client.__aenter__(), self._datadog_api_client.__aenter__()
@@ -137,6 +152,7 @@ class Task(AbstractAsyncContextManager["Task"]):
         try:
             submit_telemetry = create_task(self.submit_telemetry())
             if exc_type is None and exc_value is None and traceback is None:
+                self.submit_control_plane_metric(TASK_RUN_COMPLETED_METRIC, 1)
                 await self.write_caches()
             try:
                 await submit_telemetry
@@ -188,11 +204,26 @@ class Task(AbstractAsyncContextManager["Task"]):
             await self._logs_client.submit_log(dd_logs, ddtags=",".join(self.tags))  # type: ignore
 
     async def submit_status_update(self, step: str, status: StatusCode, message: str) -> None:
-        if not self._is_initial_run:
+        """Submits a status update to the LFO status endpoint.
+
+        Error statuses are always submitted. Non-error statuses are only submitted on the initial
+        run, since the endpoint backs the onboarding workflow UI and steady-state progress updates
+        would be noise. Errors are the signal an operator needs on every run, and suppressing them
+        outside onboarding is why a scaling task stuck in a create/delete loop stayed invisible.
+        """
+        if not self._is_initial_run and status is StatusCode.OK:
             return
-        await self._datadog_api_client.submit_status_update(
-            f"{self.NAME}.{step}", status, message, self.execution_id, VERSION, self.control_plane_id
-        )
+        # never let status reporting abort the caller: these are awaited from inside except
+        # handlers that still have cleanup to do, and an unreachable status endpoint must not
+        # become the reason a storage account is leaked
+        try:
+            await self._datadog_api_client.submit_status_update(
+                f"{self.NAME}.{step}", status, message, self.execution_id, VERSION, self.control_plane_id
+            )
+        except Exception:
+            # self.log, not the module logger: the ListHandler that feeds Datadog log submission
+            # is attached to the child logger, and records propagate up but never down
+            self.log.exception("Failed to submit status update for %s.%s", self.NAME, step)
 
 
 async def task_main(task_class: type[Task], caches: list[str], is_initial_run: bool = False) -> None:
@@ -203,6 +234,10 @@ async def task_main(task_class: type[Task], caches: list[str], is_initial_run: b
     log.setLevel(level)
     log.info("Started %s at %s (log level %s)", task_class.NAME, now(), level)
     cache_states = await gather(*map(read_cache, caches))
-    async with task_class(*cache_states, is_initial_run=is_initial_run) as task:
+    task = task_class(*cache_states, is_initial_run=is_initial_run)
+    # emitted before __aenter__ so a run killed during client setup still shows up in the
+    # started - completed delta; anything emitted inside would be missed by exactly those deaths
+    task.submit_control_plane_metric(TASK_STARTED_METRIC, 1)
+    async with task:
         await task.run()
     log.info("%s finished at %s", task_class.NAME, now())
