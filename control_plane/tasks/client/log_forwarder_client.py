@@ -7,6 +7,7 @@ from asyncio import Lock, Task as AsyncTask, create_task, gather, wait
 from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from contextlib import AbstractAsyncContextManager, suppress
 from datetime import UTC, datetime, timedelta
+from enum import Enum, auto
 from logging import Logger
 from types import TracebackType
 from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
@@ -24,6 +25,7 @@ from azure.mgmt.appcontainers.aio import ContainerAppsAPIClient
 from azure.mgmt.appcontainers.models import (
     Container,
     ContainerResources,
+    EnvironmentProvisioningState,
     EnvironmentVar,
     Job,
     JobConfiguration,
@@ -107,6 +109,24 @@ CLIENT_MAX_SECONDS = 5
 MAX_ATTEMPS = 5
 
 FORWARDER_METRIC_BLOB_LIFETIME_DAYS = 1
+
+FAILED_ENVIRONMENT_PROVISIONING_STATES = frozenset(
+    {
+        EnvironmentProvisioningState.FAILED,
+        EnvironmentProvisioningState.CANCELED,
+        EnvironmentProvisioningState.SCHEDULED_FOR_DELETE,
+        EnvironmentProvisioningState.UPGRADE_FAILED,
+    }
+)
+
+
+class ManagedEnvironmentState(Enum):
+    """High level state of a log forwarder managed environment, derived from its provisioning_state."""
+
+    NOT_FOUND = auto()
+    READY = auto()
+    PROVISIONING = auto()
+    FAILED = auto()
 
 
 T = TypeVar("T")
@@ -308,13 +328,28 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         if wait:
             await poller.result()
 
-    async def get_log_forwarder_managed_environment(self, region: str) -> str | None:
+    async def get_log_forwarder_managed_environment_state(self, region: str) -> ManagedEnvironmentState:
+        """Checks the provisioning state of the forwarder managed environment for a given region."""
         env_name = get_managed_env_name(self.get_container_app_region(region), self.control_plane_id)
         try:
             managed_env = await self.container_apps_client.managed_environments.get(self.resource_group, env_name)
         except ResourceNotFoundError:
-            return None
-        return str(managed_env.id)
+            return ManagedEnvironmentState.NOT_FOUND
+
+        provisioning_state = managed_env.provisioning_state
+        if provisioning_state == EnvironmentProvisioningState.SUCCEEDED:
+            return ManagedEnvironmentState.READY
+        if provisioning_state in FAILED_ENVIRONMENT_PROVISIONING_STATES:
+            self.log.error(
+                "Managed environment %s for region %s is in a failed provisioning state: %s",
+                env_name,
+                region,
+                provisioning_state,
+                extra=self.log_extra,
+            )
+            return ManagedEnvironmentState.FAILED
+        # still settling, nothing to do until it resolves
+        return ManagedEnvironmentState.PROVISIONING
 
     async def create_or_update_log_forwarder_container_app(
         self,
@@ -444,24 +479,38 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 extra=self.log_extra,
             )
 
-            # start deleting the storage account now, it has no dependencies
-            delete_storage_account_task = create_task(
-                ignore_exception_type(
+            async def _delete_job() -> None:
+                poller = await ignore_exception_type(
+                    ResourceNotFoundError,
+                    self.container_apps_client.jobs.begin_delete(
+                        self.resource_group, get_container_app_name(forwarder_id)
+                    ),
+                )
+                if poller:
+                    await poller.result()
+
+            async def _delete_storage_account() -> None:
+                await ignore_exception_type(
                     ResourceNotFoundError,
                     self.storage_client.storage_accounts.delete(
                         self.resource_group, get_storage_account_name(forwarder_id)
                     ),
                 )
-            )
 
-            poller = await ignore_exception_type(
-                ResourceNotFoundError,
-                self.container_apps_client.jobs.begin_delete(self.resource_group, get_container_app_name(forwarder_id)),
+            # run both deletes concurrently, but always wait for both so neither is left dangling
+            # if the other raises
+            maybe_errors = await gather(
+                _delete_job(),
+                _delete_storage_account(),
+                return_exceptions=True,
             )
-            if poller:
-                await poller.result()
-
-            await delete_storage_account_task
+            log_errors(
+                self.log,
+                f"Failed to delete log forwarder {forwarder_id}",
+                *maybe_errors,
+                reraise=True,
+                extra=self.log_extra,
+            )
             self.log.info("Deleted log forwarder %s", forwarder_id, extra=self.log_extra)
 
         try:
@@ -473,8 +522,54 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             return False
 
     async def delete_log_forwarder_env(self, region: str, *, raise_error: bool = True, max_attempts: int = 3) -> bool:
-        """Deletes the Log forwarder env, returns True if successful, False otherwise"""
+        """Deletes the Log forwarder env, including all forwarders in the env. Returns True if successful, False otherwise"""
 
+        # delete any log forwarders in this environment first
+        environment_id = get_managed_env_id(self.subscription_id, self.resource_group, region, self.control_plane_id)
+
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
+        async def _list_jobs() -> list[Job]:
+            return await collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group))
+
+        try:
+            jobs = await _list_jobs()
+        except Exception:
+            self.log.warning(
+                "Failed to delete log forwarder env for region %s and control plane %s because jobs could not be listed.",
+                region,
+                self.control_plane_id,
+                extra=self.log_extra,
+            )
+            if raise_error:
+                raise
+            return False
+
+        for job in jobs:
+            if (
+                job.name
+                and job.name.startswith(FORWARDER_CONTAINER_APP_PREFIX)
+                and job.environment_id
+                and job.environment_id.lower() == environment_id.lower()
+            ):
+                try:
+                    await self.delete_log_forwarder(
+                        job.name.removeprefix(FORWARDER_CONTAINER_APP_PREFIX),
+                        raise_error=True,
+                        max_attempts=max_attempts,
+                    )
+                except Exception:
+                    self.log.warning(
+                        "Failed to delete log forwarder env for region %s and control plane %s because child forwarder %s could not be deleted.",
+                        region,
+                        self.control_plane_id,
+                        job.name,
+                        extra=self.log_extra,
+                    )
+                    if raise_error:
+                        raise
+                    return False
+
+        # then the environment itself
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder_env() -> None:
             self.log.info(
