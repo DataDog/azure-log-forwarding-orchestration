@@ -529,6 +529,29 @@ class TestLogForwarderClient(AsyncTestCase):
 
         self.client.container_apps_client.managed_environments.begin_delete.assert_not_awaited()
 
+    async def test_delete_log_forwarder_env_handles_listing_failure(self):
+        for status_code, attempts in ((400, 1), (529, 5)):
+            for raise_error in (False, True):
+                with self.subTest(status_code=status_code, raise_error=raise_error):
+
+                    async def failing_jobs(*args, status_code=status_code):
+                        yield mock(name=get_container_app_name(CONFIG_ID1))
+                        raise FakeHttpError(status_code)
+
+                    listing = Mock(side_effect=failing_jobs)
+                    self.client.container_apps_client.jobs.list_by_resource_group = listing
+                    with patch.object(self.client, "delete_log_forwarder") as delete:
+                        if raise_error:
+                            with self.assertRaises(RetryError if attempts > 1 else FakeHttpError):
+                                await self.client.delete_log_forwarder_env(EAST_US, max_attempts=5)
+                        else:
+                            self.assertFalse(
+                                await self.client.delete_log_forwarder_env(EAST_US, raise_error=False, max_attempts=5)
+                            )
+                        delete.assert_not_awaited()
+                    self.assertEqual(listing.call_count, attempts)
+                    self.client.container_apps_client.managed_environments.begin_delete.assert_not_awaited()
+
     async def test_delete_log_forwarder_env_ignore_resource_not_found(self):
         # GIVEN
         env_name = get_managed_env_name(EAST_US, CONTROL_PLANE_ID)

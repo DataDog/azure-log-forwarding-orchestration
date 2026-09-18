@@ -526,7 +526,24 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         # delete any log forwarders in this environment first
         environment_id = get_managed_env_id(self.subscription_id, self.resource_group, region, self.control_plane_id)
-        jobs = await collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group))
+
+        @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
+        async def _list_jobs() -> list[Job]:
+            return await collect(self.container_apps_client.jobs.list_by_resource_group(self.resource_group))
+
+        try:
+            jobs = await _list_jobs()
+        except Exception:
+            self.log.warning(
+                "Failed to delete log forwarder env for region %s and control plane %s because jobs could not be listed.",
+                region,
+                self.control_plane_id,
+                extra=self.log_extra,
+            )
+            if raise_error:
+                raise
+            return False
+
         for job in jobs:
             if (
                 job.name
@@ -541,7 +558,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                         max_attempts=max_attempts,
                     )
                 except Exception:
-                    self.log.info(
+                    self.log.warning(
                         "Failed to delete log forwarder env for region %s and control plane %s because child forwarder %s could not be deleted.",
                         region,
                         self.control_plane_id,
