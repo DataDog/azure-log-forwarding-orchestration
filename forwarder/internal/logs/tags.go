@@ -7,6 +7,8 @@ package logs
 import (
 	// stdlib
 	"strings"
+	"unicode"
+
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 
@@ -16,14 +18,20 @@ import (
 
 var (
 	// DefaultTags are the tags to include with every log.
-	DefaultTags = []string{
+	DefaultTags = append([]string{
 		"forwarder:lfo",
 		"control_plane_id:" + environment.Get(environment.ControlPlaneId),
 		"config_id:" + environment.Get(environment.ConfigId),
 		"forwarder_version:" + environment.Get(environment.VersionTag),
-	}
+	}, tagsFromEnvironment()...)
 )
 
+func tagsFromEnvironment() []string {
+	tags := strings.FieldsFunc(environment.Get(environment.DdTags), func(r rune) bool {
+		return unicode.IsSpace(r) || r == ','
+	})
+	return tags
+}
 func sourceTag(resourceType string) string {
 	parts := strings.Split(strings.ToLower(resourceType), "/")
 	return strings.Replace(parts[0], "microsoft.", "azure.", -1)
