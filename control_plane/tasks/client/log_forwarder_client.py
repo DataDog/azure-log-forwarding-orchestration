@@ -477,6 +477,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
 
         @retry(stop=stop_after_attempt(max_attempts), retry=is_exception_retryable)
         async def _delete_forwarder_env() -> None:
+            container_app_region = self.get_container_app_region(region)
             self.log.info(
                 "Attempting to delete log forwarder env for region %s and control plane %s",
                 region,
@@ -488,7 +489,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
                 ResourceNotFoundError,
                 self.container_apps_client.managed_environments.begin_delete(
                     self.resource_group,
-                    get_managed_env_name(region, self.control_plane_id),
+                    get_managed_env_name(container_app_region, self.control_plane_id),
                 ),
             )
             if poller:
