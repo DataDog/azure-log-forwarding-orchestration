@@ -10,8 +10,48 @@ import (
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
+
+const managedIdentityCredential = "managedidentity"
+
+// AzureBlobConfig contains the configuration required to create an Azure Blob Storage client.
+type AzureBlobConfig struct {
+	ConnectionString        string
+	AccountName             string
+	Credential              string
+	ManagedIdentityClientID string
+}
+
+// AzureBlobConfigFromEnvironment loads Azure Blob Storage configuration from environment variables.
+func AzureBlobConfigFromEnvironment() AzureBlobConfig {
+	return AzureBlobConfig{
+		ConnectionString:        environment.Get(environment.AzureWebJobsStorage),
+		AccountName:             environment.Get(environment.AzureWebJobsStorageAccountName),
+		Credential:              environment.Get(environment.AzureWebJobsStorageCredential),
+		ManagedIdentityClientID: environment.Get(environment.AzureWebJobsStorageClientID),
+	}
+}
+
+// NewAzureBlobClient creates an Azure Blob Storage client using managed identity or a connection string.
+func NewAzureBlobClient(config AzureBlobConfig) (*azblob.Client, error) {
+	if config.Credential == managedIdentityCredential {
+		blobServiceURI := "https://" + config.AccountName + ".blob.core.windows.net"
+		if config.ManagedIdentityClientID != "" {
+			credential, _ := azidentity.NewManagedIdentityCredential(&azidentity.ManagedIdentityCredentialOptions{
+				ID: azidentity.ClientID(config.ManagedIdentityClientID),
+			})
+			return azblob.NewClient(blobServiceURI, credential, nil)
+		}
+		credential, _ := azidentity.NewDefaultAzureCredential(nil)
+		return azblob.NewClient(blobServiceURI, credential, nil)
+	}
+	return azblob.NewClientFromConnectionString(config.ConnectionString, nil)
+}
 
 // AzureBlobClient wraps around the azblob.Client struct, to allow for mocking.
 // these are the inherited and used methods.
