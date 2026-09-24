@@ -38,7 +38,6 @@ func AzureBlobConfigFromEnvironment() AzureBlobConfig {
 }
 
 // NewAzureBlobClient creates an Azure Blob Storage client using managed identity or a connection string.
-
 func NewAzureBlobClient(config AzureBlobConfig) (*azblob.Client, error) {
 	if config.Credential == managedIdentityCredential {
 		blobServiceURI := "https://" + config.AccountName + ".blob.core.windows.net"
