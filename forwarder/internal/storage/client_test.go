@@ -16,7 +16,8 @@ import (
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 )
 
-const testConnectionString = "DefaultEndpointsProtocol=https;AccountName=connectionstringaccount;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;EndpointSuffix=core.windows.net"
+// The account key is a synthetic base64-encoded value for test-account-key.
+const testConnectionString = "DefaultEndpointsProtocol=https;AccountName=connectionstringaccount;AccountKey=dGVzdC1hY2NvdW50LWtleQ==;EndpointSuffix=core.windows.net"
 
 func TestNewAzureBlobClient(t *testing.T) {
 	t.Parallel()
