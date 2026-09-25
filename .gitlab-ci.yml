@@ -227,7 +227,7 @@ deployer-publish:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: deployer:latest,deployer:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
-    IMG_REGISTRIES: public-azure
+    IMG_REGISTRIES: azure
 # Builds the deployer-caj image and pushes it to the internal registry with a versioned tag
 deployer-caj-build-tagged:
   image: $DOCKER_IMAGE
@@ -254,7 +254,7 @@ deployer-caj-publish:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: deployer-caj:latest,deployer-caj:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
-    IMG_REGISTRIES: public-azure
+    IMG_REGISTRIES: azure
 # Builds the resources-task image and pushes it to the internal registry with a versioned tag
 resources-task-build-tagged:
   image: $DOCKER_IMAGE
@@ -281,7 +281,7 @@ resources-task-publish:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: resources-task:latest,resources-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
-    IMG_REGISTRIES: public-azure
+    IMG_REGISTRIES: azure
 # Builds the diagnostic-settings-task image and pushes it to the internal registry with a versioned tag
 diagnostic-settings-task-build-tagged:
   image: $DOCKER_IMAGE
@@ -308,7 +308,7 @@ diagnostic-settings-task-publish:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: diagnostic-settings-task:latest,diagnostic-settings-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
-    IMG_REGISTRIES: public-azure
+    IMG_REGISTRIES: azure
 # Builds the scaling-task image and pushes it to the internal registry with a versioned tag
 scaling-task-build-tagged:
   image: $DOCKER_IMAGE
@@ -335,7 +335,7 @@ scaling-task-publish:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: scaling-task:latest,scaling-task:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
-    IMG_REGISTRIES: public-azure
+    IMG_REGISTRIES: azure
 # ------------- FORWARDER -------------
 # Runs the forwarder Go test suite and uploads a coverage report artifact
 forwarder-tests:
@@ -379,7 +379,7 @@ forwarder-publish:
     IMG_SOURCES: $INTERNAL_DOCKER_REGISTRY/forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_DESTINATIONS: forwarder:latest,forwarder:v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     IMG_SIGNING: "false"
-    IMG_REGISTRIES: public-azure
+    IMG_REGISTRIES: azure
 # Checks that go.mod and go.sum are tidy (no missing or extra dependencies)
 forwarder-tidy:
   image: $CI_IMAGE
