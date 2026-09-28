@@ -628,6 +628,8 @@ def _deploy_tasks(
         "DD_API_KEY=secretref:dd-api-key",
         "AzureWebJobsStorage=secretref:connection-string",
     ]
+    if dd_tags := environ.get("Dd_TAGS"):
+        common_env_vars.append(f"DD_TAGS={dd_tags}")
 
     task_extra_env_vars: dict[str, list[str]] = {
         "resources-task": [

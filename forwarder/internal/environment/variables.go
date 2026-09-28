@@ -15,6 +15,7 @@ const (
 	ControlPlaneId      = "CONTROL_PLANE_ID"
 	ConfigId            = "CONFIG_ID"
 	DdApiKey            = "DD_API_KEY"
+	DdTags              = "DD_TAGS"
 	ForceProfile        = "DD_FORCE_PROFILE"
 	DdSite              = "DD_SITE"
 	TelemetryEnabled    = "DD_TELEMETRY"

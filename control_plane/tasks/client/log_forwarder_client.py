@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum, auto
 from logging import Logger
 from types import TracebackType
+from os import environ
 from typing import Any, Literal, Self, TypeAlias, TypeVar, cast
 
 # 3p
@@ -71,6 +72,7 @@ from cache.env import (
     DD_API_KEY_SECRET,
     DD_API_KEY_SETTING,
     DD_SITE_SETTING,
+    DD_TAGS_SETTING
     DD_TELEMETRY_SETTING,
     FORWARDER_IMAGE_SETTING,
     PII_SCRUBBER_RULES_SETTING,
@@ -406,7 +408,7 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
         ]
 
     def generate_forwarder_settings(self, config_id: str) -> list[EnvironmentVar]:
-        return [
+        settings= [
             EnvironmentVar(name=STORAGE_CONNECTION_SETTING, secret_ref=CONNECTION_STRING_SECRET),
             EnvironmentVar(name=DD_API_KEY_SETTING, secret_ref=DD_API_KEY_SECRET),
             EnvironmentVar(name=DD_SITE_SETTING, value=self.dd_site),
@@ -415,6 +417,9 @@ class LogForwarderClient(AbstractAsyncContextManager["LogForwarderClient"]):
             EnvironmentVar(name=PII_SCRUBBER_RULES_SETTING, value=self.pii_rules_json),
             EnvironmentVar(name=DD_TELEMETRY_SETTING, value=str(TELEMETRY_ENABLED).lower()),
         ]
+        if dd_tags := environ.get(DD_TAGS_SETTING):
+            settings.append(EnvironmentVar(name=DD_TAGS_SETTING, value=dd_tags))
+        return settings
 
     async def create_log_forwarder_containers(self, storage_account_name: str) -> None:
         await self.storage_client.blob_containers.create(
