@@ -22,7 +22,7 @@ An example is below:
 AzureWebJobsStorage='DefaultEndpointsProtocol=https;AccountName=...' go run cmd/forwarder/forwarder.go
 ```
 
-### Running Datadog Performaance Tests
+### Running Datadog Performance Tests
 Create an Ubuntu VM in Azure.
 Install the Datadog agent on the VM.
 Follow the wizard at https://app.datadoghq.com/account/settings/agent/latest?platform=ubuntu
