@@ -16,7 +16,6 @@ import (
 	"time"
 
 	// 3p
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 
@@ -408,8 +407,7 @@ func main() {
 	}
 
 	// Initialize storage client
-	storageAccountConnectionString := environment.Get(environment.AzureWebJobsStorage)
-	azBlobClient, err := azblob.NewClientFromConnectionString(storageAccountConnectionString, nil)
+	azBlobClient, err := storage.NewAzureBlobClient(storage.AzureBlobConfigFromEnvironment())
 	if err != nil {
 		logger.Fatal(fmt.Errorf("error creating azure blob client: %w", err).Error())
 		return
