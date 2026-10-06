@@ -35,6 +35,38 @@ func TestNewAzureBlobClient(t *testing.T) {
 		assert.Equal(t, "https://identityaccount.blob.core.windows.net", client.URL())
 	})
 
+	t.Run("uses a configured blob service URI", func(t *testing.T) {
+		t.Parallel()
+		client, err := storage.NewAzureBlobClient(storage.AzureBlobConfig{
+			BlobServiceURI: "https://identityaccount.blob.core.chinacloudapi.cn",
+			Credential:     "managedidentity",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://identityaccount.blob.core.chinacloudapi.cn", client.URL())
+	})
+
+	t.Run("managed identity credential comparison is case insensitive", func(t *testing.T) {
+		t.Parallel()
+		client, err := storage.NewAzureBlobClient(storage.AzureBlobConfig{
+			AccountName: "identityaccount",
+			Credential:  "ManagedIdentity",
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, "https://identityaccount.blob.core.windows.net", client.URL())
+	})
+
+	t.Run("requires an account name or blob service URI for managed identity", func(t *testing.T) {
+		t.Parallel()
+		client, err := storage.NewAzureBlobClient(storage.AzureBlobConfig{
+			Credential: "managedidentity",
+		})
+
+		require.Error(t, err)
+		assert.Nil(t, client)
+	})
+
 	t.Run("uses user-assigned managed identity", func(t *testing.T) {
 		t.Parallel()
 		// WHEN
@@ -78,6 +110,7 @@ func TestNewAzureBlobClient(t *testing.T) {
 func TestAzureBlobConfigFromEnvironment(t *testing.T) {
 	t.Setenv("AzureWebJobsStorage", testConnectionString)
 	t.Setenv("AzureWebJobsStorage__accountName", "identityaccount")
+	t.Setenv("AzureWebJobsStorage__blobServiceUri", "https://custom.blob.core.windows.net")
 	t.Setenv("AzureWebJobsStorage__credential", "managedidentity")
 	t.Setenv("AzureWebJobsStorage__clientId", "00000000-0000-0000-0000-000000000000")
 
@@ -86,6 +119,7 @@ func TestAzureBlobConfigFromEnvironment(t *testing.T) {
 	assert.Equal(t, storage.AzureBlobConfig{
 		ConnectionString:        testConnectionString,
 		AccountName:             "identityaccount",
+		BlobServiceURI:          "https://custom.blob.core.windows.net",
 		Credential:              "managedidentity",
 		ManagedIdentityClientID: "00000000-0000-0000-0000-000000000000",
 	}, config)
