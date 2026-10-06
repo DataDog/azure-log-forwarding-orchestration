@@ -15,6 +15,7 @@ from cache.resources_cache import (
     _deserialize_v2_resource_cache,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
+    deserialize_resource_provider_configs,
     deserialize_resource_tag_filters,
     prune_resource_cache,
 )
@@ -134,3 +135,27 @@ class TestDeserializeResourceCache(TestCase):
     def test_deserialize_empty_resource_tag_filters(self):
         tag_filters = deserialize_resource_tag_filters("")
         self.assertEqual(tag_filters, [])
+
+    def test_deserialize_resource_provider_configs(self):
+        env_var = dumps(
+            [
+                {"namespace": "Microsoft.Web", "logs_enabled": True},
+                {"namespace": " microsoft.KeyVault ", "logs_enabled": False},
+            ]
+        )
+        self.assertEqual(
+            deserialize_resource_provider_configs(env_var),
+            {"microsoft.web": True, "microsoft.keyvault": False},
+        )
+
+    def test_deserialize_empty_resource_provider_configs(self):
+        self.assertEqual(deserialize_resource_provider_configs("[]"), {})
+
+    def test_deserialize_invalid_resource_provider_configs(self):
+        self.assertIsNone(deserialize_resource_provider_configs(""))
+        self.assertIsNone(deserialize_resource_provider_configs('[{"namespace": "Microsoft.Web",}]'))
+        self.assertIsNone(deserialize_resource_provider_configs('[{"namespace": "Microsoft.Web"}]'))
+        self.assertIsNone(
+            deserialize_resource_provider_configs('[{"namespace": "Microsoft.Web", "logs_enabled": "yes"}]')
+        )
+        self.assertIsNone(deserialize_resource_provider_configs('{"namespace": "Microsoft.Web", "logs_enabled": true}'))
