@@ -110,11 +110,17 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         tag_filters: list[str],
         subscription_id: str,
         base_url: str = "https://management.azure.com",
+        resource_provider_configs: dict[str, bool] | None = None,
+        is_logs_enabled_default: bool = True,
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
+        self.resource_provider_configs = resource_provider_configs or {}
+        """Mapping of casefolded resource provider namespace to whether logs are enabled for it.
+        Only contains resource providers which override `is_logs_enabled_default`"""
+        self.is_logs_enabled_default = is_logs_enabled_default
         self.should_include = parse_filtering_rule(tag_filters)
         """Predicate which takes a resource's tags as input and evaluates them against the
         user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
@@ -196,6 +202,12 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             ),
         }
 
+    def is_resource_provider_enabled(self, resource_type: str) -> bool:
+        """Determines whether logs are enabled for the resource provider of the given resource type,
+        falling back to `is_logs_enabled_default` for resource providers without an explicit config"""
+        namespace = resource_type.split("/", 1)[0].strip().casefold()
+        return self.resource_provider_configs.get(namespace, self.is_logs_enabled_default)
+
     def make_sub_resource_extractor_for_rg_and_name(self, *functions: SDKClientMethod) -> FetchSubResources:
         """Creates an extractor for sub resource IDs based on the resource group and name"""
 
@@ -263,8 +275,11 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             resource_tags = resource_tag_dict_to_list(resource.tags)
             # include the control plane storage account in the resource cache, but mark it as not included for forwarding
             # so we can remove diagnostic settings from it
-            include_resource = self.should_include(resource_tags) and not (
-                is_control_plane_storage_account(cast(str, resource.name))
+            # resource provider filters take precedence over tag filters
+            include_resource = (
+                self.is_resource_provider_enabled(cast(str, resource.type))
+                and self.should_include(resource_tags)
+                and not is_control_plane_storage_account(cast(str, resource.name))
             )
             metadata = ResourceMetadata(include=include_resource)
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
