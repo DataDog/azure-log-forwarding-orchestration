@@ -31,6 +31,11 @@ RESOURCE_PROVIDER_CONFIGS_SCHEMA: dict[str, Any] = {
 }
 
 
+class ResourceProviderConfig(TypedDict, total=True):
+    namespace: str
+    logs_enabled: bool
+
+
 class ResourceMetadata(TypedDict, total=True):
     include: bool
 
@@ -114,11 +119,10 @@ def deserialize_resource_provider_configs(env_str: str) -> dict[str, bool] | Non
     """Deserialize resource provider configs from a JSON array of {namespace, logs_enabled} objects
     into a mapping of casefolded namespace to logs_enabled. Returns None if the configs are invalid."""
 
-    return deserialize_cache(
-        env_str,
-        RESOURCE_PROVIDER_CONFIGS_SCHEMA,
-        lambda configs: {c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs},
-    )
+    configs: list[ResourceProviderConfig] | None = deserialize_cache(env_str, RESOURCE_PROVIDER_CONFIGS_SCHEMA)
+    if configs is None:
+        return None
+    return {c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs}
 
 
 def _deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
