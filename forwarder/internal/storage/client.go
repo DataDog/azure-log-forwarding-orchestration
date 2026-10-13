@@ -7,11 +7,66 @@ package storage
 import (
 	// stdlib
 	"context"
+	"fmt"
+	"strings"
 
 	// 3p
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+
+	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 )
+
+const managedIdentityCredential = "managedidentity"
+
+// AzureBlobConfig contains the configuration required to create an Azure Blob Storage client.
+type AzureBlobConfig struct {
+	ConnectionString        string
+	AccountName             string
+	BlobServiceURI          string
+	Credential              string
+	ManagedIdentityClientID string
+}
+
+// AzureBlobConfigFromEnvironment loads Azure Blob Storage configuration from environment variables.
+func AzureBlobConfigFromEnvironment() AzureBlobConfig {
+	return AzureBlobConfig{
+		ConnectionString:        environment.Get(environment.AzureWebJobsStorage),
+		AccountName:             environment.Get(environment.AzureWebJobsStorageAccountName),
+		BlobServiceURI:          environment.Get(environment.AzureWebJobsStorageBlobServiceURI),
+		Credential:              environment.Get(environment.AzureWebJobsStorageCredential),
+		ManagedIdentityClientID: environment.Get(environment.AzureWebJobsStorageClientID),
+	}
+}
+
+// NewAzureBlobClient creates an Azure Blob Storage client using managed identity or a connection string.
+func NewAzureBlobClient(config AzureBlobConfig) (*azblob.Client, error) {
+	if strings.EqualFold(config.Credential, managedIdentityCredential) {
+		blobServiceURI := strings.TrimSpace(config.BlobServiceURI)
+		if blobServiceURI == "" {
+			accountName := strings.TrimSpace(config.AccountName)
+			if accountName == "" {
+				return nil, fmt.Errorf("AzureWebJobsStorage__accountName or AzureWebJobsStorage__blobServiceUri must be set when using managed identity")
+			}
+			blobServiceURI = "https://" + accountName + ".blob.core.windows.net"
+		}
+
+		var options *azidentity.ManagedIdentityCredentialOptions
+		if config.ManagedIdentityClientID != "" {
+			options = &azidentity.ManagedIdentityCredentialOptions{
+				ID: azidentity.ClientID(config.ManagedIdentityClientID),
+			}
+		}
+		credential, err := azidentity.NewManagedIdentityCredential(options)
+		if err != nil {
+			return nil, err
+		}
+		return azblob.NewClient(blobServiceURI, credential, nil)
+	}
+	return azblob.NewClientFromConnectionString(config.ConnectionString, nil)
+}
 
 // AzureBlobClient wraps around the azblob.Client struct, to allow for mocking.
 // these are the inherited and used methods.
