@@ -18,6 +18,24 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 }
 
 
+RESOURCE_PROVIDER_CONFIGS_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "namespace": {"type": "string"},
+            "logs_enabled": {"type": "boolean"},
+        },
+        "required": ["namespace", "logs_enabled"],
+    },
+}
+
+
+class ResourceProviderConfig(TypedDict, total=True):
+    namespace: str
+    logs_enabled: bool
+
+
 class ResourceMetadata(TypedDict, total=True):
     include: bool
 
@@ -95,6 +113,16 @@ def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
     """Deserialize resource tag filters from a CSV string"""
 
     return [tag.strip().casefold() for tag in tag_filter_str.split(",") if len(tag) > 0]
+
+
+def deserialize_resource_provider_configs(env_str: str) -> dict[str, bool] | None:
+    """Deserialize resource provider configs from a JSON array of {namespace, logs_enabled} objects
+    into a mapping of casefolded namespace to logs_enabled. Returns None if the configs are invalid."""
+
+    configs: list[ResourceProviderConfig] | None = deserialize_cache(env_str, RESOURCE_PROVIDER_CONFIGS_SCHEMA)
+    if configs is None:
+        return None
+    return {c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs}
 
 
 def _deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:

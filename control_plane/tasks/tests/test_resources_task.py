@@ -15,6 +15,7 @@ from azure.core.exceptions import HttpResponseError
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
+    IS_LOGS_ENABLED_DEFAULT_SETTING,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
@@ -61,9 +62,12 @@ class TestResourcesTask(TaskTestCase):
         self.resource_mock_client.log = self.log
         self.last_resource_client_base_url: str | None = None
 
-        def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str, base_url: str = ""):
+        self.last_resource_client_kwargs: dict[str, Any] = {}
+
+        def create_resource_client(_log: Any, _cred: Any, _tags: Any, sub_id: str, base_url: str = "", **kwargs: Any):
             assert sub_id in self.resource_client_mapping, "subscription not mocked properly"
             self.last_resource_client_base_url = base_url
+            self.last_resource_client_kwargs = kwargs
             self.resource_mock_client.get_resources_per_region.return_value = self.resource_client_mapping[sub_id]
             return self.resource_mock_client
 
@@ -270,6 +274,69 @@ class TestResourcesTask(TaskTestCase):
             self.cache,
             {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}}},
         )
+
+    async def test_resource_provider_configs_unset_defaults(self):
+        self.patch("getenv").side_effect = lambda _name, default=None: default
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
+
+        await self.run_resources_task({})
+
+        self.assertEqual(
+            self.last_resource_client_kwargs,
+            {"resource_provider_configs": {}, "is_logs_enabled_default": True},
+        )
+        self.log.error.assert_not_called()
+
+    async def test_resource_provider_configs_passed_to_resource_client(self):
+        def getenv_mock(name, default=None):
+            env_vars = {
+                "RESOURCE_PROVIDER_CONFIGS": dumps(
+                    [
+                        {"namespace": "Microsoft.Web", "logs_enabled": True},
+                        {"namespace": " microsoft.KEYVAULT ", "logs_enabled": False},
+                    ]
+                )
+            }
+            return env_vars.get(name, default)
+
+        self.patch("getenv").side_effect = getenv_mock
+        self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "False"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
+
+        await self.run_resources_task({})
+
+        self.assertEqual(
+            self.last_resource_client_kwargs,
+            {
+                "resource_provider_configs": {"microsoft.web": True, "microsoft.keyvault": False},
+                "is_logs_enabled_default": False,
+            },
+        )
+
+    async def test_invalid_resource_provider_configs_ignored(self):
+        def getenv_mock(name, default=None):
+            env_vars = {"RESOURCE_PROVIDER_CONFIGS": '[{"namespace": "Microsoft.Web"}]'}
+            return env_vars.get(name, default)
+
+        self.patch("getenv").side_effect = getenv_mock
+        self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "not a bool"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
+
+        await self.run_resources_task({})
+
+        self.log.error.assert_called_once_with(
+            "Invalid value for %s, ignoring resource provider configs: %s",
+            "RESOURCE_PROVIDER_CONFIGS",
+            '[{"namespace": "Microsoft.Web"}]',
+        )
+        self.assertEqual(
+            self.last_resource_client_kwargs,
+            {"resource_provider_configs": {}, "is_logs_enabled_default": True},
+        )
+        self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
 
     async def test_tags(self):
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
