@@ -16,15 +16,19 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 from cache.common import write_cache
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
+    IS_LOGS_ENABLED_DEFAULT_SETTING,
     MONITORED_SUBSCRIPTIONS_SETTING,
+    RESOURCE_PROVIDER_CONFIGS_SETTING,
     RESOURCE_TAG_FILTERS_SETTING,
     get_config_option,
+    parse_config_option,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
+    deserialize_resource_provider_configs,
     deserialize_resource_tag_filters,
     prune_resource_cache,
 )
@@ -55,6 +59,20 @@ class ResourcesTask(Task):
         "in-memory cache of subscription_id to resource_ids"
 
         self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
+
+        resource_provider_configs_str = getenv(RESOURCE_PROVIDER_CONFIGS_SETTING) or "[]"
+        resource_provider_configs = deserialize_resource_provider_configs(resource_provider_configs_str)
+        if resource_provider_configs is None:
+            self.log.error(
+                "Invalid value for %s, ignoring resource provider configs: %s",
+                RESOURCE_PROVIDER_CONFIGS_SETTING,
+                resource_provider_configs_str,
+            )
+            resource_provider_configs = {}
+        self.resource_provider_configs = resource_provider_configs
+        self.is_logs_enabled_default = parse_config_option(
+            IS_LOGS_ENABLED_DEFAULT_SETTING, lambda v: {"true": True, "false": False}.get(v.strip().lower()), True
+        )
 
     async def run(self) -> None:
         await self.submit_status_update("task_start", StatusCode.OK, "Resources task started")
@@ -93,7 +111,13 @@ class ResourcesTask(Task):
     async def process_subscription(self, subscription_id: str) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
         async with ResourceClient(
-            self.log, self.credential, self.tag_filter_list, subscription_id, self.base_url
+            self.log,
+            self.credential,
+            self.tag_filter_list,
+            subscription_id,
+            self.base_url,
+            resource_provider_configs=self.resource_provider_configs,
+            is_logs_enabled_default=self.is_logs_enabled_default,
         ) as client:
             try:
                 self.resource_cache[subscription_id] = await client.get_resources_per_region()

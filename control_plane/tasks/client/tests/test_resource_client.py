@@ -280,6 +280,100 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {SUPPORTED_REGION_1: {resource1.id: included_metadata}},
         )
 
+    async def get_resources_with_provider_configs(
+        self, tag_filters: list[str], resource_provider_configs: dict[str, bool], is_logs_enabled_default: bool
+    ) -> dict:
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(resource1, resource2)
+        )
+        async with ResourceClient(
+            self.log,
+            self.cred,
+            tag_filters,
+            sub_id1,
+            resource_provider_configs=resource_provider_configs,
+            is_logs_enabled_default=is_logs_enabled_default,
+        ) as client:
+            return await client.get_resources_per_region()
+
+    async def test_resource_provider_unlisted_uses_enabled_default(self):
+        resources = await self.get_resources_with_provider_configs([], {"microsoft.web": False}, True)
+
+        self.assertEqual(
+            resources,
+            {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}},
+        )
+
+    async def test_resource_provider_unlisted_uses_disabled_default(self):
+        resources = await self.get_resources_with_provider_configs([], {"microsoft.web": True}, False)
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    resource1.id: ResourceMetadata(include=False),
+                    resource2.id: ResourceMetadata(include=False),
+                }
+            },
+        )
+
+    async def test_resource_provider_config_overrides_disabled_default(self):
+        resources = await self.get_resources_with_provider_configs([], {"microsoft.network": True}, False)
+
+        self.assertEqual(
+            resources,
+            {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}},
+        )
+
+    async def test_resource_provider_config_overrides_enabled_default(self):
+        resources = await self.get_resources_with_provider_configs([], {"microsoft.network": False}, True)
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    resource1.id: ResourceMetadata(include=False),
+                    resource2.id: ResourceMetadata(include=False),
+                }
+            },
+        )
+
+    async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
+        # resource1 matches the inclusive tag filter, but its resource provider is disabled
+        resources = await self.get_resources_with_provider_configs(["datadog:true"], {"microsoft.network": False}, True)
+
+        self.assertEqual(
+            resources,
+            {
+                SUPPORTED_REGION_1: {
+                    resource1.id: ResourceMetadata(include=False),
+                    resource2.id: ResourceMetadata(include=False),
+                }
+            },
+        )
+
+    async def test_tag_filters_apply_to_enabled_resource_provider(self):
+        resources = await self.get_resources_with_provider_configs(["datadog:true"], {"microsoft.network": True}, False)
+
+        self.assertEqual(
+            resources,
+            {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: ResourceMetadata(include=False)}},
+        )
+
+    def test_is_resource_provider_enabled(self):
+        client = ResourceClient(
+            self.log,
+            self.cred,
+            [],
+            sub_id1,
+            resource_provider_configs={"microsoft.web": True, "microsoft.network": False},
+            is_logs_enabled_default=False,
+        )
+
+        self.assertTrue(client.is_resource_provider_enabled("Microsoft.Web/sites"))
+        self.assertFalse(client.is_resource_provider_enabled("MICROSOFT.NETWORK/loadBalancers"))
+        self.assertFalse(client.is_resource_provider_enabled("Microsoft.KeyVault/vaults"))
+
     async def test_resource_included_by_key_only_tag(self):
         inclusive_tags = ["datadog"]
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
