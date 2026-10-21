@@ -234,10 +234,9 @@ ALLOWED_TYPES_PER_PROVIDER: Final = {
     "microsoft.workloads": {"sapvirtualinstances"},
     "NGINX.NGINXPLUS": {"nginxDeployment"},
 }
-ALLOWED_RESOURCE_TYPES: Final = [
+ALLOWED_RESOURCE_TYPES: Final = {
     f"{rp}/{rt}".casefold() for rp, resource_types in ALLOWED_TYPES_PER_PROVIDER.items() for rt in resource_types
-]
-ALLOWED_RESOURCE_TYPES_FILTER: Final = " || ".join([f"type == '{rt}'" for rt in ALLOWED_RESOURCE_TYPES])
+}
 PROGRESS_BAR_LENGTH: Final = 40
 MAX_RETRIES = 7
 RESOURCE_GROUP_DELETION_POLLING_DELAY = 5  # seconds
@@ -472,12 +471,11 @@ def list_users_subscriptions() -> dict:
 def list_resources(sub_id: str, sub_name: str) -> set:
     log.info(f"Searching for resources in {sub_name} ({sub_id})... ")
 
-    resource_ids = json.loads(
-        az(f'resource list --subscription {sub_id} --query "[?{ALLOWED_RESOURCE_TYPES_FILTER}].id" --output json')
-    )
+    resources = json.loads(az(f'resource list --subscription {sub_id} --query "[].{{id:id, type:type}}" --output json'))
+    resource_ids = {r["id"] for r in resources if r["type"].casefold() in ALLOWED_RESOURCE_TYPES}
     print(f"Found {formatted_number(len(resource_ids))} resource(s)")
 
-    return set(resource_ids)
+    return resource_ids
 
 
 def num_resources_in_group(sub_id: str, resource_group: str) -> int:

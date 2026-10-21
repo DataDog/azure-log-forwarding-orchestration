@@ -398,12 +398,26 @@ class TestUninstallScript(TestCase):
         self.assertEqual(result, 5)
 
     def test_list_resources_success(self):
-        """Test listing resources in a subscription"""
-        self.az_mock.return_value = json.dumps(MOCK_RESOURCE_IDS)
+        """Test listing resources filters to allowed types, case-insensitively.
+
+        Azure returns resource types in canonical mixed case, so matching must be
+        case-insensitive against ALLOWED_RESOURCE_TYPES (which is case-folded). Resources
+        whose type is not in the allowed set must be excluded.
+        """
+        disallowed_storage = MOCK_RESOURCE_IDS[0]  # Microsoft.Storage/storageAccounts -> not allowed
+        allowed_lb = MOCK_RESOURCE_IDS[1]  # Microsoft.Network/loadBalancers -> allowed
+        allowed_env = "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.App/managedEnvironments/env1"
+        self.az_mock.return_value = json.dumps(
+            [
+                {"id": allowed_lb, "type": "Microsoft.Network/loadBalancers"},
+                {"id": allowed_env, "type": "Microsoft.App/managedEnvironments"},
+                {"id": disallowed_storage, "type": "Microsoft.Storage/storageAccounts"},
+            ]
+        )
 
         result = uninstall.list_resources(SUB_ID_1, SUB_NAME_1)
 
-        self.assertEqual(result, set(MOCK_RESOURCE_IDS))
+        self.assertEqual(result, {allowed_lb, allowed_env})
 
     # ===== Deletion Tests ===== #
 
