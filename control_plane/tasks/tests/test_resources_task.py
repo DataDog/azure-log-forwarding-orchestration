@@ -22,6 +22,7 @@ from cache.resources_cache import (
     ResourceCache,
     ResourceCacheV1,
     ResourceMetadata,
+    ResourceProviderConfigs,
     _deserialize_v2_resource_cache,
 )
 from tasks.client.datadog_api_client import StatusCode
@@ -284,13 +285,9 @@ class TestResourcesTask(TaskTestCase):
 
         self.assertEqual(
             self.last_resource_client_kwargs,
-            {"resource_provider_configs": {}, "is_logs_enabled_default": True},
+            {"resource_provider_configs": ResourceProviderConfigs(overrides={}, logs_enabled_default=True)},
         )
         self.log.error.assert_not_called()
-        self.assertNotIn(
-            "Filtering resources by resource provider, logs enabled by default: %s, overrides: %s",
-            [c.args[0] for c in self.log.info.call_args_list],
-        )
 
     async def test_resource_provider_configs_passed_to_resource_client(self):
         def getenv_mock(name, default=None):
@@ -316,14 +313,10 @@ class TestResourcesTask(TaskTestCase):
         self.assertEqual(
             self.last_resource_client_kwargs,
             {
-                "resource_provider_configs": {"microsoft.web": True, "microsoft.keyvault": False},
-                "is_logs_enabled_default": False,
+                "resource_provider_configs": ResourceProviderConfigs(
+                    overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
+                )
             },
-        )
-        self.log.info.assert_any_call(
-            "Filtering resources by resource provider, logs enabled by default: %s, overrides: %s",
-            False,
-            {"microsoft.web": True, "microsoft.keyvault": False},
         )
 
     def patch_resource_provider_configs(self, value: str) -> None:

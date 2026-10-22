@@ -130,8 +130,7 @@ class ResourcesTask(Task):
             self.tag_filter_list,
             subscription_id,
             self.base_url,
-            resource_provider_configs=resource_provider_configs.overrides,
-            is_logs_enabled_default=resource_provider_configs.logs_enabled_default,
+            resource_provider_configs=resource_provider_configs,
         ) as client:
             try:
                 self.resource_cache[subscription_id] = await client.get_resources_per_region()

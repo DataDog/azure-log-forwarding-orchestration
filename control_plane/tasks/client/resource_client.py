@@ -31,7 +31,7 @@ from azure.mgmt.synapse.aio import SynapseManagementClient
 from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
-from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
+from cache.resources_cache import RegionToResourcesDict, ResourceMetadata, ResourceProviderConfigs
 from tasks.client.filtering import parse_filtering_rule
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
@@ -125,17 +125,18 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         tag_filters: list[str],
         subscription_id: str,
         base_url: str = "https://management.azure.com",
-        resource_provider_configs: dict[str, bool] | None = None,
-        is_logs_enabled_default: bool = True,
+        resource_provider_configs: ResourceProviderConfigs | None = None,
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
-        self.resource_provider_configs = resource_provider_configs or {}
-        """Mapping of casefolded resource provider namespace to whether logs are enabled for it.
-        Only contains resource providers which override `is_logs_enabled_default`"""
-        self.is_logs_enabled_default = is_logs_enabled_default
+        self.resource_provider_configs = (
+            resource_provider_configs
+            if resource_provider_configs is not None
+            else ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
+        )
+        "Which resource providers logs are enabled for, all of them unless configured otherwise"
         self.should_include = parse_filtering_rule(tag_filters)
         """Predicate which takes a resource's tags as input and evaluates them against the
         user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
@@ -219,9 +220,9 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
 
     def is_resource_provider_enabled(self, resource_type: str) -> bool:
         """Determines whether logs are enabled for the resource provider of the given resource type,
-        falling back to `is_logs_enabled_default` for resource providers without an explicit config"""
-        return self.resource_provider_configs.get(
-            resource_provider_namespace(resource_type), self.is_logs_enabled_default
+        falling back to `logs_enabled_default` for resource providers without an override"""
+        return self.resource_provider_configs.overrides.get(
+            resource_provider_namespace(resource_type), self.resource_provider_configs.logs_enabled_default
         )
 
     def exclusion_reason(self, resource: GenericResourceExpanded) -> ExclusionReason | None:

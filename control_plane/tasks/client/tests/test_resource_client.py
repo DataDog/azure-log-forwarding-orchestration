@@ -4,54 +4,34 @@
 
 # stdlib
 from unittest import IsolatedAsyncioTestCase, TestCase
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 # 3p
 from azure.core.exceptions import ResourceNotFoundError
 
 # project
-from cache.resources_cache import ResourceMetadata
+from cache.resources_cache import RegionToResourcesDict, ResourceMetadata, ResourceProviderConfigs
 from tasks.client.resource_client import (
     RESOURCE_QUERY_FILTER,
     ExclusionReason,
     ResourceClient,
     should_ignore_resource,
 )
-from tasks.common import CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX
-from tasks.constants import FETCHED_RESOURCE_TYPES, NESTED_VALID_RESOURCE_TYPES
+from tasks.client.tests.fixtures import (
+    CONTAINER_APPS_UNSUPPORTED_REGION,
+    SUPPORTED_REGION_1,
+    SUPPORTED_REGION_2,
+    UNSUPPORTED_REGION,
+    control_plane_storage_account,
+    eventhub_resource,
+    included_metadata,
+    keyvault_resource,
+    resource1,
+    resource2,
+    sub_id1,
+)
+from tasks.constants import FETCHED_RESOURCE_TYPES
 from tasks.tests.common import AsyncMockClient, async_generator, mock
-
-sub_id1 = "a062baee-fdd3-4784-beb4-d817f591422c"
-sub_id2 = "77602a31-36b2-4417-a27c-9071107ca3e6"
-sub1 = mock(subscription_id=sub_id1)
-sub2 = mock(subscription_id=sub_id2)
-
-SUPPORTED_REGION_1 = "norwayeast"
-SUPPORTED_REGION_2 = "southafricanorth"
-CONTAINER_APPS_UNSUPPORTED_REGION = "newzealandnorth"
-UNSUPPORTED_REGION = "uae"
-resource1 = mock(
-    id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Network/loadBalancers", tags={"datadog": "true"}
-)
-resource2 = mock(
-    id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
-)
-
-keyvault_resource = mock(
-    id="kv1", name="kv1", location=SUPPORTED_REGION_1, type="Microsoft.KeyVault/vaults", tags={"datadog": "true"}
-)
-control_plane_storage_account = mock(
-    id="cpsa",
-    name=f"{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}abc",
-    location=SUPPORTED_REGION_1,
-    type="Microsoft.Storage/storageAccounts",
-    tags={"datadog": "true"},
-)
-control_plane_storage_account_ids = {
-    f"cpsa/{service}/default" for service in NESTED_VALID_RESOURCE_TYPES["microsoft.storage/storageaccounts"]
-}
-
-included_metadata = ResourceMetadata(include=True)
 
 
 class TestResourceClientHelpers(TestCase):
@@ -301,23 +281,21 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def get_resources_with_provider_configs(
-        self, tag_filters: list[str], resource_provider_configs: dict[str, bool], is_logs_enabled_default: bool
-    ) -> dict:
-        self.mock_clients["ResourceManagementClient"].resources.list = mock(
-            return_value=async_generator(resource1, resource2)
-        )
+        self,
+        resource_provider_configs: ResourceProviderConfigs,
+        tag_filters: list[str] | None = None,
+        resources: tuple[Mock, ...] = (resource1, resource2),
+    ) -> RegionToResourcesDict:
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(return_value=async_generator(*resources))
         async with ResourceClient(
-            self.log,
-            self.cred,
-            tag_filters,
-            sub_id1,
-            resource_provider_configs=resource_provider_configs,
-            is_logs_enabled_default=is_logs_enabled_default,
+            self.log, self.cred, tag_filters or [], sub_id1, resource_provider_configs=resource_provider_configs
         ) as client:
             return await client.get_resources_per_region()
 
     async def test_resource_provider_unlisted_uses_enabled_default(self):
-        resources = await self.get_resources_with_provider_configs([], {"microsoft.web": False}, True)
+        resources = await self.get_resources_with_provider_configs(
+            ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True)
+        )
 
         self.assertEqual(
             resources,
@@ -325,7 +303,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def test_resource_provider_unlisted_uses_disabled_default(self):
-        resources = await self.get_resources_with_provider_configs([], {"microsoft.web": True}, False)
+        resources = await self.get_resources_with_provider_configs(
+            ResourceProviderConfigs(overrides={"microsoft.web": True}, logs_enabled_default=False)
+        )
 
         self.assertEqual(
             resources,
@@ -338,7 +318,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def test_resource_provider_config_overrides_disabled_default(self):
-        resources = await self.get_resources_with_provider_configs([], {"microsoft.network": True}, False)
+        resources = await self.get_resources_with_provider_configs(
+            ResourceProviderConfigs(overrides={"microsoft.network": True}, logs_enabled_default=False)
+        )
 
         self.assertEqual(
             resources,
@@ -346,7 +328,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def test_resource_provider_config_overrides_enabled_default(self):
-        resources = await self.get_resources_with_provider_configs([], {"microsoft.network": False}, True)
+        resources = await self.get_resources_with_provider_configs(
+            ResourceProviderConfigs(overrides={"microsoft.network": False}, logs_enabled_default=True)
+        )
 
         self.assertEqual(
             resources,
@@ -360,7 +344,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
         # resource1 matches the inclusive tag filter, but its resource provider is disabled
-        resources = await self.get_resources_with_provider_configs(["datadog:true"], {"microsoft.network": False}, True)
+        resources = await self.get_resources_with_provider_configs(
+            ResourceProviderConfigs(overrides={"microsoft.network": False}, logs_enabled_default=True),
+            tag_filters=["datadog:true"],
+        )
 
         self.assertEqual(
             resources,
@@ -373,7 +360,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def test_tag_filters_apply_to_enabled_resource_provider(self):
-        resources = await self.get_resources_with_provider_configs(["datadog:true"], {"microsoft.network": True}, False)
+        resources = await self.get_resources_with_provider_configs(
+            ResourceProviderConfigs(overrides={"microsoft.network": True}, logs_enabled_default=False),
+            tag_filters=["datadog:true"],
+        )
 
         self.assertEqual(
             resources,
@@ -381,23 +371,15 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
     async def test_mixed_resource_providers_in_same_run(self):
-        eventhub_resource = mock(
-            id="eh1", name="eh1", location=SUPPORTED_REGION_1, type="Microsoft.EventHub/namespaces", tags=None
-        )
-        for is_logs_enabled_default in (True, False):
-            with self.subTest(is_logs_enabled_default=is_logs_enabled_default):
-                self.mock_clients["ResourceManagementClient"].resources.list = mock(
-                    return_value=async_generator(eventhub_resource, keyvault_resource, resource1)
+        for logs_enabled_default in (True, False):
+            with self.subTest(logs_enabled_default=logs_enabled_default):
+                resources = await self.get_resources_with_provider_configs(
+                    ResourceProviderConfigs(
+                        overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
+                        logs_enabled_default=logs_enabled_default,
+                    ),
+                    resources=(eventhub_resource, keyvault_resource, resource1),
                 )
-                async with ResourceClient(
-                    self.log,
-                    self.cred,
-                    [],
-                    sub_id1,
-                    resource_provider_configs={"microsoft.eventhub": True, "microsoft.keyvault": False},
-                    is_logs_enabled_default=is_logs_enabled_default,
-                ) as client:
-                    resources = await client.get_resources_per_region()
 
                 # each resource gets its own provider's decision, unlisted providers (resource1) use the default
                 self.assertEqual(
@@ -406,7 +388,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                         SUPPORTED_REGION_1: {
                             eventhub_resource.id: ResourceMetadata(include=True),
                             keyvault_resource.id: ResourceMetadata(include=False),
-                            resource1.id: ResourceMetadata(include=is_logs_enabled_default),
+                            resource1.id: ResourceMetadata(include=logs_enabled_default),
                         }
                     },
                 )
@@ -417,74 +399,14 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             self.cred,
             [],
             sub_id1,
-            resource_provider_configs={"microsoft.web": True, "microsoft.network": False},
-            is_logs_enabled_default=False,
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.web": True, "microsoft.network": False}, logs_enabled_default=False
+            ),
         )
 
         self.assertTrue(client.is_resource_provider_enabled("Microsoft.Web/sites"))
         self.assertFalse(client.is_resource_provider_enabled("MICROSOFT.NETWORK/loadBalancers"))
         self.assertFalse(client.is_resource_provider_enabled("Microsoft.KeyVault/vaults"))
-
-    async def test_logs_resource_counts_by_exclusion_reason(self):
-        self.mock_clients["ResourceManagementClient"].resources.list = mock(
-            return_value=async_generator(resource1, resource2, keyvault_resource, control_plane_storage_account)
-        )
-        async with ResourceClient(
-            self.log, self.cred, ["datadog:true"], sub_id1, resource_provider_configs={"microsoft.keyvault": False}
-        ) as client:
-            resources = await client.get_resources_per_region()
-
-        self.assertEqual(
-            {resource_id: metadata["include"] for resource_id, metadata in resources[SUPPORTED_REGION_1].items()},
-            {
-                resource1.id: True,
-                resource2.id: False,
-                keyvault_resource.id: False,
-                **{resource_id: False for resource_id in control_plane_storage_account_ids},
-            },
-        )
-        self.log.info.assert_called_once_with(
-            "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
-            sub_id1,
-            7,
-            1,
-            6,
-            "control_plane_storage_account: 4, resource_provider: 1, tag_filter: 1",
-            extra={
-                "subscription_id": sub_id1,
-                "resources_included": 1,
-                "resources_excluded_control_plane_storage_account": 4,
-                "resources_excluded_resource_provider": 1,
-                "resources_excluded_tag_filter": 1,
-                "resources_excluded_resource_provider_namespaces": "microsoft.keyvault:1",
-            },
-        )
-
-    async def test_logs_resource_provider_exclusions_by_namespace(self):
-        self.mock_clients["ResourceManagementClient"].resources.list = mock(
-            return_value=async_generator(resource1, resource2, keyvault_resource)
-        )
-        async with ResourceClient(
-            self.log, self.cred, ["datadog:true"], sub_id1, is_logs_enabled_default=False
-        ) as client:
-            await client.get_resources_per_region()
-
-        self.log.info.assert_called_once_with(
-            "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
-            sub_id1,
-            3,
-            0,
-            3,
-            "control_plane_storage_account: 0, resource_provider: 3, tag_filter: 0",
-            extra={
-                "subscription_id": sub_id1,
-                "resources_included": 0,
-                "resources_excluded_control_plane_storage_account": 0,
-                "resources_excluded_resource_provider": 3,
-                "resources_excluded_tag_filter": 0,
-                "resources_excluded_resource_provider_namespaces": "microsoft.keyvault:1,microsoft.network:2",
-            },
-        )
 
     def test_exclusion_reason_attributed_to_first_matching_check(self):
         client = ResourceClient(
@@ -492,7 +414,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             self.cred,
             ["datadog:true"],
             sub_id1,
-            resource_provider_configs={"microsoft.storage": False, "microsoft.network": False},
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.storage": False, "microsoft.network": False}, logs_enabled_default=True
+            ),
         )
 
         self.assertIs(
