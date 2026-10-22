@@ -230,7 +230,6 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         # so we can remove diagnostic settings from it
         if is_control_plane_storage_account(cast(str, resource.name)):
             return ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT
-        # resource provider filters are checked before tag filters
         if not self.is_resource_provider_enabled(cast(str, resource.type)):
             return ExclusionReason.RESOURCE_PROVIDER
         if not self.should_include(resource_tag_dict_to_list(resource.tags)):
