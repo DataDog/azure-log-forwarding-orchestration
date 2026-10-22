@@ -4,6 +4,7 @@
 
 # stdlib
 from asyncio import gather
+from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from enum import Enum
@@ -299,17 +300,59 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         batched_resource_ids = await gather(
             *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
         )
+        # count of resource IDs by exclusion reason, None for included resources
+        resource_counts: Counter[ExclusionReason | None] = Counter()
+        # count of resource IDs excluded by their resource provider, by namespace
+        disabled_resource_provider_counts: Counter[str] = Counter()
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            metadata = ResourceMetadata(include=self.exclusion_reason(resource) is None)
+            reason = self.exclusion_reason(resource)
+            metadata = ResourceMetadata(include=reason is None)
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
+            resource_id_count = len(resource_ids)
+            resource_counts[reason] += resource_id_count
+            if reason is ExclusionReason.RESOURCE_PROVIDER:
+                namespace = resource_provider_namespace(cast(str, resource.type))
+                disabled_resource_provider_counts[namespace] += resource_id_count
+
+        self.log_resource_counts(resource_counts, disabled_resource_provider_counts)
+        return resources_per_region
+
+    def log_resource_counts(
+        self, resource_counts: Counter[ExclusionReason | None], disabled_resource_provider_counts: Counter[str]
+    ) -> None:
+        """Logs how many resources are included and excluded for each reason, with the counts as log attributes"""
+        included_count = resource_counts[None]
+        excluded_counts = {reason: resource_counts[reason] for reason in ExclusionReason}
+        excluded_count = sum(excluded_counts.values())
+        total_count = included_count + excluded_count
+
+        # e.g. "control_plane_storage_account: 4, resource_provider: 1, tag_filter: 1"
+        excluded_counts_message = ", ".join(f"{reason.value}: {count}" for reason, count in excluded_counts.items())
+        # e.g. {"resources_excluded_tag_filter": 1, ...}
+        excluded_counts_attributes = {
+            f"resources_excluded_{reason.value}": count for reason, count in excluded_counts.items()
+        }
+        # e.g. "microsoft.keyvault:1,microsoft.network:2"
+        sorted_disabled_resource_provider_counts = sorted(disabled_resource_provider_counts.items())
+        disabled_resource_providers_attribute = ",".join(
+            f"{namespace}:{count}" for namespace, count in sorted_disabled_resource_provider_counts
+        )
 
         self.log.info(
-            "Subscription %s: Collected %s resources",
+            "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
             self.subscription_id,
-            sum(len(rs) for rs in resources_per_region.values()),
+            total_count,
+            included_count,
+            excluded_count,
+            excluded_counts_message,
+            extra={
+                "subscription_id": self.subscription_id,
+                "resources_included": included_count,
+                **excluded_counts_attributes,
+                "resources_excluded_resource_provider_namespaces": disabled_resource_providers_attribute,
+            },
         )
-        return resources_per_region
 
     async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
         resource_id = cast(str, resource.id).lower()
