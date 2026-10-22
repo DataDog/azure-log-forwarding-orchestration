@@ -61,15 +61,15 @@ class ResourcesTask(Task):
         self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
 
         resource_provider_configs_str = getenv(RESOURCE_PROVIDER_CONFIGS_SETTING) or "[]"
-        resource_provider_configs = deserialize_resource_provider_configs(resource_provider_configs_str)
-        if resource_provider_configs is None:
+        self.resource_provider_configs = deserialize_resource_provider_configs(resource_provider_configs_str)
+        """None when the configured value is invalid, in which case the resource cache is left unchanged,
+        since falling back to `is_logs_enabled_default` could remove diagnostic settings from every resource"""
+        if self.resource_provider_configs is None:
             self.log.error(
-                "Invalid value for %s, ignoring resource provider configs: %s",
+                "Invalid value for %s, resource cache will not be updated: %s",
                 RESOURCE_PROVIDER_CONFIGS_SETTING,
                 resource_provider_configs_str,
             )
-            resource_provider_configs = {}
-        self.resource_provider_configs = resource_provider_configs
         self.is_logs_enabled_default = parse_config_option(
             IS_LOGS_ENABLED_DEFAULT_SETTING, lambda v: {"true": True, "false": False}.get(v.strip().lower()), True
         )
@@ -81,6 +81,14 @@ class ResourcesTask(Task):
             self.log.warning("Detected resource cache schema upgrade, flushing cache")
             await self.write_caches(is_schema_upgrade=True)
             self.schema_upgrade = False
+
+        if self.resource_provider_configs is None:
+            await self.submit_status_update(
+                "resource_provider_configs",
+                StatusCode.DESERIALIZATION_ERROR,
+                f"Invalid value for {RESOURCE_PROVIDER_CONFIGS_SETTING}, resource cache was not updated",
+            )
+            return
 
         async with SubscriptionClient(self.credential, base_url=self.base_url) as subscription_client:
             try:
@@ -133,6 +141,10 @@ class ResourcesTask(Task):
     async def write_caches(self, is_schema_upgrade: bool = False) -> None:
         if is_schema_upgrade:
             await write_cache(RESOURCE_CACHE_BLOB, dumps(self._resource_cache_initial_state))
+            return
+
+        if self.resource_provider_configs is None:
+            # run() skipped collecting resources, writing the empty in-memory cache would drop every resource
             return
 
         prune_resource_cache(self.resource_cache)

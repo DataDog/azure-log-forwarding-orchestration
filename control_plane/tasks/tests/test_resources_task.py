@@ -16,6 +16,7 @@ from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
     IS_LOGS_ENABLED_DEFAULT_SETTING,
+    RESOURCE_PROVIDER_CONFIGS_SETTING,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
@@ -315,23 +316,70 @@ class TestResourcesTask(TaskTestCase):
             },
         )
 
-    async def test_invalid_resource_provider_configs_ignored(self):
-        def getenv_mock(name, default=None):
-            env_vars = {"RESOURCE_PROVIDER_CONFIGS": '[{"namespace": "Microsoft.Web"}]'}
-            return env_vars.get(name, default)
+    def patch_resource_provider_configs(self, value: str) -> None:
+        self.patch("getenv").side_effect = lambda name, default=None: (
+            value if name == RESOURCE_PROVIDER_CONFIGS_SETTING else default
+        )
 
-        self.patch("getenv").side_effect = getenv_mock
+    async def test_invalid_resource_provider_configs_leaves_cache_unchanged(self):
+        invalid_configs = '[{"namespace": "Microsoft.Web"}]'
+        self.patch_resource_provider_configs(invalid_configs)
+        self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "false"
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        # what the task would write if it fell back to the disabled default
+        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": ResourceMetadata(include=False)}}}
+
+        await self.run_resources_task({sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
+
+        self.log.error.assert_called_once_with(
+            "Invalid value for %s, resource cache will not be updated: %s",
+            RESOURCE_PROVIDER_CONFIGS_SETTING,
+            invalid_configs,
+        )
+        self.subscription_client_mock.assert_not_called()
+        self.resource_client.assert_not_called()
+        self.write_cache.assert_not_called()
+
+    async def test_invalid_resource_provider_configs_submits_status_update(self):
+        self.patch_resource_provider_configs("not json")
+        status_client = AsyncMockClient()
+        self.datadog_client.submit_status_update = status_client
+        uuid = str(uuid4())
+
+        await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
+
+        expected_calls = [
+            call("resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"),
+            call(
+                "resources_task.resource_provider_configs",
+                StatusCode.DESERIALIZATION_ERROR,
+                "Invalid value for RESOURCE_PROVIDER_CONFIGS, resource cache was not updated",
+                uuid,
+                "unknown",
+                "unknown",
+            ),
+        ]
+        status_client.assert_has_calls(expected_calls)
+        self.assertEqual(status_client.call_count, len(expected_calls))
+        self.write_cache.assert_not_called()
+
+    async def test_invalid_resource_provider_configs_still_upgrades_cache_schema(self):
+        self.patch_resource_provider_configs("not json")
+
+        await self.run_resources_task({sub_id1: {SUPPORTED_REGION_1: {"res1"}}})
+
+        self.write_cache.assert_called_once()
+        self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
+        self.subscription_client_mock.assert_not_called()
+
+    async def test_invalid_logs_enabled_default_falls_back_to_true(self):
+        self.patch("getenv").side_effect = lambda _name, default=None: default
         self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "not a bool"
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
 
         await self.run_resources_task({})
 
-        self.log.error.assert_called_once_with(
-            "Invalid value for %s, ignoring resource provider configs: %s",
-            "RESOURCE_PROVIDER_CONFIGS",
-            '[{"namespace": "Microsoft.Web"}]',
-        )
         self.assertEqual(
             self.last_resource_client_kwargs,
             {"resource_provider_configs": {}, "is_logs_enabled_default": True},
