@@ -380,6 +380,37 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: ResourceMetadata(include=False)}},
         )
 
+    async def test_mixed_resource_providers_in_same_run(self):
+        eventhub_resource = mock(
+            id="eh1", name="eh1", location=SUPPORTED_REGION_1, type="Microsoft.EventHub/namespaces", tags=None
+        )
+        for is_logs_enabled_default in (True, False):
+            with self.subTest(is_logs_enabled_default=is_logs_enabled_default):
+                self.mock_clients["ResourceManagementClient"].resources.list = mock(
+                    return_value=async_generator(eventhub_resource, keyvault_resource, resource1)
+                )
+                async with ResourceClient(
+                    self.log,
+                    self.cred,
+                    [],
+                    sub_id1,
+                    resource_provider_configs={"microsoft.eventhub": True, "microsoft.keyvault": False},
+                    is_logs_enabled_default=is_logs_enabled_default,
+                ) as client:
+                    resources = await client.get_resources_per_region()
+
+                # each resource gets its own provider's decision, unlisted providers (resource1) use the default
+                self.assertEqual(
+                    resources,
+                    {
+                        SUPPORTED_REGION_1: {
+                            eventhub_resource.id: ResourceMetadata(include=True),
+                            keyvault_resource.id: ResourceMetadata(include=False),
+                            resource1.id: ResourceMetadata(include=is_logs_enabled_default),
+                        }
+                    },
+                )
+
     def test_is_resource_provider_enabled(self):
         client = ResourceClient(
             self.log,
