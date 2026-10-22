@@ -27,8 +27,8 @@ from tasks.client.tests.fixtures import (
     excluded_metadata,
     included_metadata,
     keyvault_resource,
-    resource1,
-    resource2,
+    network1,
+    network2,
     sub_id1,
 )
 from tasks.constants import FETCHED_RESOURCE_TYPES
@@ -146,7 +146,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
                 mock(id="res1", location=SUPPORTED_REGION_1, type="Microsoft.Compute/Snapshots", tags={}),
-                resource2,
+                network2,
                 mock(
                     id="res3",
                     location=SUPPORTED_REGION_2,
@@ -158,7 +158,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         async with ResourceClient(self.log, self.cred, [], sub_id1) as client:
             resources = await client.get_resources_per_region()
 
-        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource2.id: included_metadata}})
+        self.assertEqual(resources, {SUPPORTED_REGION_1: {network2.id: included_metadata}})
 
     async def test_lfo_resource_is_ignored(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
@@ -170,13 +170,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     type="Microsoft.Web/sites",
                     tags={},
                 ),
-                resource1,
+                network1,
             )
         )
 
         async with ResourceClient(self.log, self.cred, [], sub_id1) as client:
             resources = await client.get_resources_per_region()
-        self.assertEqual(resources, {SUPPORTED_REGION_1: {resource1.id: included_metadata}})
+        self.assertEqual(resources, {SUPPORTED_REGION_1: {network1.id: included_metadata}})
 
     async def test_storage_account_sub_resources_collected(self):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
@@ -188,7 +188,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     type="MICROSOFT.STORAGE/STORAGEACCOUNTS",
                     tags={},
                 ),
-                resource1,
+                network1,
             )
         )
 
@@ -218,10 +218,10 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_resource_tags_normalized(self):
         inclusive_tags = ["datadog:true"]
-        resource1.tags = {" DATADOG ": "tRuE    "}
+        network1.tags = {" DATADOG ": "tRuE    "}
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                resource1,
+                network1,
             )
         )
 
@@ -230,14 +230,14 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: included_metadata}},
+            {SUPPORTED_REGION_1: {network1.id: included_metadata}},
         )
 
     async def test_resource_filtered_out_by_excluding_tags(self):
         excluding_tags = ["!datadog:true"]
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                resource1,
+                network1,
             )
         )
 
@@ -246,14 +246,14 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
+            {SUPPORTED_REGION_1: {network1.id: ResourceMetadata(include=False)}},
         )
 
     async def test_resource_filtered_out_by_inclusive_tags(self):
         inclusive_tags = ["hello:world"]
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                resource1,
+                network1,
             )
         )
 
@@ -262,14 +262,14 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: ResourceMetadata(include=False)}},
+            {SUPPORTED_REGION_1: {network1.id: ResourceMetadata(include=False)}},
         )
 
     async def test_resource_included_by_inclusive_tags(self):
         inclusive_tags = ["datadog:true"]
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
-                resource1,
+                network1,
             )
         )
 
@@ -278,7 +278,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         self.assertEqual(
             resources,
-            {SUPPORTED_REGION_1: {resource1.id: included_metadata}},
+            {SUPPORTED_REGION_1: {network1.id: included_metadata}},
         )
 
     async def get_resources_with_provider_configs(
@@ -296,7 +296,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_resource_provider_unlisted_uses_enabled_default(self):
         # GIVEN network resources, an override only for microsoft.web, and logs enabled by default
-        resources = (resource1, resource2)
+        resources = (network1, network2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.web": False}, logs_enabled_default=True
         )
@@ -311,13 +311,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # THEN
         expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
+            SUPPORTED_REGION_1: {network1.id: included_metadata, network2.id: included_metadata}
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_unlisted_uses_disabled_default(self):
         # GIVEN network resources, an override only for microsoft.web, and logs disabled by default
-        resources = (resource1, resource2)
+        resources = (network1, network2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.web": True}, logs_enabled_default=False
         )
@@ -332,13 +332,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # THEN
         expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+            SUPPORTED_REGION_1: {network1.id: excluded_metadata, network2.id: excluded_metadata}
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_disabled_default(self):
         # GIVEN network resources with microsoft.network enabled and logs disabled by default
-        resources = (resource1, resource2)
+        resources = (network1, network2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": True}, logs_enabled_default=False
         )
@@ -353,13 +353,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # THEN
         expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
+            SUPPORTED_REGION_1: {network1.id: included_metadata, network2.id: included_metadata}
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_enabled_default(self):
         # GIVEN network resources with microsoft.network disabled and logs enabled by default
-        resources = (resource1, resource2)
+        resources = (network1, network2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": False}, logs_enabled_default=True
         )
@@ -374,13 +374,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # THEN
         expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+            SUPPORTED_REGION_1: {network1.id: excluded_metadata, network2.id: excluded_metadata}
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
-        # GIVEN microsoft.network disabled and a tag filter that resource1 matches
-        resources = (resource1, resource2)
+        # GIVEN microsoft.network disabled and a tag filter that network1 matches
+        resources = (network1, network2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": False}, logs_enabled_default=True
         )
@@ -395,13 +395,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # THEN
         expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+            SUPPORTED_REGION_1: {network1.id: excluded_metadata, network2.id: excluded_metadata}
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_tag_filters_apply_to_enabled_resource_provider(self):
-        # GIVEN microsoft.network enabled and a tag filter that only resource1 matches
-        resources = (resource1, resource2)
+        # GIVEN microsoft.network enabled and a tag filter that only network1 matches
+        resources = (network1, network2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": True}, logs_enabled_default=False
         )
@@ -416,13 +416,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # THEN
         expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: excluded_metadata}
+            SUPPORTED_REGION_1: {network1.id: included_metadata, network2.id: excluded_metadata}
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_mixed_resource_providers_with_enabled_default(self):
-        # GIVEN eventhub enabled, keyvault disabled, and resource1's microsoft.network left to the enabled default
-        resources = (eventhub_resource, keyvault_resource, resource1)
+        # GIVEN eventhub enabled, keyvault disabled, and network1's microsoft.network left to the enabled default
+        resources = (eventhub_resource, keyvault_resource, network1)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
             logs_enabled_default=True,
@@ -441,14 +441,14 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             SUPPORTED_REGION_1: {
                 eventhub_resource.id: included_metadata,
                 keyvault_resource.id: excluded_metadata,
-                resource1.id: included_metadata,
+                network1.id: included_metadata,
             }
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_mixed_resource_providers_with_disabled_default(self):
-        # GIVEN eventhub enabled, keyvault disabled, and resource1's microsoft.network left to the disabled default
-        resources = (eventhub_resource, keyvault_resource, resource1)
+        # GIVEN eventhub enabled, keyvault disabled, and network1's microsoft.network left to the disabled default
+        resources = (eventhub_resource, keyvault_resource, network1)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
             logs_enabled_default=False,
@@ -467,7 +467,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             SUPPORTED_REGION_1: {
                 eventhub_resource.id: included_metadata,
                 keyvault_resource.id: excluded_metadata,
-                resource1.id: excluded_metadata,
+                network1.id: excluded_metadata,
             }
         }
         self.assertEqual(resources_per_region, expected_resources_per_region)
@@ -501,13 +501,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
         # WHEN
         control_plane_storage_account_reason = client.exclusion_reason(control_plane_storage_account)
-        # resource2 also fails the tag filter, but its resource provider is checked first
-        resource2_reason = client.exclusion_reason(resource2)
+        # network2 also fails the tag filter, but its resource provider is checked first
+        network2_reason = client.exclusion_reason(network2)
         keyvault_reason = client.exclusion_reason(keyvault_resource)
 
         # THEN
         self.assertIs(control_plane_storage_account_reason, ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT)
-        self.assertIs(resource2_reason, ExclusionReason.RESOURCE_PROVIDER)
+        self.assertIs(network2_reason, ExclusionReason.RESOURCE_PROVIDER)
         self.assertIsNone(keyvault_reason)
 
     async def test_resource_included_by_key_only_tag(self):
@@ -544,7 +544,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.mock_clients["ResourceManagementClient"].resources.list = mock(
             return_value=async_generator(
                 mockSqlManagedInstance,
-                resource1,
+                network1,
             )
         )
         self.mock_clients["SqlManagementClient"].managed_databases.list_by_instance = mock(
@@ -567,7 +567,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     mockSqlManagedInstance.id.lower(): included_metadata,
                     "/subscriptions/.../db2": included_metadata,
                     "/subscriptions/.../db1": included_metadata,
-                    resource1.id.lower(): included_metadata,
+                    network1.id.lower(): included_metadata,
                 }
             },
         )
@@ -583,7 +583,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     type="Microsoft.Sql/servers",
                     tags={"datadog": "true"},
                 ),
-                resource1,
+                network1,
             )
         )
         self.mock_clients["SqlManagementClient"].databases.list_by_server = mock(
@@ -606,7 +606,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                 SUPPORTED_REGION_1: {
                     "/subscriptions/.../some-sql-server/databases/db1": included_metadata,
                     "/subscriptions/.../some-sql-server/databases/db2": included_metadata,
-                    resource1.id.lower(): included_metadata,
+                    network1.id.lower(): included_metadata,
                 }
             },
         )
@@ -654,7 +654,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
                     type="MICROSOFT.STORAGE/STORAGEACCOUNTS",
                     tags={},
                 ),
-                resource1,
+                network1,
             )
         )
 

@@ -14,10 +14,10 @@ SUPPORTED_REGION_2 = "southafricanorth"
 CONTAINER_APPS_UNSUPPORTED_REGION = "newzealandnorth"
 UNSUPPORTED_REGION = "uae"
 
-resource1 = mock(
+network1 = mock(
     id="res1", name="1", location=SUPPORTED_REGION_1, type="Microsoft.Network/loadBalancers", tags={"datadog": "true"}
 )
-resource2 = mock(
+network2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
 )
 keyvault_resource = mock(
