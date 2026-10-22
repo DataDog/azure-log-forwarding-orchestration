@@ -285,7 +285,7 @@ class DiagnosticSettingsTask(Task):
             resource_id,
             assigned_config,
             # keep the same categories selected (or add all if new), just fix the storage account
-            categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or [])],
+            categories=current_setting and [cast(str, log.category) for log in (current_setting.logs or []) if log.enabled],
         )
 
         if current_setting is None and add_setting_success:
@@ -304,11 +304,12 @@ class DiagnosticSettingsTask(Task):
         Returns True if the diagnostic setting was successfully created or updated, False otherwise
         """
         try:
-            categories = categories or [
-                cast(str, category.name)
-                async for category in client.diagnostic_settings_category.list(resource_id)
-                if category.category_type == CategoryType.LOGS
-            ]
+            if categories is None:
+                categories = [
+                    cast(str, category.name)
+                    async for category in client.diagnostic_settings_category.list(resource_id)
+                    if category.category_type == CategoryType.LOGS
+                ]
             if not categories:
                 self.log.debug("No log categories found for resource %s", resource_id)
                 return False
