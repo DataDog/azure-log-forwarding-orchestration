@@ -286,12 +286,12 @@ class TestResourcesTask(TaskTestCase):
         self.patch_resource_provider_configs(None)
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
-        expected_resource_provider_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
 
         # WHEN
         await self.run_resources_task({})
 
         # THEN
+        expected_resource_provider_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
         self.assertEqual(
             self.last_resource_client_kwargs, {"resource_provider_configs": expected_resource_provider_configs}
         )
@@ -311,14 +311,14 @@ class TestResourcesTask(TaskTestCase):
         self.patch_resource_provider_configs(resource_provider_configs_setting)
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
-        expected_resource_provider_configs = ResourceProviderConfigs(
-            overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
-        )
 
         # WHEN
         await self.run_resources_task({})
 
         # THEN
+        expected_resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
+        )
         self.assertEqual(
             self.last_resource_client_kwargs, {"resource_provider_configs": expected_resource_provider_configs}
         )

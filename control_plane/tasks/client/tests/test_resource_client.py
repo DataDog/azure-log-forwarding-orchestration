@@ -301,9 +301,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             overrides={"microsoft.web": False}, logs_enabled_default=True
         )
         tag_filters: list[str] = []
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -313,6 +310,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_unlisted_uses_disabled_default(self):
@@ -322,9 +322,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             overrides={"microsoft.web": True}, logs_enabled_default=False
         )
         tag_filters: list[str] = []
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -334,6 +331,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_disabled_default(self):
@@ -343,9 +343,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             overrides={"microsoft.network": True}, logs_enabled_default=False
         )
         tag_filters: list[str] = []
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -355,6 +352,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_enabled_default(self):
@@ -364,9 +364,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             overrides={"microsoft.network": False}, logs_enabled_default=True
         )
         tag_filters: list[str] = []
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -376,6 +373,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
@@ -385,9 +385,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             overrides={"microsoft.network": False}, logs_enabled_default=True
         )
         tag_filters: list[str] = ["datadog:true"]
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -397,6 +394,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_tag_filters_apply_to_enabled_resource_provider(self):
@@ -406,9 +406,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             overrides={"microsoft.network": True}, logs_enabled_default=False
         )
         tag_filters: list[str] = ["datadog:true"]
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: excluded_metadata}
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -418,6 +415,9 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: excluded_metadata}
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_mixed_resource_providers_with_enabled_default(self):
@@ -428,13 +428,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             logs_enabled_default=True,
         )
         tag_filters: list[str] = []
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {
-                eventhub_resource.id: included_metadata,
-                keyvault_resource.id: excluded_metadata,
-                resource1.id: included_metadata,
-            }
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -444,6 +437,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {
+                eventhub_resource.id: included_metadata,
+                keyvault_resource.id: excluded_metadata,
+                resource1.id: included_metadata,
+            }
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_mixed_resource_providers_with_disabled_default(self):
@@ -454,13 +454,6 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             logs_enabled_default=False,
         )
         tag_filters: list[str] = []
-        expected_resources_per_region: RegionToResourcesDict = {
-            SUPPORTED_REGION_1: {
-                eventhub_resource.id: included_metadata,
-                keyvault_resource.id: excluded_metadata,
-                resource1.id: excluded_metadata,
-            }
-        }
 
         # WHEN
         resources_per_region = await self.get_resources_with_provider_configs(
@@ -470,6 +463,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         )
 
         # THEN
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {
+                eventhub_resource.id: included_metadata,
+                keyvault_resource.id: excluded_metadata,
+                resource1.id: excluded_metadata,
+            }
+        }
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     def test_is_resource_provider_enabled(self):

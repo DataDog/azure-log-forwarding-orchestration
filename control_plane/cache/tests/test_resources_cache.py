@@ -148,58 +148,58 @@ class TestDeserializeResourceCache(TestCase):
                 ],
             }
         )
-        expected_configs = ResourceProviderConfigs(
-            overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
-        )
 
         # WHEN
         configs = deserialize_resource_provider_configs(env_str)
 
         # THEN
+        expected_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
+        )
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_empty_resource_provider_configs_enables_all(self):
         # GIVEN an empty config
         env_str = "{}"
-        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
 
         # WHEN
         configs = deserialize_resource_provider_configs(env_str)
 
         # THEN
+        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_resource_provider_configs_without_providers(self):
         # GIVEN only logs_enabled_default
         env_str = '{"logs_enabled_default": false}'
-        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
 
         # WHEN
         configs = deserialize_resource_provider_configs(env_str)
 
         # THEN
+        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_resource_provider_configs_without_logs_enabled_default(self):
         # GIVEN only providers
         env_str = '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": false}]}'
-        expected_configs = ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True)
 
         # WHEN
         configs = deserialize_resource_provider_configs(env_str)
 
         # THEN
+        expected_configs = ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True)
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_resource_provider_configs_ignores_unknown_fields(self):
         # GIVEN a field that isn't in the schema
         env_str = '{"logs_enabled_default": false, "unknown": 1}'
-        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
 
         # WHEN
         configs = deserialize_resource_provider_configs(env_str)
 
         # THEN
+        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_invalid_resource_provider_configs(self):
