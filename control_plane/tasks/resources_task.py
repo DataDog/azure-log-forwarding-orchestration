@@ -147,7 +147,6 @@ class ResourcesTask(Task):
             return
 
         if self.resource_provider_configs is None:
-            # run() skipped collecting resources, writing the empty in-memory cache would drop every resource
             return
 
         prune_resource_cache(self.resource_cache)
