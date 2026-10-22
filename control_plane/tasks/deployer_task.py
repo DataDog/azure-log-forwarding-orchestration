@@ -60,7 +60,7 @@ class DeployerTask(Task):
     NAME = DEPLOYER_TASK_NAME
 
     def __init__(self, is_initial_run: bool = False) -> None:
-        super().__init__()
+        super().__init__(is_initial_run=is_initial_run)
         self.subscription_id = get_config_option(SUBSCRIPTION_ID_SETTING)
         self.resource_group = get_config_option(RESOURCE_GROUP_SETTING)
         self.region = get_config_option(CONTROL_PLANE_REGION_SETTING)
