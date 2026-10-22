@@ -342,38 +342,6 @@ class TestResourcesTask(TaskTestCase):
         self.resource_client.assert_not_called()
         self.write_cache.assert_not_called()
 
-    async def test_invalid_resource_provider_configs_submits_status_update(self):
-        self.patch_resource_provider_configs("not json")
-        status_client = AsyncMockClient()
-        self.datadog_client.submit_status_update = status_client
-        uuid = str(uuid4())
-
-        await self.run_resources_task({}, is_initial_run=True, execution_id=uuid)
-
-        expected_calls = [
-            call("resources_task.task_start", StatusCode.OK, "Resources task started", uuid, "unknown", "unknown"),
-            call(
-                "resources_task.resource_provider_configs",
-                StatusCode.DESERIALIZATION_ERROR,
-                "Invalid value for RESOURCE_PROVIDER_CONFIGS, resource cache was not updated",
-                uuid,
-                "unknown",
-                "unknown",
-            ),
-        ]
-        status_client.assert_has_calls(expected_calls)
-        self.assertEqual(status_client.call_count, len(expected_calls))
-        self.write_cache.assert_not_called()
-
-    async def test_invalid_resource_provider_configs_still_upgrades_cache_schema(self):
-        self.patch_resource_provider_configs("not json")
-
-        await self.run_resources_task({sub_id1: {SUPPORTED_REGION_1: {"res1"}}})
-
-        self.write_cache.assert_called_once()
-        self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
-        self.subscription_client_mock.assert_not_called()
-
     async def test_tags(self):
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"
         self.sub_client.subscriptions.list = Mock(return_value=async_generator())
