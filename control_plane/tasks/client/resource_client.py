@@ -309,11 +309,11 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             reason = self.exclusion_reason(resource)
             metadata = ResourceMetadata(include=reason is None)
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
-            resource_counts[reason] += len(resource_ids)
+            resource_id_count = len(resource_ids)
+            resource_counts[reason] += resource_id_count
             if reason is ExclusionReason.RESOURCE_PROVIDER:
-                disabled_resource_provider_counts[resource_provider_namespace(cast(str, resource.type))] += len(
-                    resource_ids
-                )
+                namespace = resource_provider_namespace(cast(str, resource.type))
+                disabled_resource_provider_counts[namespace] += resource_id_count
 
         self.log_resource_counts(resource_counts, disabled_resource_provider_counts)
         return resources_per_region
@@ -322,21 +322,35 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self, resource_counts: Counter[ExclusionReason | None], disabled_resource_provider_counts: Counter[str]
     ) -> None:
         """Logs how many resources are included and excluded for each reason, with the counts as log attributes"""
+        included_count = resource_counts[None]
         excluded_counts = {reason: resource_counts[reason] for reason in ExclusionReason}
+        excluded_count = sum(excluded_counts.values())
+        total_count = included_count + excluded_count
+
+        # e.g. "control_plane_storage_account: 4, resource_provider: 1, tag_filter: 1"
+        excluded_counts_message = ", ".join(f"{reason.value}: {count}" for reason, count in excluded_counts.items())
+        # e.g. {"resources_excluded_tag_filter": 1, ...}
+        excluded_counts_attributes = {
+            f"resources_excluded_{reason.value}": count for reason, count in excluded_counts.items()
+        }
+        # e.g. "microsoft.keyvault:1,microsoft.network:2"
+        sorted_disabled_resource_provider_counts = sorted(disabled_resource_provider_counts.items())
+        disabled_resource_providers_attribute = ",".join(
+            f"{namespace}:{count}" for namespace, count in sorted_disabled_resource_provider_counts
+        )
+
         self.log.info(
             "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
             self.subscription_id,
-            resource_counts.total(),
-            resource_counts[None],
-            sum(excluded_counts.values()),
-            ", ".join(f"{reason.value}: {count}" for reason, count in excluded_counts.items()),
+            total_count,
+            included_count,
+            excluded_count,
+            excluded_counts_message,
             extra={
                 "subscription_id": self.subscription_id,
-                "resources_included": resource_counts[None],
-                **{f"resources_excluded_{reason.value}": count for reason, count in excluded_counts.items()},
-                "resources_excluded_resource_provider_namespaces": ",".join(
-                    f"{namespace}:{count}" for namespace, count in sorted(disabled_resource_provider_counts.items())
-                ),
+                "resources_included": included_count,
+                **excluded_counts_attributes,
+                "resources_excluded_resource_provider_namespaces": disabled_resource_providers_attribute,
             },
         )
 
