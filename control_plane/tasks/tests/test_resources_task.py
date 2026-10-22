@@ -15,7 +15,6 @@ from azure.core.exceptions import HttpResponseError
 from cache.env import (
     CONTROL_PLANE_ID_SETTING,
     CONTROL_PLANE_REGION_SETTING,
-    IS_LOGS_ENABLED_DEFAULT_SETTING,
     RESOURCE_PROVIDER_CONFIGS_SETTING,
 )
 from cache.resources_cache import (
@@ -297,16 +296,18 @@ class TestResourcesTask(TaskTestCase):
         def getenv_mock(name, default=None):
             env_vars = {
                 "RESOURCE_PROVIDER_CONFIGS": dumps(
-                    [
-                        {"namespace": "Microsoft.Web", "logs_enabled": True},
-                        {"namespace": " microsoft.KEYVAULT ", "logs_enabled": False},
-                    ]
+                    {
+                        "logs_enabled_default": False,
+                        "providers": [
+                            {"namespace": "Microsoft.Web", "logs_enabled": True},
+                            {"namespace": " microsoft.KEYVAULT ", "logs_enabled": False},
+                        ],
+                    }
                 )
             }
             return env_vars.get(name, default)
 
         self.patch("getenv").side_effect = getenv_mock
-        self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "False"
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
 
@@ -331,11 +332,10 @@ class TestResourcesTask(TaskTestCase):
         )
 
     async def test_invalid_resource_provider_configs_leaves_cache_unchanged(self):
-        invalid_configs = '[{"namespace": "Microsoft.Web"}]'
+        invalid_configs = '{"logs_enabled_default": false, "providers": [{"namespace": "Microsoft.Web"}]}'
         self.patch_resource_provider_configs(invalid_configs)
-        self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "false"
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
-        # what the task would write if it fell back to the disabled default
+        # what the task would write if it kept the disabled default but dropped the Microsoft.Web override
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": ResourceMetadata(include=False)}}}
 
         await self.run_resources_task({sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
@@ -380,20 +380,6 @@ class TestResourcesTask(TaskTestCase):
         self.write_cache.assert_called_once()
         self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
         self.subscription_client_mock.assert_not_called()
-
-    async def test_invalid_logs_enabled_default_falls_back_to_true(self):
-        self.patch("getenv").side_effect = lambda _name, default=None: default
-        self.env[IS_LOGS_ENABLED_DEFAULT_SETTING] = "not a bool"
-        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
-        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
-
-        await self.run_resources_task({})
-
-        self.assertEqual(
-            self.last_resource_client_kwargs,
-            {"resource_provider_configs": {}, "is_logs_enabled_default": True},
-        )
-        self.assertEqual(self.cache, {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
 
     async def test_tags(self):
         self.env[CONTROL_PLANE_ID_SETTING] = "a2b4c5d6"

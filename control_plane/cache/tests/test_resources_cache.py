@@ -11,6 +11,7 @@ from cache.resources_cache import (
     INCLUDE_KEY,
     ResourceCache,
     ResourceMetadata,
+    ResourceProviderConfigs,
     _deserialize_v1_resource_cache,
     _deserialize_v2_resource_cache,
     deserialize_monitored_subscriptions,
@@ -138,24 +139,55 @@ class TestDeserializeResourceCache(TestCase):
 
     def test_deserialize_resource_provider_configs(self):
         env_var = dumps(
-            [
-                {"namespace": "Microsoft.Web", "logs_enabled": True},
-                {"namespace": " microsoft.KeyVault ", "logs_enabled": False},
-            ]
+            {
+                "logs_enabled_default": False,
+                "providers": [
+                    {"namespace": "Microsoft.Web", "logs_enabled": True},
+                    {"namespace": " microsoft.KeyVault ", "logs_enabled": False},
+                ],
+            }
         )
         self.assertEqual(
             deserialize_resource_provider_configs(env_var),
-            {"microsoft.web": True, "microsoft.keyvault": False},
+            ResourceProviderConfigs(
+                overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
+            ),
         )
 
-    def test_deserialize_empty_resource_provider_configs(self):
-        self.assertEqual(deserialize_resource_provider_configs("[]"), {})
+    def test_deserialize_resource_provider_configs_optional_fields(self):
+        self.assertEqual(
+            deserialize_resource_provider_configs("{}"),
+            ResourceProviderConfigs(overrides={}, logs_enabled_default=True),
+        )
+        self.assertEqual(
+            deserialize_resource_provider_configs('{"logs_enabled_default": false}'),
+            ResourceProviderConfigs(overrides={}, logs_enabled_default=False),
+        )
+        self.assertEqual(
+            deserialize_resource_provider_configs(
+                '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": false}]}'
+            ),
+            ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True),
+        )
+
+    def test_deserialize_resource_provider_configs_ignores_unknown_fields(self):
+        self.assertEqual(
+            deserialize_resource_provider_configs('{"logs_enabled_default": false, "unknown": 1}'),
+            ResourceProviderConfigs(overrides={}, logs_enabled_default=False),
+        )
 
     def test_deserialize_invalid_resource_provider_configs(self):
-        self.assertIsNone(deserialize_resource_provider_configs(""))
-        self.assertIsNone(deserialize_resource_provider_configs('[{"namespace": "Microsoft.Web",}]'))
-        self.assertIsNone(deserialize_resource_provider_configs('[{"namespace": "Microsoft.Web"}]'))
-        self.assertIsNone(
-            deserialize_resource_provider_configs('[{"namespace": "Microsoft.Web", "logs_enabled": "yes"}]')
-        )
-        self.assertIsNone(deserialize_resource_provider_configs('{"namespace": "Microsoft.Web", "logs_enabled": true}'))
+        for invalid in [
+            "",
+            "not json",
+            "[]",
+            '[{"namespace": "Microsoft.Web", "logs_enabled": true}]',
+            '{"logs_enabled_default": "false"}',
+            '{"logs_enabled_default": null}',
+            '{"providers": {"namespace": "Microsoft.Web", "logs_enabled": true}}',
+            '{"providers": [{"namespace": "Microsoft.Web"}]}',
+            '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": "yes"}]}',
+            '{"providers": [{"namespace": "Microsoft.Web",}]}',
+        ]:
+            with self.subTest(invalid=invalid):
+                self.assertIsNone(deserialize_resource_provider_configs(invalid))

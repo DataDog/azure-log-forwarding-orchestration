@@ -16,16 +16,15 @@ from azure.mgmt.resource.subscriptions.v2021_01_01.aio import SubscriptionClient
 from cache.common import write_cache
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
-    IS_LOGS_ENABLED_DEFAULT_SETTING,
     MONITORED_SUBSCRIPTIONS_SETTING,
     RESOURCE_PROVIDER_CONFIGS_SETTING,
     RESOURCE_TAG_FILTERS_SETTING,
     get_config_option,
-    parse_config_option,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
+    ResourceProviderConfigs,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
     deserialize_resource_provider_configs,
@@ -60,19 +59,16 @@ class ResourcesTask(Task):
 
         self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
 
-        resource_provider_configs_str = getenv(RESOURCE_PROVIDER_CONFIGS_SETTING) or "[]"
+        resource_provider_configs_str = getenv(RESOURCE_PROVIDER_CONFIGS_SETTING) or "{}"
         self.resource_provider_configs = deserialize_resource_provider_configs(resource_provider_configs_str)
         """None when the configured value is invalid, in which case the resource cache is left unchanged,
-        since falling back to `is_logs_enabled_default` could remove diagnostic settings from every resource"""
+        since ignoring the configs could remove diagnostic settings from every resource"""
         if self.resource_provider_configs is None:
             self.log.error(
                 "Invalid value for %s, resource cache will not be updated: %s",
                 RESOURCE_PROVIDER_CONFIGS_SETTING,
                 resource_provider_configs_str,
             )
-        self.is_logs_enabled_default = parse_config_option(
-            IS_LOGS_ENABLED_DEFAULT_SETTING, lambda v: {"true": True, "false": False}.get(v.strip().lower()), True
-        )
 
     async def run(self) -> None:
         await self.submit_status_update("task_start", StatusCode.OK, "Resources task started")
@@ -82,7 +78,8 @@ class ResourcesTask(Task):
             await self.write_caches(is_schema_upgrade=True)
             self.schema_upgrade = False
 
-        if self.resource_provider_configs is None:
+        resource_provider_configs = self.resource_provider_configs
+        if resource_provider_configs is None:
             await self.submit_status_update(
                 "resource_provider_configs",
                 StatusCode.DESERIALIZATION_ERROR,
@@ -90,11 +87,11 @@ class ResourcesTask(Task):
             )
             return
 
-        if self.resource_provider_configs or not self.is_logs_enabled_default:
+        if resource_provider_configs.overrides or not resource_provider_configs.logs_enabled_default:
             self.log.info(
                 "Filtering resources by resource provider, logs enabled by default: %s, overrides: %s",
-                self.is_logs_enabled_default,
-                self.resource_provider_configs,
+                resource_provider_configs.logs_enabled_default,
+                resource_provider_configs.overrides,
             )
 
         async with SubscriptionClient(self.credential, base_url=self.base_url) as subscription_client:
@@ -120,10 +117,12 @@ class ResourcesTask(Task):
                 len(subscriptions),
             )
 
-        await gather(*map(self.process_subscription, subscriptions))
+        await gather(*(self.process_subscription(sub, resource_provider_configs) for sub in subscriptions))
         await self.submit_status_update("task_complete", StatusCode.OK, "Resources task completed")
 
-    async def process_subscription(self, subscription_id: str) -> None:
+    async def process_subscription(
+        self, subscription_id: str, resource_provider_configs: ResourceProviderConfigs
+    ) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
         async with ResourceClient(
             self.log,
@@ -131,8 +130,8 @@ class ResourcesTask(Task):
             self.tag_filter_list,
             subscription_id,
             self.base_url,
-            resource_provider_configs=self.resource_provider_configs,
-            is_logs_enabled_default=self.is_logs_enabled_default,
+            resource_provider_configs=resource_provider_configs.overrides,
+            is_logs_enabled_default=resource_provider_configs.logs_enabled_default,
         ) as client:
             try:
                 self.resource_cache[subscription_id] = await client.get_resources_per_region()

@@ -3,7 +3,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, NamedTuple, TypeAlias, TypedDict
 from uuid import UUID
 
 # 3p
@@ -19,14 +19,20 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
 
 
 RESOURCE_PROVIDER_CONFIGS_SCHEMA: dict[str, Any] = {
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "namespace": {"type": "string"},
-            "logs_enabled": {"type": "boolean"},
+    "type": "object",
+    "properties": {
+        "logs_enabled_default": {"type": "boolean"},
+        "providers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "namespace": {"type": "string"},
+                    "logs_enabled": {"type": "boolean"},
+                },
+                "required": ["namespace", "logs_enabled"],
+            },
         },
-        "required": ["namespace", "logs_enabled"],
     },
 }
 
@@ -34,6 +40,18 @@ RESOURCE_PROVIDER_CONFIGS_SCHEMA: dict[str, Any] = {
 class ResourceProviderConfig(TypedDict, total=True):
     namespace: str
     logs_enabled: bool
+
+
+class ResourceProviderConfigsSetting(TypedDict, total=False):
+    logs_enabled_default: bool
+    providers: list[ResourceProviderConfig]
+
+
+class ResourceProviderConfigs(NamedTuple):
+    overrides: dict[str, bool]
+    "mapping of casefolded resource provider namespace to whether logs are enabled for it"
+    logs_enabled_default: bool
+    "whether logs are enabled for resource providers without an override"
 
 
 class ResourceMetadata(TypedDict, total=True):
@@ -115,14 +133,17 @@ def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
     return [tag.strip().casefold() for tag in tag_filter_str.split(",") if len(tag) > 0]
 
 
-def deserialize_resource_provider_configs(env_str: str) -> dict[str, bool] | None:
-    """Deserialize resource provider configs from a JSON array of {namespace, logs_enabled} objects
-    into a mapping of casefolded namespace to logs_enabled. Returns None if the configs are invalid."""
+def deserialize_resource_provider_configs(env_str: str) -> ResourceProviderConfigs | None:
+    """Deserialize resource provider configs from a JSON object with an optional `logs_enabled_default` (defaults to true)
+    and an optional `providers` array of {namespace, logs_enabled} overrides. Returns None if the configs are invalid."""
 
-    configs: list[ResourceProviderConfig] | None = deserialize_cache(env_str, RESOURCE_PROVIDER_CONFIGS_SCHEMA)
+    configs: ResourceProviderConfigsSetting | None = deserialize_cache(env_str, RESOURCE_PROVIDER_CONFIGS_SCHEMA)
     if configs is None:
         return None
-    return {c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs}
+    return ResourceProviderConfigs(
+        overrides={c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs.get("providers", [])},
+        logs_enabled_default=configs.get("logs_enabled_default", True),
+    )
 
 
 def _deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
