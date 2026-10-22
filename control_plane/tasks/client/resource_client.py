@@ -4,8 +4,10 @@
 
 # stdlib
 from asyncio import gather
+from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
+from enum import Enum
 from itertools import chain
 from logging import Logger
 from types import TracebackType
@@ -100,6 +102,19 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
         # only certain resource types have diagnostic settings, this is a confirmation that the filter worked
         or resource_type.lower() not in FETCHED_RESOURCE_TYPES
     )
+
+
+class ExclusionReason(Enum):
+    """Why a resource's logs are not forwarded. Each excluded resource is attributed to the first matching reason"""
+
+    CONTROL_PLANE_STORAGE_ACCOUNT = "control_plane_storage_account"
+    RESOURCE_PROVIDER = "resource_provider"
+    TAG_FILTER = "tag_filter"
+
+
+def resource_provider_namespace(resource_type: str) -> str:
+    """Extracts the casefolded resource provider namespace from a resource type, e.g. Microsoft.Web/sites -> microsoft.web"""
+    return resource_type.split("/", 1)[0].strip().casefold()
 
 
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
@@ -205,8 +220,22 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
     def is_resource_provider_enabled(self, resource_type: str) -> bool:
         """Determines whether logs are enabled for the resource provider of the given resource type,
         falling back to `is_logs_enabled_default` for resource providers without an explicit config"""
-        namespace = resource_type.split("/", 1)[0].strip().casefold()
-        return self.resource_provider_configs.get(namespace, self.is_logs_enabled_default)
+        return self.resource_provider_configs.get(
+            resource_provider_namespace(resource_type), self.is_logs_enabled_default
+        )
+
+    def exclusion_reason(self, resource: GenericResourceExpanded) -> ExclusionReason | None:
+        """Determines why the resource's logs should not be forwarded, or None if they should be"""
+        # include the control plane storage account in the resource cache, but mark it as not included for forwarding
+        # so we can remove diagnostic settings from it
+        if is_control_plane_storage_account(cast(str, resource.name)):
+            return ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT
+        # resource provider filters are checked before tag filters
+        if not self.is_resource_provider_enabled(cast(str, resource.type)):
+            return ExclusionReason.RESOURCE_PROVIDER
+        if not self.should_include(resource_tag_dict_to_list(resource.tags)):
+            return ExclusionReason.TAG_FILTER
+        return None
 
     def make_sub_resource_extractor_for_rg_and_name(self, *functions: SDKClientMethod) -> FetchSubResources:
         """Creates an extractor for sub resource IDs based on the resource group and name"""
@@ -270,26 +299,45 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         batched_resource_ids = await gather(
             *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
         )
+        resource_counts: Counter[ExclusionReason | None] = Counter()
+        "count of resource IDs by exclusion reason, None for included resources"
+        disabled_resource_provider_counts: Counter[str] = Counter()
+        "count of resource IDs excluded by their resource provider, by namespace"
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            resource_tags = resource_tag_dict_to_list(resource.tags)
-            # include the control plane storage account in the resource cache, but mark it as not included for forwarding
-            # so we can remove diagnostic settings from it
-            # resource provider filters take precedence over tag filters
-            include_resource = (
-                self.is_resource_provider_enabled(cast(str, resource.type))
-                and self.should_include(resource_tags)
-                and not is_control_plane_storage_account(cast(str, resource.name))
-            )
-            metadata = ResourceMetadata(include=include_resource)
+            reason = self.exclusion_reason(resource)
+            metadata = ResourceMetadata(include=reason is None)
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
+            resource_counts[reason] += len(resource_ids)
+            if reason is ExclusionReason.RESOURCE_PROVIDER:
+                disabled_resource_provider_counts[resource_provider_namespace(cast(str, resource.type))] += len(
+                    resource_ids
+                )
 
-        self.log.info(
-            "Subscription %s: Collected %s resources",
-            self.subscription_id,
-            sum(len(rs) for rs in resources_per_region.values()),
-        )
+        self.log_resource_counts(resource_counts, disabled_resource_provider_counts)
         return resources_per_region
+
+    def log_resource_counts(
+        self, resource_counts: Counter[ExclusionReason | None], disabled_resource_provider_counts: Counter[str]
+    ) -> None:
+        """Logs how many resources are included and excluded for each reason, with the counts as log attributes"""
+        excluded_counts = {reason: resource_counts[reason] for reason in ExclusionReason}
+        self.log.info(
+            "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
+            self.subscription_id,
+            resource_counts.total(),
+            resource_counts[None],
+            sum(excluded_counts.values()),
+            ", ".join(f"{reason.value}: {count}" for reason, count in excluded_counts.items()),
+            extra={
+                "subscription_id": self.subscription_id,
+                "resources_included": resource_counts[None],
+                **{f"resources_excluded_{reason.value}": count for reason, count in excluded_counts.items()},
+                "resources_excluded_resource_provider_namespaces": ",".join(
+                    f"{namespace}:{count}" for namespace, count in sorted(disabled_resource_provider_counts.items())
+                ),
+            },
+        )
 
     async def all_resource_ids_for_resource(self, resource: GenericResourceExpanded) -> AsyncGenerator[str]:
         resource_id = cast(str, resource.id).lower()

@@ -11,8 +11,14 @@ from azure.core.exceptions import ResourceNotFoundError
 
 # project
 from cache.resources_cache import ResourceMetadata
-from tasks.client.resource_client import RESOURCE_QUERY_FILTER, ResourceClient, should_ignore_resource
-from tasks.constants import FETCHED_RESOURCE_TYPES
+from tasks.client.resource_client import (
+    RESOURCE_QUERY_FILTER,
+    ExclusionReason,
+    ResourceClient,
+    should_ignore_resource,
+)
+from tasks.common import CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX
+from tasks.constants import FETCHED_RESOURCE_TYPES, NESTED_VALID_RESOURCE_TYPES
 from tasks.tests.common import AsyncMockClient, async_generator, mock
 
 sub_id1 = "a062baee-fdd3-4784-beb4-d817f591422c"
@@ -30,6 +36,20 @@ resource1 = mock(
 resource2 = mock(
     id="res2", name="2", location=SUPPORTED_REGION_1, type="Microsoft.Network/applicationgateways", tags=None
 )
+
+keyvault_resource = mock(
+    id="kv1", name="kv1", location=SUPPORTED_REGION_1, type="Microsoft.KeyVault/vaults", tags={"datadog": "true"}
+)
+control_plane_storage_account = mock(
+    id="cpsa",
+    name=f"{CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX}abc",
+    location=SUPPORTED_REGION_1,
+    type="Microsoft.Storage/storageAccounts",
+    tags={"datadog": "true"},
+)
+control_plane_storage_account_ids = {
+    f"cpsa/{service}/default" for service in NESTED_VALID_RESOURCE_TYPES["microsoft.storage/storageaccounts"]
+}
 
 included_metadata = ResourceMetadata(include=True)
 
@@ -373,6 +393,83 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertTrue(client.is_resource_provider_enabled("Microsoft.Web/sites"))
         self.assertFalse(client.is_resource_provider_enabled("MICROSOFT.NETWORK/loadBalancers"))
         self.assertFalse(client.is_resource_provider_enabled("Microsoft.KeyVault/vaults"))
+
+    async def test_logs_resource_counts_by_exclusion_reason(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(resource1, resource2, keyvault_resource, control_plane_storage_account)
+        )
+        async with ResourceClient(
+            self.log, self.cred, ["datadog:true"], sub_id1, resource_provider_configs={"microsoft.keyvault": False}
+        ) as client:
+            resources = await client.get_resources_per_region()
+
+        self.assertEqual(
+            {resource_id: metadata["include"] for resource_id, metadata in resources[SUPPORTED_REGION_1].items()},
+            {
+                resource1.id: True,
+                resource2.id: False,
+                keyvault_resource.id: False,
+                **{resource_id: False for resource_id in control_plane_storage_account_ids},
+            },
+        )
+        self.log.info.assert_called_once_with(
+            "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
+            sub_id1,
+            7,
+            1,
+            6,
+            "control_plane_storage_account: 4, resource_provider: 1, tag_filter: 1",
+            extra={
+                "subscription_id": sub_id1,
+                "resources_included": 1,
+                "resources_excluded_control_plane_storage_account": 4,
+                "resources_excluded_resource_provider": 1,
+                "resources_excluded_tag_filter": 1,
+                "resources_excluded_resource_provider_namespaces": "microsoft.keyvault:1",
+            },
+        )
+
+    async def test_logs_resource_provider_exclusions_by_namespace(self):
+        self.mock_clients["ResourceManagementClient"].resources.list = mock(
+            return_value=async_generator(resource1, resource2, keyvault_resource)
+        )
+        async with ResourceClient(
+            self.log, self.cred, ["datadog:true"], sub_id1, is_logs_enabled_default=False
+        ) as client:
+            await client.get_resources_per_region()
+
+        self.log.info.assert_called_once_with(
+            "Subscription %s: Collected %s resources, %s included, %s excluded (%s)",
+            sub_id1,
+            3,
+            0,
+            3,
+            "control_plane_storage_account: 0, resource_provider: 3, tag_filter: 0",
+            extra={
+                "subscription_id": sub_id1,
+                "resources_included": 0,
+                "resources_excluded_control_plane_storage_account": 0,
+                "resources_excluded_resource_provider": 3,
+                "resources_excluded_tag_filter": 0,
+                "resources_excluded_resource_provider_namespaces": "microsoft.keyvault:1,microsoft.network:2",
+            },
+        )
+
+    def test_exclusion_reason_attributed_to_first_matching_check(self):
+        client = ResourceClient(
+            self.log,
+            self.cred,
+            ["datadog:true"],
+            sub_id1,
+            resource_provider_configs={"microsoft.storage": False, "microsoft.network": False},
+        )
+
+        self.assertIs(
+            client.exclusion_reason(control_plane_storage_account), ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT
+        )
+        # resource2 also fails the tag filter, but its resource provider is checked first
+        self.assertIs(client.exclusion_reason(resource2), ExclusionReason.RESOURCE_PROVIDER)
+        self.assertIsNone(client.exclusion_reason(keyvault_resource))
 
     async def test_resource_included_by_key_only_tag(self):
         inclusive_tags = ["datadog"]

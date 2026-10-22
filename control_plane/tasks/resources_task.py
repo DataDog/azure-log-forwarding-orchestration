@@ -90,6 +90,13 @@ class ResourcesTask(Task):
             )
             return
 
+        if self.resource_provider_configs or not self.is_logs_enabled_default:
+            self.log.info(
+                "Filtering resources by resource provider, logs enabled by default: %s, overrides: %s",
+                self.is_logs_enabled_default,
+                self.resource_provider_configs,
+            )
+
         async with SubscriptionClient(self.credential, base_url=self.base_url) as subscription_client:
             try:
                 subscriptions = [
