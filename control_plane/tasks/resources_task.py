@@ -60,8 +60,6 @@ class ResourcesTask(Task):
         self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
 
         resource_provider_configs_str = getenv(RESOURCE_PROVIDER_CONFIGS_SETTING) or "{}"
-        # None when the configured value is invalid, in which case the resource cache is left unchanged,
-        # since ignoring the configs could remove diagnostic settings from every resource
         self.resource_provider_configs = deserialize_resource_provider_configs(resource_provider_configs_str)
         if self.resource_provider_configs is None:
             self.log.error(
