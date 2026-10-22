@@ -131,12 +131,12 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
+        # which resource providers logs are enabled for, all of them unless configured otherwise
         self.resource_provider_configs = (
             resource_provider_configs
             if resource_provider_configs is not None
             else ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
         )
-        "Which resource providers logs are enabled for, all of them unless configured otherwise"
         self.should_include = parse_filtering_rule(tag_filters)
         """Predicate which takes a resource's tags as input and evaluates them against the
         user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
@@ -300,10 +300,10 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         batched_resource_ids = await gather(
             *(safe_collect(self.all_resource_ids_for_resource(r), self.log) for r in valid_resources)
         )
+        # count of resource IDs by exclusion reason, None for included resources
         resource_counts: Counter[ExclusionReason | None] = Counter()
-        "count of resource IDs by exclusion reason, None for included resources"
+        # count of resource IDs excluded by their resource provider, by namespace
         disabled_resource_provider_counts: Counter[str] = Counter()
-        "count of resource IDs excluded by their resource provider, by namespace"
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
             reason = self.exclusion_reason(resource)

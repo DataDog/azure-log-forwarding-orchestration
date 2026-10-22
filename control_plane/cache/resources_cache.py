@@ -48,10 +48,10 @@ class ResourceProviderConfigsSetting(TypedDict, total=False):
 
 
 class ResourceProviderConfigs(NamedTuple):
+    # mapping of casefolded resource provider namespace to whether logs are enabled for it
     overrides: dict[str, bool]
-    "mapping of casefolded resource provider namespace to whether logs are enabled for it"
+    # whether logs are enabled for resource providers without an override
     logs_enabled_default: bool
-    "whether logs are enabled for resource providers without an override"
 
 
 class ResourceMetadata(TypedDict, total=True):
