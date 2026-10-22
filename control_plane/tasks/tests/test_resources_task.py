@@ -282,7 +282,7 @@ class TestResourcesTask(TaskTestCase):
         )
 
     async def test_resource_provider_configs_unset_defaults(self):
-        # GIVEN
+        # GIVEN RESOURCE_PROVIDER_CONFIGS is unset
         self.patch_resource_provider_configs(None)
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
@@ -298,7 +298,7 @@ class TestResourcesTask(TaskTestCase):
         self.log.error.assert_not_called()
 
     async def test_resource_provider_configs_passed_to_resource_client(self):
-        # GIVEN
+        # GIVEN RESOURCE_PROVIDER_CONFIGS disabling logs by default, with web and keyvault overrides
         resource_provider_configs_setting = dumps(
             {
                 "logs_enabled_default": False,
@@ -324,7 +324,7 @@ class TestResourcesTask(TaskTestCase):
         )
 
     async def test_invalid_resource_provider_configs_leaves_cache_unchanged(self):
-        # GIVEN
+        # GIVEN an existing resource cache and an override missing logs_enabled in RESOURCE_PROVIDER_CONFIGS
         invalid_resource_provider_configs_setting = (
             '{"logs_enabled_default": false, "providers": [{"namespace": "Microsoft.Web"}]}'
         )

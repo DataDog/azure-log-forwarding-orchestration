@@ -138,7 +138,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(tag_filters, [])
 
     def test_deserialize_resource_provider_configs(self):
-        # GIVEN
+        # GIVEN logs disabled by default, with overrides in mixed case and padded with whitespace
         env_str = dumps(
             {
                 "logs_enabled_default": False,
@@ -159,7 +159,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_empty_resource_provider_configs_enables_all(self):
-        # GIVEN
+        # GIVEN an empty config
         env_str = "{}"
         expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
 
@@ -170,7 +170,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_resource_provider_configs_without_providers(self):
-        # GIVEN
+        # GIVEN only logs_enabled_default
         env_str = '{"logs_enabled_default": false}'
         expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
 
@@ -181,7 +181,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_resource_provider_configs_without_logs_enabled_default(self):
-        # GIVEN
+        # GIVEN only providers
         env_str = '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": false}]}'
         expected_configs = ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True)
 
@@ -192,7 +192,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_resource_provider_configs_ignores_unknown_fields(self):
-        # GIVEN
+        # GIVEN a field that isn't in the schema
         env_str = '{"logs_enabled_default": false, "unknown": 1}'
         expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
 
@@ -203,7 +203,7 @@ class TestDeserializeResourceCache(TestCase):
         self.assertEqual(configs, expected_configs)
 
     def test_deserialize_invalid_resource_provider_configs(self):
-        # GIVEN
+        # GIVEN configs that are malformed JSON, the wrong shape, or have wrongly typed fields
         invalid_env_strs = [
             "",
             "not json",

@@ -295,7 +295,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             return await client.get_resources_per_region()
 
     async def test_resource_provider_unlisted_uses_enabled_default(self):
-        # GIVEN
+        # GIVEN network resources, an override only for microsoft.web, and logs enabled by default
         resources = (resource1, resource2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.web": False}, logs_enabled_default=True
@@ -316,7 +316,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_unlisted_uses_disabled_default(self):
-        # GIVEN
+        # GIVEN network resources, an override only for microsoft.web, and logs disabled by default
         resources = (resource1, resource2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.web": True}, logs_enabled_default=False
@@ -337,7 +337,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_disabled_default(self):
-        # GIVEN
+        # GIVEN network resources with microsoft.network enabled and logs disabled by default
         resources = (resource1, resource2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": True}, logs_enabled_default=False
@@ -358,7 +358,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_enabled_default(self):
-        # GIVEN
+        # GIVEN network resources with microsoft.network disabled and logs enabled by default
         resources = (resource1, resource2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": False}, logs_enabled_default=True
@@ -379,8 +379,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
-        # GIVEN
-        # resource1 matches the inclusive tag filter, but its resource provider is disabled
+        # GIVEN microsoft.network disabled and a tag filter that resource1 matches
         resources = (resource1, resource2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": False}, logs_enabled_default=True
@@ -401,8 +400,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_tag_filters_apply_to_enabled_resource_provider(self):
-        # GIVEN
-        # resource1 matches the inclusive tag filter, resource2 has no tags
+        # GIVEN microsoft.network enabled and a tag filter that only resource1 matches
         resources = (resource1, resource2)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.network": True}, logs_enabled_default=False
@@ -423,14 +421,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_mixed_resource_providers_with_enabled_default(self):
-        # GIVEN
+        # GIVEN eventhub enabled, keyvault disabled, and resource1's microsoft.network left to the enabled default
         resources = (eventhub_resource, keyvault_resource, resource1)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
             logs_enabled_default=True,
         )
         tag_filters: list[str] = []
-        # resource1's resource provider (microsoft.network) has no override, so it uses the default
         expected_resources_per_region: RegionToResourcesDict = {
             SUPPORTED_REGION_1: {
                 eventhub_resource.id: included_metadata,
@@ -450,14 +447,13 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_mixed_resource_providers_with_disabled_default(self):
-        # GIVEN
+        # GIVEN eventhub enabled, keyvault disabled, and resource1's microsoft.network left to the disabled default
         resources = (eventhub_resource, keyvault_resource, resource1)
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
             logs_enabled_default=False,
         )
         tag_filters: list[str] = []
-        # resource1's resource provider (microsoft.network) has no override, so it uses the default
         expected_resources_per_region: RegionToResourcesDict = {
             SUPPORTED_REGION_1: {
                 eventhub_resource.id: included_metadata,
@@ -477,7 +473,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertEqual(resources_per_region, expected_resources_per_region)
 
     def test_is_resource_provider_enabled(self):
-        # GIVEN
+        # GIVEN microsoft.web enabled, microsoft.network disabled, and logs disabled by default
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.web": True, "microsoft.network": False}, logs_enabled_default=False
         )
@@ -494,7 +490,7 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         self.assertFalse(is_keyvault_enabled)
 
     def test_exclusion_reason_attributed_to_first_matching_check(self):
-        # GIVEN
+        # GIVEN microsoft.storage and microsoft.network disabled, and a tag filter
         resource_provider_configs = ResourceProviderConfigs(
             overrides={"microsoft.storage": False, "microsoft.network": False}, logs_enabled_default=True
         )
