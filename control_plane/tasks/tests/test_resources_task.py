@@ -276,67 +276,72 @@ class TestResourcesTask(TaskTestCase):
             {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata, "res2": included_metadata}}},
         )
 
-    async def test_resource_provider_configs_unset_defaults(self):
-        self.patch("getenv").side_effect = lambda _name, default=None: default
-        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
-        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
-
-        await self.run_resources_task({})
-
-        self.assertEqual(
-            self.last_resource_client_kwargs,
-            {"resource_provider_configs": ResourceProviderConfigs(overrides={}, logs_enabled_default=True)},
-        )
-        self.log.error.assert_not_called()
-
-    async def test_resource_provider_configs_passed_to_resource_client(self):
-        def getenv_mock(name, default=None):
-            env_vars = {
-                "RESOURCE_PROVIDER_CONFIGS": dumps(
-                    {
-                        "logs_enabled_default": False,
-                        "providers": [
-                            {"namespace": "Microsoft.Web", "logs_enabled": True},
-                            {"namespace": " microsoft.KEYVAULT ", "logs_enabled": False},
-                        ],
-                    }
-                )
-            }
-            return env_vars.get(name, default)
-
-        self.patch("getenv").side_effect = getenv_mock
-        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
-        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
-
-        await self.run_resources_task({})
-
-        self.assertEqual(
-            self.last_resource_client_kwargs,
-            {
-                "resource_provider_configs": ResourceProviderConfigs(
-                    overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
-                )
-            },
-        )
-
-    def patch_resource_provider_configs(self, value: str) -> None:
+    def patch_resource_provider_configs(self, value: str | None) -> None:
         self.patch("getenv").side_effect = lambda name, default=None: (
             value if name == RESOURCE_PROVIDER_CONFIGS_SETTING else default
         )
 
+    async def test_resource_provider_configs_unset_defaults(self):
+        # GIVEN
+        self.patch_resource_provider_configs(None)
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
+        expected_resource_provider_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
+
+        # WHEN
+        await self.run_resources_task({})
+
+        # THEN
+        self.assertEqual(
+            self.last_resource_client_kwargs, {"resource_provider_configs": expected_resource_provider_configs}
+        )
+        self.log.error.assert_not_called()
+
+    async def test_resource_provider_configs_passed_to_resource_client(self):
+        # GIVEN
+        resource_provider_configs_setting = dumps(
+            {
+                "logs_enabled_default": False,
+                "providers": [
+                    {"namespace": "Microsoft.Web", "logs_enabled": True},
+                    {"namespace": " microsoft.KEYVAULT ", "logs_enabled": False},
+                ],
+            }
+        )
+        self.patch_resource_provider_configs(resource_provider_configs_setting)
+        self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
+        self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
+        expected_resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
+        )
+
+        # WHEN
+        await self.run_resources_task({})
+
+        # THEN
+        self.assertEqual(
+            self.last_resource_client_kwargs, {"resource_provider_configs": expected_resource_provider_configs}
+        )
+
     async def test_invalid_resource_provider_configs_leaves_cache_unchanged(self):
-        invalid_configs = '{"logs_enabled_default": false, "providers": [{"namespace": "Microsoft.Web"}]}'
-        self.patch_resource_provider_configs(invalid_configs)
+        # GIVEN
+        invalid_resource_provider_configs_setting = (
+            '{"logs_enabled_default": false, "providers": [{"namespace": "Microsoft.Web"}]}'
+        )
+        self.patch_resource_provider_configs(invalid_resource_provider_configs_setting)
         self.sub_client.subscriptions.list = Mock(return_value=async_generator(sub1))
         # what the task would write if it kept the disabled default but dropped the Microsoft.Web override
         self.resource_client_mapping = {sub_id1: {SUPPORTED_REGION_1: {"res1": ResourceMetadata(include=False)}}}
+        initial_resource_cache: ResourceCache = {sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}}
 
-        await self.run_resources_task({sub_id1: {SUPPORTED_REGION_1: {"res1": included_metadata}}})
+        # WHEN
+        await self.run_resources_task(initial_resource_cache)
 
+        # THEN
         self.log.error.assert_called_once_with(
             "Invalid value for %s, resource cache will not be updated: %s",
             RESOURCE_PROVIDER_CONFIGS_SETTING,
-            invalid_configs,
+            invalid_resource_provider_configs_setting,
         )
         self.subscription_client_mock.assert_not_called()
         self.resource_client.assert_not_called()

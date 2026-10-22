@@ -35,3 +35,4 @@ control_plane_storage_account = mock(
 )
 
 included_metadata = ResourceMetadata(include=True)
+excluded_metadata = ResourceMetadata(include=False)

@@ -24,6 +24,7 @@ from tasks.client.tests.fixtures import (
     UNSUPPORTED_REGION,
     control_plane_storage_account,
     eventhub_resource,
+    excluded_metadata,
     included_metadata,
     keyvault_resource,
     resource1,
@@ -294,161 +295,224 @@ class TestResourceClient(IsolatedAsyncioTestCase):
             return await client.get_resources_per_region()
 
     async def test_resource_provider_unlisted_uses_enabled_default(self):
-        resources = await self.get_resources_with_provider_configs(
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.web": False}, logs_enabled_default=True
-            ),
-            tag_filters=[],
-            resources=(resource1, resource2),
+        # GIVEN
+        resources = (resource1, resource2)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": False}, logs_enabled_default=True
+        )
+        tag_filters: list[str] = []
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-        self.assertEqual(
-            resources,
-            {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}},
-        )
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_unlisted_uses_disabled_default(self):
-        resources = await self.get_resources_with_provider_configs(
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.web": True}, logs_enabled_default=False
-            ),
-            tag_filters=[],
-            resources=(resource1, resource2),
+        # GIVEN
+        resources = (resource1, resource2)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": True}, logs_enabled_default=False
+        )
+        tag_filters: list[str] = []
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-        self.assertEqual(
-            resources,
-            {
-                SUPPORTED_REGION_1: {
-                    resource1.id: ResourceMetadata(include=False),
-                    resource2.id: ResourceMetadata(include=False),
-                }
-            },
-        )
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_disabled_default(self):
-        resources = await self.get_resources_with_provider_configs(
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.network": True}, logs_enabled_default=False
-            ),
-            tag_filters=[],
-            resources=(resource1, resource2),
+        # GIVEN
+        resources = (resource1, resource2)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.network": True}, logs_enabled_default=False
+        )
+        tag_filters: list[str] = []
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-        self.assertEqual(
-            resources,
-            {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: included_metadata}},
-        )
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_config_overrides_enabled_default(self):
-        resources = await self.get_resources_with_provider_configs(
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.network": False}, logs_enabled_default=True
-            ),
-            tag_filters=[],
-            resources=(resource1, resource2),
+        # GIVEN
+        resources = (resource1, resource2)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.network": False}, logs_enabled_default=True
+        )
+        tag_filters: list[str] = []
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-        self.assertEqual(
-            resources,
-            {
-                SUPPORTED_REGION_1: {
-                    resource1.id: ResourceMetadata(include=False),
-                    resource2.id: ResourceMetadata(include=False),
-                }
-            },
-        )
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
+        # GIVEN
         # resource1 matches the inclusive tag filter, but its resource provider is disabled
-        resources = await self.get_resources_with_provider_configs(
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.network": False}, logs_enabled_default=True
-            ),
-            tag_filters=["datadog:true"],
-            resources=(resource1, resource2),
+        resources = (resource1, resource2)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.network": False}, logs_enabled_default=True
+        )
+        tag_filters: list[str] = ["datadog:true"]
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: excluded_metadata, resource2.id: excluded_metadata}
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-        self.assertEqual(
-            resources,
-            {
-                SUPPORTED_REGION_1: {
-                    resource1.id: ResourceMetadata(include=False),
-                    resource2.id: ResourceMetadata(include=False),
-                }
-            },
-        )
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
     async def test_tag_filters_apply_to_enabled_resource_provider(self):
-        resources = await self.get_resources_with_provider_configs(
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.network": True}, logs_enabled_default=False
-            ),
-            tag_filters=["datadog:true"],
-            resources=(resource1, resource2),
+        # GIVEN
+        # resource1 matches the inclusive tag filter, resource2 has no tags
+        resources = (resource1, resource2)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.network": True}, logs_enabled_default=False
+        )
+        tag_filters: list[str] = ["datadog:true"]
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: excluded_metadata}
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-        self.assertEqual(
-            resources,
-            {SUPPORTED_REGION_1: {resource1.id: included_metadata, resource2.id: ResourceMetadata(include=False)}},
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
+
+    async def test_mixed_resource_providers_with_enabled_default(self):
+        # GIVEN
+        resources = (eventhub_resource, keyvault_resource, resource1)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
+            logs_enabled_default=True,
+        )
+        tag_filters: list[str] = []
+        # resource1's resource provider (microsoft.network) has no override, so it uses the default
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {
+                eventhub_resource.id: included_metadata,
+                keyvault_resource.id: excluded_metadata,
+                resource1.id: included_metadata,
+            }
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
         )
 
-    async def test_mixed_resource_providers_in_same_run(self):
-        for logs_enabled_default in (True, False):
-            with self.subTest(logs_enabled_default=logs_enabled_default):
-                resources = await self.get_resources_with_provider_configs(
-                    resource_provider_configs=ResourceProviderConfigs(
-                        overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
-                        logs_enabled_default=logs_enabled_default,
-                    ),
-                    tag_filters=[],
-                    resources=(eventhub_resource, keyvault_resource, resource1),
-                )
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
-                # each resource gets its own provider's decision, unlisted providers (resource1) use the default
-                self.assertEqual(
-                    resources,
-                    {
-                        SUPPORTED_REGION_1: {
-                            eventhub_resource.id: ResourceMetadata(include=True),
-                            keyvault_resource.id: ResourceMetadata(include=False),
-                            resource1.id: ResourceMetadata(include=logs_enabled_default),
-                        }
-                    },
-                )
+    async def test_mixed_resource_providers_with_disabled_default(self):
+        # GIVEN
+        resources = (eventhub_resource, keyvault_resource, resource1)
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
+            logs_enabled_default=False,
+        )
+        tag_filters: list[str] = []
+        # resource1's resource provider (microsoft.network) has no override, so it uses the default
+        expected_resources_per_region: RegionToResourcesDict = {
+            SUPPORTED_REGION_1: {
+                eventhub_resource.id: included_metadata,
+                keyvault_resource.id: excluded_metadata,
+                resource1.id: excluded_metadata,
+            }
+        }
+
+        # WHEN
+        resources_per_region = await self.get_resources_with_provider_configs(
+            resource_provider_configs=resource_provider_configs,
+            tag_filters=tag_filters,
+            resources=resources,
+        )
+
+        # THEN
+        self.assertEqual(resources_per_region, expected_resources_per_region)
 
     def test_is_resource_provider_enabled(self):
-        client = ResourceClient(
-            self.log,
-            self.cred,
-            [],
-            sub_id1,
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.web": True, "microsoft.network": False}, logs_enabled_default=False
-            ),
+        # GIVEN
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": True, "microsoft.network": False}, logs_enabled_default=False
         )
+        client = ResourceClient(self.log, self.cred, [], sub_id1, resource_provider_configs=resource_provider_configs)
 
-        self.assertTrue(client.is_resource_provider_enabled("Microsoft.Web/sites"))
-        self.assertFalse(client.is_resource_provider_enabled("MICROSOFT.NETWORK/loadBalancers"))
-        self.assertFalse(client.is_resource_provider_enabled("Microsoft.KeyVault/vaults"))
+        # WHEN
+        is_web_enabled = client.is_resource_provider_enabled("Microsoft.Web/sites")
+        is_network_enabled = client.is_resource_provider_enabled("MICROSOFT.NETWORK/loadBalancers")
+        is_keyvault_enabled = client.is_resource_provider_enabled("Microsoft.KeyVault/vaults")
+
+        # THEN
+        self.assertTrue(is_web_enabled)
+        self.assertFalse(is_network_enabled)
+        self.assertFalse(is_keyvault_enabled)
 
     def test_exclusion_reason_attributed_to_first_matching_check(self):
+        # GIVEN
+        resource_provider_configs = ResourceProviderConfigs(
+            overrides={"microsoft.storage": False, "microsoft.network": False}, logs_enabled_default=True
+        )
+        tag_filters = ["datadog:true"]
         client = ResourceClient(
-            self.log,
-            self.cred,
-            ["datadog:true"],
-            sub_id1,
-            resource_provider_configs=ResourceProviderConfigs(
-                overrides={"microsoft.storage": False, "microsoft.network": False}, logs_enabled_default=True
-            ),
+            self.log, self.cred, tag_filters, sub_id1, resource_provider_configs=resource_provider_configs
         )
 
-        self.assertIs(
-            client.exclusion_reason(control_plane_storage_account), ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT
-        )
+        # WHEN
+        control_plane_storage_account_reason = client.exclusion_reason(control_plane_storage_account)
         # resource2 also fails the tag filter, but its resource provider is checked first
-        self.assertIs(client.exclusion_reason(resource2), ExclusionReason.RESOURCE_PROVIDER)
-        self.assertIsNone(client.exclusion_reason(keyvault_resource))
+        resource2_reason = client.exclusion_reason(resource2)
+        keyvault_reason = client.exclusion_reason(keyvault_resource)
+
+        # THEN
+        self.assertIs(control_plane_storage_account_reason, ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT)
+        self.assertIs(resource2_reason, ExclusionReason.RESOURCE_PROVIDER)
+        self.assertIsNone(keyvault_reason)
 
     async def test_resource_included_by_key_only_tag(self):
         inclusive_tags = ["datadog"]
