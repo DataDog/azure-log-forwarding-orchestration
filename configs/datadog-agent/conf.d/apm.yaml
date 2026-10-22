@@ -1,0 +1,10 @@
+# APM Configuration for Azure Log Forwarder
+# This prepares the agent to receive traces when APM code is merged
+# The APM receiver listens on localhost:8126 by default
+
+init_config:
+instances:
+
+# The APM receiver is configured through the main datadog.yaml
+# This file ensures the APM check is enabled and can be extended
+# with additional configuration if needed
