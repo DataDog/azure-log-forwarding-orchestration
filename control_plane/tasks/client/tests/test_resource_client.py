@@ -282,19 +282,24 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def get_resources_with_provider_configs(
         self,
+        *,
         resource_provider_configs: ResourceProviderConfigs,
-        tag_filters: list[str] | None = None,
-        resources: tuple[Mock, ...] = (resource1, resource2),
+        tag_filters: list[str],
+        resources: tuple[Mock, ...],
     ) -> RegionToResourcesDict:
         self.mock_clients["ResourceManagementClient"].resources.list = mock(return_value=async_generator(*resources))
         async with ResourceClient(
-            self.log, self.cred, tag_filters or [], sub_id1, resource_provider_configs=resource_provider_configs
+            self.log, self.cred, tag_filters, sub_id1, resource_provider_configs=resource_provider_configs
         ) as client:
             return await client.get_resources_per_region()
 
     async def test_resource_provider_unlisted_uses_enabled_default(self):
         resources = await self.get_resources_with_provider_configs(
-            ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True)
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.web": False}, logs_enabled_default=True
+            ),
+            tag_filters=[],
+            resources=(resource1, resource2),
         )
 
         self.assertEqual(
@@ -304,7 +309,11 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_resource_provider_unlisted_uses_disabled_default(self):
         resources = await self.get_resources_with_provider_configs(
-            ResourceProviderConfigs(overrides={"microsoft.web": True}, logs_enabled_default=False)
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.web": True}, logs_enabled_default=False
+            ),
+            tag_filters=[],
+            resources=(resource1, resource2),
         )
 
         self.assertEqual(
@@ -319,7 +328,11 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_resource_provider_config_overrides_disabled_default(self):
         resources = await self.get_resources_with_provider_configs(
-            ResourceProviderConfigs(overrides={"microsoft.network": True}, logs_enabled_default=False)
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.network": True}, logs_enabled_default=False
+            ),
+            tag_filters=[],
+            resources=(resource1, resource2),
         )
 
         self.assertEqual(
@@ -329,7 +342,11 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_resource_provider_config_overrides_enabled_default(self):
         resources = await self.get_resources_with_provider_configs(
-            ResourceProviderConfigs(overrides={"microsoft.network": False}, logs_enabled_default=True)
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.network": False}, logs_enabled_default=True
+            ),
+            tag_filters=[],
+            resources=(resource1, resource2),
         )
 
         self.assertEqual(
@@ -345,8 +362,11 @@ class TestResourceClient(IsolatedAsyncioTestCase):
     async def test_resource_provider_filter_takes_precedence_over_tag_filters(self):
         # resource1 matches the inclusive tag filter, but its resource provider is disabled
         resources = await self.get_resources_with_provider_configs(
-            ResourceProviderConfigs(overrides={"microsoft.network": False}, logs_enabled_default=True),
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.network": False}, logs_enabled_default=True
+            ),
             tag_filters=["datadog:true"],
+            resources=(resource1, resource2),
         )
 
         self.assertEqual(
@@ -361,8 +381,11 @@ class TestResourceClient(IsolatedAsyncioTestCase):
 
     async def test_tag_filters_apply_to_enabled_resource_provider(self):
         resources = await self.get_resources_with_provider_configs(
-            ResourceProviderConfigs(overrides={"microsoft.network": True}, logs_enabled_default=False),
+            resource_provider_configs=ResourceProviderConfigs(
+                overrides={"microsoft.network": True}, logs_enabled_default=False
+            ),
             tag_filters=["datadog:true"],
+            resources=(resource1, resource2),
         )
 
         self.assertEqual(
@@ -374,10 +397,11 @@ class TestResourceClient(IsolatedAsyncioTestCase):
         for logs_enabled_default in (True, False):
             with self.subTest(logs_enabled_default=logs_enabled_default):
                 resources = await self.get_resources_with_provider_configs(
-                    ResourceProviderConfigs(
+                    resource_provider_configs=ResourceProviderConfigs(
                         overrides={"microsoft.eventhub": True, "microsoft.keyvault": False},
                         logs_enabled_default=logs_enabled_default,
                     ),
+                    tag_filters=[],
                     resources=(eventhub_resource, keyvault_resource, resource1),
                 )
 
