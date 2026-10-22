@@ -135,15 +135,18 @@ def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
 
 def deserialize_resource_provider_configs(env_str: str) -> ResourceProviderConfigs | None:
     """Deserialize resource provider configs from a JSON object with an optional `logs_enabled_default` (defaults to true)
-    and an optional `providers` array of {namespace, logs_enabled} overrides. Returns None if the configs are invalid."""
+    and an optional `providers` array of {namespace, logs_enabled} overrides. Returns None if the configs are invalid,
+    including when a namespace is listed more than once."""
 
     configs: ResourceProviderConfigsSetting | None = deserialize_cache(env_str, RESOURCE_PROVIDER_CONFIGS_SCHEMA)
     if configs is None:
         return None
-    return ResourceProviderConfigs(
-        overrides={c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs.get("providers", [])},
-        logs_enabled_default=configs.get("logs_enabled_default", True),
-    )
+    providers = configs.get("providers", [])
+    overrides = {c["namespace"].strip().casefold(): c["logs_enabled"] for c in providers}
+    if len(overrides) != len(providers):
+        # a namespace listed more than once (ignoring case and whitespace) is ambiguous
+        return None
+    return ResourceProviderConfigs(overrides=overrides, logs_enabled_default=configs.get("logs_enabled_default", True))
 
 
 def _deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:

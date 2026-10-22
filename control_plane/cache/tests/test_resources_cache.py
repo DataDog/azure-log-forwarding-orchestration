@@ -188,6 +188,11 @@ class TestDeserializeResourceCache(TestCase):
             '{"providers": [{"namespace": "Microsoft.Web"}]}',
             '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": "yes"}]}',
             '{"providers": [{"namespace": "Microsoft.Web",}]}',
+            # duplicate namespaces, ignoring case and whitespace
+            '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": true},'
+            ' {"namespace": "Microsoft.Web", "logs_enabled": true}]}',
+            '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": true},'
+            ' {"namespace": " microsoft.web ", "logs_enabled": false}]}',
         ]:
             with self.subTest(invalid=invalid):
                 self.assertIsNone(deserialize_resource_provider_configs(invalid))
