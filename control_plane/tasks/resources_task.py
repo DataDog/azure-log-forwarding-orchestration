@@ -17,14 +17,17 @@ from cache.common import write_cache
 from cache.env import (
     CONTROL_PLANE_REGION_SETTING,
     MONITORED_SUBSCRIPTIONS_SETTING,
+    RESOURCE_PROVIDER_CONFIGS_SETTING,
     RESOURCE_TAG_FILTERS_SETTING,
     get_config_option,
 )
 from cache.resources_cache import (
     RESOURCE_CACHE_BLOB,
     ResourceCache,
+    ResourceProviderConfigs,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
+    deserialize_resource_provider_configs,
     deserialize_resource_tag_filters,
     prune_resource_cache,
 )
@@ -56,6 +59,15 @@ class ResourcesTask(Task):
 
         self.tag_filter_list = deserialize_resource_tag_filters(getenv(RESOURCE_TAG_FILTERS_SETTING, ""))
 
+        resource_provider_configs_str = getenv(RESOURCE_PROVIDER_CONFIGS_SETTING) or "{}"
+        self.resource_provider_configs = deserialize_resource_provider_configs(resource_provider_configs_str)
+        if self.resource_provider_configs is None:
+            self.log.error(
+                "Invalid value for %s, resource cache will not be updated: %s",
+                RESOURCE_PROVIDER_CONFIGS_SETTING,
+                resource_provider_configs_str,
+            )
+
     async def run(self) -> None:
         await self.submit_status_update("task_start", StatusCode.OK, "Resources task started")
 
@@ -63,6 +75,22 @@ class ResourcesTask(Task):
             self.log.warning("Detected resource cache schema upgrade, flushing cache")
             await self.write_caches(is_schema_upgrade=True)
             self.schema_upgrade = False
+
+        resource_provider_configs = self.resource_provider_configs
+        if resource_provider_configs is None:
+            await self.submit_status_update(
+                "resource_provider_configs",
+                StatusCode.DESERIALIZATION_ERROR,
+                f"Invalid value for {RESOURCE_PROVIDER_CONFIGS_SETTING}, resource cache was not updated",
+            )
+            return
+
+        if resource_provider_configs.overrides or not resource_provider_configs.logs_enabled_default:
+            self.log.info(
+                "Filtering resources by resource provider, logs enabled by default: %s, overrides: %s",
+                resource_provider_configs.logs_enabled_default,
+                resource_provider_configs.overrides,
+            )
 
         async with SubscriptionClient(self.credential, base_url=self.base_url) as subscription_client:
             try:
@@ -87,13 +115,20 @@ class ResourcesTask(Task):
                 len(subscriptions),
             )
 
-        await gather(*map(self.process_subscription, subscriptions))
+        await gather(*(self.process_subscription(sub, resource_provider_configs) for sub in subscriptions))
         await self.submit_status_update("task_complete", StatusCode.OK, "Resources task completed")
 
-    async def process_subscription(self, subscription_id: str) -> None:
+    async def process_subscription(
+        self, subscription_id: str, resource_provider_configs: ResourceProviderConfigs
+    ) -> None:
         self.log.debug("Processing the following subscription: %s", subscription_id)
         async with ResourceClient(
-            self.log, self.credential, self.tag_filter_list, subscription_id, self.base_url
+            self.log,
+            self.credential,
+            self.tag_filter_list,
+            subscription_id,
+            self.base_url,
+            resource_provider_configs=resource_provider_configs,
         ) as client:
             try:
                 self.resource_cache[subscription_id] = await client.get_resources_per_region()
@@ -109,6 +144,9 @@ class ResourcesTask(Task):
     async def write_caches(self, is_schema_upgrade: bool = False) -> None:
         if is_schema_upgrade:
             await write_cache(RESOURCE_CACHE_BLOB, dumps(self._resource_cache_initial_state))
+            return
+
+        if self.resource_provider_configs is None:
             return
 
         prune_resource_cache(self.resource_cache)

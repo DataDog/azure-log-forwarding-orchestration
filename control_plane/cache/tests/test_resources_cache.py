@@ -11,10 +11,12 @@ from cache.resources_cache import (
     INCLUDE_KEY,
     ResourceCache,
     ResourceMetadata,
+    ResourceProviderConfigs,
     _deserialize_v1_resource_cache,
     _deserialize_v2_resource_cache,
     deserialize_monitored_subscriptions,
     deserialize_resource_cache,
+    deserialize_resource_provider_configs,
     deserialize_resource_tag_filters,
     prune_resource_cache,
 )
@@ -134,3 +136,91 @@ class TestDeserializeResourceCache(TestCase):
     def test_deserialize_empty_resource_tag_filters(self):
         tag_filters = deserialize_resource_tag_filters("")
         self.assertEqual(tag_filters, [])
+
+    def test_deserialize_resource_provider_configs(self):
+        # GIVEN logs disabled by default, with overrides in mixed case and padded with whitespace
+        env_str = dumps(
+            {
+                "logs_enabled_default": False,
+                "providers": [
+                    {"namespace": "Microsoft.Web", "logs_enabled": True},
+                    {"namespace": " microsoft.KeyVault ", "logs_enabled": False},
+                ],
+            }
+        )
+
+        # WHEN
+        configs = deserialize_resource_provider_configs(env_str)
+
+        # THEN
+        expected_configs = ResourceProviderConfigs(
+            overrides={"microsoft.web": True, "microsoft.keyvault": False}, logs_enabled_default=False
+        )
+        self.assertEqual(configs, expected_configs)
+
+    def test_deserialize_empty_resource_provider_configs_enables_all(self):
+        # GIVEN an empty config
+        env_str = "{}"
+
+        # WHEN
+        configs = deserialize_resource_provider_configs(env_str)
+
+        # THEN
+        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
+        self.assertEqual(configs, expected_configs)
+
+    def test_deserialize_resource_provider_configs_without_providers(self):
+        # GIVEN only logs_enabled_default
+        env_str = '{"logs_enabled_default": false}'
+
+        # WHEN
+        configs = deserialize_resource_provider_configs(env_str)
+
+        # THEN
+        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
+        self.assertEqual(configs, expected_configs)
+
+    def test_deserialize_resource_provider_configs_without_logs_enabled_default(self):
+        # GIVEN only providers
+        env_str = '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": false}]}'
+
+        # WHEN
+        configs = deserialize_resource_provider_configs(env_str)
+
+        # THEN
+        expected_configs = ResourceProviderConfigs(overrides={"microsoft.web": False}, logs_enabled_default=True)
+        self.assertEqual(configs, expected_configs)
+
+    def test_deserialize_resource_provider_configs_ignores_unknown_fields(self):
+        # GIVEN a field that isn't in the schema
+        env_str = '{"logs_enabled_default": false, "unknown": 1}'
+
+        # WHEN
+        configs = deserialize_resource_provider_configs(env_str)
+
+        # THEN
+        expected_configs = ResourceProviderConfigs(overrides={}, logs_enabled_default=False)
+        self.assertEqual(configs, expected_configs)
+
+    def test_deserialize_invalid_resource_provider_configs(self):
+        # GIVEN configs that are malformed JSON, the wrong shape, or have wrongly typed fields
+        invalid_env_strs = [
+            "",
+            "not json",
+            "[]",
+            '[{"namespace": "Microsoft.Web", "logs_enabled": true}]',
+            '{"logs_enabled_default": "false"}',
+            '{"logs_enabled_default": null}',
+            '{"providers": {"namespace": "Microsoft.Web", "logs_enabled": true}}',
+            '{"providers": [{"namespace": "Microsoft.Web"}]}',
+            '{"providers": [{"namespace": "Microsoft.Web", "logs_enabled": "yes"}]}',
+            '{"providers": [{"namespace": "Microsoft.Web",}]}',
+        ]
+
+        for env_str in invalid_env_strs:
+            with self.subTest(env_str=env_str):
+                # WHEN
+                configs = deserialize_resource_provider_configs(env_str)
+
+                # THEN
+                self.assertIsNone(configs)

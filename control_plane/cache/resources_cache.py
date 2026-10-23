@@ -3,7 +3,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
-from typing import Any, TypeAlias, TypedDict
+from typing import Any, NamedTuple, TypeAlias, TypedDict
 from uuid import UUID
 
 # 3p
@@ -16,6 +16,42 @@ MONITORED_SUBSCRIPTIONS_SCHEMA: dict[str, Any] = {
     "type": "array",
     "items": {"type": "string"},
 }
+
+
+RESOURCE_PROVIDER_CONFIGS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "logs_enabled_default": {"type": "boolean"},
+        "providers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "namespace": {"type": "string"},
+                    "logs_enabled": {"type": "boolean"},
+                },
+                "required": ["namespace", "logs_enabled"],
+            },
+        },
+    },
+}
+
+
+class ResourceProviderConfig(TypedDict, total=True):
+    namespace: str
+    logs_enabled: bool
+
+
+class ResourceProviderConfigsSetting(TypedDict, total=False):
+    logs_enabled_default: bool
+    providers: list[ResourceProviderConfig]
+
+
+class ResourceProviderConfigs(NamedTuple):
+    # mapping of casefolded resource provider namespace to whether logs are enabled for it
+    overrides: dict[str, bool]
+    # whether logs are enabled for resource providers without an override
+    logs_enabled_default: bool
 
 
 class ResourceMetadata(TypedDict, total=True):
@@ -95,6 +131,20 @@ def deserialize_resource_tag_filters(tag_filter_str: str) -> list[str]:
     """Deserialize resource tag filters from a CSV string"""
 
     return [tag.strip().casefold() for tag in tag_filter_str.split(",") if len(tag) > 0]
+
+
+def deserialize_resource_provider_configs(env_str: str) -> ResourceProviderConfigs | None:
+    """Deserialize resource provider configs from a JSON object with an optional `logs_enabled_default` (defaults to true)
+    and an optional `providers` array of {namespace, logs_enabled} overrides, where the last override for a namespace wins.
+    Returns None if the configs are invalid."""
+
+    configs: ResourceProviderConfigsSetting | None = deserialize_cache(env_str, RESOURCE_PROVIDER_CONFIGS_SCHEMA)
+    if configs is None:
+        return None
+    return ResourceProviderConfigs(
+        overrides={c["namespace"].strip().casefold(): c["logs_enabled"] for c in configs.get("providers", [])},
+        logs_enabled_default=configs.get("logs_enabled_default", True),
+    )
 
 
 def _deserialize_v2_resource_cache(cache_str: str) -> ResourceCache | None:
