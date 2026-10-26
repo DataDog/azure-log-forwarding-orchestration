@@ -6,6 +6,7 @@
 from asyncio import gather
 from collections.abc import AsyncGenerator, AsyncIterable, Callable, Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
+from enum import Enum
 from itertools import chain
 from logging import Logger
 from types import TracebackType
@@ -29,7 +30,7 @@ from azure.mgmt.synapse.aio import SynapseManagementClient
 from azure.mgmt.web.v2024_04_01.aio import WebSiteManagementClient
 
 # project
-from cache.resources_cache import RegionToResourcesDict, ResourceMetadata
+from cache.resources_cache import RegionToResourcesDict, ResourceMetadata, ResourceProviderConfigs
 from tasks.client.filtering import parse_filtering_rule
 from tasks.common import (
     CONTROL_PLANE_STORAGE_ACCOUNT_PREFIX,
@@ -102,6 +103,19 @@ def should_ignore_resource(region: str, resource_type: str, resource_name: str) 
     )
 
 
+class ExclusionReason(Enum):
+    """Why a resource's logs are not forwarded. Each excluded resource is attributed to the first matching reason"""
+
+    CONTROL_PLANE_STORAGE_ACCOUNT = "control_plane_storage_account"
+    RESOURCE_PROVIDER = "resource_provider"
+    TAG_FILTER = "tag_filter"
+
+
+def resource_provider_namespace(resource_type: str) -> str:
+    """Extracts the casefolded resource provider namespace from a resource type, e.g. Microsoft.Web/sites -> microsoft.web"""
+    return resource_type.split("/", 1)[0].strip().casefold()
+
+
 class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
     def __init__(
         self,
@@ -110,11 +124,18 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         tag_filters: list[str],
         subscription_id: str,
         base_url: str = "https://management.azure.com",
+        resource_provider_configs: ResourceProviderConfigs | None = None,
     ) -> None:
         super().__init__()
         self.log = log
         self.credential = cred
         self.subscription_id = subscription_id
+        # which resource providers logs are enabled for, all of them unless configured otherwise
+        self.resource_provider_configs = (
+            resource_provider_configs
+            if resource_provider_configs is not None
+            else ResourceProviderConfigs(overrides={}, logs_enabled_default=True)
+        )
         self.should_include = parse_filtering_rule(tag_filters)
         """Predicate which takes a resource's tags as input and evaluates them against the
         user-configured `tag_filters` to determine whether the resource's logs should be forwarded"""
@@ -196,6 +217,25 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
             ),
         }
 
+    def is_resource_provider_enabled(self, resource_type: str) -> bool:
+        """Determines whether logs are enabled for the resource provider of the given resource type,
+        falling back to `logs_enabled_default` for resource providers without an override"""
+        return self.resource_provider_configs.overrides.get(
+            resource_provider_namespace(resource_type), self.resource_provider_configs.logs_enabled_default
+        )
+
+    def exclusion_reason(self, resource: GenericResourceExpanded) -> ExclusionReason | None:
+        """Determines why the resource's logs should not be forwarded, or None if they should be"""
+        # include the control plane storage account in the resource cache, but mark it as not included for forwarding
+        # so we can remove diagnostic settings from it
+        if is_control_plane_storage_account(cast(str, resource.name)):
+            return ExclusionReason.CONTROL_PLANE_STORAGE_ACCOUNT
+        if not self.is_resource_provider_enabled(cast(str, resource.type)):
+            return ExclusionReason.RESOURCE_PROVIDER
+        if not self.should_include(resource_tag_dict_to_list(resource.tags)):
+            return ExclusionReason.TAG_FILTER
+        return None
+
     def make_sub_resource_extractor_for_rg_and_name(self, *functions: SDKClientMethod) -> FetchSubResources:
         """Creates an extractor for sub resource IDs based on the resource group and name"""
 
@@ -260,13 +300,7 @@ class ResourceClient(AbstractAsyncContextManager["ResourceClient"]):
         )
         for resource, resource_ids in zip(valid_resources, batched_resource_ids, strict=False):
             region = cast(str, resource.location).lower()
-            resource_tags = resource_tag_dict_to_list(resource.tags)
-            # include the control plane storage account in the resource cache, but mark it as not included for forwarding
-            # so we can remove diagnostic settings from it
-            include_resource = self.should_include(resource_tags) and not (
-                is_control_plane_storage_account(cast(str, resource.name))
-            )
-            metadata = ResourceMetadata(include=include_resource)
+            metadata = ResourceMetadata(include=self.exclusion_reason(resource) is None)
             resources_per_region.setdefault(region, {}).update({id: metadata for id in resource_ids})
 
         self.log.info(
