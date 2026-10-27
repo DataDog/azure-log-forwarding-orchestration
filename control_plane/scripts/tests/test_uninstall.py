@@ -5,6 +5,7 @@
 # stdlib
 import concurrent.futures
 import json
+import subprocess
 import sys
 from pathlib import Path
 from unittest import TestCase
@@ -15,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # project
 import uninstall
+
+# Reference to the real az() function, captured before setUp replaces uninstall.az with a mock.
+# Used to exercise az()'s retry/timeout logic directly.
+REAL_AZ = uninstall.az
 
 SUB_ID_1 = "sub-1"
 SUB_ID_2 = "sub-2"
@@ -99,6 +104,8 @@ class TestUninstallScript(TestCase):
         uninstall.SKIP_PROMPTS_SETTING = False
         uninstall.CONTROL_PLANE_ID_SETTING = None
         uninstall.SUBSCRIPTION_ID_SETTING = None
+        uninstall.RESTRICT_DIAG_SETTINGS_SETTING = False
+        uninstall.SKIPPED_DURING_SEARCH.clear()
 
         # Set up mocks
         self.az_mock = self.patch("uninstall.az")
@@ -663,3 +670,94 @@ class TestUninstallScript(TestCase):
         # Verify the error message mentions timeout
         error_calls = [str(call) for call in self.log_mock.error.call_args_list]
         self.assertTrue(any("Timeout" in call for call in error_calls))
+
+    # ===== az() subprocess timeout tests ===== #
+
+    @mock_patch("uninstall.sleep")
+    @mock_patch("uninstall.subprocess.run")
+    def test_az_retries_on_subprocess_timeout_then_succeeds(self, mock_run, _mock_sleep):
+        """A single az subprocess timeout is retried rather than aborting or hanging the run"""
+        mock_run.side_effect = [
+            subprocess.TimeoutExpired(cmd="az account list", timeout=uninstall.AZ_COMMAND_TIMEOUT),
+            MagicMock(stdout="success"),
+        ]
+
+        result = REAL_AZ("account list")
+
+        self.assertEqual(result, "success")
+        self.assertEqual(mock_run.call_count, 2)
+        # Verify the subprocess call carries a timeout so a hung az cannot block forever
+        self.assertEqual(mock_run.call_args.kwargs["timeout"], uninstall.AZ_COMMAND_TIMEOUT)
+
+    @mock_patch("uninstall.sleep")
+    @mock_patch("uninstall.subprocess.run")
+    def test_az_reraises_after_exhausting_timeout_retries(self, mock_run, _mock_sleep):
+        """If az keeps timing out, it re-raises so the caller's future resolves with an exception"""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="az account list", timeout=uninstall.AZ_COMMAND_TIMEOUT)
+
+        with self.assertRaises(subprocess.TimeoutExpired):
+            REAL_AZ("account list")
+
+        self.assertEqual(mock_run.call_count, uninstall.MAX_RETRIES)
+
+    # ===== Diagnostic setting error-skip tests ===== #
+
+    @mock_patch("uninstall.ThreadPoolExecutor")
+    @mock_patch("uninstall.list_resources")
+    def test_find_diagnostic_settings_skips_errored_resource(self, mock_list_resources, mock_executor_class):
+        """A per-resource error is logged and skipped; other resources are still inventoried"""
+        mock_list_resources.return_value = set(MOCK_RESOURCE_IDS)
+
+        ok_future = MagicMock()
+        ok_future.done.return_value = True
+        ok_future.result.return_value = json.dumps([f"datadog_log_forwarding_{CONTROL_PLANE_ID_1}"])
+
+        errored_future = MagicMock()
+        errored_future.done.return_value = True
+        errored_future.result.side_effect = uninstall.AuthError("insufficient permissions")
+
+        mock_executor = MagicMock()
+        mock_executor.__enter__ = MagicMock(return_value=mock_executor)
+        mock_executor.__exit__ = MagicMock(return_value=False)
+        mock_executor.submit.side_effect = [ok_future, errored_future]
+        mock_executor_class.return_value = mock_executor
+
+        result = uninstall.find_diagnostic_settings(SUB_ID_1, SUB_NAME_1, {CONTROL_PLANE_ID_1})
+
+        # One resource inventoried, one skipped (not aborted)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn("Diagnostic setting search", uninstall.SKIPPED_DURING_SEARCH[0])
+
+    @mock_patch("uninstall.list_resources")
+    def test_find_diagnostic_settings_skips_sub_on_list_resources_error(self, mock_list_resources):
+        """A subscription-level listing error is logged and skipped, not fatal"""
+        mock_list_resources.side_effect = uninstall.AuthError("cannot list resources")
+
+        result = uninstall.find_diagnostic_settings(SUB_ID_1, SUB_NAME_1, {CONTROL_PLANE_ID_1})
+
+        self.assertEqual(dict(result), {})
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn(SUB_ID_1, uninstall.SKIPPED_DURING_SEARCH[0])
+
+    # ===== Diagnostic setting search scoping tests ===== #
+
+    def test_subs_to_search_for_diag_settings_default_is_all(self):
+        """By default, the diagnostic setting search covers all accessible subscriptions"""
+        uninstall.RESTRICT_DIAG_SETTINGS_SETTING = False
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+        role_assignment_deletions = {SUB_ID_1: list(MOCK_ROLE_ASSIGNMENTS)}
+
+        result = uninstall.subs_to_search_for_diag_settings(sub_id_to_name, role_assignment_deletions)
+
+        self.assertEqual(result, sub_id_to_name)
+
+    def test_subs_to_search_for_diag_settings_restricted_to_role_subs(self):
+        """With --diag-settings-role-subs-only, only subscriptions with LFO role assignments are searched"""
+        uninstall.RESTRICT_DIAG_SETTINGS_SETTING = True
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+        role_assignment_deletions = {SUB_ID_1: list(MOCK_ROLE_ASSIGNMENTS)}
+
+        result = uninstall.subs_to_search_for_diag_settings(sub_id_to_name, role_assignment_deletions)
+
+        self.assertEqual(result, {SUB_ID_1: SUB_NAME_1})
