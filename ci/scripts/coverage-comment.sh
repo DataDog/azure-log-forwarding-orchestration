@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 
-set -uxo pipefail
+set -uo pipefail
+# The request expands an authorization header, so do not trace it.
+set +x
 
-curl -f -v 'https://pr-commenter.us1.ddbuild.io/internal/cit/pr-comment'\
+curl -f -sS 'https://pr-commenter.us1.ddbuild.io/internal/cit/pr-comment'\
     -H "$(/bin/authanywhere)"\
     -X PATCH \
     -d '{
