@@ -67,6 +67,7 @@ OLD_LOG_FORWARDER_ID = "5a095f74c60a"
 NEW_LOG_FORWARDER_ID = "93a5885365f5"
 
 included_metadata = ResourceMetadata(include=True)
+excluded_metadata = ResourceMetadata(include=False)
 
 
 def minutes_ago(minutes: float) -> float:
@@ -1644,6 +1645,64 @@ class TestScalingTask(TaskTestCase):
 
         self.status_client.assert_has_calls(expected_calls)
         self.assertEqual(self.status_client.call_count, len(expected_calls))
+
+    # ---- CLOUDS-8990 regression tests ----
+    async def test_region_with_only_excluded_resources_is_not_provisioned(self):
+        # GIVEN two regions in the resource cache, only one of which has an included resource
+        # (the customer's case: a tag filter selecting a single resource in one region)
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.NOT_FOUND
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={
+                SUB_ID1: {
+                    WEST_US: {"resource1": included_metadata},
+                    EAST_US: {"resource2": excluded_metadata, "resource3": excluded_metadata},
+                }
+            },
+            assignment_cache_state={},
+        )
+
+        # THEN no infrastructure is provisioned in the excluded-only region
+        self.client.create_log_forwarder_managed_environment.assert_awaited_once_with(WEST_US, wait=False)
+
+    async def test_excluded_only_region_does_not_create_forwarder(self):
+        # GIVEN an excluded-only region whose env is already READY
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
+
+        # WHEN
+        await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": excluded_metadata}}},
+            assignment_cache_state={},
+        )
+
+        # THEN no forwarder (and therefore no storage account) is created
+        self.client.create_log_forwarder.assert_not_awaited()
+        self.assertEqual(self.cache[SUB_ID1][EAST_US]["configurations"], {})
+
+    async def test_excluded_resources_stay_assigned_in_a_live_region(self):
+        # GIVEN a region whose resources have all become excluded, but which already has a forwarder.
+        # The diagnostic settings task iterates the assignment cache, so these resources must stay
+        # assigned for their diagnostic settings to be removed.
+        self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
+        initial_cache: AssignmentCache = {
+            SUB_ID1: {
+                EAST_US: {
+                    "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        # WHEN
+        task = await self.run_scaling_task(
+            resource_cache_state={SUB_ID1: {EAST_US: {"resource1": excluded_metadata}}},
+            assignment_cache_state=initial_cache,
+        )
+
+        # THEN the region is neither torn down nor emptied
+        self.client.delete_log_forwarder_env.assert_not_called()
+        self.assertEqual(task.assignment_cache[SUB_ID1][EAST_US]["resources"], {"resource1": OLD_LOG_FORWARDER_ID})
 
 
 class TestIsConsistentlyOverThreshold(TestCase):
