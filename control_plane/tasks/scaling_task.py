@@ -37,7 +37,7 @@ from cache.env import (
     parse_config_option,
 )
 from cache.metric_blob_cache import MetricBlobEntry
-from cache.resources_cache import RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
+from cache.resources_cache import INCLUDE_KEY, RESOURCE_CACHE_BLOB, ResourceCache, deserialize_resource_cache
 from cache.user_config import convert_pii_rules_to_json
 from tasks.client.datadog_api_client import StatusCode
 from tasks.client.log_forwarder_client import LogForwarderClient, ManagedEnvironmentState
@@ -179,10 +179,18 @@ class ScalingTask(Task):
             if region_config.get("configurations")
         }
         regions_with_resources = set(self.resource_cache.get(subscription_id, {}).keys())
+        # only regions with at least one resource we actually forward logs for are worth provisioning in.
+        # excluded resources stay in the resource cache so the diagnostic settings task can remove their
+        # settings, so they must not on their own cause a forwarder to be created
+        regions_with_included_resources = {
+            region
+            for region, resources in self.resource_cache.get(subscription_id, {}).items()
+            if any(metadata.get(INCLUDE_KEY, True) for metadata in resources.values())
+        }
         # regions with any forwarders or environments
         provisioned_regions = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
 
-        regions_to_add = regions_with_resources - regions_with_forwarders
+        regions_to_add = regions_with_included_resources - regions_with_forwarders
         regions_to_remove = provisioned_regions - regions_with_resources
         regions_to_check_scaling = regions_with_resources & regions_with_forwarders
         async with LogForwarderClient(
