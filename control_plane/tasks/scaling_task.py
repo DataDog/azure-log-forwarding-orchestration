@@ -181,7 +181,7 @@ class ScalingTask(Task):
         regions_with_resources = set(self.resource_cache.get(subscription_id, {}).keys())
         # only regions with at least one resource we actually forward logs for are worth provisioning in.
         # excluded resources stay in the resource cache so the diagnostic settings task can remove their
-        # settings, so they must not on their own cause a forwarder to be created (CLOUDS-8990)
+        # settings, so they must not on their own cause a forwarder to be created
         regions_with_included_resources = {
             region
             for region, resources in self.resource_cache.get(subscription_id, {}).items()
