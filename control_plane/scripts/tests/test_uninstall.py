@@ -389,6 +389,47 @@ class TestUninstallScript(TestCase):
 
         self.assertFalse(result)
 
+    def test_sub_has_rg_auth_error(self):
+        """An inaccessible subscription is treated as not having the resource group"""
+        self.az_mock.side_effect = uninstall.AuthError("insufficient permissions")
+
+        result = uninstall.sub_has_rg(SUB_ID_1, "test-rg")
+
+        self.assertFalse(result)
+
+    def test_sub_has_rg_refresh_token_error(self):
+        """A token refresh error is treated as not having the resource group"""
+        self.az_mock.side_effect = uninstall.RefreshTokenError("token expired")
+
+        result = uninstall.sub_has_rg(SUB_ID_1, "test-rg")
+
+        self.assertFalse(result)
+
+    def test_mark_log_forwarder_env_rg_deletions_includes_all_accessible_subs(self):
+        """Forwarder RGs are detected in monitored subs, not just the control plane sub, and
+        subscriptions already marked for deletion are not duplicated."""
+        shared_rg = "rg-datadog-log-forwarding-shared"
+        # The RG exists (same name) in every accessible subscription.
+        self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
+
+        all_accessible_subs = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+        # The control plane sub (SUB_ID_1) is already marked for deletion.
+        sub_id_to_rg_deletions = {SUB_ID_1: {shared_rg}}
+
+        result = uninstall.mark_log_forwarder_env_rg_deletions(all_accessible_subs, {shared_rg}, sub_id_to_rg_deletions)
+
+        # The forwarder subs are added; the already-marked control plane sub is skipped.
+        self.assertEqual(dict(result), {SUB_ID_2: {shared_rg}, SUB_ID_3: {shared_rg}})
+
+    def test_mark_log_forwarder_env_rg_deletions_no_rgs_to_delete(self):
+        """With no resource groups chosen for deletion, nothing is searched or returned"""
+        mock_sub_has_rg = self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
+
+        result = uninstall.mark_log_forwarder_env_rg_deletions({SUB_ID_1: SUB_NAME_1}, set(), {})
+
+        self.assertEqual(dict(result), {})
+        mock_sub_has_rg.assert_not_called()
+
     def test_num_resources_in_group_success(self):
         """Test counting resources in a resource group"""
         self.az_mock.return_value = "5"

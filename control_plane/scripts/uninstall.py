@@ -611,7 +611,9 @@ def sub_has_rg(sub_id: str, rg_name: str) -> bool:
     """Returns True if the given subscription has the given resource group, False otherwise"""
     try:
         return az(f"group exists --name {rg_name} --subscription {sub_id}").strip().casefold() == "true"
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, AuthError, RefreshTokenError):
+        # This runs against every accessible subscription, including unrelated ones we may not have
+        # permission to query - treat an inaccessible subscription as not having the resource group.
         return False
 
 
@@ -931,13 +933,15 @@ def mark_rg_deletions(
             sub_id_to_rg_deletions[sub_id].update(rgs_to_delete)
 
         if is_control_plane_found:
-            # Search for forwarder resource groups with same name as control plane resource groups
+            # Search for forwarder resource groups with same name as control plane resource groups,
+            # across all accessible subscriptions (forwarders live in monitored subs, not just the
+            # subscription where the control plane was found).
             sub_to_log_forwarder_rg_deletions = mark_log_forwarder_env_rg_deletions(
-                sub_to_rgs_found, rgs_to_delete, sub_id_to_rg_deletions
+                sub_id_to_name, rgs_to_delete, sub_id_to_rg_deletions
             )
             # Merge them into the deletion plan if found
-            for sub_id, forwarder_rgs in sub_to_log_forwarder_rg_deletions.items():
-                sub_id_to_rg_deletions[sub_id].update(forwarder_rgs)
+            for fwd_sub_id, forwarder_rgs in sub_to_log_forwarder_rg_deletions.items():
+                sub_id_to_rg_deletions[fwd_sub_id].update(forwarder_rgs)
 
         if rgs_to_delete and not is_control_plane_found:
             # Don't prompt the user for every subscription if we're showing resource forwader env resource groups - it would be many prompts.
@@ -948,22 +952,30 @@ def mark_rg_deletions(
 
 
 def mark_log_forwarder_env_rg_deletions(
-    sub_id_to_rgs_found: SubIdToResourceGroupsDict,
+    all_accessible_subs: dict[str, str],
     rgs_to_delete: set[str],
     sub_id_to_rg_deletions: SubIdToResourceGroupsDict,
 ) -> SubIdToResourceGroupsDict:
     """
     Returns mapping of subscription ID to log forwarder resource groups to delete.
-    Checks accessible subscriptions to see if they contain the resource group(s) that the user chose to delete.
+    LFO deploys forwarders into a resource group with the same name as the control plane resource group in
+    every monitored subscription. This checks all accessible subscriptions (not just the ones where the
+    control plane was found) for resource groups matching the one(s) chosen for deletion, so forwarder
+    resource groups in monitored subscriptions are not left behind.
     """
     sub_to_log_forwarder_rg_deletions: SubIdToResourceGroupsDict = defaultdict(set)
+    if not rgs_to_delete:
+        return sub_to_log_forwarder_rg_deletions
 
-    # Check if other subs have the resource groups that the user chose to delete, mark them for deletion if so.
-    # If the control plane resource group still exists, this loop will also mark forwarder env resource groups for deletion.
-    for sub_id in sub_id_to_rgs_found:
-        for rg in rgs_to_delete:
-            if sub_has_rg(sub_id, rg) and rg not in sub_id_to_rg_deletions.get(sub_id, set()):
-                sub_to_log_forwarder_rg_deletions[sub_id].add(rg)
+    # Check every accessible subscription for a resource group matching one chosen for deletion.
+    checks = [(sub_id, rg) for sub_id in all_accessible_subs for rg in rgs_to_delete]
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+        futures = [tpe.submit(sub_has_rg, sub_id, rg) for sub_id, rg in checks]
+        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
+
+    for (sub_id, rg), future in zip(checks, futures):
+        if future.result() and rg not in sub_id_to_rg_deletions.get(sub_id, set()):
+            sub_to_log_forwarder_rg_deletions[sub_id].add(rg)
 
     return sub_to_log_forwarder_rg_deletions
 
