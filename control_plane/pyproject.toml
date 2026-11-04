@@ -23,6 +23,8 @@ resources_task = [
     "azure-mgmt-netapp==13.5.0",
     "azure-mgmt-network==28.1.0",
     "azure-mgmt-notificationhubs==8.0.0",
+    # azure-mgmt-notificationhubs==8.0.0 imports `six` at module load but does not declare it as a dependency
+    "six==1.17.0",
     "azure-mgmt-powerbiembedded==3.0.0",
     "azure-mgmt-redisenterprise==3.0.0",
     "azure-mgmt-resource==23.3.0",
@@ -52,7 +54,8 @@ dev = [
     "coverage==7.8.0",
     "pycobertura==4.0.0",
     "stickytape==0.2.1",
-    "pyright==1.1.400",
+    # [nodejs] pulls nodejs-wheel-binaries so pyright uses a pinned Node instead of fetching one via nodeenv
+    "pyright[nodejs]==1.1.400",
     "ruff==0.12.1",
     "types-jsonschema==4.24.0.20250528",
     "types-requests==2.32.4.20250611",
