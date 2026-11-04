@@ -21,6 +21,8 @@
 import argparse
 import concurrent.futures
 import json
+import os
+import signal
 import subprocess
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -260,6 +262,9 @@ REFRESH_TOKEN_EXPIRED_ERROR = "AADSTS700082"
 AZURE_THROTTLING_ERROR = "TooManyRequests"
 RESOURCE_COLLECTION_THROTTLING_ERROR = "ResourceCollectionRequestsThrottled"
 AUTHORIZATION_ERROR = "AuthorizationFailed"
+# Substrings indicating the target of a delete no longer exists. A delete that succeeded on a first attempt
+# that we timed out and killed will report "not found" on retry - treat that as success, not a failure.
+NOT_FOUND_ERRORS = ("NotFound", "ResourceNotFound", "does not exist", "was not found", "could not be found")
 
 # ===== Type Aliases ===== #
 SubIdToResourceGroupsDict: TypeAlias = dict[str, set[str]]
@@ -336,6 +341,12 @@ class RefreshTokenError(Exception):
     pass
 
 
+def is_not_found_error(stderr: str) -> bool:
+    """True if stderr indicates the target resource no longer exists."""
+    lowered = stderr.casefold()
+    return any(marker.casefold() in lowered for marker in NOT_FOUND_ERRORS)
+
+
 def try_regex_access_error(cmd: str, stderr: str):
     # Sample:
     # (AuthorizationFailed) The client 'user@example.com' with object id '00000000-0000-0000-0000-000000000000'
@@ -394,9 +405,9 @@ def skipped_summary() -> str:
         return ""
 
     summary = (
-        f"{SEPARATOR}WARNING: the following were skipped due to errors and are NOT reflected in the inventory "
-        "above. A skipped resource could hide an LFO diagnostic setting - verify these manually before relying "
-        "on this run:\n"
+        f"{SEPARATOR}WARNING: the following were skipped due to errors and may need manual verification or "
+        "cleanup. Search skips may hide an LFO artifact from the inventory; deletion skips may leave an artifact "
+        "behind:\n"
     )
     summary += indented_log_of(SKIPPED_DURING_SEARCH)
     return summary
@@ -441,6 +452,32 @@ def uninstall_summary(
 
 
 # ===== Azure Commands ===== #
+def _run_az(az_cmd: str) -> subprocess.CompletedProcess:
+    """
+    Run a single az invocation with a timeout, raising the same exceptions as subprocess.run(check=True).
+
+    `az` is a bash wrapper that launches `python -sm azure.cli` without `exec`. With `shell=True`, a
+    subprocess.run(timeout=...) kills only the shell on timeout, orphaning the Python CLI process. Running in a
+    new session (process group) lets us kill the whole process tree with os.killpg on timeout.
+    """
+    proc = subprocess.Popen(
+        az_cmd, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True
+    )
+    try:
+        stdout, stderr = proc.communicate(timeout=AZ_COMMAND_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError, AttributeError):
+            proc.kill()  # fall back to killing just the shell (e.g. non-POSIX platforms)
+        proc.communicate()  # reap the killed process
+        raise
+
+    if proc.returncode != 0:
+        raise subprocess.CalledProcessError(proc.returncode, az_cmd, output=stdout, stderr=stderr)
+    return subprocess.CompletedProcess(az_cmd, proc.returncode, stdout, stderr)
+
+
 def az(cmd: str) -> str:
     """Runs az command with exponential backoff/retry, returns stdout"""
 
@@ -449,9 +486,7 @@ def az(cmd: str) -> str:
 
     for attempt in range(MAX_RETRIES):
         try:
-            result = subprocess.run(
-                az_cmd, shell=True, check=True, text=True, capture_output=True, timeout=AZ_COMMAND_TIMEOUT
-            )
+            result = _run_az(az_cmd)
             return result.stdout
         except subprocess.TimeoutExpired:
             if attempt < MAX_RETRIES - 1:
@@ -522,6 +557,11 @@ def num_resources_in_group(sub_id: str, resource_group: str) -> int:
         if "ResourceGroupNotFound" in str(e.stderr):
             return 0
         raise e
+    except subprocess.TimeoutExpired:
+        # This only drives the best-effort resource-group deletion progress display (deletion is --no-wait
+        # and main() does a final safety delete), so treat an undeterminable count as 0 rather than crashing.
+        log.warning(f"Timed out counting resources in '{resource_group}' ({sub_id}); treating as empty")
+        return 0
 
 
 def find_sub_control_planes(sub_id: str, sub_name: str) -> dict[str, str]:
@@ -644,7 +684,7 @@ def sub_has_rg(sub_id: str, rg_name: str) -> bool:
     """Returns True if the given subscription has the given resource group, False otherwise"""
     try:
         return az(f"group exists --name {rg_name} --subscription {sub_id}").strip().casefold() == "true"
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
 
@@ -669,16 +709,18 @@ def find_role_assignments(sub_id_to_name: dict[str, str], control_plane_ids: set
 
     sub_to_role_assignments_json = {}
     for future, sub_id in zip(futures, sub_id_to_name):
-        if future.exception():
-            log.error(
-                f"Unexpected error searching for role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {future.exception()}"
-            )
+        if e := future.exception():
+            log.error(f"Unexpected error searching for role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {e}")
+            # Record the failure: with --diag-settings-role-subs-only this sub would otherwise be silently
+            # dropped from the diagnostic setting search because we couldn't confirm its role assignments.
+            SKIPPED_DURING_SEARCH.append(f"Role assignment search in '{sub_id_to_name[sub_id]}' ({sub_id}): {e}")
             continue
 
         try:
             role_assignment = future.result(timeout=MAX_WAIT_TIME)
         except concurrent.futures.TimeoutError:
             log.error(f"Timeout searching for role assignments in subscription {sub_id}")
+            SKIPPED_DURING_SEARCH.append(f"Role assignment search in '{sub_id_to_name[sub_id]}' ({sub_id}): timed out")
             continue
 
         role_assigment_json = json.loads(role_assignment)
@@ -706,9 +748,12 @@ def find_unknown_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, l
 
     unknown_role_assignments = {}
     for future, sub_id in zip(futures, sub_id_to_name):
-        if future.exception():
+        if e := future.exception():
             log.error(
-                f"Unexpected error searching for 'Unknown' role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {future.exception()}"
+                f"Unexpected error searching for 'Unknown' role assignments in '{sub_id_to_name[sub_id]}' ({sub_id}): {e}"
+            )
+            SKIPPED_DURING_SEARCH.append(
+                f"'Unknown' role assignment search in '{sub_id_to_name[sub_id]}' ({sub_id}): {e}"
             )
             continue
 
@@ -716,6 +761,9 @@ def find_unknown_role_assignments(sub_id_to_name: dict[str, str]) -> dict[str, l
             unknown_role_assignment = future.result(timeout=MAX_WAIT_TIME)
         except concurrent.futures.TimeoutError:
             log.error(f"Timeout searching for 'Unknown' role assignments in subscription {sub_id}")
+            SKIPPED_DURING_SEARCH.append(
+                f"'Unknown' role assignment search in '{sub_id_to_name[sub_id]}' ({sub_id}): timed out"
+            )
             continue
 
         unknown_role_assignment_json = json.loads(unknown_role_assignment)
@@ -746,7 +794,14 @@ def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str, st
         return
 
     # --include-inherited flag will also try to delete the role assignment from the management group scope if possible
-    az(f"role assignment delete --ids {space_separated(ids)} --subscription {sub_id} --include-inherited --yes")
+    try:
+        az(f"role assignment delete --ids {space_separated(ids)} --subscription {sub_id} --include-inherited --yes")
+    except subprocess.CalledProcessError as e:
+        # A timed-out-then-retried delete can succeed on the first attempt and report not-found on the retry.
+        if is_not_found_error(str(e.stderr)):
+            log.info(f"Role assignments in subscription {sub_id} already removed - treating as deleted")
+            return
+        raise
 
 
 def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set) -> dict[str, set[str]]:
@@ -755,7 +810,7 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
     resource_ds_map = defaultdict(set)
     try:
         resource_ids = list_resources(sub_id, sub_name)
-    except (AuthError, RefreshTokenError, subprocess.CalledProcessError) as e:
+    except (AuthError, RefreshTokenError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         log.warning(f"Could not list resources in '{sub_name}' ({sub_id}) - skipping diagnostic setting search: {e}")
         SKIPPED_DURING_SEARCH.append(f"Resource listing in subscription '{sub_name}' ({sub_id}): {e}")
         return resource_ds_map
@@ -783,7 +838,13 @@ def find_diagnostic_settings(sub_id: str, sub_name: str, control_plane_ids: set)
         except concurrent.futures.TimeoutError:
             log.error(f"Timeout searching for diagnostic settings in resource {resource_id}")
             continue
-        except (AuthError, RefreshTokenError, subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        except (
+            AuthError,
+            RefreshTokenError,
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            json.JSONDecodeError,
+        ) as e:
             # Log and skip this resource instead of aborting the whole run. Record it so the final
             # summary can flag that this resource was not inventoried and may hide an LFO setting.
             log.warning(f"Error searching for diagnostic settings in resource {resource_id} - skipping: {e}")
@@ -802,7 +863,14 @@ def delete_diagnostic_setting(sub_id: str, resource_id: str, ds_name: str):
     if DRY_RUN_SETTING:
         return
 
-    az(f'monitor diagnostic-settings delete --name {ds_name} --resource "{resource_id}" --subscription {sub_id}')
+    try:
+        az(f'monitor diagnostic-settings delete --name {ds_name} --resource "{resource_id}" --subscription {sub_id}')
+    except subprocess.CalledProcessError as e:
+        # A timed-out-then-retried delete can succeed on the first attempt and report not-found on the retry.
+        if is_not_found_error(str(e.stderr)):
+            log.info(f"Diagnostic setting '{ds_name}' on resource {resource_id} already removed - treating as deleted")
+            return
+        raise
 
 
 def init_resource_group_delete(sub_id_to_name: dict[str, str], sub_to_rg_deletions: SubIdToResourceGroupsDict):
@@ -1073,6 +1141,10 @@ def subs_to_search_for_diag_settings(
     By default this is all accessible subscriptions. If --diag-settings-role-subs-only was passed, it is
     restricted to subscriptions where LFO role assignments were found, since LFO only creates diagnostic
     settings where it holds a role assignment.
+
+    Caveat for the restricted mode: a subscription whose role-assignment search failed (recorded in the skipped
+    summary), or whose role assignments were already removed (e.g. by a prior partial uninstall), will not be
+    searched for diagnostic settings. Use the default (all-subscriptions) search if that is a concern.
     """
     if not RESTRICT_DIAG_SETTINGS_SETTING:
         return sub_id_to_name
@@ -1128,7 +1200,9 @@ def parse_args():
         action="store_true",
         help="Only search for diagnostic settings in subscriptions where LFO role assignments were found. "
         "LFO only creates diagnostic settings where it holds a role assignment, so this skips unrelated "
-        "subscriptions and speeds up the search. Default: search all accessible subscriptions.",
+        "subscriptions and speeds up the search. Caveat: a subscription whose role-assignment search failed, or "
+        "whose role assignments were already removed (e.g. by a prior partial uninstall), will not be searched. "
+        "Default: search all accessible subscriptions.",
     )
     args = parser.parse_args()
 
@@ -1258,7 +1332,14 @@ def main():
         for resource_group in rg_set:
             delete_resource_group(sub_id, resource_group)
 
-    log.info("Uninstall done! Exiting.")
+    # Re-print the skipped summary so failures that occurred during deletion (not just search) are surfaced.
+    if skipped := skipped_summary():
+        log.warning(skipped)
+        log.warning(
+            "Uninstall finished, but some items were skipped due to errors (see above). Please verify them manually."
+        )
+    else:
+        log.info("Uninstall done! Exiting.")
 
 
 if __name__ == "__main__":
