@@ -761,10 +761,20 @@ class TestUninstallScript(TestCase):
     # ===== Timeout graceful-degradation tests ===== #
 
     def test_sub_has_rg_timeout(self):
-        """A timeout checking RG existence is treated as 'not present' rather than crashing"""
+        """A timeout checking RG existence is treated as 'not present' and recorded as skipped"""
         self.az_mock.side_effect = subprocess.TimeoutExpired(cmd="az", timeout=1)
 
         self.assertFalse(uninstall.sub_has_rg(SUB_ID_1, "test-rg"))
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn("test-rg", uninstall.SKIPPED_DURING_SEARCH[0])
+
+    def test_sub_has_rg_auth_error_recorded_as_skipped(self):
+        """An inaccessible subscription is treated as 'not present' and recorded in the skipped summary"""
+        self.az_mock.side_effect = uninstall.AuthError("insufficient permissions")
+
+        self.assertFalse(uninstall.sub_has_rg(SUB_ID_1, "test-rg"))
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn(SUB_ID_1, uninstall.SKIPPED_DURING_SEARCH[0])
 
     def test_num_resources_in_group_timeout(self):
         """A timeout counting resources during deletion polling returns 0 instead of crashing"""

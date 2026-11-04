@@ -684,7 +684,14 @@ def sub_has_rg(sub_id: str, rg_name: str) -> bool:
     """Returns True if the given subscription has the given resource group, False otherwise"""
     try:
         return az(f"group exists --name {rg_name} --subscription {sub_id}").strip().casefold() == "true"
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, AuthError, RefreshTokenError) as e:
+        # This can run against subscriptions we lack access to or that error transiently; treat them as not
+        # having the resource group, but record it so a resource group hidden by an error still shows up in
+        # the skipped summary rather than silently disappearing from the deletion plan.
+        log.warning(
+            f"Could not check for resource group '{rg_name}' in subscription {sub_id} - treating as absent: {e}"
+        )
+        SKIPPED_DURING_SEARCH.append(f"Resource group existence check for '{rg_name}' in subscription {sub_id}: {e}")
         return False
 
 
