@@ -1060,7 +1060,10 @@ def identify_rgs_to_delete(sub_id: str, sub_name: str, resource_groups_in_sub: s
 
 
 def mark_rg_deletions(
-    sub_id_to_name: dict[str, str], sub_to_rgs_found: SubIdToResourceGroupsDict, is_control_plane_found: bool
+    sub_id_to_name: dict[str, str],
+    sub_to_rgs_found: SubIdToResourceGroupsDict,
+    is_control_plane_found: bool,
+    rg_to_lfo_ids: ResourceGroupToLfoIdsDict,
 ) -> SubIdToResourceGroupsDict:
     """
     Based on resources found and user input, build a deletion plan for resource groups.
@@ -1074,55 +1077,106 @@ def mark_rg_deletions(
         log.info("Did not find any Datadog log forwarding artifacts")
         return sub_id_to_rg_deletions
 
+    chosen_rgs: set[str] = set()
     for sub_id, rg_set in sub_to_rgs_found.items():
         sub_name = sub_id_to_name[sub_id]
         rgs_to_delete = identify_rgs_to_delete(sub_id, sub_name, rg_set)
         if any(rgs_to_delete):
             sub_id_to_rg_deletions[sub_id].update(rgs_to_delete)
-
-        if is_control_plane_found:
-            # Search for forwarder resource groups with same name as control plane resource groups,
-            # across all accessible subscriptions (forwarders live in monitored subs, not just the
-            # subscription where the control plane was found).
-            sub_to_log_forwarder_rg_deletions = mark_log_forwarder_env_rg_deletions(
-                sub_id_to_name, rgs_to_delete, sub_id_to_rg_deletions
-            )
-            # Merge them into the deletion plan if found
-            for fwd_sub_id, forwarder_rgs in sub_to_log_forwarder_rg_deletions.items():
-                sub_id_to_rg_deletions[fwd_sub_id].update(forwarder_rgs)
+            chosen_rgs.update(rgs_to_delete)
 
         if rgs_to_delete and not is_control_plane_found:
             # Don't prompt the user for every subscription if we're showing resource forwader env resource groups - it would be many prompts.
             # We will delete the chosen resource group from all subs it was found in.
             break
 
+    if is_control_plane_found and chosen_rgs:
+        # Forwarders live in monitored subscriptions in a resource group with the same name as the control
+        # plane's. Scan the monitored subscriptions once (control plane subs are already user-decided, so they're
+        # excluded) for the chosen resource group name(s), and only mark resource groups that actually hold a
+        # forwarder environment (or are empty) so a generic control-plane RG name can't sweep up unrelated groups.
+        control_plane_ids = {lfo_id for rg in chosen_rgs for lfo_id in rg_to_lfo_ids.get(rg, set())}
+        if CONTROL_PLANE_ID_SETTING:
+            control_plane_ids.add(CONTROL_PLANE_ID_SETTING)
+        forwarder_subs = {s: n for s, n in sub_id_to_name.items() if s not in sub_to_rgs_found}
+
+        sub_to_log_forwarder_rg_deletions = mark_log_forwarder_env_rg_deletions(
+            forwarder_subs, chosen_rgs, control_plane_ids, sub_id_to_rg_deletions
+        )
+        for fwd_sub_id, forwarder_rgs in sub_to_log_forwarder_rg_deletions.items():
+            sub_id_to_rg_deletions[fwd_sub_id].update(forwarder_rgs)
+
     return sub_id_to_rg_deletions
 
 
+def rg_is_forwarder_or_empty(sub_id: str, rg: str, control_plane_ids: set[str]) -> bool:
+    """
+    Returns True if the resource group holds a dd-log-forwarder-env-<control_plane_id>-* managed environment,
+    or is empty. Used to avoid deleting unrelated resource groups that merely share the control plane RG's name.
+    """
+    if control_plane_ids:
+        env_filter = " || ".join(
+            f"starts_with(name, '{FORWARDER_ENVIRONMENT_PREFIX}{cp_id}')" for cp_id in control_plane_ids
+        )
+        try:
+            envs = json.loads(
+                az(
+                    f"resource list --subscription {sub_id} --resource-group {rg} "
+                    f"--resource-type {CONTAINER_APP_ENV_RESOURCE_TYPE} "
+                    f'--query "[?{env_filter}].name" --output json'
+                )
+            )
+        except (subprocess.CalledProcessError, AuthError, RefreshTokenError) as e:
+            log.warning(f"Could not inspect resource group '{rg}' in subscription {sub_id} - not marking it: {e}")
+            return False
+        if envs:
+            return True
+
+    # No forwarder environment found; only mark the resource group if it is empty (e.g. a drained forwarder RG).
+    try:
+        return num_resources_in_group(sub_id, rg) == 0
+    except (subprocess.CalledProcessError, AuthError, RefreshTokenError) as e:
+        log.warning(f"Could not inspect resource group '{rg}' in subscription {sub_id} - not marking it: {e}")
+        return False
+
+
 def mark_log_forwarder_env_rg_deletions(
-    all_accessible_subs: dict[str, str],
-    rgs_to_delete: set[str],
+    forwarder_subs: dict[str, str],
+    candidate_rgs: set[str],
+    control_plane_ids: set[str],
     sub_id_to_rg_deletions: SubIdToResourceGroupsDict,
 ) -> SubIdToResourceGroupsDict:
     """
     Returns mapping of subscription ID to log forwarder resource groups to delete.
-    LFO deploys forwarders into a resource group with the same name as the control plane resource group in
-    every monitored subscription. This checks all accessible subscriptions (not just the ones where the
-    control plane was found) for resource groups matching the one(s) chosen for deletion, so forwarder
-    resource groups in monitored subscriptions are not left behind.
+    LFO deploys forwarders into a resource group with the same name as the control plane resource group in every
+    monitored subscription. For each accessible subscription that has a resource group matching one chosen for
+    deletion, this marks it only if the resource group actually holds a dd-log-forwarder-env-<id>-* environment
+    (or is empty), so a generically-named control plane resource group can't sweep up unrelated resource groups.
     """
     sub_to_log_forwarder_rg_deletions: SubIdToResourceGroupsDict = defaultdict(set)
-    if not rgs_to_delete:
+    if not candidate_rgs:
         return sub_to_log_forwarder_rg_deletions
 
-    # Check every accessible subscription for a resource group matching one chosen for deletion.
-    checks = [(sub_id, rg) for sub_id in all_accessible_subs for rg in rgs_to_delete]
+    # Stage 1: find which (subscription, resource group) pairs actually exist.
+    checks = [(sub_id, rg) for sub_id in forwarder_subs for rg in candidate_rgs]
     with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
-        futures = [tpe.submit(sub_has_rg, sub_id, rg) for sub_id, rg in checks]
-        progress_spinner(len(futures), lambda: sum(f.done() for f in futures))
+        exists_futures = [tpe.submit(sub_has_rg, sub_id, rg) for sub_id, rg in checks]
+        progress_spinner(len(exists_futures), lambda: sum(f.done() for f in exists_futures))
+    candidates = [
+        (sub_id, rg)
+        for (sub_id, rg), future in zip(checks, exists_futures)
+        if future.result() and rg not in sub_id_to_rg_deletions.get(sub_id, set())
+    ]
 
-    for (sub_id, rg), future in zip(checks, futures):
-        if future.result() and rg not in sub_id_to_rg_deletions.get(sub_id, set()):
+    # Stage 2: only mark resource groups that hold an LFO forwarder environment, or that are empty.
+    with ThreadPoolExecutor(THREAD_POOL_SIZE) as tpe:
+        keep_futures = [
+            tpe.submit(rg_is_forwarder_or_empty, sub_id, rg, control_plane_ids) for sub_id, rg in candidates
+        ]
+        progress_spinner(len(keep_futures), lambda: sum(f.done() for f in keep_futures))
+
+    for (sub_id, rg), future in zip(candidates, keep_futures):
+        if future.result():
             sub_to_log_forwarder_rg_deletions[sub_id].add(rg)
 
     return sub_to_log_forwarder_rg_deletions
@@ -1332,7 +1386,9 @@ def main():
             log.info("No 'Unknown' role assignments found, exiting.")
         raise SystemExit(0)
 
-    sub_to_rg_deletions = mark_rg_deletions(sub_id_to_name, sub_to_resource_groups_found, control_plane_found)
+    sub_to_rg_deletions = mark_rg_deletions(
+        sub_id_to_name, sub_to_resource_groups_found, control_plane_found, rg_to_lfo_ids
+    )
 
     if not any(sub_to_rg_deletions.values()) and not CONTROL_PLANE_ID_SETTING:
         log.info("Could not find any resource groups to delete.")

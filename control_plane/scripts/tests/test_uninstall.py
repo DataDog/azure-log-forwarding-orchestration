@@ -412,30 +412,91 @@ class TestUninstallScript(TestCase):
 
         self.assertFalse(result)
 
-    def test_mark_log_forwarder_env_rg_deletions_includes_all_accessible_subs(self):
-        """Forwarder RGs are detected in monitored subs, not just the control plane sub, and
-        subscriptions already marked for deletion are not duplicated."""
+    def test_mark_log_forwarder_env_rg_deletions_marks_forwarder_and_empty_rgs(self):
+        """Marks RGs that hold a forwarder env or are empty across monitored subs; skips unrelated same-named RGs
+        and already-marked subs."""
         shared_rg = "rg-datadog-log-forwarding-shared"
-        # The RG exists (same name) in every accessible subscription.
+        # The same-named RG exists in all three monitored subs.
         self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
 
-        all_accessible_subs = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
-        # The control plane sub (SUB_ID_1) is already marked for deletion.
+        # SUB_ID_1: has a forwarder env -> keep. SUB_ID_2: no env but empty -> keep. SUB_ID_3: no env, not empty -> drop.
+        def fake_rg_filter(sub_id, rg, control_plane_ids):
+            return sub_id in (SUB_ID_1, SUB_ID_2)
+
+        self.patch("uninstall.rg_is_forwarder_or_empty", side_effect=fake_rg_filter)
+
+        forwarder_subs = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+
+        result = uninstall.mark_log_forwarder_env_rg_deletions(forwarder_subs, {shared_rg}, {CONTROL_PLANE_ID_1}, {})
+
+        self.assertEqual(dict(result), {SUB_ID_1: {shared_rg}, SUB_ID_2: {shared_rg}})
+
+    def test_mark_log_forwarder_env_rg_deletions_skips_already_marked(self):
+        """A sub already in the deletion plan for that RG is not duplicated."""
+        shared_rg = "rg-datadog-log-forwarding-shared"
+        self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
+        self.patch("uninstall.rg_is_forwarder_or_empty", side_effect=lambda sub_id, rg, cp_ids: True)
+
+        forwarder_subs = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2}
         sub_id_to_rg_deletions = {SUB_ID_1: {shared_rg}}
 
-        result = uninstall.mark_log_forwarder_env_rg_deletions(all_accessible_subs, {shared_rg}, sub_id_to_rg_deletions)
+        result = uninstall.mark_log_forwarder_env_rg_deletions(
+            forwarder_subs, {shared_rg}, {CONTROL_PLANE_ID_1}, sub_id_to_rg_deletions
+        )
 
-        # The forwarder subs are added; the already-marked control plane sub is skipped.
-        self.assertEqual(dict(result), {SUB_ID_2: {shared_rg}, SUB_ID_3: {shared_rg}})
+        self.assertEqual(dict(result), {SUB_ID_2: {shared_rg}})
 
     def test_mark_log_forwarder_env_rg_deletions_no_rgs_to_delete(self):
         """With no resource groups chosen for deletion, nothing is searched or returned"""
         mock_sub_has_rg = self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
 
-        result = uninstall.mark_log_forwarder_env_rg_deletions({SUB_ID_1: SUB_NAME_1}, set(), {})
+        result = uninstall.mark_log_forwarder_env_rg_deletions({SUB_ID_1: SUB_NAME_1}, set(), {CONTROL_PLANE_ID_1}, {})
 
         self.assertEqual(dict(result), {})
         mock_sub_has_rg.assert_not_called()
+
+    @mock_patch("uninstall.mark_log_forwarder_env_rg_deletions")
+    @mock_patch("uninstall.identify_rgs_to_delete")
+    def test_mark_rg_deletions_hoists_scan_and_excludes_declined_and_cp_subs(self, mock_identify, mock_forwarder):
+        """The forwarder scan runs once over the union of chosen RGs, excludes control-plane subs, and a
+        control-plane sub whose RG was declined is not re-marked by another sub's same-named choice."""
+        cp_rg = CONTROL_PLANE_RESOURCE_GROUP_1
+        # SUB_ID_1 chooses the RG; SUB_ID_2 (same RG name) declines it.
+        mock_identify.side_effect = lambda sub_id, sub_name, rg_set: {cp_rg} if sub_id == SUB_ID_1 else set()
+        mock_forwarder.return_value = {}
+
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+        sub_to_rgs_found = {SUB_ID_1: {cp_rg}, SUB_ID_2: {cp_rg}}
+        rg_to_lfo_ids = {cp_rg: {CONTROL_PLANE_ID_1}}
+
+        result = uninstall.mark_rg_deletions(sub_id_to_name, sub_to_rgs_found, True, rg_to_lfo_ids)
+
+        # Scan runs exactly once (hoisted out of the per-control-plane-sub loop)
+        self.assertEqual(mock_forwarder.call_count, 1)
+        forwarder_subs, candidate_rgs, control_plane_ids, _plan = mock_forwarder.call_args[0]
+        # Control-plane subs are excluded from the monitored-sub scan
+        self.assertEqual(set(forwarder_subs), {SUB_ID_3})
+        self.assertEqual(candidate_rgs, {cp_rg})
+        self.assertEqual(control_plane_ids, {CONTROL_PLANE_ID_1})
+        # The declined control-plane sub is not marked; the one that chose it is
+        self.assertEqual(result.get(SUB_ID_1), {cp_rg})
+        self.assertFalse(result.get(SUB_ID_2))
+
+    def test_rg_is_forwarder_or_empty(self):
+        """Keeps RGs with a matching forwarder env or that are empty; drops unrelated non-empty same-named RGs."""
+        # Has a forwarder env -> keep (empty-check not consulted).
+        self.az_mock.return_value = json.dumps([f"dd-log-forwarder-env-{CONTROL_PLANE_ID_1}-eastus"])
+        self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # No env, but empty -> keep.
+        self.az_mock.return_value = json.dumps([])
+        with mock_patch("uninstall.num_resources_in_group", return_value=0):
+            self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # No env, not empty -> drop (unrelated RG sharing the name).
+        self.az_mock.return_value = json.dumps([])
+        with mock_patch("uninstall.num_resources_in_group", return_value=7):
+            self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
 
     def test_num_resources_in_group_success(self):
         """Test counting resources in a resource group"""
