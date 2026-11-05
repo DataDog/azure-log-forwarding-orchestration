@@ -557,10 +557,10 @@ def num_resources_in_group(sub_id: str, resource_group: str) -> int:
         if "ResourceGroupNotFound" in str(e.stderr):
             return 0
         raise e
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, AuthError, RefreshTokenError) as e:
         # This only drives the best-effort resource-group deletion progress display (deletion is --no-wait
         # and main() does a final safety delete), so treat an undeterminable count as 0 rather than crashing.
-        log.warning(f"Timed out counting resources in '{resource_group}' ({sub_id}); treating as empty")
+        log.warning(f"Could not count resources in '{resource_group}' ({sub_id}); treating as empty: {e}")
         return 0
 
 
@@ -791,6 +791,20 @@ def delete_resource_group(sub_id: str, resource_group: str):
     az(f"group delete --subscription {sub_id} --name {resource_group} --yes --no-wait")
 
 
+def delete_resource_group_safely(sub_id: str, resource_group: str) -> None:
+    """
+    Delete a resource group, recording (not raising) failures so one failure can't abort the run.
+    A single failing delete (resource lock, read-only access in that subscription, throttling, or timeout) must not
+    prevent role assignment and diagnostic setting deletion from running, so failures are logged and recorded in the
+    skipped summary instead of propagating. SystemExit is included because az() raises it on throttling exhaustion.
+    """
+    try:
+        delete_resource_group(sub_id, resource_group)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, AuthError, RefreshTokenError, SystemExit) as e:
+        log.warning(f"Failed to delete resource group '{resource_group}' in subscription {sub_id} - skipping: {e}")
+        SKIPPED_DURING_SEARCH.append(f"Resource group '{resource_group}' deletion in subscription {sub_id}: {e}")
+
+
 def delete_role_assignments(sub_id: str, role_assigments_json: list[dict[str, str]]):
     if DRY_RUN_SETTING:
         return
@@ -940,7 +954,7 @@ def start_resource_group_delete(sub_id: str, resource_group_set: set[str]):
 
         log.info(deletion_log)
 
-        delete_resource_group(sub_id, rg)
+        delete_resource_group_safely(sub_id, rg)
 
 
 def wait_for_resource_group_deletion(sub_to_rg_deletions: SubIdToResourceGroupsDict):
@@ -1337,7 +1351,7 @@ def main():
     # Execute a second delete because Azure sometimes deletes all the resources within, but not the group itself
     for sub_id, rg_set in sub_to_rg_deletions.items():
         for resource_group in rg_set:
-            delete_resource_group(sub_id, resource_group)
+            delete_resource_group_safely(sub_id, resource_group)
 
     # Re-print the skipped summary so failures that occurred during deletion (not just search) are surfaced.
     if skipped := skipped_summary():

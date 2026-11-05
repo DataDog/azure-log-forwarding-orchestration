@@ -445,6 +445,33 @@ class TestUninstallScript(TestCase):
         expected_cmd = f"group delete --subscription {SUB_ID_1} --name {CONTROL_PLANE_RESOURCE_GROUP_1} --yes --no-wait"
         self.az_mock.assert_called_once_with(expected_cmd)
 
+    def test_delete_resource_group_safely_records_failures(self):
+        """A resource group deletion failure is recorded and swallowed, not raised, so the run can continue."""
+        for error in (
+            subprocess.CalledProcessError(1, "az", stderr="(ScopeLocked) resource group is locked"),
+            subprocess.TimeoutExpired(cmd="az", timeout=1),
+            uninstall.AuthError("Reader-only access"),
+            SystemExit(1),
+        ):
+            with self.subTest(error=type(error).__name__):
+                uninstall.SKIPPED_DURING_SEARCH.clear()
+                self.az_mock.side_effect = error
+
+                uninstall.delete_resource_group_safely(SUB_ID_1, CONTROL_PLANE_RESOURCE_GROUP_1)  # must not raise
+
+                self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+                self.assertIn(CONTROL_PLANE_RESOURCE_GROUP_1, uninstall.SKIPPED_DURING_SEARCH[0])
+
+    def test_init_resource_group_delete_continues_on_failure(self):
+        """A failed `group delete` is recorded and does not abort the run, so later deletion steps still run."""
+        self.az_mock.side_effect = subprocess.CalledProcessError(1, "az", stderr="(ScopeLocked) locked")
+
+        # Must not raise - mirrors main() reaching role/diagnostic deletion afterwards.
+        uninstall.init_resource_group_delete({SUB_ID_1: SUB_NAME_1}, {SUB_ID_1: {CONTROL_PLANE_RESOURCE_GROUP_1}})
+
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn(CONTROL_PLANE_RESOURCE_GROUP_1, uninstall.SKIPPED_DURING_SEARCH[0])
+
     def test_delete_role_assignments_dry_run(self):
         """Test role assignment deletion in dry run mode"""
         uninstall.DRY_RUN_SETTING = True
@@ -779,6 +806,12 @@ class TestUninstallScript(TestCase):
     def test_num_resources_in_group_timeout(self):
         """A timeout counting resources during deletion polling returns 0 instead of crashing"""
         self.az_mock.side_effect = subprocess.TimeoutExpired(cmd="az", timeout=1)
+
+        self.assertEqual(uninstall.num_resources_in_group(SUB_ID_1, "test-rg"), 0)
+
+    def test_num_resources_in_group_auth_error(self):
+        """A permission error counting resources during deletion polling returns 0 instead of crashing"""
+        self.az_mock.side_effect = uninstall.AuthError("Reader-only access")
 
         self.assertEqual(uninstall.num_resources_in_group(SUB_ID_1, "test-rg"), 0)
 
