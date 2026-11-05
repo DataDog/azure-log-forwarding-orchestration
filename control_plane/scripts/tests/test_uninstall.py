@@ -483,20 +483,31 @@ class TestUninstallScript(TestCase):
         self.assertFalse(result.get(SUB_ID_2))
 
     def test_rg_is_forwarder_or_empty(self):
-        """Keeps RGs with a matching forwarder env or that are empty; drops unrelated non-empty same-named RGs."""
-        # Has a forwarder env -> keep (empty-check not consulted).
-        self.az_mock.return_value = json.dumps([f"dd-log-forwarder-env-{CONTROL_PLANE_ID_1}-eastus"])
+        """Keeps RGs with a matching forwarder env or that are empty; drops unrelated/uninspectable same-named RGs.
+
+        The emptiness check queries az directly and fails closed on any error, so a resource group we could not
+        inspect (e.g. a timed-out count) is never marked for deletion.
+        """
+        # Has a forwarder env -> keep (empty-check / count query not reached).
+        self.az_mock.side_effect = [json.dumps([f"dd-log-forwarder-env-{CONTROL_PLANE_ID_1}-eastus"])]
         self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
 
-        # No env, but empty -> keep.
-        self.az_mock.return_value = json.dumps([])
-        with mock_patch("uninstall.num_resources_in_group", return_value=0):
-            self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+        # No env, but empty (count == 0) -> keep.
+        self.az_mock.side_effect = [json.dumps([]), "0"]
+        self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
 
         # No env, not empty -> drop (unrelated RG sharing the name).
-        self.az_mock.return_value = json.dumps([])
-        with mock_patch("uninstall.num_resources_in_group", return_value=7):
-            self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+        self.az_mock.side_effect = [json.dumps([]), "7"]
+        self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # Env query times out -> fail closed, don't mark.
+        self.az_mock.side_effect = subprocess.TimeoutExpired(cmd="az", timeout=1)
+        self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # Count query times out -> fail closed, don't mark (would be treated as empty if it went through
+        # num_resources_in_group).
+        self.az_mock.side_effect = [json.dumps([]), subprocess.TimeoutExpired(cmd="az", timeout=1)]
+        self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
 
     def test_num_resources_in_group_success(self):
         """Test counting resources in a resource group"""

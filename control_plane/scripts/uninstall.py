@@ -1113,6 +1113,8 @@ def rg_is_forwarder_or_empty(sub_id: str, rg: str, control_plane_ids: set[str]) 
     """
     Returns True if the resource group holds a dd-log-forwarder-env-<control_plane_id>-* managed environment,
     or is empty. Used to avoid deleting unrelated resource groups that merely share the control plane RG's name.
+    Any error inspecting the resource group fails closed (returns False / does not mark it), so a resource group
+    we could not inspect is never deleted.
     """
     if control_plane_ids:
         env_filter = " || ".join(
@@ -1126,18 +1128,23 @@ def rg_is_forwarder_or_empty(sub_id: str, rg: str, control_plane_ids: set[str]) 
                     f'--query "[?{env_filter}].name" --output json'
                 )
             )
-        except (subprocess.CalledProcessError, AuthError, RefreshTokenError) as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, AuthError, RefreshTokenError) as e:
             log.warning(f"Could not inspect resource group '{rg}' in subscription {sub_id} - not marking it: {e}")
             return False
         if envs:
             return True
 
     # No forwarder environment found; only mark the resource group if it is empty (e.g. a drained forwarder RG).
+    # Query az directly rather than num_resources_in_group: that helper treats a timed-out count as 0 (empty) for
+    # the deletion-progress display, but here that would mark a group we couldn't inspect. Fail closed instead.
     try:
-        return num_resources_in_group(sub_id, rg) == 0
-    except (subprocess.CalledProcessError, AuthError, RefreshTokenError) as e:
+        count = int(
+            az(f'resource list --subscription {sub_id} --resource-group {rg} --query "length([])" --output tsv')
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, AuthError, RefreshTokenError) as e:
         log.warning(f"Could not inspect resource group '{rg}' in subscription {sub_id} - not marking it: {e}")
         return False
+    return count == 0
 
 
 def mark_log_forwarder_env_rg_deletions(
@@ -1266,7 +1273,7 @@ def parse_args():
         "-s",
         "--subscription",
         type=str,
-        help="Specify subscription ID to search for log forwarding artifacts. This can save time if you know the subscription where log forwarding was installed.",
+        help="Specify subscription ID to search for log forwarding artifacts. This can save time if you know the subscription where log forwarding was installed. Note: this does not restrict the cross-subscription search for forwarder resource groups performed when a control plane is found.",
     )
     parser.add_argument(
         "-y",
