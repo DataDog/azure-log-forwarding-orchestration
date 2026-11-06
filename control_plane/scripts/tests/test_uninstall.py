@@ -396,6 +396,124 @@ class TestUninstallScript(TestCase):
 
         self.assertFalse(result)
 
+    def test_sub_has_rg_auth_error(self):
+        """An inaccessible subscription is treated as not having the resource group"""
+        self.az_mock.side_effect = uninstall.AuthError("insufficient permissions")
+
+        result = uninstall.sub_has_rg(SUB_ID_1, "test-rg")
+
+        self.assertFalse(result)
+
+    def test_sub_has_rg_refresh_token_error(self):
+        """A token refresh error is treated as not having the resource group"""
+        self.az_mock.side_effect = uninstall.RefreshTokenError("token expired")
+
+        result = uninstall.sub_has_rg(SUB_ID_1, "test-rg")
+
+        self.assertFalse(result)
+
+    def test_mark_log_forwarder_env_rg_deletions_marks_forwarder_and_empty_rgs(self):
+        """Marks RGs that hold a forwarder env or are empty across monitored subs; skips unrelated same-named RGs
+        and already-marked subs."""
+        shared_rg = "rg-datadog-log-forwarding-shared"
+        # The same-named RG exists in all three monitored subs.
+        self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
+
+        # SUB_ID_1: has a forwarder env -> keep. SUB_ID_2: no env but empty -> keep. SUB_ID_3: no env, not empty -> drop.
+        def fake_rg_filter(sub_id, rg, control_plane_ids):
+            return sub_id in (SUB_ID_1, SUB_ID_2)
+
+        self.patch("uninstall.rg_is_forwarder_or_empty", side_effect=fake_rg_filter)
+
+        forwarder_subs = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+
+        result = uninstall.mark_log_forwarder_env_rg_deletions(forwarder_subs, {shared_rg}, {CONTROL_PLANE_ID_1}, {})
+
+        self.assertEqual(dict(result), {SUB_ID_1: {shared_rg}, SUB_ID_2: {shared_rg}})
+
+    def test_mark_log_forwarder_env_rg_deletions_skips_already_marked(self):
+        """A sub already in the deletion plan for that RG is not duplicated."""
+        shared_rg = "rg-datadog-log-forwarding-shared"
+        self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
+        self.patch("uninstall.rg_is_forwarder_or_empty", side_effect=lambda sub_id, rg, cp_ids: True)
+
+        forwarder_subs = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2}
+        sub_id_to_rg_deletions = {SUB_ID_1: {shared_rg}}
+
+        result = uninstall.mark_log_forwarder_env_rg_deletions(
+            forwarder_subs, {shared_rg}, {CONTROL_PLANE_ID_1}, sub_id_to_rg_deletions
+        )
+
+        self.assertEqual(dict(result), {SUB_ID_2: {shared_rg}})
+
+    def test_mark_log_forwarder_env_rg_deletions_no_rgs_to_delete(self):
+        """With no resource groups chosen for deletion, nothing is searched or returned"""
+        mock_sub_has_rg = self.patch("uninstall.sub_has_rg", side_effect=lambda sub_id, rg: True)
+
+        result = uninstall.mark_log_forwarder_env_rg_deletions({SUB_ID_1: SUB_NAME_1}, set(), {CONTROL_PLANE_ID_1}, {})
+
+        self.assertEqual(dict(result), {})
+        mock_sub_has_rg.assert_not_called()
+
+    @mock_patch("uninstall.mark_log_forwarder_env_rg_deletions")
+    @mock_patch("uninstall.identify_rgs_to_delete")
+    def test_mark_rg_deletions_hoists_scan_and_excludes_declined_and_cp_subs(self, mock_identify, mock_forwarder):
+        """The forwarder scan runs once over the union of chosen RGs, excludes control-plane subs, and a
+        control-plane sub whose RG was declined is not re-marked by another sub's same-named choice."""
+        cp_rg = CONTROL_PLANE_RESOURCE_GROUP_1
+        # SUB_ID_1 chooses the RG; SUB_ID_2 (same RG name) declines it.
+        mock_identify.side_effect = lambda sub_id, sub_name, rg_set: {cp_rg} if sub_id == SUB_ID_1 else set()
+        mock_forwarder.return_value = {}
+
+        sub_id_to_name = {SUB_ID_1: SUB_NAME_1, SUB_ID_2: SUB_NAME_2, SUB_ID_3: SUB_NAME_3}
+        sub_to_rgs_found = {SUB_ID_1: {cp_rg}, SUB_ID_2: {cp_rg}}
+        rg_to_lfo_ids = {cp_rg: {CONTROL_PLANE_ID_1}}
+
+        result = uninstall.mark_rg_deletions(sub_id_to_name, sub_to_rgs_found, True, rg_to_lfo_ids)
+
+        # Scan runs exactly once (hoisted out of the per-control-plane-sub loop)
+        self.assertEqual(mock_forwarder.call_count, 1)
+        forwarder_subs, candidate_rgs, control_plane_ids, _plan = mock_forwarder.call_args[0]
+        # Control-plane subs are excluded from the monitored-sub scan
+        self.assertEqual(set(forwarder_subs), {SUB_ID_3})
+        self.assertEqual(candidate_rgs, {cp_rg})
+        self.assertEqual(control_plane_ids, {CONTROL_PLANE_ID_1})
+        # The declined control-plane sub is not marked; the one that chose it is
+        self.assertEqual(result.get(SUB_ID_1), {cp_rg})
+        self.assertFalse(result.get(SUB_ID_2))
+
+    def test_rg_is_forwarder_or_empty(self):
+        """Keeps RGs with a matching forwarder env or that are empty; drops unrelated/uninspectable same-named RGs.
+
+        The emptiness check queries az directly and fails closed on any error, so a resource group we could not
+        inspect (e.g. a timed-out count) is never marked for deletion.
+        """
+        # Has a forwarder env -> keep (empty-check / count query not reached).
+        self.az_mock.side_effect = [json.dumps([f"dd-log-forwarder-env-{CONTROL_PLANE_ID_1}-eastus"])]
+        self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # No env, but empty (count == 0) -> keep.
+        self.az_mock.side_effect = [json.dumps([]), "0"]
+        self.assertTrue(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # No env, not empty -> drop (unrelated RG sharing the name).
+        self.az_mock.side_effect = [json.dumps([]), "7"]
+        self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+
+        # Env query times out -> fail closed, don't mark, and record it in the skipped summary.
+        uninstall.SKIPPED_DURING_SEARCH.clear()
+        self.az_mock.side_effect = subprocess.TimeoutExpired(cmd="az", timeout=1)
+        self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn("rg", uninstall.SKIPPED_DURING_SEARCH[0])
+
+        # Count query times out -> fail closed, don't mark (would be treated as empty if it went through
+        # num_resources_in_group), and record it in the skipped summary.
+        uninstall.SKIPPED_DURING_SEARCH.clear()
+        self.az_mock.side_effect = [json.dumps([]), subprocess.TimeoutExpired(cmd="az", timeout=1)]
+        self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+
     def test_num_resources_in_group_success(self):
         """Test counting resources in a resource group"""
         self.az_mock.return_value = "5"
