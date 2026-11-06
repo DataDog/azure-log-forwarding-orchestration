@@ -500,14 +500,19 @@ class TestUninstallScript(TestCase):
         self.az_mock.side_effect = [json.dumps([]), "7"]
         self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
 
-        # Env query times out -> fail closed, don't mark.
+        # Env query times out -> fail closed, don't mark, and record it in the skipped summary.
+        uninstall.SKIPPED_DURING_SEARCH.clear()
         self.az_mock.side_effect = subprocess.TimeoutExpired(cmd="az", timeout=1)
         self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
+        self.assertIn("rg", uninstall.SKIPPED_DURING_SEARCH[0])
 
         # Count query times out -> fail closed, don't mark (would be treated as empty if it went through
-        # num_resources_in_group).
+        # num_resources_in_group), and record it in the skipped summary.
+        uninstall.SKIPPED_DURING_SEARCH.clear()
         self.az_mock.side_effect = [json.dumps([]), subprocess.TimeoutExpired(cmd="az", timeout=1)]
         self.assertFalse(uninstall.rg_is_forwarder_or_empty(SUB_ID_1, "rg", {CONTROL_PLANE_ID_1}))
+        self.assertEqual(len(uninstall.SKIPPED_DURING_SEARCH), 1)
 
     def test_num_resources_in_group_success(self):
         """Test counting resources in a resource group"""

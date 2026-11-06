@@ -1114,7 +1114,7 @@ def rg_is_forwarder_or_empty(sub_id: str, rg: str, control_plane_ids: set[str]) 
     Returns True if the resource group holds a dd-log-forwarder-env-<control_plane_id>-* managed environment,
     or is empty. Used to avoid deleting unrelated resource groups that merely share the control plane RG's name.
     Any error inspecting the resource group fails closed (returns False / does not mark it), so a resource group
-    we could not inspect is never deleted.
+    we could not inspect is never deleted; the skipped inspection is recorded in the final summary.
     """
     if control_plane_ids:
         env_filter = " || ".join(
@@ -1130,6 +1130,7 @@ def rg_is_forwarder_or_empty(sub_id: str, rg: str, control_plane_ids: set[str]) 
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, AuthError, RefreshTokenError) as e:
             log.warning(f"Could not inspect resource group '{rg}' in subscription {sub_id} - not marking it: {e}")
+            SKIPPED_DURING_SEARCH.append(f"Resource group inspection for '{rg}' in subscription {sub_id}: {e}")
             return False
         if envs:
             return True
@@ -1143,6 +1144,7 @@ def rg_is_forwarder_or_empty(sub_id: str, rg: str, control_plane_ids: set[str]) 
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, AuthError, RefreshTokenError) as e:
         log.warning(f"Could not inspect resource group '{rg}' in subscription {sub_id} - not marking it: {e}")
+        SKIPPED_DURING_SEARCH.append(f"Resource group inspection for '{rg}' in subscription {sub_id}: {e}")
         return False
     return count == 0
 
