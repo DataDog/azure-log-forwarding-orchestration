@@ -1,0 +1,38 @@
+# Log collection configuration for Azure Log Forwarder
+# Collects logs from the forwarder service and correlates with traces
+
+logs:
+  # Main forwarder application logs
+  - type: file
+    path: /var/log/datadog-forwarder/forwarder.log
+    service: ${DD_SERVICE}
+    source: azure-log-forwarder
+    sourcecategory: application
+    tags:
+      - env:${DD_ENV}
+      - component:forwarder
+    # Multi-line log aggregation for stack traces
+    multiline:
+      pattern: '^\d{4}-\d{2}-\d{2}'
+      type: pattern
+  # Error logs (if separated)
+  - type: file
+    path: /var/log/datadog-forwarder/error.log
+    service: ${DD_SERVICE}
+    source: azure-log-forwarder
+    sourcecategory: application
+    tags:
+      - env:${DD_ENV}
+      - component:forwarder
+      - log_type:error
+  # Systemd journal logs for the forwarder service
+  - type: journald
+    path: /var/log/journal
+    include_units:
+      - datadog-forwarder.service
+    service: ${DD_SERVICE}
+    source: systemd
+    sourcecategory: service
+    tags:
+      - env:${DD_ENV}
+      - component:systemd
