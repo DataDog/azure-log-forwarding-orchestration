@@ -54,6 +54,9 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	if cursorOffset > blob.ContentLength {
 		return fmt.Errorf("cursor is ahead of blob length for %s", blob.Name)
 	}
+	if (logs.FlowEventParser{}).Valid(blob) {
+		return getFlowEventLogs(ctx, storageClient, cursors, blob, piiScrubber, logsChannel)
+	}
 	content, err := storageClient.DownloadSegment(ctx, blob, cursorOffset, blob.ContentLength)
 	if err != nil {
 		return fmt.Errorf("download range for %s: %w", blob.Name, err)
@@ -71,6 +74,33 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 	cursors.Set(blob.Container.Name, blob.Name, cursorOffset+processedRawBytes)
 
 	return err
+}
+
+// Flow-log block blobs grow inside a JSON array, rather than by appending whole
+// JSON lines. Read the document from its beginning and persist only the boundary
+// of a record successfully handed off for processing.
+func getFlowEventLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor.Cursors, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) error {
+	checkpoint := cursors.Get(blob.Container.Name, blob.Name)
+	content, err := storageClient.DownloadSegment(ctx, blob, 0, blob.ContentLength)
+	if err != nil {
+		return fmt.Errorf("download flow logs for %s: %w", blob.Name, err)
+	}
+	defer content.Reader.Close()
+	for result := range logs.ParseFlowEvents(content.Reader, blob, piiScrubber, checkpoint) {
+		if result.Err != nil {
+			return fmt.Errorf("error parsing flow log: %w", result.Err)
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		select {
+		case logsChannel <- result.ParsedLog:
+			cursors.Set(blob.Container.Name, blob.Name, result.EndOffset)
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 func parseLogs(ctx context.Context, reader io.ReadCloser, blob storage.Blob, piiScrubber logs.Scrubber, logsChannel chan<- *logs.Log) (int64, int64, error) {

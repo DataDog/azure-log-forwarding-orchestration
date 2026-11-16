@@ -1400,7 +1400,9 @@ func TestCursorsOnVnetFlowLogs(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
-			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName), name)
+			// Flow-log checkpoints stop after the last record, before the closing
+			// array/object delimiters that Azure replaces as the blob grows.
+			assert.Equal(t, int64(len(bytes.TrimSpace(currentLogData))-2), lastCursor.Get(containerName, blobName), name)
 
 			for _, logItem := range submittedLogs {
 				assert.Equal(t, azureService, *logItem.Service)
