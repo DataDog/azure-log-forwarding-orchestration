@@ -1400,6 +1400,8 @@ func TestCursorsOnVnetFlowLogs(t *testing.T) {
 			// THEN
 			assert.NoError(t, err)
 
+			// A successfully parsed flow-log snapshot checkpoints EOF. On the next
+			// run, the forwarder can skip it unless Azure has appended more records.
 			assert.Equal(t, int64(len(currentLogData)), lastCursor.Get(containerName, blobName), name)
 
 			for _, logItem := range submittedLogs {
