@@ -55,6 +55,12 @@ func getLogs(ctx context.Context, storageClient *storage.Client, cursors *cursor
 		return fmt.Errorf("cursor is ahead of blob length for %s", blob.Name)
 	}
 	if (logs.FlowEventParser{}).Valid(blob) {
+		// A successful flow-log pass checkpoints EOF. The current blob metadata
+		// tells us whether Azure has appended anything since then, so avoid
+		// downloading and decoding an unchanged completed snapshot.
+		if cursorOffset == blob.ContentLength {
+			return nil
+		}
 		return getFlowEventLogs(ctx, storageClient, cursors, blob, piiScrubber, logsChannel)
 	}
 	content, err := storageClient.DownloadSegment(ctx, blob, cursorOffset, blob.ContentLength)
@@ -100,6 +106,10 @@ func getFlowEventLogs(ctx context.Context, storageClient *storage.Client, cursor
 			return ctx.Err()
 		}
 	}
+	// Per-record checkpoints protect against parse errors and cancellation. Once
+	// the entire snapshot succeeds, EOF lets the next scheduled run skip an
+	// unchanged blob while still detecting an Azure append via ContentLength.
+	cursors.Set(blob.Container.Name, blob.Name, blob.ContentLength)
 	return nil
 }
 

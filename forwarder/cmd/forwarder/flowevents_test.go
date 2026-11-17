@@ -41,19 +41,24 @@ func flowDocument(t *testing.T, records []json.RawMessage) []byte {
 // Exercise getLogs with the real parser and a storage range mock, without Azure
 // credentials or an intake connection. Honour the requested range so a test
 // fails if the forwarder resumes inside the growing JSON document.
-func readFlowSnapshot(t *testing.T, ctx context.Context, data []byte, blob storage.Blob, checkpoints *cursor.Cursors, out chan *logs.Log) error {
+func readFlowSnapshot(t *testing.T, ctx context.Context, data []byte, blob storage.Blob, checkpoints *cursor.Cursors, out chan *logs.Log, expectedDownloads ...int) error {
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	client := storagemocks.NewMockAzureBlobClient(ctrl)
 	blob.ContentLength = int64(len(data))
-	client.EXPECT().DownloadStream(gomock.Any(), blob.Container.Name, blob.Name, gomock.Any()).DoAndReturn(
+	downloads := 1
+	if len(expectedDownloads) > 0 {
+		downloads = expectedDownloads[0]
+	}
+	download := client.EXPECT().DownloadStream(gomock.Any(), blob.Container.Name, blob.Name, gomock.Any()).DoAndReturn(
 		func(_ context.Context, _, _ string, options *azblob.DownloadStreamOptions) (azblob.DownloadStreamResponse, error) {
 			start := options.Range.Offset
 			end := start + options.Range.Count
 			response := azblob.DownloadStreamResponse{}
 			response.Body = io.NopCloser(bytes.NewReader(data[start:end]))
 			return response, nil
-		}).AnyTimes()
+		})
+	download.Times(downloads)
 	return getLogs(ctx, storage.NewClient(client), checkpoints, blob, newMockPiiScrubber(ctrl), out)
 }
 
@@ -76,8 +81,9 @@ func TestGrowingFlowLogSnapshots(t *testing.T) {
 				require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out))
 				require.Len(t, out, 1, "each snapshot should emit only its new record")
 				<-out
-				// The same snapshot must not replay a record.
-				require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out))
+				// The same completed snapshot must neither replay a record nor be
+				// downloaded again.
+				require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out, 0))
 				require.Empty(t, out)
 			}
 			// A new hourly blob has an independent checkpoint.
@@ -157,6 +163,6 @@ func TestFlowLogMultipleDocuments(t *testing.T) {
 	require.Len(t, out, 2)
 	<-out
 	<-out
-	require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out))
+	require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out, 0))
 	require.Empty(t, out)
 }
