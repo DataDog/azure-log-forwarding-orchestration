@@ -404,6 +404,32 @@ func parsePiiScrubRules(piiConfigJSON string) (map[string]logs.ScrubberRuleConfi
 	return piiScrubRules, err
 }
 
+// configureStagingSite adds the staging site to the SDK's server enum. The SDK
+// does not include datad0g.com by default, so an explicitly configured staging
+// forwarder must opt in before submitting logs. This is independent of whether
+// the forwarder emits telemetry.
+func configureStagingSite(datadogConfig *datadog.Configuration, ddSite string) {
+	if ddSite != logs.DatadogStagingSite {
+		return
+	}
+
+	servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
+	if len(servers) == 0 {
+		return
+	}
+
+	server := servers[0]
+	siteVar := server.Variables["site"]
+	enumValues := siteVar.EnumValues
+	if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
+		enumValues = append(enumValues, logs.DatadogStagingSite)
+	}
+	siteVar.EnumValues = enumValues
+	server.Variables["site"] = siteVar
+	servers[0] = server
+	datadogConfig.OperationServers["v2.LogsApi.SubmitLog"] = servers
+}
+
 func main() {
 	var err error
 
@@ -468,23 +494,7 @@ func main() {
 
 	datadogConfig := datadog.NewConfiguration()
 
-	// Append staging site (datad0g.com) to SDK's server enum when telemetry is enabled for staging,
-	// since the SDK doesn't include it by default and falls back to production incorrectly.
-	if environment.Enabled(environment.TelemetryEnabled) && (ddSite == "" || ddSite == logs.DatadogStagingSite) {
-		servers := datadogConfig.OperationServers["v2.LogsApi.SubmitLog"]
-		if len(servers) > 0 {
-			server := servers[0]
-			siteVar := server.Variables["site"]
-			enumValues := siteVar.EnumValues
-			if len(enumValues) == 0 || !slices.Contains(enumValues, logs.DatadogStagingSite) {
-				enumValues = append(enumValues, logs.DatadogStagingSite)
-			}
-			siteVar.EnumValues = enumValues
-			server.Variables["site"] = siteVar
-			servers[0] = server
-			datadogConfig.OperationServers["v2.LogsApi.SubmitLog"] = servers
-		}
-	}
+	configureStagingSite(datadogConfig, ddSite)
 
 	err = run(ctx, logger, goroutineCount, datadogConfig, azBlobClient, piiScrubber, time.Now, versionTag)
 

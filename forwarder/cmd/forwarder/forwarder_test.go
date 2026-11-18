@@ -76,6 +76,28 @@ func nullLogger() *log.Logger {
 	return l
 }
 
+func TestConfigureStagingSite(t *testing.T) {
+	t.Run("allows an explicitly configured staging site", func(t *testing.T) {
+		config := datadog.NewConfiguration()
+
+		configureStagingSite(config, logs.DatadogStagingSite)
+
+		servers := config.OperationServers["v2.LogsApi.SubmitLog"]
+		require.NotEmpty(t, servers)
+		assert.Contains(t, servers[0].Variables["site"].EnumValues, logs.DatadogStagingSite)
+	})
+
+	t.Run("does not add staging to production sites", func(t *testing.T) {
+		config := datadog.NewConfiguration()
+
+		configureStagingSite(config, "datadoghq.com")
+
+		servers := config.OperationServers["v2.LogsApi.SubmitLog"]
+		require.NotEmpty(t, servers)
+		assert.NotContains(t, servers[0].Variables["site"].EnumValues, logs.DatadogStagingSite)
+	})
+}
+
 // CustomRoundTripper implements the http.RoundTripper interface
 type CustomRoundTripper struct {
 	transport   http.RoundTripper
