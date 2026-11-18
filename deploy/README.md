@@ -25,3 +25,24 @@ The FunctionApp script uses the Bicep templates from your local `integrations-ma
 | `--skip-docker` | both | Skip building and pushing Docker images |
 | `--force-arm-deploy` | FunctionApp | Force ARM/Bicep deployment even if the resource group already exists |
 | `--force-recreate` | ContainerAppJob | Force recreate Container App Jobs even if they already exist |
+
+### Environment Variables
+
+ContainerAppJob envs pass these optional variables from your shell to the control plane tasks. They are only applied
+when a job is created, so use `--force-recreate` after changing them.
+
+| Variable | Task | Description |
+|----------|------|-------------|
+| `RESOURCE_TAG_FILTERS` | resources | Comma-separated tag filters |
+| `RESOURCE_PROVIDER_CONFIGS` | resources | JSON object with an optional `logs_enabled_default` and `providers` overrides |
+| `PII_SCRUBBER_RULES` | scaling | PII scrubbing rules |
+
+For example, to only forward logs from `Microsoft.Web` resources:
+
+```bash
+RESOURCE_PROVIDER_CONFIGS='{"logs_enabled_default":false,"providers":[{"namespace":"Microsoft.Web","logs_enabled":true}]}' \
+  ./scripts/deploy_personal_env.py --container-app-jobs --force-recreate
+```
+
+FunctionApp envs are deployed from the `integrations-management` Bicep templates, which don't take
+`RESOURCE_PROVIDER_CONFIGS` yet.
