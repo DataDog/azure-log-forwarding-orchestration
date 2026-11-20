@@ -38,6 +38,43 @@ func flowDocument(t *testing.T, records []json.RawMessage) []byte {
 	return data
 }
 
+func vnetFlowTupleCount(t *testing.T, records []json.RawMessage) int {
+	t.Helper()
+	var count int
+	for _, raw := range records {
+		var record struct {
+			FlowRecords struct {
+				Flows []struct {
+					FlowGroups []struct {
+						FlowTuples []string `json:"flowTuples"`
+					} `json:"flowGroups"`
+				} `json:"flows"`
+			} `json:"flowRecords"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &record))
+		for _, flow := range record.FlowRecords.Flows {
+			for _, group := range flow.FlowGroups {
+				count += len(group.FlowTuples)
+			}
+		}
+	}
+	return count
+}
+
+func flowLogOutputCount(t *testing.T, container string, records []json.RawMessage) int {
+	t.Helper()
+	if container == logs.VnetFlowEventContainer {
+		return vnetFlowTupleCount(t, records)
+	}
+	return len(records)
+}
+
+func drainFlowLogs(out <-chan *logs.Log, count int) {
+	for range count {
+		<-out
+	}
+}
+
 // Exercise getLogs with the real parser and a storage range mock, without Azure
 // credentials or an intake connection. Honour the requested range so a test
 // fails if the forwarder resumes inside the growing JSON document.
@@ -75,12 +112,13 @@ func TestGrowingFlowLogSnapshots(t *testing.T) {
 			records := flowRecords(t, test.fixture)
 			checkpoints := cursor.New(nil)
 			blob := newBlob("flows", test.container)
-			out := make(chan *logs.Log, 20)
+			out := make(chan *logs.Log, flowLogOutputCount(t, test.container, records))
 			for n := 1; n <= len(records); n++ {
 				data := flowDocument(t, records[:n])
 				require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out))
-				require.Len(t, out, 1, "each snapshot should emit only its new record")
-				<-out
+				expected := flowLogOutputCount(t, test.container, records[n-1:n])
+				require.Len(t, out, expected, "each snapshot should emit only its new record")
+				drainFlowLogs(out, expected)
 				// The same completed snapshot must neither replay a record nor be
 				// downloaded again.
 				require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out, 0))
@@ -89,7 +127,7 @@ func TestGrowingFlowLogSnapshots(t *testing.T) {
 			// A new hourly blob has an independent checkpoint.
 			blob.Name += ".next-hour.json"
 			require.NoError(t, readFlowSnapshot(t, context.Background(), flowDocument(t, records[:1]), blob, checkpoints, out))
-			require.Len(t, out, 1)
+			require.Len(t, out, flowLogOutputCount(t, test.container, records[:1]))
 		})
 	}
 }
@@ -102,14 +140,15 @@ func TestFlowLogCheckpointMigration(t *testing.T) {
 	checkpoints := cursor.New(nil)
 	// The old implementation saves EOF, including the closing ]} delimiters.
 	checkpoints.Set(blob.Container.Name, blob.Name, int64(len(first)))
-	out := make(chan *logs.Log, 10)
+	out := make(chan *logs.Log, vnetFlowTupleCount(t, records[1:2]))
 	require.NoError(t, readFlowSnapshot(t, context.Background(), flowDocument(t, records[:2]), blob, checkpoints, out))
-	require.Len(t, out, 1)
+	require.Len(t, out, vnetFlowTupleCount(t, records[1:2]))
 	var got map[string]any
 	require.NoError(t, json.Unmarshal((<-out).Content, &got))
 	var expected map[string]any
 	require.NoError(t, json.Unmarshal(records[1], &expected))
 	require.Equal(t, expected["time"], got["time"])
+	drainFlowLogs(out, vnetFlowTupleCount(t, records[1:2])-1)
 }
 
 func TestFlowLogTruncationAndRetry(t *testing.T) {
@@ -121,13 +160,13 @@ func TestFlowLogTruncationAndRetry(t *testing.T) {
 	broken := full[:len(first)+30]
 	blob := newBlob("flows", logs.VnetFlowEventContainer)
 	checkpoints := cursor.New(nil)
-	out := make(chan *logs.Log, 10)
+	out := make(chan *logs.Log, vnetFlowTupleCount(t, records))
 	require.Error(t, readFlowSnapshot(t, context.Background(), broken, blob, checkpoints, out))
-	require.Len(t, out, 1)
-	<-out
+	require.Len(t, out, vnetFlowTupleCount(t, records[:1]))
+	drainFlowLogs(out, vnetFlowTupleCount(t, records[:1]))
 	require.Equal(t, int64(len(first)-2), checkpoints.Get(blob.Container.Name, blob.Name))
 	require.NoError(t, readFlowSnapshot(t, context.Background(), full, blob, checkpoints, out))
-	require.Len(t, out, 1, "retry must deliver the previously incomplete record")
+	require.Len(t, out, vnetFlowTupleCount(t, records[1:2]), "retry must deliver the previously incomplete record")
 }
 
 func TestFlowLogCancellationAndRetry(t *testing.T) {
@@ -144,10 +183,10 @@ func TestFlowLogCancellationAndRetry(t *testing.T) {
 	<-out
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
-	require.Equal(t, int64(len(flowDocument(t, records[:1]))-2), checkpoints.Get(blob.Container.Name, blob.Name))
-	retry := make(chan *logs.Log, 10)
+	require.Zero(t, checkpoints.Get(blob.Container.Name, blob.Name), "a partial record must not advance the checkpoint")
+	retry := make(chan *logs.Log, vnetFlowTupleCount(t, records[:2]))
 	require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, retry))
-	require.Len(t, retry, 1, "cancellation must not advance past an unsent record")
+	require.Len(t, retry, vnetFlowTupleCount(t, records[:2]), "cancellation must not advance past an unsent tuple")
 }
 
 func TestFlowLogMultipleDocuments(t *testing.T) {
@@ -158,11 +197,10 @@ func TestFlowLogMultipleDocuments(t *testing.T) {
 	data := append(append(first, '\n'), second...)
 	blob := newBlob("flows", logs.VnetFlowEventContainer)
 	checkpoints := cursor.New(nil)
-	out := make(chan *logs.Log, 10)
+	out := make(chan *logs.Log, vnetFlowTupleCount(t, records[:2]))
 	require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out))
-	require.Len(t, out, 2)
-	<-out
-	<-out
+	require.Len(t, out, vnetFlowTupleCount(t, records[:2]))
+	drainFlowLogs(out, vnetFlowTupleCount(t, records[:2]))
 	require.NoError(t, readFlowSnapshot(t, context.Background(), data, blob, checkpoints, out, 0))
 	require.Empty(t, out)
 }
