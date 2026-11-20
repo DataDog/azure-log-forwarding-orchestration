@@ -34,7 +34,14 @@ from cache.diagnostic_settings_cache import (
     remove_cached_resource,
     update_cached_event,
 )
-from cache.env import CONTROL_PLANE_ID_SETTING, CONTROL_PLANE_REGION_SETTING, RESOURCE_GROUP_SETTING, get_config_option
+from cache.env import (
+    CONTROL_PLANE_ID_SETTING,
+    CONTROL_PLANE_REGION_SETTING,
+    DIAGNOSTIC_SETTINGS_MAX_CONCURRENCY_SETTING,
+    RESOURCE_GROUP_SETTING,
+    get_config_option,
+    parse_config_option,
+)
 from cache.resources_cache import INCLUDE_KEY, RESOURCE_CACHE_BLOB, deserialize_resource_cache
 from tasks.client.datadog_api_client import StatusCode
 from tasks.common import (
@@ -51,7 +58,7 @@ DD_REQUEST_TIMEOUT = 5  # seconds
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 MAX_DIAGNOSTIC_SETTINGS = 5
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
-MAX_CONCURRENT_RESOURCES = 25
+DEFAULT_MAX_CONCURRENCY = 100
 """Resources processed at once across all subscriptions. Each makes 1-3 ARM calls, so an unbounded fan-out
 throttles ARM and exhausts outbound (SNAT) ports on the Consumption plan once there are thousands of resources."""
 
@@ -126,7 +133,13 @@ class DiagnosticSettingsTask(Task):
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
         self.event_cache = deepcopy(event_cache)
-        self.resource_semaphore = Semaphore(MAX_CONCURRENT_RESOURCES)
+        self.resource_semaphore = Semaphore(
+            parse_config_option(
+                DIAGNOSTIC_SETTINGS_MAX_CONCURRENCY_SETTING,
+                lambda value: limit if (limit := int(value)) > 0 else None,
+                DEFAULT_MAX_CONCURRENCY,
+            )
+        )
         self.events_api = EventsApi(self._datadog_client)
 
     async def run(self) -> None:
