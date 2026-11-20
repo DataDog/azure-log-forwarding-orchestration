@@ -1765,11 +1765,14 @@ class TestScalingTask(TaskTestCase):
         self.client.create_log_forwarder.assert_not_awaited()
         self.assertEqual(self.cache[SUB_ID1][EAST_US]["configurations"], {})
 
-    async def test_excluded_resources_stay_assigned_in_a_live_region(self):
-        # GIVEN a region whose resources have all become excluded, but which already has a forwarder.
+    async def test_excluded_resources_stay_assigned_while_forwarder_receives_logs(self):
+        # GIVEN a region whose resources have all become excluded, but whose forwarder is still receiving logs.
         # The diagnostic settings task iterates the assignment cache, so these resources must stay
-        # assigned for their diagnostic settings to be removed.
+        # assigned until their diagnostic settings are removed and the forwarder drains.
         self.client.get_log_forwarder_managed_environment_state.return_value = ManagedEnvironmentState.READY
+        self.client.collect_forwarder_metrics.return_value = generate_metrics(
+            runtime=2, resource_log_volume={"resource1": 100}
+        )
         initial_cache: AssignmentCache = {
             SUB_ID1: {
                 EAST_US: {
@@ -1785,7 +1788,8 @@ class TestScalingTask(TaskTestCase):
             assignment_cache_state=initial_cache,
         )
 
-        # THEN the region is neither torn down nor emptied
+        # THEN the forwarder is kept and the resources stay assigned to it
+        self.client.delete_log_forwarder.assert_not_called()
         self.client.delete_log_forwarder_env.assert_not_called()
         self.assertEqual(task.assignment_cache[SUB_ID1][EAST_US]["resources"], {"resource1": OLD_LOG_FORWARDER_ID})
 

@@ -197,8 +197,11 @@ class ScalingTask(Task):
         provisioned_regions = set(self._assignment_cache_initial_state.get(subscription_id, {}).keys())
 
         regions_to_add = regions_with_included_resources - regions_with_forwarders
-        regions_to_remove = provisioned_regions - regions_with_resources
-        regions_to_check_scaling = regions_with_resources & regions_with_forwarders
+        # forwarders in a region whose resources are all filtered out have nothing left to forward
+        regions_to_remove = (provisioned_regions - regions_with_resources) | (
+            regions_with_forwarders - regions_with_included_resources
+        )
+        regions_to_check_scaling = regions_with_included_resources & regions_with_forwarders
         async with LogForwarderClient(
             self.log, self.credential, subscription_id, self.resource_group, self.pii_rules_json
         ) as client:
@@ -296,9 +299,8 @@ class ScalingTask(Task):
             await self.write_caches()
             return
 
-        # not needed, but useful to indicate all resources are gone
-        self.assignment_cache[subscription_id][region]["resources"].clear()
-
+        # filtered out resources stay assigned until their forwarder is deleted, so the diagnostic settings
+        # task can still find them and remove their diagnostic settings while the forwarder drains.
         # a forwarder without a storage account can't be holding logs, so don't wait on its (unreadable) metrics
         forwarder_resources = await gather(*(client.get_forwarder_resources(config_id) for config_id in forwarders))
         missing_storage = [
@@ -327,6 +329,12 @@ class ScalingTask(Task):
             return_exceptions=True,
         )
         log_errors(self.log, "Failed to delete region", *maybe_errors)
+        region_config = self.assignment_cache[subscription_id][region]
+        region_config["resources"] = {
+            resource_id: config_id
+            for resource_id, config_id in region_config["resources"].items()
+            if config_id in region_config["configurations"]
+        }
         await self.write_caches()
 
     async def maintain_existing_region(self, client: LogForwarderClient, subscription_id: str, region: str) -> None:
