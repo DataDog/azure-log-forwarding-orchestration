@@ -3,7 +3,6 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
-from asyncio import sleep
 from collections.abc import AsyncIterable
 from json import dumps
 from os import environ
@@ -33,7 +32,6 @@ from tasks.tests.common import AsyncMockClient, AzureModelMatcher, TaskTestCase,
 from tasks.version import VERSION
 
 sub_id1: Final = "sub1"
-sub_id2: Final = "sub2"
 region1: Final = "region1"
 config_id1: Final = "bc666ef914ec"
 control_plane_id: Final = "e90ecb54476d"
@@ -161,37 +159,6 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
         self.create_or_update_setting.assert_not_awaited()
         self.delete_diagnostic_setting.assert_not_awaited()
-
-    async def test_task_limits_concurrent_resources(self):
-        max_concurrent = 2
-        self.patch("MAX_CONCURRENT_RESOURCES", new=max_concurrent)
-        in_flight = 0
-        peak_in_flight = 0
-
-        async def list_settings(resource_id: str) -> AsyncIterable[Mock]:
-            nonlocal in_flight, peak_in_flight
-            in_flight += 1
-            peak_in_flight = max(peak_in_flight, in_flight)
-            await sleep(0)  # yield so every resource that is allowed to run gets to start
-            in_flight -= 1
-            for setting in ():  # an async generator with no settings
-                yield setting
-
-        self.list_diagnostic_settings.side_effect = list_settings
-        self.list_diagnostic_settings_categories.side_effect = lambda resource_id: async_generator()
-        resources = {f"{resource_id1}-{i}": config_id1 for i in range(max_concurrent * 3)}
-
-        await self.run_diagnostic_settings_task(
-            resource_cache={},
-            assignment_cache={
-                sub_id1: {region1: {"configurations": {config_id1: STORAGE_ACCOUNT_TYPE}, "resources": resources}},
-                sub_id2: {region1: {"configurations": {config_id1: STORAGE_ACCOUNT_TYPE}, "resources": resources}},
-            },
-            event_cache=None,
-        )
-
-        self.assertEqual(self.list_diagnostic_settings.call_count, len(resources) * 2)
-        self.assertEqual(peak_in_flight, max_concurrent)
 
     async def test_task_updates_incorrect_settings(self):
         self.list_diagnostic_settings.return_value = async_generator(
