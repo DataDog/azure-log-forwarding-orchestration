@@ -3,7 +3,7 @@
 # This product includes software developed at Datadog (https://www.datadoghq.com/) Copyright 2025 Datadog, Inc.
 
 # stdlib
-from asyncio import gather, run
+from asyncio import Semaphore, gather, run
 from copy import deepcopy
 from json import dumps
 from random import shuffle
@@ -51,6 +51,9 @@ DD_REQUEST_TIMEOUT = 5  # seconds
 DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 MAX_DIAGNOSTIC_SETTINGS = 5
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
+MAX_CONCURRENT_RESOURCES = 25
+"""Resources processed at once across all subscriptions. Each makes 1-3 ARM calls, so an unbounded fan-out
+throttles ARM and exhausts outbound (SNAT) ports on the Consumption plan once there are thousands of resources."""
 
 
 def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:  # pragma: no cover
@@ -123,6 +126,7 @@ class DiagnosticSettingsTask(Task):
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
         self.event_cache = deepcopy(event_cache)
+        self.resource_semaphore = Semaphore(MAX_CONCURRENT_RESOURCES)
         self.events_api = EventsApi(self._datadog_client)
 
     async def run(self) -> None:
@@ -209,6 +213,17 @@ class DiagnosticSettingsTask(Task):
         return True
 
     async def process_resource(
+        self,
+        client: MonitorManagementClient,
+        sub_id: str,
+        resource_id: str,
+        region: str,
+        assigned_config: DiagnosticSettingConfiguration,
+    ) -> None:
+        async with self.resource_semaphore:
+            await self._process_resource(client, sub_id, resource_id, region, assigned_config)
+
+    async def _process_resource(
         self,
         client: MonitorManagementClient,
         sub_id: str,
