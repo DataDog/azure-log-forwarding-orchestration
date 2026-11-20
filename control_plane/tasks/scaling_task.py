@@ -306,14 +306,14 @@ class ScalingTask(Task):
             for config_id, (_, storage_account) in zip(forwarders, forwarder_resources, strict=True)
             if storage_account is None
         ]
-        forwarder_metrics = await self.collect_region_forwarder_metrics(
-            client, region, [config_id for config_id in forwarders if config_id not in missing_storage]
-        )
-        forwarders_to_delete = missing_storage + [
+        forwarders_with_storage = [config_id for config_id in forwarders if config_id not in missing_storage]
+        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region, forwarders_with_storage)
+        drained_forwarders = [
             config_id
             for config_id, metrics in forwarder_metrics.items()
             if not any(metric["resource_log_volume"] for metric in metrics)
         ]
+        forwarders_to_delete = missing_storage + drained_forwarders
         if not forwarders_to_delete:
             self.log.info("Attempted to delete region %s but all forwarders are still receiving logs", region)
             return
