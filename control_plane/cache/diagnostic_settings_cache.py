@@ -5,7 +5,8 @@
 # stdlib
 from typing import Any, TypeAlias, TypedDict
 
-# 3p
+# project
+from cache.assignment_cache import AssignmentCache
 from cache.common import deserialize_cache
 
 EVENT_CACHE_BLOB = "settings_event.json"
@@ -66,3 +67,24 @@ def update_cached_event(
     cache.setdefault(sub_id, {})[resource_id] = EventDict(
         diagnostic_settings_count=num_diag_settings, sent_event=sent_event
     )
+
+
+def prune_event_cache(cache: DiagnosticSettingsCache, assignment_cache: AssignmentCache) -> DiagnosticSettingsCache:
+    """Returns a copy of the event cache containing only resources that are still in the assignment cache.
+
+    The scaling task drops resources from the assignment cache once they are no longer discovered
+    (deleted, or in a subscription that is no longer monitored), so their entries here are stale.
+    """
+    assigned_resources = {
+        sub_id: {resource_id for region_config in regions.values() for resource_id in region_config["resources"]}
+        for sub_id, regions in assignment_cache.items()
+    }
+    return {
+        sub_id: {
+            resource_id: EventDict(**event)
+            for resource_id, event in resources.items()
+            if resource_id in assigned_resources[sub_id]
+        }
+        for sub_id, resources in cache.items()
+        if sub_id in assigned_resources
+    }

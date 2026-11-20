@@ -17,7 +17,14 @@ from azure.mgmt.monitor.models import CategoryType
 # project
 from cache.assignment_cache import AssignmentCache
 from cache.common import STORAGE_ACCOUNT_TYPE, InvalidCacheError
-from cache.diagnostic_settings_cache import DIAGNOSTIC_SETTINGS_COUNT, SENT_EVENT, DiagnosticSettingsCache, EventDict
+from cache.diagnostic_settings_cache import (
+    DIAGNOSTIC_SETTINGS_COUNT,
+    EVENT_CACHE_BLOB,
+    SENT_EVENT,
+    DiagnosticSettingsCache,
+    EventDict,
+    deserialize_event_cache,
+)
 from cache.env import CONTROL_PLANE_ID_SETTING
 from cache.resources_cache import INCLUDE_KEY, ResourceCache, ResourceCacheV1
 from cache.tests import TEST_EVENT_HUB_NAME
@@ -159,6 +166,37 @@ class TestDiagnosticSettingsTask(TaskTestCase):
         )
         self.create_or_update_setting.assert_not_awaited()
         self.delete_diagnostic_setting.assert_not_awaited()
+
+    async def test_task_prunes_event_cache_entries_for_unassigned_resources(self):
+        self.list_diagnostic_settings.return_value = async_generator(
+            Mock(name=DIAGNOSTIC_SETTING_NAME, event_hub_name=TEST_EVENT_HUB_NAME)
+        )
+        self.list_diagnostic_settings_categories.return_value = async_generator()
+        removed_sub_id = "removed_sub"
+
+        await self.run_diagnostic_settings_task(
+            resource_cache={},
+            assignment_cache={
+                sub_id1: {
+                    region1: {
+                        "configurations": {config_id1: STORAGE_ACCOUNT_TYPE},
+                        "resources": {resource_id1: config_id1},
+                    }
+                }
+            },
+            event_cache={
+                sub_id1: {
+                    resource_id1: EventDict(diagnostic_settings_count=1, sent_event=False),
+                    resource_id2: EventDict(diagnostic_settings_count=1, sent_event=False),
+                },
+                removed_sub_id: {resource_id2: EventDict(diagnostic_settings_count=1, sent_event=False)},
+            },
+        )
+
+        self.assertEqual(
+            self.cache_value(EVENT_CACHE_BLOB, deserialize_event_cache),
+            {sub_id1: {resource_id1: {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}}},
+        )
 
     async def test_task_updates_incorrect_settings(self):
         self.list_diagnostic_settings.return_value = async_generator(

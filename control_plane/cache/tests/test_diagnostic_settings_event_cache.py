@@ -7,11 +7,14 @@ from json import dumps
 from unittest import TestCase
 
 # project
+from cache.assignment_cache import AssignmentCache, RegionAssignmentConfiguration
+from cache.common import STORAGE_ACCOUNT_TYPE
 from cache.diagnostic_settings_cache import (
     DIAGNOSTIC_SETTINGS_COUNT,
     SENT_EVENT,
     DiagnosticSettingsCache,
     deserialize_event_cache,
+    prune_event_cache,
     remove_cached_resource,
     update_cached_event,
 )
@@ -109,3 +112,64 @@ class TestDeserializeDiagnosticSettingsCache(TestCase):
                 sub_id2: {"resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 5, SENT_EVENT: True}},
             },
         )
+
+
+def assignments(sub_regions: dict[str, dict[str, list[str]]]) -> AssignmentCache:
+    return {
+        sub_id: {
+            region: RegionAssignmentConfiguration(
+                configurations={"config1": STORAGE_ACCOUNT_TYPE},
+                resources={resource_id: "config1" for resource_id in resources},
+            )
+            for region, resources in regions.items()
+        }
+        for sub_id, regions in sub_regions.items()
+    }
+
+
+class TestPruneEventCache(TestCase):
+    def test_keeps_assigned_resources_across_regions(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {
+                "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+                "resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 5, SENT_EVENT: True},
+            },
+        }
+        pruned = prune_event_cache(
+            cache, assignments({sub_id1: {"eastus": ["resource1_id"], "westus": ["resource2_id"]}})
+        )
+        self.assertEqual(pruned, cache)
+
+    def test_drops_resources_no_longer_assigned(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {
+                "resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False},
+                "deleted_resource_id": {DIAGNOSTIC_SETTINGS_COUNT: 5, SENT_EVENT: True},
+            },
+        }
+        pruned = prune_event_cache(cache, assignments({sub_id1: {"eastus": ["resource1_id"]}}))
+        self.assertEqual(pruned, {sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}}})
+
+    def test_drops_subscriptions_no_longer_assigned(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}},
+            sub_id2: {"resource2_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}},
+        }
+        pruned = prune_event_cache(cache, assignments({sub_id1: {"eastus": ["resource1_id"]}}))
+        self.assertEqual(pruned, {sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}}})
+
+    def test_empties_subscription_whose_forwarders_are_still_being_deleted(self):
+        # the scaling task keeps a removed subscription's regions, with no resources, until its forwarders are gone
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}},
+        }
+        pruned = prune_event_cache(cache, assignments({sub_id1: {"eastus": []}}))
+        self.assertEqual(pruned, {sub_id1: {}})
+
+    def test_does_not_mutate_input(self):
+        cache: DiagnosticSettingsCache = {
+            sub_id1: {"resource1_id": {DIAGNOSTIC_SETTINGS_COUNT: 1, SENT_EVENT: False}},
+        }
+        pruned = prune_event_cache(cache, assignments({sub_id1: {"eastus": ["resource1_id"]}}))
+        pruned[sub_id1]["resource1_id"][SENT_EVENT] = True
+        self.assertFalse(cache[sub_id1]["resource1_id"][SENT_EVENT])
