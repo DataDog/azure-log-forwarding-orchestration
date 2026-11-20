@@ -302,13 +302,17 @@ class ScalingTask(Task):
         # a forwarder without a storage account can't be holding logs, so don't wait on its (unreadable) metrics
         forwarder_resources = await gather(*(client.get_forwarder_resources(config_id) for config_id in forwarders))
         missing_storage = [
-            c for c, (_, storage) in zip(forwarders, forwarder_resources, strict=True) if storage is None
+            config_id
+            for config_id, (_, storage_account) in zip(forwarders, forwarder_resources, strict=True)
+            if storage_account is None
         ]
         forwarder_metrics = await self.collect_region_forwarder_metrics(
-            client, region, [c for c in forwarders if c not in missing_storage]
+            client, region, [config_id for config_id in forwarders if config_id not in missing_storage]
         )
         forwarders_to_delete = missing_storage + [
-            c for c, metrics in forwarder_metrics.items() if not any(m["resource_log_volume"] for m in metrics)
+            config_id
+            for config_id, metrics in forwarder_metrics.items()
+            if not any(metric["resource_log_volume"] for metric in metrics)
         ]
         if not forwarders_to_delete:
             self.log.info("Attempted to delete region %s but all forwarders are still receiving logs", region)
