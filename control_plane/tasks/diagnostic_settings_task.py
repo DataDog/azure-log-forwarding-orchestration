@@ -4,7 +4,6 @@
 
 # stdlib
 from asyncio import gather, run
-from copy import deepcopy
 from json import dumps
 from random import shuffle
 from typing import NamedTuple, cast
@@ -31,6 +30,7 @@ from cache.diagnostic_settings_cache import (
     SENT_EVENT,
     EventDict,
     deserialize_event_cache,
+    prune_event_cache,
     remove_cached_resource,
     update_cached_event,
 )
@@ -122,7 +122,10 @@ class DiagnosticSettingsTask(Task):
             self.log.warning("Detected invalid event cache, cache will be reset")
             event_cache = {sub_id: {} for sub_id in self.assignment_cache}
 
-        self.event_cache = deepcopy(event_cache)
+        self.event_cache = prune_event_cache(event_cache, self.assignment_cache)
+        pruned_count = sum(map(len, event_cache.values())) - sum(map(len, self.event_cache.values()))
+        if pruned_count:
+            self.log.info("Pruned %s event cache entries for resources no longer assigned", pruned_count)
         self.events_api = EventsApi(self._datadog_client)
 
     async def run(self) -> None:
