@@ -16,8 +16,9 @@ import (
 // the original blob. Unlike EOF, this position is stable when Azure inserts more
 // records before the closing array/object delimiters of an hourly flow-log blob.
 type FlowEventResponse struct {
-	ParsedLogResponse
-	EndOffset int64
+	ParsedLogs []*Log
+	Err        error
+	EndOffset  int64
 }
 
 // ParseFlowEvents reads complete flow-log documents from the beginning of a blob,
@@ -29,7 +30,7 @@ func ParseFlowEvents(reader io.Reader, blob storage.Blob, piiScrubber Scrubber, 
 	return func(yield func(FlowEventResponse) bool) {
 		decoder := json.NewDecoder(reader)
 		fail := func(err error) {
-			yield(FlowEventResponse{ParsedLogResponse: ParsedLogResponse{Err: err}})
+			yield(FlowEventResponse{Err: err})
 		}
 		for {
 			token, err := decoder.Token()
@@ -74,12 +75,12 @@ func ParseFlowEvents(reader io.Reader, blob storage.Blob, piiScrubber Scrubber, 
 					if end <= checkpoint {
 						continue
 					}
-					parsed, err := parseFlowEventRecord(raw, blob, piiScrubber)
+					parsedLogs, err := parseFlowEventRecord(raw, blob, piiScrubber)
 					if err != nil {
 						fail(err)
 						return
 					}
-					if !yield(FlowEventResponse{ParsedLogResponse: ParsedLogResponse{ParsedLog: parsed}, EndOffset: end}) {
+					if !yield(FlowEventResponse{ParsedLogs: parsedLogs, EndOffset: end}) {
 						return
 					}
 				}
@@ -111,7 +112,7 @@ func expectFlowDelimiter(decoder *json.Decoder, delimiter json.Delim) error {
 	return nil
 }
 
-func parseFlowEventRecord(raw []byte, blob storage.Blob, piiScrubber Scrubber) (*Log, error) {
+func parseFlowEventRecord(raw []byte, blob storage.Blob, piiScrubber Scrubber) ([]*Log, error) {
 	scrubbed := piiScrubber.Scrub(raw)
 	var record flowEventRecord
 	switch blob.Container.Name {
@@ -125,11 +126,10 @@ func parseFlowEventRecord(raw []byte, blob storage.Blob, piiScrubber Scrubber) (
 	if err := json.Unmarshal(scrubbed, record); err != nil {
 		return nil, err
 	}
-	parsed, err := record.ToLog(blob)
+	parsedLogs, err := record.ToLogs(blob)
 	if err != nil {
 		return nil, err
 	}
-	parsed.RawByteSize = int64(len(raw))
-	parsed.ScrubbedByteSize = int64(len(scrubbed))
-	return parsed, nil
+	distributeLogByteSizes(parsedLogs, int64(len(raw)), int64(len(scrubbed)))
+	return parsedLogs, nil
 }

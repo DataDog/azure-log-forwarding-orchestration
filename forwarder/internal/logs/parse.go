@@ -45,25 +45,39 @@ func unmarshalFlowEventRecords[T any](bytes []byte) (*flowEventRecords[T], error
 }
 
 func processFlowEventRecords[T flowEventRecord](flowEventRecords *flowEventRecords[T], blob storage.Blob, originalSize int, scrubbedSize int, piiScrubber Scrubber, yield func(ParsedLogResponse) bool) bool {
-	response := ParsedLogResponse{}
-	for idx, flowEventLog := range flowEventRecords.Records {
-		currLog, err := flowEventLog.ToLog(blob)
-		response.ParsedLog = currLog
+	var parsedLogs []*Log
+	for _, flowEventLog := range flowEventRecords.Records {
+		logs, err := flowEventLog.ToLogs(blob)
 		if err != nil {
-			response.Err = err
-			yield(response)
+			yield(ParsedLogResponse{Err: err})
 			return false
 		}
-		if idx == len(flowEventRecords.Records)-1 {
-			response.ParsedLog.RawByteSize = int64(originalSize)
-			response.ParsedLog.ScrubbedByteSize = int64(scrubbedSize)
-		}
-
-		if !yield(response) {
+		parsedLogs = append(parsedLogs, logs...)
+	}
+	distributeLogByteSizes(parsedLogs, int64(originalSize), int64(scrubbedSize))
+	for _, parsed := range parsedLogs {
+		if !yield(ParsedLogResponse{ParsedLog: parsed}) {
 			return false
 		}
 	}
 	return true
+}
+
+func distributeLogByteSizes(logs []*Log, rawByteSize, scrubbedByteSize int64) {
+	if len(logs) == 0 {
+		return
+	}
+	count := int64(len(logs))
+	for index, log := range logs {
+		log.RawByteSize = rawByteSize / count
+		if int64(index) < rawByteSize%count {
+			log.RawByteSize++
+		}
+		log.ScrubbedByteSize = scrubbedByteSize / count
+		if int64(index) < scrubbedByteSize%count {
+			log.ScrubbedByteSize++
+		}
+	}
 }
 
 // Parse reads logs from a reader and parses them into Log objects.

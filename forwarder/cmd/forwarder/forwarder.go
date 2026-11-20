@@ -96,15 +96,20 @@ func getFlowEventLogs(ctx context.Context, storageClient *storage.Client, cursor
 		if result.Err != nil {
 			return fmt.Errorf("error parsing flow log: %w", result.Err)
 		}
-		if err := ctx.Err(); err != nil {
-			return err
+		for _, parsedLog := range result.ParsedLogs {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			select {
+			case logsChannel <- parsedLog:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
-		select {
-		case logsChannel <- result.ParsedLog:
-			cursors.Set(blob.Container.Name, blob.Name, result.EndOffset)
-		case <-ctx.Done():
-			return ctx.Err()
-		}
+		// A VNet record can become several Datadog logs. Advance the cursor only
+		// after all of them have been handed off, so cancellation cannot discard
+		// the remaining tuples from the record.
+		cursors.Set(blob.Container.Name, blob.Name, result.EndOffset)
 	}
 	// Per-record checkpoints protect against parse errors and cancellation. Once
 	// the entire snapshot succeeds, EOF lets the next scheduled run skip an
