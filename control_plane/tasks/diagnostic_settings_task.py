@@ -59,8 +59,6 @@ DIAGNOSTIC_SETTINGS_TASK_NAME = "diagnostic_settings_task"
 MAX_DIAGNOSTIC_SETTINGS = 5
 DIAGNOSTIC_SETTING_PREFIX = "datadog_log_forwarding_"
 DEFAULT_MAX_CONCURRENCY = 100
-"""Resources processed at once across all subscriptions. Each makes 1-3 ARM calls, so an unbounded fan-out
-throttles ARM and exhausts outbound (SNAT) ports on the Consumption plan once there are thousands of resources."""
 
 
 def get_authorization_rule_id(sub_id: str, resource_group: str, config_id: str) -> str:  # pragma: no cover
