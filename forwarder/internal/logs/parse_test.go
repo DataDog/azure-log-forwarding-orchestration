@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 )
 
@@ -229,7 +230,7 @@ func TestParseLogs(t *testing.T) {
 }
 
 func TestParseVnetFlowLogs(t *testing.T) {
-	t.Parallel()
+	t.Setenv(environment.SplitVnetFlowTuples, "true")
 
 	tests := map[string]struct {
 		categoryName     string
@@ -256,7 +257,6 @@ func TestParseVnetFlowLogs(t *testing.T) {
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 
 			// GIVEN
 			reader := bytes.NewReader(testData.logData)
@@ -317,6 +317,24 @@ func TestParseVnetFlowLogs(t *testing.T) {
 			assert.Equal(t, expectedPayloadBytes, scrubbedBytes)
 		})
 	}
+}
+
+func TestVnetFlowLogsRemainBundledWithoutTupleSplitting(t *testing.T) {
+	t.Setenv(environment.SplitVnetFlowTuples, "false")
+
+	closer := io.NopCloser(bytes.NewReader(vnetFlowLogData))
+	parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob("/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG", logs.VnetFlowEventContainer), MockScrubber(t, vnetFlowLogData))
+	require.NoError(t, err)
+
+	var got int
+	for parsedLog := range parsedLogsIter {
+		require.NoError(t, parsedLog.Err)
+		assert.Contains(t, string(parsedLog.ParsedLog.Content), "\"flowRecords\"")
+		got++
+	}
+
+	assert.Equal(t, 6, got)
+	assert.Equal(t, len(vnetFlowLogData), *totalBytes)
 }
 
 func TestParseActiveDirectoryLogs(t *testing.T) {

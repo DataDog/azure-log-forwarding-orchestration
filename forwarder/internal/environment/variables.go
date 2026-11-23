@@ -25,6 +25,7 @@ const (
 	NumGoroutines                     = "NUM_GOROUTINES"
 	PiiScrubberRules                  = "PII_SCRUBBER_RULES"
 	VersionTag                        = "VERSION_TAG"
+	SplitVnetFlowTuples               = "SPLIT_VNET_FLOW_TUPLES"
 )
 
 func Get(envVar string) string {

@@ -15,6 +15,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/cursor"
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	storagemocks "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage/mocks"
@@ -75,6 +76,11 @@ func drainFlowLogs(out <-chan *logs.Log, count int) {
 	}
 }
 
+func enableVnetFlowTupleSplitting(t *testing.T) {
+	t.Helper()
+	t.Setenv(environment.SplitVnetFlowTuples, "true")
+}
+
 // Exercise getLogs with the real parser and a storage range mock, without Azure
 // credentials or an intake connection. Honour the requested range so a test
 // fails if the forwarder resumes inside the growing JSON document.
@@ -100,7 +106,7 @@ func readFlowSnapshot(t *testing.T, ctx context.Context, data []byte, blob stora
 }
 
 func TestGrowingFlowLogSnapshots(t *testing.T) {
-	t.Parallel()
+	enableVnetFlowTupleSplitting(t)
 	for _, test := range []struct {
 		name, container, fixture string
 	}{
@@ -108,7 +114,6 @@ func TestGrowingFlowLogSnapshots(t *testing.T) {
 		{"NSG", logs.NetworkSecurityGroupFlowEventContainer, networkSecurityGroupFlowEventLogData},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 			records := flowRecords(t, test.fixture)
 			checkpoints := cursor.New(nil)
 			blob := newBlob("flows", test.container)
@@ -133,7 +138,7 @@ func TestGrowingFlowLogSnapshots(t *testing.T) {
 }
 
 func TestFlowLogCheckpointMigration(t *testing.T) {
-	t.Parallel()
+	enableVnetFlowTupleSplitting(t)
 	records := flowRecords(t, vnetFlowLogData)
 	first := flowDocument(t, records[:1])
 	blob := newBlob("flows", logs.VnetFlowEventContainer)
@@ -152,7 +157,7 @@ func TestFlowLogCheckpointMigration(t *testing.T) {
 }
 
 func TestFlowLogTruncationAndRetry(t *testing.T) {
-	t.Parallel()
+	enableVnetFlowTupleSplitting(t)
 	records := flowRecords(t, vnetFlowLogData)
 	full := flowDocument(t, records[:2])
 	first := flowDocument(t, records[:1])
@@ -170,7 +175,7 @@ func TestFlowLogTruncationAndRetry(t *testing.T) {
 }
 
 func TestFlowLogCancellationAndRetry(t *testing.T) {
-	t.Parallel()
+	enableVnetFlowTupleSplitting(t)
 	records := flowRecords(t, vnetFlowLogData)
 	data := flowDocument(t, records[:2])
 	blob := newBlob("flows", logs.VnetFlowEventContainer)
@@ -190,7 +195,7 @@ func TestFlowLogCancellationAndRetry(t *testing.T) {
 }
 
 func TestFlowLogMultipleDocuments(t *testing.T) {
-	t.Parallel()
+	enableVnetFlowTupleSplitting(t)
 	records := flowRecords(t, vnetFlowLogData)
 	first := flowDocument(t, records[:1])
 	second := flowDocument(t, records[1:2])

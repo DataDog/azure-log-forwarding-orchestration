@@ -19,6 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
@@ -445,6 +446,41 @@ func (l *vnetFlowEventLog) Bytes() ([]byte, error) {
 	return json.Marshal(l)
 }
 
+// ToLog preserves the existing VNet flow event shape for installations that
+// have not opted into connection-level events.
+func (l *vnetFlowEventLog) ToLog(blob storage.Blob) (*Log, error) {
+	logBytes, err := l.Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	parsedId, err := arm.ParseResourceID(l.FlowLogResourceID)
+	if err != nil && l.FlowLogResourceID != "" {
+		return nil, err
+	}
+
+	tags := append([]string(nil), DefaultTags...)
+
+	var logSource string
+	if parsedId != nil {
+		logSource = sourceTag(parsedId.ResourceType.String())
+	}
+	tags = append(tags, tagsFromResourceId(parsedId)...)
+
+	return &Log{
+		Time:       l.Time,
+		Category:   l.Category,
+		ResourceId: l.FlowLogResourceID,
+		Service:    azureService,
+		Source:     logSource,
+		Content:    logBytes,
+		Container:  blob.Container.Name,
+		Blob:       blob.Name,
+		Level:      "Informational",
+		Tags:       tags,
+	}, nil
+}
+
 type vnetFlowTuple struct {
 	Time            int64  `json:"time"`
 	SourceIP        string `json:"sourceIp"`
@@ -539,7 +575,7 @@ func parseVnetFlowTuple(raw string) (vnetFlowTuple, error) {
 	}, nil
 }
 
-func (l *vnetFlowEventLog) ToLogs(blob storage.Blob) ([]*Log, error) {
+func (l *vnetFlowEventLog) ToTupleLogs(blob storage.Blob) ([]*Log, error) {
 	parsedId, err := arm.ParseResourceID(l.FlowLogResourceID)
 	if err != nil && l.FlowLogResourceID != "" {
 		return nil, err
@@ -593,4 +629,16 @@ func (l *vnetFlowEventLog) ToLogs(blob storage.Blob) ([]*Log, error) {
 		}
 	}
 	return logs, nil
+}
+
+func (l *vnetFlowEventLog) ToLogs(blob storage.Blob) ([]*Log, error) {
+	if environment.Enabled(environment.SplitVnetFlowTuples) {
+		return l.ToTupleLogs(blob)
+	}
+
+	rawLog, err := l.ToLog(blob)
+	if err != nil {
+		return nil, err
+	}
+	return []*Log{rawLog}, nil
 }
