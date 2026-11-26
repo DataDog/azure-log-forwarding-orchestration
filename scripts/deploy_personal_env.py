@@ -631,7 +631,8 @@ def _deploy_tasks(
 
     task_extra_env_vars: dict[str, list[str]] = {
         "resources-task": [
-            f"RESOURCE_TAG_FILTERS={environ.get('RESOURCE_TAG_FILTERS', '')}"
+            f"RESOURCE_TAG_FILTERS={environ.get('RESOURCE_TAG_FILTERS', '')}",
+            f"RESOURCE_PROVIDER_CONFIGS={environ.get('RESOURCE_PROVIDER_CONFIGS', '')}",
         ],
         "scaling-task": [
             f"FORWARDER_IMAGE={forwarder_image}",
