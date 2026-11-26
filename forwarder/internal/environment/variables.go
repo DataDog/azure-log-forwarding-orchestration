@@ -11,6 +11,7 @@ import (
 // Environment variable names
 const (
 	ApmEnabled                        = "DD_APM_ENABLED"
+	AzureFederatedTokenFile           = "AZURE_FEDERATED_TOKEN_FILE"
 	AzureWebJobsStorage               = "AzureWebJobsStorage"
 	AzureWebJobsStorageAccountName    = "AzureWebJobsStorage__accountName"
 	AzureWebJobsStorageBlobServiceURI = "AzureWebJobsStorage__blobServiceUri"
