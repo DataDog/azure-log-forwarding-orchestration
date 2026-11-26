@@ -19,6 +19,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/storage"
 	customtime "github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/time"
 )
@@ -350,7 +351,7 @@ func (adl *activeDirectoryLog) ToLog(blob storage.Blob) (*Log, error) {
 }
 
 type flowEventRecord interface {
-	ToLog(blob storage.Blob) (*Log, error)
+	ToLogs(blob storage.Blob) ([]*Log, error)
 }
 
 type flowEventRecords[T any] struct {
@@ -413,6 +414,14 @@ func (l *networkSecurityGroupFlowLog) ToLog(blob storage.Blob) (*Log, error) {
 	}, nil
 }
 
+func (l *networkSecurityGroupFlowLog) ToLogs(blob storage.Blob) ([]*Log, error) {
+	parsed, err := l.ToLog(blob)
+	if err != nil {
+		return nil, err
+	}
+	return []*Log{parsed}, nil
+}
+
 type vnetFlowEventLog struct {
 	Time              time.Time `json:"time"`
 	FlowLogGUID       string    `json:"flowLogGUID"`
@@ -437,6 +446,8 @@ func (l *vnetFlowEventLog) Bytes() ([]byte, error) {
 	return json.Marshal(l)
 }
 
+// ToLog preserves the existing VNet flow event shape for installations that
+// have not opted into connection-level events.
 func (l *vnetFlowEventLog) ToLog(blob storage.Blob) (*Log, error) {
 	logBytes, err := l.Bytes()
 	if err != nil {
@@ -468,4 +479,166 @@ func (l *vnetFlowEventLog) ToLog(blob storage.Blob) (*Log, error) {
 		Level:      "Informational",
 		Tags:       tags,
 	}, nil
+}
+
+type vnetFlowTuple struct {
+	Time            int64  `json:"time"`
+	SourceIP        string `json:"sourceIp"`
+	DestinationIP   string `json:"destinationIp"`
+	SourcePort      int64  `json:"sourcePort"`
+	DestinationPort int64  `json:"destinationPort"`
+	Protocol        int64  `json:"protocol"`
+	Direction       string `json:"direction"`
+	State           string `json:"state"`
+	Encryption      string `json:"encryption"`
+	PacketsOut      int64  `json:"packetsOut"`
+	BytesOut        int64  `json:"bytesOut"`
+	PacketsIn       int64  `json:"packetsIn"`
+	BytesIn         int64  `json:"bytesIn"`
+}
+
+type flattenedVnetFlowLog struct {
+	Time              time.Time     `json:"time"`
+	FlowLogGUID       string        `json:"flowLogGUID"`
+	MacAddress        string        `json:"macAddress"`
+	Category          string        `json:"category"`
+	FlowLogResourceID string        `json:"flowLogResourceID"`
+	TargetResourceID  string        `json:"targetResourceID"`
+	FlowLogVersion    int           `json:"flowLogVersion"`
+	OperationName     string        `json:"operationName"`
+	AclID             string        `json:"aclID"`
+	Rule              string        `json:"rule"`
+	Flow              vnetFlowTuple `json:"flow"`
+}
+
+func parseVnetFlowTuple(raw string) (vnetFlowTuple, error) {
+	parts := strings.Split(raw, ",")
+	if len(parts) != 13 {
+		return vnetFlowTuple{}, fmt.Errorf("invalid VNet flow tuple: expected 13 fields, got %d", len(parts))
+	}
+
+	parseNumber := func(name, value string) (int64, error) {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid VNet flow tuple %s: %w", name, err)
+		}
+		return parsed, nil
+	}
+
+	flowTime, err := parseNumber("time", parts[0])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	sourcePort, err := parseNumber("source port", parts[3])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	destinationPort, err := parseNumber("destination port", parts[4])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	protocol, err := parseNumber("protocol", parts[5])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	packetsOut, err := parseNumber("packets out", parts[9])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	bytesOut, err := parseNumber("bytes out", parts[10])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	packetsIn, err := parseNumber("packets in", parts[11])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+	bytesIn, err := parseNumber("bytes in", parts[12])
+	if err != nil {
+		return vnetFlowTuple{}, err
+	}
+
+	return vnetFlowTuple{
+		Time:            flowTime,
+		SourceIP:        parts[1],
+		DestinationIP:   parts[2],
+		SourcePort:      sourcePort,
+		DestinationPort: destinationPort,
+		Protocol:        protocol,
+		Direction:       parts[6],
+		State:           parts[7],
+		Encryption:      parts[8],
+		PacketsOut:      packetsOut,
+		BytesOut:        bytesOut,
+		PacketsIn:       packetsIn,
+		BytesIn:         bytesIn,
+	}, nil
+}
+
+func (l *vnetFlowEventLog) ToTupleLogs(blob storage.Blob) ([]*Log, error) {
+	parsedId, err := arm.ParseResourceID(l.FlowLogResourceID)
+	if err != nil && l.FlowLogResourceID != "" {
+		return nil, err
+	}
+
+	tags := append([]string(nil), DefaultTags...)
+
+	var logSource string
+	if parsedId != nil {
+		logSource = sourceTag(parsedId.ResourceType.String())
+	}
+	tags = append(tags, tagsFromResourceId(parsedId)...)
+
+	var logs []*Log
+	for _, flow := range l.FlowRecords.Flows {
+		for _, group := range flow.FlowGroups {
+			for _, rawTuple := range group.FlowTuples {
+				tuple, err := parseVnetFlowTuple(rawTuple)
+				if err != nil {
+					return nil, err
+				}
+				content, err := json.Marshal(flattenedVnetFlowLog{
+					Time:              l.Time,
+					FlowLogGUID:       l.FlowLogGUID,
+					MacAddress:        l.MacAddress,
+					Category:          l.Category,
+					FlowLogResourceID: l.FlowLogResourceID,
+					TargetResourceID:  l.TargetResourceID,
+					FlowLogVersion:    l.FlowLogVersion,
+					OperationName:     l.OperationName,
+					AclID:             flow.AclID,
+					Rule:              group.Rule,
+					Flow:              tuple,
+				})
+				if err != nil {
+					return nil, err
+				}
+				logs = append(logs, &Log{
+					Time:       l.Time,
+					Category:   l.Category,
+					ResourceId: l.FlowLogResourceID,
+					Service:    azureService,
+					Source:     logSource,
+					Content:    content,
+					Container:  blob.Container.Name,
+					Blob:       blob.Name,
+					Level:      "Informational",
+					Tags:       slices.Clone(tags),
+				})
+			}
+		}
+	}
+	return logs, nil
+}
+
+func (l *vnetFlowEventLog) ToLogs(blob storage.Blob) ([]*Log, error) {
+	if environment.Enabled(environment.SplitVnetFlowTuples) {
+		return l.ToTupleLogs(blob)
+	}
+
+	rawLog, err := l.ToLog(blob)
+	if err != nil {
+		return nil, err
+	}
+	return []*Log{rawLog}, nil
 }

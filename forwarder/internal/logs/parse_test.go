@@ -8,6 +8,7 @@ import (
 	// stdlib
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"io"
 	"strings"
 	"testing"
@@ -17,8 +18,35 @@ import (
 	"github.com/stretchr/testify/require"
 
 	// project
+	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/environment"
 	"github.com/DataDog/azure-log-forwarding-orchestration/forwarder/internal/logs"
 )
+
+func vnetFlowTupleCount(t *testing.T, data []byte) int {
+	t.Helper()
+	var document struct {
+		Records []struct {
+			FlowRecords struct {
+				Flows []struct {
+					FlowGroups []struct {
+						FlowTuples []string `json:"flowTuples"`
+					} `json:"flowGroups"`
+				} `json:"flows"`
+			} `json:"flowRecords"`
+		} `json:"records"`
+	}
+	require.NoError(t, json.Unmarshal(data, &document))
+
+	var count int
+	for _, record := range document.Records {
+		for _, flow := range record.FlowRecords.Flows {
+			for _, group := range flow.FlowGroups {
+				count += len(group.FlowTuples)
+			}
+		}
+	}
+	return count
+}
 
 var (
 	//go:embed fixtures/activedirectory/audit_logs.json
@@ -202,7 +230,7 @@ func TestParseLogs(t *testing.T) {
 }
 
 func TestParseVnetFlowLogs(t *testing.T) {
-	t.Parallel()
+	t.Setenv(environment.SplitVnetFlowTuples, "true")
 
 	tests := map[string]struct {
 		categoryName     string
@@ -223,19 +251,19 @@ func TestParseVnetFlowLogs(t *testing.T) {
 			containerName:    logs.VnetFlowEventContainer,
 			resourceId:       "/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG",
 			logData:          vnetFlowLogData,
-			expectedLogCount: 6,
+			expectedLogCount: vnetFlowTupleCount(t, vnetFlowLogData),
 		},
 	}
 
 	for name, testData := range tests {
 		t.Run(name, func(t *testing.T) {
-			t.Parallel()
 
 			// GIVEN
 			reader := bytes.NewReader(testData.logData)
 			closer := io.NopCloser(reader)
 
 			var numLogsParsed int
+			var rawBytes, scrubbedBytes int64
 
 			// WHEN
 			parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob(testData.resourceId, testData.containerName), MockScrubber(t, testData.logData))
@@ -248,14 +276,65 @@ func TestParseVnetFlowLogs(t *testing.T) {
 				require.Equal(t, testData.containerName, currLog.Container)
 				require.True(t, strings.EqualFold(testData.resourceId, currLog.ResourceId))
 				require.False(t, currLog.Time.IsZero())
+				if testData.containerName == logs.VnetFlowEventContainer {
+					var flattened struct {
+						AclID string `json:"aclID"`
+						Rule  string `json:"rule"`
+						Flow  struct {
+							SourceIP        string `json:"sourceIp"`
+							DestinationIP   string `json:"destinationIp"`
+							SourcePort      int64  `json:"sourcePort"`
+							DestinationPort int64  `json:"destinationPort"`
+							Protocol        int64  `json:"protocol"`
+							Direction       string `json:"direction"`
+							State           string `json:"state"`
+						} `json:"flow"`
+					}
+					require.NoError(t, json.Unmarshal(currLog.Content, &flattened))
+					require.NotEmpty(t, flattened.AclID)
+					require.NotEmpty(t, flattened.Rule)
+					require.NotEmpty(t, flattened.Flow.SourceIP)
+					require.NotEmpty(t, flattened.Flow.DestinationIP)
+					require.NotZero(t, flattened.Flow.SourcePort)
+					require.NotZero(t, flattened.Flow.DestinationPort)
+					require.NotZero(t, flattened.Flow.Protocol)
+					require.NotEmpty(t, flattened.Flow.Direction)
+					require.NotEmpty(t, flattened.Flow.State)
+				}
+				rawBytes += currLog.RawLength()
+				scrubbedBytes += currLog.ScrubbedLength()
 				numLogsParsed += 1
 			}
 
 			// THEN
 			assert.Equal(t, len(testData.logData), *totalBytes)
 			assert.Equal(t, testData.expectedLogCount, numLogsParsed)
+			// The scanner's cursor count includes a trailing newline, while the
+			// raw payload does not. Splitting a record must preserve that existing
+			// accounting behavior across all derived logs.
+			expectedPayloadBytes := int64(len(bytes.TrimSuffix(testData.logData, []byte("\n"))))
+			assert.Equal(t, expectedPayloadBytes, rawBytes)
+			assert.Equal(t, expectedPayloadBytes, scrubbedBytes)
 		})
 	}
+}
+
+func TestVnetFlowLogsRemainBundledWithoutTupleSplitting(t *testing.T) {
+	t.Setenv(environment.SplitVnetFlowTuples, "false")
+
+	closer := io.NopCloser(bytes.NewReader(vnetFlowLogData))
+	parsedLogsIter, totalBytes, err := logs.Parse(closer, newBlob("/SUBSCRIPTIONS/0B62A232-B8DB-4380-9DA6-640F7272ED6D/RESOURCEGROUPS/NETWORKWATCHERRG/PROVIDERS/MICROSOFT.NETWORK/NETWORKWATCHERS/NETWORKWATCHER_EASTUS/FLOWLOGS/CRONK-VM-2-VNET-CRONK-VM-2_GROUP-FLOWLOG", logs.VnetFlowEventContainer), MockScrubber(t, vnetFlowLogData))
+	require.NoError(t, err)
+
+	var got int
+	for parsedLog := range parsedLogsIter {
+		require.NoError(t, parsedLog.Err)
+		assert.Contains(t, string(parsedLog.ParsedLog.Content), "\"flowRecords\"")
+		got++
+	}
+
+	assert.Equal(t, 6, got)
+	assert.Equal(t, len(vnetFlowLogData), *totalBytes)
 }
 
 func TestParseActiveDirectoryLogs(t *testing.T) {
