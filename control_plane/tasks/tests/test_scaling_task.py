@@ -14,6 +14,7 @@ from unittest.mock import ANY, Mock, call, patch
 from uuid import uuid4
 
 # 3rd party
+from azure.core.exceptions import HttpResponseError
 from azure.mgmt.appcontainers.models import EnvironmentVar, Secret
 from tenacity import RetryError
 
@@ -55,6 +56,7 @@ from tasks.tests.common import AsyncMockClient, AzureModelMatcher, TaskTestCase,
 from tasks.version import VERSION
 
 SUB_ID1 = "decc348e-ca9e-4925-b351-ae56b0d9f811"
+SUB_ID2 = "009c172f-5a2e-4ae7-befa-c1e84a3c3cd1"
 EAST_US = "eastus"
 EAST_US_2 = "eastus2"
 WEST_US = "westus"
@@ -570,6 +572,89 @@ class TestScalingTask(TaskTestCase):
             }
         }
         self.assertEqual(self.cache, expected_cache)
+
+    async def test_failing_subscription_does_not_stop_other_subscriptions(self):
+        # SUB_ID2 is no longer monitored and the control plane has lost access to it
+        unreachable_client = AsyncMockClient()
+        unreachable_client.get_forwarder_resources.side_effect = HttpResponseError("AuthorizationFailed")
+        unreachable_client.list_log_forwarder_ids.side_effect = HttpResponseError("AuthorizationFailed")
+        clients = {SUB_ID1: self.client, SUB_ID2: unreachable_client}
+        self.patch_path("tasks.scaling_task.LogForwarderClient").side_effect = (
+            lambda _log, _credential, subscription_id, *_: clients[subscription_id]
+        )
+        unreachable_assignments: AssignmentCache = {
+            SUB_ID2: {
+                EAST_US: {
+                    "resources": {"resource3": OLD_LOG_FORWARDER_ID},
+                    "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                }
+            }
+        }
+
+        with self.assertRaises(HttpResponseError):
+            await self.run_scaling_task(
+                resource_cache_state={SUB_ID1: {EAST_US: {"resource1": included_metadata}}},
+                assignment_cache_state=unreachable_assignments,
+            )
+
+        self.client.create_log_forwarder.assert_awaited_once_with(EAST_US, NEW_LOG_FORWARDER_ID)
+        self.assertEqual(
+            self.cache,
+            {
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": NEW_LOG_FORWARDER_ID},
+                        "configurations": {NEW_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+                SUB_ID2: {
+                    EAST_US: {
+                        "resources": {},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+    async def test_regions_to_be_cleaned_up_without_forwarder_storage_are_deleted(self):
+        self.forwarder_resources_mapping[OLD_LOG_FORWARDER_ID] = (mock(), None)
+
+        await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.collect_forwarder_metrics.assert_not_awaited()
+        self.client.delete_log_forwarder.assert_awaited_once_with(OLD_LOG_FORWARDER_ID)
+        self.assertEqual(self.cache, {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {}}}})
+
+    async def test_regions_to_be_cleaned_up_with_unreadable_metrics_arent_deleted(self):
+        self.client.collect_forwarder_metrics.side_effect = HttpResponseError("AuthorizationFailed")
+
+        await self.run_scaling_task(
+            resource_cache_state={},
+            assignment_cache_state={
+                SUB_ID1: {
+                    EAST_US: {
+                        "resources": {"resource1": OLD_LOG_FORWARDER_ID},
+                        "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE},
+                    }
+                },
+            },
+        )
+
+        self.client.delete_log_forwarder.assert_not_awaited()
+        self.assertEqual(
+            self.cache,
+            {SUB_ID1: {EAST_US: {"resources": {}, "configurations": {OLD_LOG_FORWARDER_ID: STORAGE_ACCOUNT_TYPE}}}},
+        )
 
     async def test_container_app_env_in_control_plane_region_is_not_deleted_on_cleanup(self):
         non_control_plane_subscription_id = "some-other-subscription-id"

@@ -169,7 +169,13 @@ class ScalingTask(Task):
         message_suffix = "" if self.wait_on_envs else " for the second time."
         await self.submit_status_update("task_start", StatusCode.OK, f"Scaling task started{message_suffix}")
         all_subscriptions = set(self.resource_cache.keys()) | set(self._assignment_cache_initial_state.keys())
-        await gather(*(self.process_subscription(sub_id) for sub_id in all_subscriptions))
+        # one failing subscription must not stop the others: let them all finish, save, then fail the run
+        results = await gather(
+            *(self.process_subscription(sub_id) for sub_id in all_subscriptions), return_exceptions=True
+        )
+        if errors := log_errors(self.log, "Failed to process subscriptions", *results):
+            await self.write_caches()
+            raise errors[0]
         await self.submit_status_update("task_complete", StatusCode.OK, "Scaling task completed")
 
     async def process_subscription(self, subscription_id: str) -> None:
@@ -293,12 +299,21 @@ class ScalingTask(Task):
         # not needed, but useful to indicate all resources are gone
         self.assignment_cache[subscription_id][region]["resources"].clear()
 
-        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region, forwarders)
-        forwarders_to_delete = [
-            forwarder
-            for forwarder, metrics in forwarder_metrics.items()
-            if not any(m["resource_log_volume"] for m in metrics)
+        # a forwarder without a storage account can't be holding logs, so don't wait on its (unreadable) metrics
+        forwarder_resources = await gather(*(client.get_forwarder_resources(config_id) for config_id in forwarders))
+        missing_storage = [
+            config_id
+            for config_id, (_, storage_account) in zip(forwarders, forwarder_resources, strict=True)
+            if storage_account is None
         ]
+        forwarders_with_storage = [config_id for config_id in forwarders if config_id not in missing_storage]
+        forwarder_metrics = await self.collect_region_forwarder_metrics(client, region, forwarders_with_storage)
+        drained_forwarders = [
+            config_id
+            for config_id, metrics in forwarder_metrics.items()
+            if not any(metric["resource_log_volume"] for metric in metrics)
+        ]
+        forwarders_to_delete = missing_storage + drained_forwarders
         if not forwarders_to_delete:
             self.log.info("Attempted to delete region %s but all forwarders are still receiving logs", region)
             return
