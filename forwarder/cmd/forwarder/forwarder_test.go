@@ -997,6 +997,48 @@ func TestParseLogs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, got, 3)
 	})
+
+	t.Run("does not advance the cursor past an incomplete flow event line on cancellation", func(t *testing.T) {
+		t.Parallel()
+
+		ctrl := gomock.NewController(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		reader := io.NopCloser(strings.NewReader(vnetFlowLogData))
+		logsChannel := make(chan *logs.Log)
+		type parseResult struct {
+			processedRawBytes int64
+			processedLogs     int64
+			err               error
+		}
+		resultChannel := make(chan parseResult, 1)
+
+		go func() {
+			processedRawBytes, processedLogs, err := parseLogs(
+				ctx,
+				reader,
+				newBlob(resourceId, "insights-logs-flowlogflowevent"),
+				newMockPiiScrubber(ctrl),
+				logsChannel,
+			)
+			resultChannel <- parseResult{
+				processedRawBytes: processedRawBytes,
+				processedLogs:     processedLogs,
+				err:               err,
+			}
+		}()
+
+		firstLog := <-logsChannel
+		require.NotNil(t, firstLog)
+
+		cancel()
+
+		result := <-resultChannel
+		assert.NoError(t, result.err)
+		assert.Equal(t, int64(1), result.processedLogs)
+		assert.Zero(t, result.processedRawBytes)
+	})
 }
 
 var (
